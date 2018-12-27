@@ -3,5 +3,5 @@ various shell scripts
 
 
 ## bashshells
-* ssl
-  - pem-to-jks.sh : Convert _pem_ Certification file to _jks_ file.
+* __ssl__
+  - _pem-to-jks.sh_ : Convert _pem_ Certification file to _jks_ file.
