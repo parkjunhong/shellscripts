@@ -193,7 +193,7 @@ execute(){
 	CMD=$1
 	if [ ! -z $3 ];
 	then
-		CMD=$CMD" "$2$3
+		CMD=$CMD" "$2"\""$3"\""
 	fi
 	echo " >>> $CMD"
 	eval $CMD
