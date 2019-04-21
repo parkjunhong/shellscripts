@@ -24,7 +24,7 @@ usage(){
 }
 
 # If no parameter.
-if [ $1 -lt 1 ];
+if [ $# -lt 1 ];
 then
     usage "No Parameter."
     exit 1
