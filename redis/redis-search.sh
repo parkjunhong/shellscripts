@@ -3,10 +3,10 @@
 help(){
 	echo
 	echo "Usage:"
-	echo " redis-search [{options}] <database> <redis commands and its arguments | built-in commands>"
+	echo " redis-search <database> <redis commands and its arguments | built-in commands> [{options}] "
 	echo
 	echo "[Options]"
-	echo " --no-key: Apply when use a built-in command. Do not print key, only value"
+	echo " --key: Apply when use a built-in command. Print key<tab>value."
 	echo
 	echo "[Built-in]"
 	echo " __get_all__: Retrieve all data using redis commands"
@@ -18,14 +18,14 @@ help(){
 	echo
 }
 
-NO_KEY="false"
+KEY=0
 PARAMS=()
 idx=0
 while [ "$1" != "" ];
 do
 	case $1 in
-		--no-key)
-			NO_KEY="true"
+		--key)
+			KEY=1
 			;;
 		-h | --help | "/h")
 			help "--help"
@@ -73,7 +73,12 @@ read_args(){
 	idx=0
 	for i in "${params[@]}";
 	do
-		__arguments__[$idx]="\"${i}\""
+		if [[ ${i} =~ "\"*" ]];
+		then
+			__arguments__[$idx]="${i}"
+		else
+			__arguments__[$idx]="\"${i}\""
+		fi
 		((idx++))
 	done
 }
@@ -111,7 +116,7 @@ __get_all__(){
 
 		for key in "${scanning[@]:1}"
 		do
-			if [ "$NO_KEY" == "true" ];
+			if [ "$KEY" == 0 ];
 			then
 				eval redis-cli -a $1 -n $2 $3 $key ${__arguments__[@]}
 			else
