@@ -6,7 +6,7 @@ help(){
 	echo " redis-search <database> <redis commands and its arguments | built-in commands> [{options}] "
 	echo
 	echo "[Options]"
-	echo " --key: Apply when use a built-in command. Print key<tab>value."
+	echo " --key: Print key<tab>value."
 	echo
 	echo "[Built-in]"
 	echo " __get_all__: Retrieve all data using redis commands"
@@ -73,7 +73,7 @@ read_args(){
 	idx=0
 	for i in "${params[@]}";
 	do
-		if [[ ${i} =~ "\"*" ]];
+		if [[ ${i} == \"* ]];
 		then
 			__arguments__[$idx]="${i}"
 		else
@@ -91,7 +91,12 @@ __exec_general__(){
 	params=("$@")
 	read_args "${params[@]:3}"
 	
-	eval redis-cli -a $1 -n $2 $3 ${__arguments__[@]}
+	if [ "$KEY" == 0 ];
+	then
+		eval redis-cli -a $1 -n $2 $3 ${__arguments__[@]}
+	else
+		echo "${__arguments__[0]}	"$(eval redis-cli -a $1 -n $2 $3 ${__arguments__[@]})
+	fi
 }
 
 # $1   : authorization
