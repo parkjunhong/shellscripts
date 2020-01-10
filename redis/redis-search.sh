@@ -261,7 +261,7 @@ __get_one__(){
 read_args "${PARAMS[@]:2}"
 args=(${__arguments__[@]})
 
-AUTH="ipasms2016"
+AUTH="password"
 case ${COMMAND} in
 	__get_all__)
 		__get_all__ ${AUTH} ${DATABASE} ${args[@]}
