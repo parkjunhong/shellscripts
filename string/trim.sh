@@ -10,7 +10,7 @@ trim(){
     return 0
   fi
   
-  str=$1
+  local str=$1
   # trim from beginning
   str=${str##*( )}
   # trim from end
