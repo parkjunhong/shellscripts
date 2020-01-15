@@ -48,8 +48,10 @@ if [ "$USER_DIR" == 1 ];
 then
 	echo "cp $COMMAND $(echo ~)/bin/"
 	eval cp $COMMAND $(echo ~)/bin/
-else
-	location=$(command -v $COMMAND)
+else	
+	# which : retreive /usr/* at first.
+	# command -v: retrieve ${user.home} at first.
+	location=$(which $COMMAND)	
 	if [ -z $location ];
 	then
 		echo "sudo cp $COMMAND /usr/bin/"
