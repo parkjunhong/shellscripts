@@ -49,7 +49,7 @@ then
 	echo "cp $COMMAND $(echo ~)/bin/"
 	eval cp $COMMAND $(echo ~)/bin/
 else
-	location=$(which $COMMAND)
+	location=$(command -v $COMMAND)
 	if [ -z $location ];
 	then
 		echo "sudo cp $COMMAND /usr/bin/"
