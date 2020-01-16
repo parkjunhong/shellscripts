@@ -84,7 +84,7 @@ cp_command(){
 	fi
 
 	echo
-	echo "eval ${_sudo_} cp ${src} ${dest}"
+	echo "${_sudo_} cp ${src} ${dest}"
 	eval ${_sudo_} cp ${src} ${dest}
 }
 
@@ -92,7 +92,7 @@ cp_command(){
 echo
 if [ -z "${location}" ];
 then
-	echo " > '${ARG_COMMAND}' does not exist!"
+	echo " > '$(pwd)/${ARG_COMMAND}' does not exist!"
 
 	if [ "${USER_DIR}" = "1" ];
 	then
@@ -101,7 +101,7 @@ then
 		DEST="/usr/bin/"
 	fi
 else
-	echo " > '${ARG_COMMAND}' already exists at ${location}"
+	echo " > '$(pwd)/${ARG_COMMAND}' already exists at ${location}"
 	# 1. Legacy:	${location}
 	# 2. New   :	${SYS_DIR}
 	if [ "${USER_DIR}" = "1" ];
