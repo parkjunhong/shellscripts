@@ -271,7 +271,7 @@ __get_one__(){
 # @param $5   : command
 # @param $6 ~ : arguments
 _filter_(){
-reset_args
+	reset_args
 	local params=("$@")
 
 	if [ $# -gt 5 ];
@@ -310,8 +310,7 @@ reset_args
 			fi
 			((count++))
 		done
-	
-		break	
+		
 		if [ "$index" == 0 ];
 		then
 			break
@@ -341,6 +340,7 @@ reset_args
 # @param $4   : command
 # @param $5 ~ : arguments
 __filter_out__(){
+	reset_args
 	local params=("$@")
 
 	if [ $# -gt 4 ];
