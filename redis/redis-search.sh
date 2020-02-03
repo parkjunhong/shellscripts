@@ -1,10 +1,5 @@
 #!/bin/bash
 
-# =======================================
-# @auther: parkjunhong77@gmail.com
-# @since: 2020-01-2
-# =======================================
-
 help(){
 	echo
 	echo "Usage:"
@@ -25,6 +20,11 @@ help(){
 	echo
 }
 
+redis_info(){
+	echo "[Redis database]"
+	echo "..."
+}
+
 KEY=0
 PARAMS=()
 idx=0
@@ -36,6 +36,10 @@ do
 			;;
 		-h | --help | "/h")
 			help "--help"
+			exit 0
+			;;
+		-d | --dbinfo)
+			redis_info
 			exit 0
 			;;
 		*)
@@ -52,20 +56,20 @@ then
 	exit 0
 fi
 
-# ------- BEGIN: Common Functions -------------
+# ------- Common Functions -------------
 
 # Assign a value to the variable
-# $1 {string} variable name
-# $2 {any} value
+# @param $1 {string} variable name
+# @param $2 {any} value
 assign(){
     eval $1=\"$2\"
 }
 
 # Convert a string to upper/lower bidirectional.
-# $1 {string} string value.
-# $2 {number} (optional)
-#             lower or upper. 
-#             0: lower, 1: upper
+# @param $1 {string} string value.
+# @param $2 {number} (optional)
+#                    lower or upper. 
+#                    0: lower, 1: upper
 convert_str(){
 	if [ "$2" == "0" ];
 	then
@@ -77,8 +81,6 @@ convert_str(){
 		echo "$1"
 	fi
 }
-
-# ------- END: Common Functions -------------
 	
 # 1. assign a database
 DATABASE=0
@@ -104,7 +106,7 @@ reset_args(){
 #
 # Print the global arguments variable, __arguments__
 #
-# $@: a message by a caller.
+# @param $@: a message by a caller.
 print_args(){
 	echo "$@: ${__arguments__[@]}"
 }
@@ -112,8 +114,8 @@ print_args(){
 #
 # Assign arguments to the variable
 #
-# $1  {string}: variable name
-# $2~ {any}   : arguments
+# @param $1   {string}: variable name
+# @param $2 ~ {any}   : arguments
 read_args(){
 	reset_args
 	params=("$@")
@@ -133,10 +135,10 @@ read_args(){
 #
 # Execute a 'redis command' with its arguments.
 #
-# $1 {string}: authorization
-# $2 {number}: database
-# $3 {string}: command
-# $4~ {any}  : arguments
+# @param $1   {string}: authorization
+# @param $2   {number}: database
+# @param $3   {string}: command
+# @param $4 ~ {any}  : arguments
 __redis__(){
 	params=($@)
 	read_args "${params[@]:3}"
@@ -148,10 +150,10 @@ __redis__(){
 #
 # Execute a 'redis-command' with its arguments and print to console.
 #
-# $1 {string}: authorization
-# $2 {number}: database
-# $3 {string}: command
-# $4~ {any}  : arguments
+# @param$1   {string}: authorization
+# @param$2   {number}: database
+# @param$3   {string}: command
+# @param$4 ~ {any}  : arguments
 __exec_general__(){
 	params=($@)
 	read_args "${params[@]:3}"
@@ -168,10 +170,10 @@ __exec_general__(){
 #
 # Search all data.
 #
-# $1  {string}: authorization
-# $2  {number}: database
-# $3  {string}: command
-# $4~ {any}   : arguments
+# @param$1   {string}: authorization
+# @param$2   {number}: database
+# @param$3   {string}: command
+# @param$4 ~ {any}   : arguments
 __get_all__(){
 	reset_args
 	params=("$@")
@@ -219,10 +221,10 @@ __get_all__(){
 #
 # Search one data.
 #
-# $1  {string}: authorization
-# $2  {number}: database
-# $3  {string}: command
-# $4~ {any}   : arguments
+# @param$1   {string}: authorization
+# @param$2   {number}: database
+# @param$3   {string}: command
+# @param$4 ~ {any}   : arguments
 __get_one__(){
 	reset_args
 	params=("$@")
@@ -262,12 +264,105 @@ __get_one__(){
 }
 
 
+# @param $1   : authorization
+# @param $2   : database
+# @param $3   : pattern
+# @param $4   : matched or not
+# @param $5   : command
+# @param $6 ~ : arguments
+_filter_(){
+reset_args
+	local params=("$@")
+
+	if [ $# -gt 5 ];
+	then
+		read_args ${params[@]:5}
+	fi
+
+	local index=0
+	local count=0
+	local value=""
+	local filtered=0
+	while [ 1 ];
+	do
+		scanning=($(redis-cli -a $1 -n $2 scan $index | awk '{print $1}'))
+		index=$scanning
+
+		for key in "${scanning[@]:1}"
+		do
+			value=$(eval redis-cli -a $1 -n $2 $5 $key ${__arguments__[@]})
+			
+			if [[ ${value} =~ ${3} ]] ;
+			then
+				filtered=$(( 1 ^ ${4} ))								
+			else
+				filtered=$(( 0 ^ ${4} ))								
+			fi
+			
+			if [ ${filtered} == 0 ];
+			then
+				if [ "$KEY" == 0 ];
+				then
+					echo ${value}
+				else
+					echo ${key}	${value}
+				fi
+			fi
+			((count++))
+		done
+	
+		break	
+		if [ "$index" == 0 ];
+		then
+			break
+		fi
+	done
+}
+# @param $1   : authorization
+# @param $2   : database
+# @param $3   : pattern
+# @param $4   : command
+# @param $5 ~ : arguments
+__filter_in__(){
+reset_args
+	local params=("$@")
+
+	if [ $# -gt 4 ];
+	then
+		read_args ${params[@]:4}
+	fi
+	
+	_filter_ "${1}" "${2}" "${3}" 1 "${4}" "${__arguments__[@]}" 
+}
+
+# @param $1   : authorization
+# @param $2   : database
+# @param $3   : pattern
+# @param $4   : command
+# @param $5 ~ : arguments
+__filter_out__(){
+	local params=("$@")
+
+	if [ $# -gt 4 ];
+	then
+		read_args ${params[@]:4}
+	fi
+	
+	_filter_ "${1}" "${2}" "${3}" 0 "${4}" "${__arguments__[@]}" 
+}
+
 # read arguments.
 read_args "${PARAMS[@]:2}"
 args=(${__arguments__[@]})
 
 AUTH="password"
 case ${COMMAND} in
+	__filter_in__)
+		__filter_in__ ${AUTH} ${DATABASE} ${args[@]}
+		;;
+	__filter_out__)
+		__filter_out__ ${AUTH} ${DATABASE} ${args[@]}
+		;;
 	__get_all__)
 		__get_all__ ${AUTH} ${DATABASE} ${args[@]}
 		;;
@@ -280,4 +375,3 @@ case ${COMMAND} in
 esac
 
 exit 0
-
