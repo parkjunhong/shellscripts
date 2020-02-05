@@ -12,14 +12,14 @@ trim(){
   
 	local str=$1
 	# trim from beginning
-	while [[ $str == ' '* ];
+	while [[ $str == ' '* ]];
 	do
-		str=${str## }"
+		str="${str## }"
 	done
 	# trim from end
-	while [[ $str == *' ' ];
+	while [[ $str == *' ' ]];
 	do
-		str=${str%% }"
+		str="${str%% }"
 	done
 	
 	echo "${str}"
