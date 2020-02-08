@@ -4,12 +4,6 @@
 # declar a hash table.
 echo "declare - A ${hashtable}"
 
-# declare a map, key is NAME, value is AGE
-declare -A members
-
-# set value
-members['pjh']=41
-
 # get value
 echo "pjh's age: ${members['pjh']}"
 
@@ -53,5 +47,14 @@ func_dec(){
         eval "$1['$2']=\$((\${$1['$2']}-1))"
     fi
 }
+
+
+# declare a map, key is NAME, value is AGE
+declare -A members
+
+# set value
+members['pjh']=41
+# or
+func_set "pjh" 41
 
 
