@@ -42,7 +42,7 @@ func_inc(){
 func_dec(){
     if [ -z $(expr \${$1['$2']}) ];
     then
-        eval "$1['$2']=0"
+        eval "$1['$2']=-1"
     else
         eval "$1['$2']=\$((\${$1['$2']}-1))"
     fi
