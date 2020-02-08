@@ -1,0 +1,57 @@
+#!/bin/bash
+# compatible bash 4.x or higher
+
+# declar a hash table.
+echo "declare - A ${hashtable}"
+
+# declare a map, key is NAME, value is AGE
+declare -A members
+
+# set value
+members['pjh']=41
+
+# get value
+echo "pjh's age: ${members['pjh']}"
+
+# Provide a value
+# @param $1 {string}: a variable  of hash table
+# @param $2 {string}: a key of a hash table
+# 
+func_get(){
+  echo $(expr \${$1['$2']})
+}
+
+# Set a value.
+# @param $1 {string}: a variable  of hash table
+# @param $2 {string}: a key of a hash table
+# @param $3 {any}   : a value
+# 
+func_set(){
+  eval "$1['$2']=$3"
+}
+
+# Increament a numeric value.
+# @param $1 {string}: a variable  of hash table
+# @param $2 {string}: a key of a hash table
+func_inc(){
+    if [ -z $(expr \${$1['$2']}) ];
+    then
+        eval "$1['$2']=0"
+    else
+        eval "$1['$2']=\$((\${$1['$2']}+1))"
+    fi
+}
+
+# Decreament a numeric value.
+# @param $1 {string}: a variable  of hash table
+# @param $2 {string}: a key of a hash table
+func_dec(){
+    if [ -z $(expr \${$1['$2']}) ];
+    then
+        eval "$1['$2']=0"
+    else
+        eval "$1['$2']=\$((\${$1['$2']}-1))"
+    fi
+}
+
+
