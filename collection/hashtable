@@ -1,4 +1,10 @@
 #!/bin/bash
+# =======================================
+# @auther : parkjunhong77@gmail.com
+# @since  : 2020-02-08
+# @license: MIT License (https://opensource.org/licenses/MIT)
+# =======================================
+
 # compatible bash 4.x or higher
 
 # declar a hash table.
