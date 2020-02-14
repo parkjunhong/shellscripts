@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# @author: parkjunhong77_gmail_com
+# @license: MIT.
+#
+
 help(){
 	if [ ! -z "$1" ];
 	then
