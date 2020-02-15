@@ -77,36 +77,38 @@ abspath(){
 
 # @param $1 {string} directory
 deltailslash(){
-	if [ ! -z "$1" ] && [[ "$1" == */ ]];
-	then
-		echo ${1:0:$((${#1}-1))}
-	else
-		echo $1
-	fi
+  if [ "$1" == "/" ];
+  then
+    echo $1
+  elif [ ! -z "$1" ] && [[ "$1" == */ ]]; 
+  then
+    echo ${1:0:$((${#1}-1))}
+  else
+    echo $1
+  fi  
 }
 
 # @param $1 list 
 search(){
-	local args=($@)
-	local parent=${args[0]}
-	local subfiles=${args[@]:1}
-	local path=""
-	RST_FORMAT="[%s] %6s %s\n"
+  local args=($@)
+  local parent=${args[0]}
+  local subfiles=${args[@]:1}
+  local path=""
+  RST_FORMAT="[%s] %6s %s\n"
 
-	for file in ${subfiles[@]}
-	do
-		path=${parent}/${file}
-		if [ -d "${path}" ];
-		then
-			IFS=" " read -a durst <<< $(du -sh ${path})
-			printf "$RST_FORMAT" "d" ${durst[0]} ${durst[1]}
-		elif [ -f "${path}" ];
-		then
-			IFS=" " read -a lsrst <<< $(ls -lh "${path}") 
-			printf "$RST_FORMAT" "f" ${lsrst[4]} ${lsrst[7]}
-		fi
-	done
+  if [ "${parent}" == "/" ];
+  then
+    parent=""
+  fi  
+
+  for file in ${subfiles[@]}
+  do  
+    path=${parent}/${file}
+    IFS=" " read -a durst <<< $(du -sh ${path})
+    printf "$RST_FORMAT" "d" ${durst[0]} ${durst[1]}
+  done
 }
+
 
 DIR=$(deltailslash ${DIR})
 SUB_FILES=($(ls ${DIR}))
