@@ -1,17 +1,27 @@
 #!/bin/bash
 # =======================================
-# @auther : parkjunhong77@gmail.com
-# @since  : 2020-02-08
-# @license: MIT License (https://opensource.org/licenses/MIT)
+# @auther    : parkjunhong77@gmail.com
+# @since     : 2020-02-08
+# @license   : MIT License (https://opensource.org/licenses/MIT)
+# @compatible: bash 4.x or higher
+# @references:
+#  - https://stackoverflow.com/questions/1494178/how-to-define-hash-tables-in-bash
 # =======================================
 
-# compatible bash 4.x or higher
-
 # declar a hash table.
-echo "declare - A ${hashtable}"
+echo "declare - A hashtable_name"
+# e.g.
+declare -A members
+
+# set value
+members["pjh"]=18
+members["hgd"]=18
 
 # get value
 echo "pjh's age: ${members['pjh']}"
+
+# get keys
+names=(${!members[@]})
 
 # Provide a value
 # @param $1 {string}: a variable  of hash table
