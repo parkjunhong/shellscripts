@@ -90,24 +90,31 @@ deltailslash(){
 
 # @param $1 list 
 search(){
-  local args=($@)
-  local parent=${args[0]}
-  local subfiles=${args[@]:1}
-  local path=""
-  RST_FORMAT="[%s] %6s %s\n"
+    local args=($@)
+    local parent=${args[0]}
+    local subfiles=${args[@]:1}
+    local path=""
+    RST_FORMAT="[%s] %6s %s\n"
 
-  if [ "${parent}" == "/" ];
-  then
-    parent=""
-  fi  
+    if [ "${parent}" == "/" ];
+    then
+        parent=""
+    fi
 
-  for file in ${subfiles[@]}
-  do  
-    path=${parent}/${file}
-    IFS=" " read -a durst <<< $(du -sh ${path})
-    printf "$RST_FORMAT" "d" ${durst[0]} ${durst[1]}
-  done
+    for file in ${subfiles[@]}
+    do
+        path=${parent}/${file}
+        IFS=" " read -a durst <<< $(du -sh ${path})
+        if [ -d "${path}" ];
+        then
+            printf "$RST_FORMAT" "d" ${durst[0]} ${durst[1]}
+        elif [ -f "${path}" ];
+        then
+            printf "$RST_FORMAT" "f" ${durst[0]} ${durst[1]}
+        fi
+    done
 }
+
 
 
 DIR=$(deltailslash ${DIR})
