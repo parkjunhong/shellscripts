@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# =======================================
+# @auther : parkjunhong77@gmail.com
+# @title  : calculate a directory size.
+# @license: Apache License 2.0
+# @since  : 2020-02-17
+# =======================================
+
 help(){
 	if [ ! -z "$1" ];
 	then
