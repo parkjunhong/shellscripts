@@ -1,0 +1,67 @@
+#!/bin/bash
+
+# @Author : Park Jun-Hont
+# @Email  : parkjunhong77@gmail.com
+# @License: Apache 2.0 License
+# @Since  : 2020-02-19
+
+FILE=""
+N=10
+
+while [ ! -z "$1" ];
+do
+  case "$1" in
+    -h)
+      echo "Usage: autotail.sh -f <filename> -n <init line count>"
+      exit 0
+      ;;
+    -f)
+      shift
+
+      if [ -z "$1" ];
+      then
+        echo "Wrong file name. filename=$1"
+        exit 1
+      fi
+      FILE="$1"
+      ;;
+    -n)
+      shift
+
+      if [[ ! $1 =~ [0-9]+ ]];
+      then
+        echo "Wrong line numbers. linenumber=$1"
+        exit 1
+      fi
+      N=$1
+      ;;
+    *)
+      ;;
+  esac
+  shift
+done
+
+
+if [ -z "${FILE}" ];
+  then
+    echo "Wrong file name. filename=${FILE}"
+    exit 1
+fi
+
+
+count=0
+while [ 1 ];
+do
+  if [ -f ${FILE} ];
+  then
+    break
+  else
+    ((count++))
+    echo -en "\r$(printf "[%10d] No exists... file: %s" ${count} ${FILE})"
+    sleep 0.1
+  fi
+done
+
+tail -n ${N} -f ${FILE}
+
+exit 0
