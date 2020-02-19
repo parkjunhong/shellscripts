@@ -1,0 +1,42 @@
+#!/bin/bash
+
+PROG_MOD=10
+
+dotprogress(){
+  local idx=0
+  prog=""
+  while [ ${idx} -lt ${PROG_MOD} ];
+  do
+    prog=${prog}"."
+    echo ${prog}
+    ((idx++))
+  done
+}
+
+linecount=0
+nw=""
+dhcp=""
+hit=0
+progress=($(dotprogress))
+while IFS="=" read -a line
+do
+  ((linecount++))
+  printf "\r\033[K[%'10d] %s" ${linecount} ${progress[((${linecount}%${PROG_MOD}))]}
+  nw="${line[0]}"
+  dhcp="${line[1]}"
+  if [[ ${nw} =~ .*\..* ]]; 
+  then
+    printf "\r\033[K[%'10d] %10s  = %s\n" ${linecount} ${nw} ${dhcp} 
+    #printf " %10s  = %s\n" ${nw} ${dhcp}
+    hit=1
+  else
+    hit=0
+  fi  
+done 
+
+if [ ${hit} -eq 0 ];
+then
+  printf "\r\033[K"
+fi
+
+exit 0
