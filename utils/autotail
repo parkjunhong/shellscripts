@@ -57,11 +57,12 @@ do
     break
   else
     ((count++))
-    echo -en "\r\033[K$(printf "[%'10d] No exists... file: %s" ${count} ${FILE})"
+    printf "\r\033[K[%'10d] No exists... file: %s" ${count} ${FILE}
     sleep 0.1
   fi
 done
 
+printf "\n"
 tail -n ${N} -f ${FILE}
 
 exit 0
