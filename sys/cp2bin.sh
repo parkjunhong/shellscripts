@@ -82,7 +82,16 @@ cp_command(){
 	then
 		local _sudo_="sudo"
 	fi
-
+	if [ -f ${dest} ];
+  	then
+    		echo
+    		echo "${dest} is NOT a directory but a file."
+    		exit 1
+  	elif [ ! -d ${dest} ];
+  	then
+    		eval ${_sudo_} mkdir ${dest}
+  	fi
+	
 	echo
 	echo "${_sudo_} cp ${src} ${dest}"
 	eval ${_sudo_} cp ${src} ${dest}
@@ -96,7 +105,7 @@ then
 
 	if [ "${USER_DIR}" = "1" ];
 	then
-		DEST="$(echo ~)/bin"
+		DEST="$(echo ~)/bin/"
 	else
 		DEST="/usr/bin/"
 	fi
@@ -106,9 +115,9 @@ else
 	# 2. New   :	${SYS_DIR}
 	if [ "${USER_DIR}" = "1" ];
 	then
-		sys_dir="$(echo ~)/bin"
+		sys_dir="$(echo ~)/bin/"
 	else
-		sys_dir="/usr/bin"
+		sys_dir="/usr/bin/"
 	fi
 
 	if [ "${location}" == "${sys_dir}/${cmd}" ];
