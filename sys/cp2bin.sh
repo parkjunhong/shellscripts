@@ -71,6 +71,59 @@ fi
 # which : retreive /usr/* at first.
 location=$(which ${cmd} 2> /dev/null) 
 
+PATH_DELIM="/"
+#
+# find a parent path of a filepath.
+# @param $1 {string}: filepath.
+find_ppath(){
+	local args="$@"
+	local is_root=0
+	if [[ $1 == ${PATH_DELIM}* ]];
+	then
+		is_root=1
+		args="${args:1}"
+	fi
+	
+	# split filepath.
+	IFS="${PATH_DELIM}" read -ra fpa <<< "${args}"
+	
+	if [ ${#fpa[@]} -gt 1 ];
+	then
+		local pos=$((${#fpa[@]}-1))
+		local ppath=""		
+		# check that a path is absolute.
+		[[ ${is_root} = 1 ]] && ppath=${PATH_DELIM}
+		local pathar=(${fpa[@]:0:${pos}})
+		for path in "${fpa[@]:0:${pos}}"
+		do
+			if [ -z ${path} ];
+			then
+				continue
+			fi
+
+			if [ "${ppath}" == "${PATH_DELIM}" ];
+			then
+				ppath=${ppath}${path}
+			elif [ ! -z ${ppath} ];
+			then
+				ppath=${ppath}${PATH_DELIM}${path}
+			# CONFIRM: ${ppath} is empty
+			else
+				ppath=${path}
+			fi
+		done
+		
+		echo "${ppath}"
+	else
+		if [ ${is_root} == 0 ];
+		then
+			echo "."
+		else
+			echo "${PATH_DELIM}"
+		fi
+	fi
+}
+
 #
 # $1 {string}: source
 # $2 {string}: destination
@@ -93,8 +146,8 @@ cp_command(){
   	fi
 	
 	echo
-	echo "${_sudo_} cp ${src} ${dest}"
-	eval ${_sudo_} cp ${src} ${dest}
+	echo "${_sudo_} cp ${src} ${dest}/"
+	eval ${_sudo_} cp ${src} ${dest}"/"
 }
 
 # check a location and decide a destination.
@@ -130,7 +183,7 @@ else
 			echo " > Bye~"
 			exit 0			
 		fi
-		DEST="${location}"
+		DEST=$(find_ppath ${location})
 	else
 		echo
 		echo " > Where do you want to copy a command to ?"
