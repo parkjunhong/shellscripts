@@ -1,0 +1,51 @@
+#!/bin/bash
+
+# =======================================
+# @auther : parkjunhong77@gmail.com
+# @since  : 2020-03-28
+# @license: MIT
+# =======================================
+
+help(){
+  echo 
+  echo "Usage:"
+  echo "./uuid-list {count}"
+  echo " - count: a number of UUID."
+  echo
+}
+
+let UUID_MAX_COUNT=1
+while [ ! -z "$1" ];
+do
+  case "$1" in
+    -h|--help)
+      help
+      exit 0
+      ;;
+    *)
+      if [[ $1 =~ [[:digit:]]+ ]];
+      then
+        UUID_MAX_COUNT=$1
+      else
+        echo
+        echo "Not A Number. input=$1"
+
+        help
+        exit 1
+      fi
+      ;;
+  esac
+  # move to a next variable
+  shift
+done
+
+let uuid_idx=0
+while [ ${uuid_idx} -lt ${UUID_MAX_COUNT} ];
+do
+  # print 'uuid'
+  uuidgen
+  # increase an index of UUID
+  ((uuid_idx++))
+done
+
+exit 0
