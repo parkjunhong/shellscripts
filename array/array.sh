@@ -12,3 +12,15 @@ apply_confs(){
     	echo "conf=$conf"
     done
 }
+
+
+# 중복된 값을 제거하는 
+# @param $1 <string> a name of an array
+# @return by 'echo' command
+create-set(){
+    ar="\${$1[@]}"
+    for v in $(eval "echo ${ar}");
+    do
+        echo "$v";
+    done|sort|uniq|xargs
+}
