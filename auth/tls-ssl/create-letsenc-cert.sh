@@ -110,7 +110,7 @@ do
         echo "=========================================================================="
         echo ">>>>>> Start '${domain}' Let's Encrypt Certificate"
         echo
-#       certbot certonly --standalone -d ${domain}
+        certbot certonly --standalone -d ${domain}
         echo
         echo "<<<<<< Finished ${domain}"
         echo "=========================================================================="
