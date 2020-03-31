@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# =============================================
+# @author: parkjunhong77@gmail.com
+# @since : 2020-03-31
+# @title : Create a Let's Encrypt Certification.
+# =============================================
+
 # Check whether a user is a 'root' or not.
 if (( $EUID != 0 )); then
     echo
