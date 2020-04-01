@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# =======================================
+# @auther : parkjunhong77@gmail.com
+# @title  : analyse ping's verbose.
+# @license: Apache License 2.0
+# @since  : 2020-04-01
+# =======================================
 
 is-time(){
   if [[ $1 == *-time-* ]];
