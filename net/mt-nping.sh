@@ -78,8 +78,8 @@ done
 
 while IFS= read -r chgw_ip 
 do
-	echo "nping.sh -m ${MD} --rate ${PPS} -c ${PPM} ${chgw_ip} > nping-m${MD}--rate${PPS}-c${PPM}-${chgw_ip}.log"
-	nping.sh -m ${MD} --rate ${PPS} -c ${PPM} ${chgw_ip} > nping-m${MD}--rate${PPS}-c${PPM}-${chgw_ip}.log
+	echo "./nping.sh -m ${MD} --rate ${PPS} -c ${PPM} ${chgw_ip} > nping-${chgw_ip}-m${MD}--rate${PPS}-c${PPM}.log"
+	./nping.sh -m ${MD} --rate ${PPS} -c ${PPM} ${chgw_ip} > nping-${chgw_ip}-m${MD}--rate${PPS}-c${PPM}.log
 
 done < "${FILE}"
 
