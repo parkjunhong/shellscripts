@@ -28,7 +28,7 @@ usage(){
 }
 
 # 파라미터가 없는 경우 종료
-if [ "$#" -ne 7 ];
+if [ "$#" -le 7 ];
 then
 	usage "Invalid Paramters."
 	exit 1
