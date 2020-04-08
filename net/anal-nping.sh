@@ -79,8 +79,7 @@ exam-file(){
   done < $1
 
   # max|min|avg|lost
-
-  printf "%s  %s  %s  %s\n" $(bc <<< "scale=3;${avg_sum_value}/${count}") ${min_value} ${max_value} $(bc <<< "scale=3;${lost_sum_value}/${sent_sum_value}*100")
+  printf "%s  %s  %s  %s  %s\n" $(bc <<< "scale=3;${avg_sum_value}/${count}") ${min_value} ${max_value} $(bc <<< "scale=3;${lost_sum_value}/${sent_sum_value}*100") ${count}
 }
 
 FILES=($(ls))
