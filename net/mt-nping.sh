@@ -2,7 +2,7 @@
 
 # =======================================
 # @auther : parkjunhong77@gmail.com
-# @title  : analyse nping's verbose.
+# @title  : nping to multiple targets.
 # @license: Apache License 2.0
 # @since  : 2020-04-01
 # =======================================
