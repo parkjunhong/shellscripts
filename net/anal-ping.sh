@@ -84,7 +84,8 @@ exam-file(){
   printf "%s  %s  %s  %s\n" $(bc <<< "scale=3;${avg_sum_value}/${count}") ${min_value} ${max_value} $(bc <<< "scale=3;${lost_sum_value}/${sent_sum_value}*100")
 }
 
-while IFS= read -r filename
+FILES=($ls))
+for filename in ${FILES[@]}
 do
   if [[ ${filename} != *.log ]];
   then
@@ -102,8 +103,7 @@ do
   fi
 
   printf "%s  %s  %s  %s  %s\n" ${arr[0]} ${arr[1]} ${M_TYPE} ${ICMPTIME} "$(exam-file ${filename})"
-
-done <<< $(ls)
+done
 
 exit 0
       
