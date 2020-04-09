@@ -7,6 +7,69 @@
 # @since  : 2020-04-01
 # =======================================
 
+
+usage(){
+  echo
+  echo ">>> CALLED BY [[ $1 ]]"
+  echo
+  echo "[Usage]"
+  echo
+  echo "./anal-nping.sh <directory> -f <filename-format>"
+  echo
+  echo "[Arguments]"
+  echo " - directory: 파일이 위치한 디렉토리. 기본값: ./"
+  echo
+  echo "[Option]"
+  echo " -f: 로그파일명 포맷"
+  echo 
+}
+
+# @param $1 {string} directory
+del-tail-slash(){
+  if [ "$1" == "/" ];
+  then
+    echo $1
+  elif [ ! -z "$1" ] && [[ "$1" == */ ]];
+  then
+    echo ${1:0:$((${#1}-1))}
+  else
+    echo $1
+  fi
+}
+
+DIRECTORY="./"
+FILENAME_FORMAT="nping-*.log"
+
+## 파라미터 읽기
+{
+while [ "$1" != "" ]; do
+  case $1 in
+    -f)
+      shift
+      FILENAME_FORMAT=$1
+      ;;
+    -h | --help)
+      usage "--help"
+      exit 0
+      ;;
+    *)
+      if [ ! -d "$1" ];
+      then
+        usage "Invalid a directory. => $1"
+        exit 1
+      fi
+      DIRECTORY=$(del-tail-slash "$1")
+      ;;
+  esac
+  shift
+done
+}||{
+  echo "Oops... "
+  usage "CAN NOT Controll..."
+  exit 1
+}
+
+
 is-time(){
   if [[ $1 == *-time-* ]];
   then
@@ -82,15 +145,17 @@ exam-file(){
   printf "%s  %s  %s  %s  %s\n" $(bc <<< "scale=3;${avg_sum_value}/${count}") ${min_value} ${max_value} $(bc <<< "scale=3;${lost_sum_value}/${sent_sum_value}*100") ${count}
 }
 
-FILES=($(ls))
+FILES=($(ls ${DIRECTORY}))
+
 for filename in ${FILES[@]}
 do
-  if [[ ${filename} != *.log ]];
+  if [[ ${filename} != nping-*.log ]];
   then
     continue
   fi
 
-  IFS="-" read -a arr <<< "${filename}"
+  filepath="${DIRECTORY}/${filename}"
+  IFS="-" read -a arr <<< "${filepath}"
 
   ICMPTIME=$(is-time ${filename})
   if [ $(is-sole ${filename}) == "true" ];
@@ -100,10 +165,9 @@ do
     M_TYPE="동시"
   fi
 
-  printf "%s  %s  %s  %s  %s\n" ${arr[0]} ${arr[1]} ${M_TYPE} ${ICMPTIME} "$(exam-file ${filename})"
-  
+  printf "%s  %s  %s  %s  %s  %s\n" ${arr[0]} ${arr[1]} ${M_TYPE} ${ICMPTIME} "$(exam-file ${filepath})"
 done
 
 exit 0
 
-      
+
