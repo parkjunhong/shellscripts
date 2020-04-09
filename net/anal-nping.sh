@@ -155,7 +155,7 @@ do
   fi
 
   filepath="${DIRECTORY}/${filename}"
-  IFS="-" read -a arr <<< "${filepath}"
+  IFS="-" read -a arr <<< "${filename}"
 
   ICMPTIME=$(is-time ${filename})
   if [ $(is-sole ${filename}) == "true" ];
