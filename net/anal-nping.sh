@@ -164,8 +164,8 @@ do
   else
     M_TYPE="동시"
   fi
-
-  printf "%s  %s  %s  %s  %s  %s\n" ${arr[0]} ${arr[1]} ${M_TYPE} ${ICMPTIME} "$(exam-file ${filepath})"
+  result_exam=$(exam-file "${filepath}")
+  printf "%s  %s  %s  %s  %s  %s\n" ${arr[0]} ${arr[1]} ${M_TYPE} ${ICMPTIME} "${result_exam}"
 done
 
 exit 0
