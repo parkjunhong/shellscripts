@@ -16,6 +16,10 @@ load(){
       continue
     fi
     IFS="=" read -a info <<< "${line}"
+    if [ ${#info[@]} -ne 2 ];
+    then
+      continue
+    fi    
     eval "$2['${info[0]}']='${info[1]}'"
   done < "$1"
 }
