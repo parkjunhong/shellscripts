@@ -1,0 +1,324 @@
+#!/bin/bash
+
+help(){
+	if [ ! -z "$1" ];
+	then
+		echo 
+		echo "Caller: ${FUNCNAME}, Cause=$1"
+	fi
+	echo
+	echo "Usage:"
+	echo "ssh-proxy [sts-user@]<sts-host>:<sts-rport>/<dest-user>@<dest-server> -nj <options>"
+	echo
+	echo "[descriptons]"
+	echo " sts-username: SSH Tunneling Server username."
+	echo " sts-host    : SSH Tunneling Server host."
+	echo " sts-rport   : SSH Tunneling Server Remote port."
+	echo " dest-user   : Destination Server username."
+	echo " dest-server : Destination Server. MUST Customize for you."
+	echo
+	echo "[options]"
+	echo " -nj         (O): No Jump"
+	echo " --service-* (O): following cmd is mutual exclusive"
+	echo "           -add : add a new service."
+	echo "           -file: replace services to the file contents."
+	echo "           -list: list services."
+	echo
+}
+
+## Read a property
+# @param $1 {string}: filepath.
+# @param $2 {string}: a name of a property
+#
+# @return by 'echo'
+prop(){
+	echo $(grep -v -e "^#" ${1} | grep -e "^${2}=" | cut -d"=" -f2-)
+}
+
+DEST_FILE="${HOME}/ssh-proxy.services"
+## create a service file.
+# @param {string}: filepath
+create-service-file(){
+	local filename=""
+	if [ -z $1 ];
+	then
+		filename="${DEST_FILE}"
+	else
+		filename="$1"
+	fi
+
+	echo "# SSH Tunneling Destination Services" > "${filename}"
+}
+
+
+## load a file to hashtable
+# @param $1 {string} filepath
+# @param $2 {string} hashtable
+load-file-to-hash(){
+	if [ ! -f $1 ];
+	then
+		return
+	fi
+
+  while IFS="=" read line
+  do
+    # pass a comment
+    if [[ ${line} == \#* ]] || [ -z "${line}" ];
+    then
+      continue
+    fi
+    IFS="=" read -a info <<< "${line}"
+    if [ ${#info[@]} -ne 2 ];
+    then
+      continue
+    fi
+    eval "$2['${info[0]}']='${info[1]}'"
+  done < "$1"
+}
+
+## write information to a file
+# @param $1 {string} hashtable name
+# @param $2 {string} filepath to write
+# @param $3 {string} to be discard
+write-hash-to-file(){
+	create-service-file "$2"
+  for key in $(eval echo "\${!$1[@]}")
+  do
+		if [ -z "$3" ] || [ "${key}" != "$3" ];
+		then
+			echo "${key}="$(eval echo "\${$1['${key}']}") >> "$2"
+		fi
+  done
+}
+
+list-services(){
+	if [ ! -f ${DEST_FILE} ];
+	then
+		echo
+		echo " * * * There is no ssh tunneling destinations."
+		echo " * * * '${DEST_FILE}' should take list. Format is compatible to Properties file."
+		echo " * * * format: <service-name>=<host> -p <port>"
+		echo " * * * e.g.)"
+		echo " * * * my-com=192.168.2.211 -p 12345"
+		create-service-file
+	fi
+	
+	echo
+	cat ${DEST_FILE}
+	echo
+}
+
+## add a new service
+# @param $1 {string} service 
+add-service(){
+	declare -A svc_table
+	# 1. load current services into hashtable
+	load-file-to-hash "${DEST_FILE}" "svc_table"
+
+	# 2. new data into hashtable
+	IFS="=" read -a new_data <<< "$1"
+	if [ ${#new_data[@]} -eq 2 ];
+	then
+		svc_table[${new_data[0]}]=${new_data[1]}
+	fi
+			
+	# 3. write hash to a file
+	write-hash-to-file "svc_table" "${DEST_FILE}"
+}
+
+## update a service file
+# @param $1 {string} new service file
+update-service(){
+	if [ ! -f $1 ];
+	then
+		return
+	fi
+
+	declare -A svc_table
+	# 1. load current services into hashtable
+	load-file-to-hash "$1" "svc_table"
+	
+	# 2. write hash to a file
+	write-hash-to-file "svc_table" "${DEST_FILE}"
+}
+
+## delete a service
+# @param $1 {string} service name
+delete-service(){
+	if [ -z "$1" ];
+	then
+		return
+	fi
+
+	declare -A svc_table
+
+	# 1. load current services into hashtable
+	load-file-to-hash "${DEST_FILE}" "svc_table"
+
+	# 3. write hash to a file
+	write-hash-to-file "svc_table" "${DEST_FILE}" "$1"
+}
+
+declare -A _args_
+
+NO_JUMP=0
+while [ ! -z "$1" ];
+do
+	case "$1" in
+		--service-add)
+			shift
+			if [ -z "$1" ];
+			then
+				help "Illegal SSH Tunneling Destination information. input=$1"
+				exit 1
+			fi
+			
+			# 1. add new information	
+			add-service "$1"
+			# 2. check information
+			list-services
+
+			exit 0
+			;;
+		--service-file)
+			shift
+			# 1. update file
+			update-service "$1"
+			# 2. check information
+			list-services
+
+			exit 0
+			;;
+		--service-delete)
+			shift 
+			# 1. delete a service
+			delete-service $1
+			# 2. check information
+			list-services
+			exit 0
+			;;
+		--service-list)
+			list-services
+			exit 0
+			;;
+		-nj)
+			NO_JUMP=1
+			;;
+		*)
+			IFS="/" read -a _input_ <<< "$1"
+			if [ ${#_input_[@]} -ne 2 ];
+			then
+				help "[Error] Invalid proxy & target information. arg=$1"
+				exit 1
+			fi
+
+			# handle proxy information.
+			IFS="@:" read -a _proxy_ <<< "${_input_[0]}"
+			case ${#_proxy_[@]} in
+				2)
+					_proxy_host_=${_proxy_[0]}
+					_proxy_port_=${_proxy_[1]}
+					;;
+				3)
+					_proxy_user_=${_proxy_[0]}
+					_proxy_host_=${_proxy_[1]}
+					_proxy_port_=${_proxy_[2]}
+					;;
+				*)
+					help "[Error] Invalid proxy information. arg=$1"
+					exit 1
+					;;
+			esac
+
+			_args_["proxy"]=1
+
+			# handle target information.
+			IFS="@" read -a _target_ <<< "${_input_[1]}"
+			case ${#_target_[@]} in
+				2)
+					_target_user_=${_target_[0]}
+					_target_type_=${_target_[1]}
+					;;
+				*)
+					help "[Error] Invalid target information. arg=$1"
+					exit 1
+					;;
+			esac
+
+			_args_["target"]=1
+			;;
+	esac
+	shift
+done
+
+# Validate SSH Tunneling Server Information
+if [ -z ${_args_["proxy"]} ] || [ -z ${_args_["target"]} ];
+then
+	help "[Error] Please, input information to connect a target."
+	exit 1
+fi
+
+# handle target
+_target_host_=$(prop "${DEST_FILE}" "${_target_type_}")
+
+if [ -z "${_target_host_}" ];
+then
+	help "[Error] Invalid target information. target=${_target_type_}"
+	exit 1
+fi
+
+# If $2 exists, append $2 after $1
+# @param $1 {string} buffer
+# @param $2 {string} concatenator
+# @param $3 {any} information
+concatIf(){
+	if [ $# -ne 3 ];
+	then
+		echo "$1"
+	else
+		echo "$1$2$3"
+	fi
+}
+
+# @param $1 {number} port
+# @param $2 {number} min
+# @param $3 {number} max
+checkRange(){
+	if [ $# -ne 3 ] || [ $1 -lt $2 ] || [ $1 -gt $3 ];
+	then
+		echo "Inalid"
+	else
+		echo
+	fi
+}
+
+SSH_CMD="ssh "
+if [ ${NO_JUMP} -eq 0 ];
+then
+	SSH_CMD=$(concatIf "${SSH_CMD}" "${_target_user_}" "@")
+	SSH_CMD=$(concatIf "${SSH_CMD}" "${_target_host_}" " -J ")
+	SSH_CMD=$(concatIf "${SSH_CMD}" "${_proxy_user_}" "@")
+	SSH_CMD=$(concatIf "${SSH_CMD}" "${_proxy_host_}" ":")
+	SSH_CMD=$(concatIf "${SSH_CMD}" "${_proxy_port_}" "")
+else
+	SSH_CMD=$(concatIf "${SSH_CMD}" "${_proxy_user_}" "@")
+	SSH_CMD=$(concatIf "${SSH_CMD}" "${_proxy_host_}" " -p ")
+	SSH_CMD=$(concatIf "${SSH_CMD}" "${_proxy_port_}" " ")
+fi
+
+if [ ! -z $(checkRange ${_proxy_port_} 1 65534) ];
+then
+	help "Invalid proxy port. min=1, max=65545, port=${_proxy_port_}"
+	exit 1
+fi
+
+LF="\033[1m[%s]\033[0m \033[3m%s\033[0m"
+
+echo
+printf "${LF}\n" "executed" "${SSH_CMD}"
+
+echo
+eval ${SSH_CMD}
+
+exit 0
+
