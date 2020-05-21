@@ -1,0 +1,67 @@
+#!/bin/bash
+
+# @param $1 {string} filepath
+# @param $2 {string} hashtable name
+load(){
+  if [ ! -f $1 ];
+  then
+    return
+  fi
+
+  while IFS="=" read line
+  do
+    # pass a comment
+    if [[ ${line} == \#* ]] || [ -z "${line}" ];
+    then
+      continue
+    fi
+    IFS="=" read -a info <<< "${line}"
+    eval "$2['${info[0]}']='${info[1]}'"
+  done < "$1"
+}
+
+## write a hashtable to file as a property
+# @param $1 {string} hashtable name
+# @param $2 {string} filepath
+write(){
+  echo "# hashtable to a file" > "$2"
+
+  for key in $(eval echo "\${!$1[@]}")
+  do
+    echo "${key}="$(eval echo "\${$1['${key}']}") >> "$2"
+  done
+}
+
+
+## print hashtable
+# @param {string} hashtable name
+# 
+print-table(){
+  for key in $(eval echo "\${!$1[@]}")
+  do
+    echo "${key}="$(eval echo "\${$1['${key}']}")
+  done
+}
+
+declare -A table
+
+case "$1" in
+  "load")
+    load "ssh-proxy.list" "table"
+    ;;
+  "write")
+    load "ssh-proxy.list" "table"
+    IFS="=" read -a info <<< "$2"
+    if [ ${#info[@]} -eq 2 ];
+    then
+      table["${info[0]}"]="${info[1]}"
+    fi
+    write "table" "ssh-proxy-2nd.list"
+    ;;
+  *)
+    ;;
+esac
+
+print-table "table"
+
+exit 0
