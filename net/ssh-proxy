@@ -8,10 +8,10 @@ help(){
 	fi
 	echo
 	echo "Usage:"
-	echo "ssh-proxy [sts-user@]<sts-host>:<sts-rport>/<dest-user>@<dest-server> -nj <options>"
+	echo "ssh-proxy <sts-user<@<sts-host>:<sts-rport>/<dest-user>@<dest-server> -nj <options>"
 	echo
 	echo "[descriptons]"
-	echo " sts-username: SSH Tunneling Server username."
+	echo " sts-username: SSH Tunneling Connected Server username."
 	echo " sts-host    : SSH Tunneling Server host."
 	echo " sts-rport   : SSH Tunneling Server Remote port."
 	echo " dest-user   : Destination Server username."
@@ -19,6 +19,7 @@ help(){
 	echo
 	echo "[options]"
 	echo " -nj         (O): No Jump"
+	echo "                : If STC server is equals to a destination, ENABLE this."
 	echo " --service-* (O): following cmd is mutual exclusive"
 	echo "           -add : add a new service."
 	echo "           -file: replace services to the file contents."
