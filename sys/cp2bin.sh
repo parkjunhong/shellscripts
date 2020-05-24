@@ -168,9 +168,9 @@ else
 	# 2. New   :	${SYS_DIR}
 	if [ "${USER_DIR}" = "1" ];
 	then
-		sys_dir="$(echo ~)/bin/"
+		sys_dir="$(echo ~)/bin"
 	else
-		sys_dir="/usr/bin/"
+		sys_dir="/usr/bin"
 	fi
 
 	if [ "${location}" == "${sys_dir}/${cmd}" ];
@@ -193,7 +193,8 @@ else
 		read -p " > Select a destination.? (1|2, Others termiante the process.) " answer
 		case ${answer} in
 			1)
-				DEST="${location}"
+				#DEST="${location}"
+				DEST=$(find_ppath ${location})
 				;;
 			2)
 				DEST="${sys_dir}"
