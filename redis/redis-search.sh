@@ -10,9 +10,9 @@ help(){
 	echo
 	echo "[Built-in]"
 	echo " __filter_in__ : Retrieve data DO MATCH a Regular Expression."
-	echo "                 e.g) redis-search 4 __filter_in__ 원주인프라팀 get"
+	echo "                 e.g) redis-search 4 __filter_in__ XXXXX get"
 	echo " __filter_out__: Retrieve data DO NOT MATCH a Regular Expression."
-	echo "                 e.g) redis-search 4 __filter_out__ 원주인프라팀 get"
+	echo "                 e.g) redis-search 4 __filter_out__ XXXXX get"
 	echo " __get_all__   : Retrieve all data using redis commands"
 	echo "                 e.g) redis-search 1 __get_all__ lrange 0 -1"
 	echo " __get_one__	 : Retrieve one data using redis commands"
@@ -26,30 +26,6 @@ help(){
 
 redis_info(){
 	echo "[Redis database]"
-	echo " 1: DHCP 패킷 개수                                              | 2: IP 점유율"                                                     
-	echo "   - Packet의 시간 / 분석된 패킷의 1분 통계 데이터              |   - Packet의 시간 / 분석된 IP 점유율의 1분 통계 데이터"                        
-	echo "   - Strings (문자열) / Lists (자리수로 구분되는 데이터 리스트) |   - Strings (문자열) / Lists (자리수로 구분되는 데이터 리스트)"                 
-	echo "   - Lpush / Lrange                                             |   - Lpush / Lrange"                                            
-	echo " 3: IP별 Primary G/W IP 정보                                    | 4: Primary G/W IP 별 ENG팀명, NW_ID 연동 정보"                   
-	echo "   - 할당가능한 IP / 속한 네트워크 Primary Gateway IP           |   - Primary Gateway IP / 연관 정보 (ENG 팀명, Network ID)"      
-	echo "   - string (문자열) / string (문자열)                          |   - Strings (문자열) /  Strings                          "   
-	echo "   - set / get                                                  |   - set / get                                            "
-	echo " 5: IP별 IP 블록 G/W 정보                                       | 6: Ethernet 패킷 유입 유무"                   
-	echo "   - 할당가능한 IP / 속한 IP 블록 G/W                           |   - IP 블록 ID / 연관 정보"                   
-	echo "   - string (문자열) / string (문자열)                          |   - Strings (문자열) / Strings (문자열)"      
-	echo "   - set / get                                                  |   - set / get"                          
-	echo " 7: DHCP 주/예비 매핑 정보                                      | 8: Primary G/W에 속한 IP 블록 정보"                  
-	echo "   - DHCP 서버 IP / DHCP 정보                                   |   - Primary G/W IP / 속한 IP 블록 목록 리스트"         
-	echo "   - Strings (문자열) / Hashes                                  |   - string (문자열) / string (문자열)        "      
-	echo "   - hmset / hgetall                                            |   - set / get                                "
-	echo " 9: Secondary G/W IP가 속한 Primary G/W IP 제공                 | 11: NW_ID와 Primary G/W IP 정보"         
-	echo "   - Secondary G/W IP / Primary G/W IP                          |   - NW ID / Primary G/W IP"           
-	echo "   - string (문자열) / string (문자열)                          |   - string (문자열) / string (문자열)"      
-	echo "   - set / get                                                  |   - set / get"                        
-	echo " 12: IP별 서비스 타입"                                          
-	echo "   - Client IP / 서비스 타입"                                   
-	echo "   - string (문자열) / string (문자열)"                         
-	echo "   - set / get"
 }
 
 KEY=0
@@ -457,7 +433,7 @@ __filter_out__(){
 read_args "${PARAMS[@]:2}"
 args=(${__arguments__[@]})
 
-AUTH="ipasms2016"
+AUTH="password"
 case ${COMMAND} in
 	__filter_in__)
 		__filter_in__ ${AUTH} ${DATABASE} ${args[@]}
