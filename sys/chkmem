@@ -8,7 +8,7 @@
 TOT_MEM=120
 TARGET="TARGET"
 LOG_DIR="$HOME/directory"
-LOG_FILE="memory-usage-"$(date "+%Y%m%d")".log"
+LOG_FILE=$(date "+%Y%m%d")".log"
 TIME=$(date "+%Y-%m-%d %H:%M:%S")
 
 if [ ! -d ${LOG_DIR} ];
