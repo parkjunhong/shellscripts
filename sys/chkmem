@@ -4,6 +4,8 @@
 # Author: parkjunohng77@gmail.com
 # License: MIT License.
 
+# unit: GiB
+TOT_MEM=120
 TARGET="TARGET"
 LOG_DIR="$HOME/directory"
 LOG_FILE="memory-usage-"$(date "+%Y%m%d")".log"
@@ -14,15 +16,17 @@ then
     mkdir ${LOG_DIR}
 fi
 
-CMD="ps -o pid,user,%mem,command ax | grep [j]ava | grep ${TARGET} | grep [-]Dname | grep -v watch | sort -b -k3 -r"
+CMD="ps -o pid,user,%mem,command ax | grep [j]ava | grep ${TARGET} |  grep [-]Dname | grep -v watch | sort -b -k3 -r"
 while IFS=" " read -a _mem_usg_
 do
     pid=${_mem_usg_[0]}
     user=${_mem_usg_[1]}
     usage=${_mem_usg_[2]}
     app=$(cut -d"=" -f2 <<< "${_mem_usg_[5]}")
-
-    echo "${TIME}   ${usage}" >> ${LOG_DIR}/${app}-${pid}-${LOG_FILE}
+        
+    #echo "${TIME}  ${pid}  ${usage}" >> ${LOG_DIR}/${app}-${LOG_FILE} 
+    #echo "${TIME}  ${usage}" >> ${LOG_DIR}/${app}-${pid}-${LOG_FILE} 
+    printf "%s\t%sGB\n" "${TIME}" $(awk -vu=${usage} -vtm=${TOT_MEM} 'BEGIN{printf "%.3f", u / 100 * tm }')  >> ${LOG_DIR}/${app}-${pid}-${LOG_FILE} 
 
 done <<< "$(eval ${CMD})"
 
