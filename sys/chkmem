@@ -26,7 +26,7 @@ do
         
     #echo "${TIME}  ${pid}  ${usage}" >> ${LOG_DIR}/${app}-${LOG_FILE} 
     #echo "${TIME}  ${usage}" >> ${LOG_DIR}/${app}-${pid}-${LOG_FILE} 
-    printf "%s\t%sGB\n" "${TIME}" $(awk -vu=${usage} -vtm=${TOT_MEM} 'BEGIN{printf "%.3f", u / 100 * tm }')  >> ${LOG_DIR}/${app}-${pid}-${LOG_FILE} 
+    printf "%s\t%s\t%sGB\n" "${TIME}" $(echo ${app} | tr "[:upper:]" "[:lower:]") $(awk -vu=${usage} -vtm=${TOT_MEM} 'BEGIN{printf "%.3f", u / 100 * tm }')  >> ${LOG_DIR}/${app}-${pid}-${LOG_FILE}
 
 done <<< "$(eval ${CMD})"
 
