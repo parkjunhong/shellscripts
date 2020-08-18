@@ -10,26 +10,26 @@
 help(){
     echo
     echo "[Usage]"
-    echo "git-merge.sh -f <from> -t <to>"
+    echo "git-merge.sh -s <source> -t <target>"
     echo
     echo "[Arguments]"
-    echo " -f | --from: 읽어올 브랜치명. 입력하지 않은 경우 자동으로 검색"
-    echo " -t | --to  : 적용할 브랜치명"
+    echo " -s | --source: a source branch. If not set, search automatically."
+    echo " -t | --target: a target branch"
 }
 
-FROM=""
-TO=""
+SOURCE=""
+TARGET=""
 
 while [ "$1" != "" ];
 do
     case $1 in
-        -f | --from)
+        -s | --source)
             shift
-            FROM="$1"
+            SOURCE="$1"
             ;;
-        -t | --to)
+        -t | --target)
             shift
-            TO="$1"
+            TARGET="$1"
             ;;
         -h | --help)
             help
@@ -41,46 +41,46 @@ do
     shift
 done
 
-if [ -z "${FROM}" ];
+if [ -z "${SOURCE}" ];
 then
     uuid=$(uuidgen)
     while read -r branch
     do
         if [[ "${branch}" == \** ]];
         then
-            FROM=${branch:2}
+            SOURCE=${branch:2}
         elif [ "${branch}" = "${uuid}" ];
         then
             echo
-            echo "[ERROR] * * * (현재 폴더 또는 상위 폴더 중 일부가) 깃 저장소가 아닙니다."
+            echo "[ERROR] * * * (A current or one of above folders) is not a git repository."
             help
             exit 1
         fi
     done <<< $(git branch 2>/dev/null || echo ${uuid})
 fi
 
-if [ -z "${FROM}" ] || [ -z "${TO}" ];
+if [ -z "${SOURCE}" ] || [ -z "${TARGET}" ];
 then
     echo
-    echo "merge 소스과 대상이 잘못되었습니다. 소스=${FROM}, 대상=${TO}"
+    echo "[ERRROR] * * * Invalid merge branches. source=${SOURCE}, target=${TARGET}"    
     help
     exit 1
 fi
 
 echo
-echo "git checkout \"${TO}\""
-git checkout "${TO}"
+echo "git checkout \"${TARGET}\""
+git checkout "${TARGET}"
 
 echo
-echo "git merge \"${FROM}\""
-git merge "${FROM}"
+echo "git merge \"${SOURCE}\""
+git merge "${SOURCE}"
 
 echo
 echo "git push"
 git push
 
 echo 
-echo "git checkout \"${FROM}\""
-git checkout "${FROM}"
+echo "git checkout \"${SOURCE}\""
+git checkout "${SOURCE}"
 
 exit 0
