@@ -1,0 +1,86 @@
+#!/bin/bash
+
+# =======================================
+# @auther : parkjunhong77@gmail.com
+# @title  : git merge from A to B
+# @license: Apache License 2.0
+# @since  : 2020-08-18
+# =======================================
+
+help(){
+    echo
+    echo "[Usage]"
+    echo "git-merge.sh -f <from> -t <to>"
+    echo
+    echo "[Arguments]"
+    echo " -f | --from: 읽어올 브랜치명. 입력하지 않은 경우 자동으로 검색"
+    echo " -t | --to  : 적용할 브랜치명"
+}
+
+FROM=""
+TO=""
+
+while [ "$1" != "" ];
+do
+    case $1 in
+        -f | --from)
+            shift
+            FROM="$1"
+            ;;
+        -t | --to)
+            shift
+            TO="$1"
+            ;;
+        -h | --help)
+            help
+            exit 0
+            ;;
+        *)
+            ;;
+    esac
+    shift
+done
+
+if [ -z "${FROM}" ];
+then
+    uuid=$(uuidgen)
+    while read -r branch
+    do
+        if [[ "${branch}" == \** ]];
+        then
+            FROM=${branch:2}
+        elif [ "${branch}" = "${uuid}" ];
+        then
+            echo
+            echo "[ERROR] * * * (현재 폴더 또는 상위 폴더 중 일부가) 깃 저장소가 아닙니다."
+            help
+            exit 1
+        fi
+    done <<< $(git branch 2>/dev/null || echo ${uuid})
+fi
+
+if [ -z "${FROM}" ] || [ -z "${TO}" ];
+then
+    echo
+    echo "merge 소스과 대상이 잘못되었습니다. 소스=${FROM}, 대상=${TO}"
+    help
+    exit 1
+fi
+
+echo
+echo "git checkout \"${TO}\""
+git checkout "${TO}"
+
+echo
+echo "git merge \"${FROM}\""
+git merge "${FROM}"
+
+echo
+echo "git push"
+git push
+
+echo 
+echo "git checkout \"${FROM}\""
+git checkout "${FROM}"
+
+exit 0
