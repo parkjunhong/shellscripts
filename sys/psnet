@@ -1,0 +1,81 @@
+#!/bin/bash
+
+#!/bin/bash
+# =======================================
+# @auther    : parkjunhong77@gmail.com
+# @since     : 2020-02-08
+# @license   : MIT License (https://opensource.org/licenses/MIT)
+# @compatible: bash 4.x or higher
+# =======================================
+
+WORD=$1
+
+if [ -z "$WORD" ];then
+	echo "Input a word to be found."
+
+    exit 1
+fi
+
+log(){
+	echo
+	echo $@
+}
+
+# $1 {string} a name of an array
+# $2 {any} a value
+hasValue(){
+	ar="\${$1[@]}"
+	for v in $(eval "echo ${ar}");
+	do
+		if [ "$v" == "$2" ];
+		then
+			echo "true"
+			return
+		fi
+	done
+	
+	echo "false"
+}
+
+PIDS=()
+
+# 1. find Process IDs.
+while IFS=" " read -a netinfo
+do
+	if [ ${#netinfo[@]} -lt 1 ];
+	then
+		log "Not match to any."
+		continue
+	fi
+
+	# Port
+	port=${netinfo[3]}
+	
+	# Process Info.
+	IFS="/" read -a psinfo <<< "${netinfo[6]}"
+	
+	# Process ID
+	pidfilter="["${psinfo[0]:0:1}"]"${psinfo[0]:1}
+	
+	# Process Name
+	procfilter="["${psinfo[1]:0:1}"]"${psinfo[1]:1}
+	
+	if [ $(hasValue "PIDS" $pidfilter) == "true" ];
+	then
+		continue
+	fi
+
+	PIDS+=("$pidfilter")
+
+	while read psgrep
+	do
+		IFS=" " read -a psgrepar <<< "$psgrep"
+		if [ "${psinfo[0]}" == "${psgrepar[1]}" ];
+		then
+			printf "%-10s\t|\t%s\n" $port "$psgrep"
+		fi
+	done <<< $(ps -aef | grep $pidfilter)
+
+done <<< $(netstat -napt | grep -E "(tcp|udp)" | grep $WORD)
+
+exit 0
