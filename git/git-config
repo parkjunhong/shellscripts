@@ -1,5 +1,13 @@
 #!/bin/bash
 
+
+# =======================================
+# @auther : parkjunhong77@gmail.com
+# @title  : git config user.name & user.email
+# @license: Apache License 2.0
+# @since  : 2020-09-15
+# =======================================
+
 usage(){
 	echo
 	echo ">>> CALLED BY [[ $1 ]]"
