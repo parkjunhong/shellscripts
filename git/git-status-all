@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# =======================================
+# @auther : parkjunhong77@gmail.com
+# @title  : git status for multiple projects.
+# @license: Apache License 2.0
+# @since  : 2020-09-15
+# =======================================
+
 help(){
 	if [ $# -gt 0 ];
 	then
