@@ -1,13 +1,5 @@
 #!/bin/bash
 
-
-# =======================================
-# @auther : parkjunhong77@gmail.com
-# @title  : git add & commit & push for multiple projects.
-# @license: Apache License 2.0
-# @since  : 2020-09-15
-# =======================================
-
 help(){
 	if [ $# -gt 0 ];
 	then
@@ -129,8 +121,9 @@ do
     echo "-------------------------------------------------------------"
 	# Go to a target directory
 	cd "$subdir"
-	echo
-	git-commit-push "$MSG"
+	git add .
+	git commit -m "$MSG"
+	git push
 	
 	if [ ! -z "$MERGE_TGT" ];
 	then
