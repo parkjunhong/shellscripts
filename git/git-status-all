@@ -1,0 +1,119 @@
+#!/bin/bash
+
+help(){
+	if [ $# -gt 0 ];
+	then
+		echo
+		echo "['${FUNCNAME[1]}' says]" $1
+	fi
+    echo
+	echo "[Usage]"
+    echo "git-status-all -p <project ...> -d <directory> -v"
+	echo
+	echo "[Parameters]"
+	echo " -d: directory. If '-p' does not occurs, you can set a directory without '-d'."
+    echo "     If '-p' occurs, you must use '-d' to set a directory."
+	echo " -p: projects. You can set project one or more if use '-p' once."
+	echo " -v: show normal status message."
+}
+
+PARAMS="--short --branch"
+PROJECTS=()
+PRJ_FLAG=0
+DIR="$PWD"
+while [ ! -z "$1" ];
+do
+	case "$1" in
+		-v)
+			PARAMS=""
+			;;
+		-p)
+			shift
+			PROJECTS+=("$1")
+			PRJ_FLAG=1
+			;;
+		-d)
+			shift
+			DIR=$1
+			;;
+		-h | --help)
+			help
+			exit 0
+			;;
+		*)
+			if [ $PRJ_FLAG -eq 1 ];
+			then
+				PROJECTS+=("$1")
+			else
+				DIR=$1
+			fi
+			;;
+	esac
+	shift
+done
+
+let "RTV = 0"
+# 배열 내 데이터가 주어진 문자열로 시작하는 것이 있는지 여부를 제공한다.
+# @param $1 {string} 배열 이름
+# @param $2 {string}  문자열
+starts_with(){
+	arr="\${$1[@]}"
+	for val in $(eval "echo ${arr}");
+	do
+		if [[ "${val}" == $2* ]];
+		then
+			RTV=1
+			return 			
+		fi
+	done
+	RTV=0
+}
+
+if [ ! -d "$DIR" ];
+then
+	echo
+	echo "Invalid a directory. dir=$DIR"
+	exit 1
+fi
+
+# 절대경로/상대경로 확인
+if [[ "$DIR" != /* ]] ;
+then
+	# handle relative path
+	DIR=$PWD"/"$DIR
+fi
+
+# save a current directory
+pushd . > /dev/null
+
+# Go to a working directory
+cd "$DIR"
+
+ls -l "$DIR" | grep '^d' | awk '{print $9}' | while read subdir;
+do
+	if [ ${#PROJECTS[@]} -gt 0 ];
+	then
+		starts_with "PROJECTS" "$subdir"
+		if [ $RTV -ne 1 ];
+		then
+			continue
+		fi
+	fi
+
+	echo
+	echo "-------------------------------------------------------------"
+	echo "- * * * * * Project: $subdir"
+	echo "-------------------------------------------------------------"
+	# Go to a target directory
+	cd "$subdir"
+	echo
+	git status $PARAMS
+	echo
+	# Go to a parent directory
+	cd ..
+done
+
+# restore a current directory
+popd > /dev/null
+
+exit 0

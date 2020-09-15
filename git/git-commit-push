@@ -1,0 +1,40 @@
+#!/bin/bash
+
+help(){
+	echo
+	echo "Usage:"
+	echo "git-commit-push <message>"
+	echo
+	echo " - message: a message for commit"
+}
+
+if [ $# -ne 1 ];
+then
+	help
+	echo
+	exit 1
+fi
+
+MSG=$1
+echo
+read -p " * * * Check a message: ${MSG}. Right? [Y/N] " confirm
+confirm=$(echo ${confirm} | tr [:lower:] [:upper:])
+
+if [ "${confirm}" != "Y" ];
+then
+	echo
+	echo " * * * Bye~"
+	echo
+	exit 1
+fi
+
+echo
+# " -> \"
+MSG=${MSG//\"/\\\"}
+git commit -m "${MSG}"
+
+echo
+git push
+
+echo
+exit 0

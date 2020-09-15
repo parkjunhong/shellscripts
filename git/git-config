@@ -1,0 +1,61 @@
+#!/bin/bash
+
+usage(){
+	echo
+	echo ">>> CALLED BY [[ $1 ]]"
+	echo
+	echo "[Usage]"
+	echo
+	echo "./git-config -u <user.name> -e <user.email> -h"
+	echo
+	echo "[Parameter]"
+	echo " -u : user.name"
+	echo " -e : user.email"
+	echo
+	echo "[Option]"
+	echo " -h, --help   : 도움말"
+	echo
+}
+
+
+## 파라미터 읽기
+while [ "$1" != "" ]; do
+	case $1 in
+		-u | --username)
+			shift
+			NAME=$1
+			;;
+		-e | --useremail)
+			shift
+			EMAIL=$1
+			;;
+		-h | --help)	 
+			usage "--help"
+			exit 0
+			;;
+		*)
+			usage "Invalid option. option: $1"
+			exit 1
+			;;
+	esac
+	shift
+done
+
+GIT_CFG_CMD="git config "
+if [ ! -z $NAME ];
+then
+	echo
+	echo $GIT_CFG_CMD " user.name " $NAME
+	eval $GIT_CFG_CMD " user.name " $NAME
+fi
+
+if [ ! -z $EMAIL ];
+then
+	echo
+	echo $GIT_CFG_CMD " user.email " $EMAIL
+	eval $GIT_CFG_CMD " user.email " $EMAIL
+fi
+
+echo 
+
+exit 0

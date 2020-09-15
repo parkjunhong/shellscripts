@@ -68,19 +68,21 @@ then
 fi
 
 echo
-echo "git checkout \"${TARGET}\""
+echo " > > > git checkout \"${TARGET}\""
 git checkout "${TARGET}"
 
 echo
-echo "git merge \"${SOURCE}\""
+echo " > > > git merge \"${SOURCE}\""
 git merge "${SOURCE}"
 
 echo
-echo "git push"
+echo " > > > git push"
 git push
 
 echo 
-echo "git checkout \"${SOURCE}\""
+echo " > > > git checkout \"${SOURCE}\""
 git checkout "${SOURCE}"
 
 exit 0
+
+
