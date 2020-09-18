@@ -11,7 +11,7 @@ help(){
 	echo "git-push-all -m <commit message> -s <merge source> -t <merge target> -p <project ...> -d <directory>"
 	echo
 	echo "[Parameters]"
-	echo " -d: directory. If '-p' does not occurs, you can set a directory without '-d'."
+	echo " -d: directory. If '-p' does not occur, you can set a directory without '-d'."
 	echo "     If '-p' occurs, you must use '-d' to set a directory."
 	echo " -m: commit message"
 	echo " -p: projects. You can set project one or more if use '-p' once."
@@ -29,6 +29,10 @@ DIR="$PWD"
 while [ ! -z "$1" ];
 do
 	case "$1" in
+		-ㅇ)
+			shift
+			=$1
+			;;	
 		-m)
 			shift
 			MSG=$1
