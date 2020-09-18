@@ -29,9 +29,9 @@ DIR="$PWD"
 while [ ! -z "$1" ];
 do
 	case "$1" in
-		-ㅇ)
+		-d)
 			shift
-			=$1
+			DIR=$1
 			;;	
 		-m)
 			shift
