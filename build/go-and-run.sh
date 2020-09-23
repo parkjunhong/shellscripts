@@ -2,7 +2,7 @@
 
 # =======================================
 # @auther : parkjunhong77@gmail.com
-# @title  : git commit & push.
+# @title  : go and deploy.
 # @license: Apache License 2.0
 # @since  : 2020-09-15
 # =======================================
