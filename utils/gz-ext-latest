@@ -1,0 +1,85 @@
+#!/bin/bash
+# =======================================
+# @auther : parkjunhong77@gmail.com
+# @title  : 가장 최근의 gz 파일 압축풀기
+# #license: Apach License 2.0
+# @since  : 2020-11-23
+# =======================================
+
+help(){
+        if [ ! -z "$1" ];
+        then
+                echo
+                echo " !!! Caller: ${FUNCNAME[1]}, cause: $1"
+        fi
+
+        echo
+        echo "Usage:"
+        echo "gz-ext-latest -b <backup-dir> <gz-directory>"
+        echo
+        echo "Arguments"
+        echo " -b : (optional) gz files backup directory."
+}
+
+while [ ! -z "$1" ];
+do
+        case $1 in
+                -b)
+                        shift
+                        BACKUP_DIR="$1"
+                        ;;
+                *)
+                        if [ ! -d "$1" ];
+                        then
+                                help "Invalid 'directory.'. input=$1"
+                                exit 1
+                        fi
+
+                        DIR="$1"
+                        ;;
+        esac
+        shift
+done
+
+if [ -z "$DIR" ]
+then
+        help "... Need more parameters. directory=$DIR"
+        exit 1
+fi
+
+
+# step1. select a latest gz file.
+LATEST_FILE=$(find $DIR -maxdepth 1 ! -type d -exec ls -r {} + | grep ".gz" | head -n 1)
+
+if [ -z "$LATEST_FILE" ];
+then
+        echo
+        echo "Oooooops. No .gz file."
+        exit 0
+fi
+
+TS_BEGIN=$(date +"%s")
+echo
+printf "... %-10s latest file=$LATEST_FILE" "[FOUND]"
+
+# step2. exctrac a latest file.
+echo
+printf "... %-10s gzip -dfv $LATEST_FILE\n" "[COMMAND]"
+printf "... %-10s " "[EXEC]"
+gzip -dfv "$LATEST_FILE"
+
+TS_END=$(date +"%s")
+TS_ELAPSED=$(expr $TS_END - $TS_BEGIN)
+
+echo
+printf "... %-10s '%d's\n" "[elapsed]" $TS_ELAPSED
+
+# step3. move .gz file to a backup directory.
+if [ ! -z "$BACKUP_DIR" ];
+then
+        echo
+        echo "... [MOVE] move *.gz file to $BACKUP_DIR"
+        mv -v .gz $BACKUP_DIR
+fi
+
+exit 0
