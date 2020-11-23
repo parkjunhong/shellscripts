@@ -86,8 +86,6 @@ TS_ELAPSED=$(expr $TS_END - $TS_BEGIN)
 echo
 printf "... %-10s '%d's\n" "[elapsed]" $TS_ELAPSED
 
-sleep 10s 
-
 # step3. move .gz file to a backup directory.
 if [ ! -z "$BACKUP_DIR" ];
 then
