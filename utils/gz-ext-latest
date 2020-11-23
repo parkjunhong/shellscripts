@@ -71,13 +71,22 @@ printf "... %-10s latest file=$LATEST_FILE" "[FOUND]"
 echo
 printf "... %-10s gzip -dfv $LATEST_FILE\n" "[COMMAND]"
 printf "... %-10s " "[EXEC]"
-gzip -dfv "$LATEST_FILE"
+
+if [ -z "$BACKUP_DIR" ];
+then
+        gzip -dfv "$LATEST_FILE"
+else
+        filename=$(echo ${LATEST_FILE##*/})
+        gunzip -v --stdout "$LATEST_FILE" > $(echo ${LATEST_FILE/.gz/})
+fi
 
 TS_END=$(date +"%s")
 TS_ELAPSED=$(expr $TS_END - $TS_BEGIN)
 
 echo
 printf "... %-10s '%d's\n" "[elapsed]" $TS_ELAPSED
+
+sleep 10s 
 
 # step3. move .gz file to a backup directory.
 if [ ! -z "$BACKUP_DIR" ];
@@ -87,11 +96,9 @@ then
         if [ ! -d "$BACKUP_DIR" ];
         then
                 mkdir -pv $BACKUP_DIR
-        fi
+        fi  
         printf "... %-10s " "[COMMAND]"
         eval mv -v $DIR"*.gz" $BACKUP_DIR
 fi
-
-
 
 exit 0
