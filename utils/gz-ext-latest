@@ -98,7 +98,7 @@ then
                 mkdir -pv $BACKUP_DIR
         fi  
         printf "... %-10s " "[COMMAND]"
-        eval mv -v $DIR"*.gz" $BACKUP_DIR
+        eval mv -v $DIR"/*.gz" $BACKUP_DIR
 fi
 
 exit 0
