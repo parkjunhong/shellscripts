@@ -26,6 +26,12 @@ do
         case $1 in
                 -b)
                         shift
+                        if [ -f "$1" ];
+                        then
+                                help "Invalid 'backup directory'. Looks like a file. input=$1"
+                                exit 1
+                        fi
+                        
                         BACKUP_DIR="$1"
                         ;;
                 *)
@@ -46,7 +52,6 @@ then
         help "... Need more parameters. directory=$DIR"
         exit 1
 fi
-
 
 # step1. select a latest gz file.
 LATEST_FILE=$(find $DIR -maxdepth 1 ! -type d -exec ls -r {} + | grep ".gz" | head -n 1)
@@ -78,8 +83,15 @@ printf "... %-10s '%d's\n" "[elapsed]" $TS_ELAPSED
 if [ ! -z "$BACKUP_DIR" ];
 then
         echo
-        echo "... [MOVE] move *.gz file to $BACKUP_DIR"
-        mv -v .gz $BACKUP_DIR
+        printf "... %-10s move '%s*.gz' file to $BACKUP_DIR\n" "[MOVE]" "$DIR"
+        if [ ! -d "$BACKUP_DIR" ];
+        then
+                mkdir -pv $BACKUP_DIR
+        fi
+        printf "... %-10s " "[COMMAND]"
+        eval mv -v $DIR"*.gz" $BACKUP_DIR
 fi
+
+
 
 exit 0
