@@ -124,7 +124,7 @@ do
 	# move file temporarily
 	mv $profile_dir/*.* $profile_dir/$build_name/
 	
-	tar -zcvf $DIR/$DATE/${build_name}_$DATE.tar.gz -C $profile_dir ./$build_name
+	tar -zcvf $DIR/$DATE/bin/${build_name}_$DATE.tar.gz -C $profile_dir ./$build_name
 
 	# restore files.
 	mv $profile_dir/$build_name/*.* $profile_dir/
