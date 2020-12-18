@@ -1,0 +1,129 @@
+#!/bin/bash
+
+help(){
+	if [ $# -gt 0 ];
+	then
+		echo
+		echo "['${FUNCNAME[1]}' says] " $1
+	fi
+	echo
+	echo "[Usage]"
+	echo "tar-deploy-all -p <profile>"
+	echo
+	echo "[Parameters]"
+	echo " -p: Profile"
+	
+}
+PROFILE=""
+TEST="true"
+DIR="$PWD"
+while [ ! -z "$1" ];
+do
+	case "$1" in
+		-p | --profile)
+			shift
+			PROFILE=$1
+			;;
+		-h | --help)
+			help
+			exit 0
+			;;
+		*)
+			DIR="$1"
+			;;
+	esac
+	shift
+done
+
+if [ ! -d "$DIR" ];
+then
+	help "Invalid a directory. dir=$DIR"
+	exit 1
+fi
+
+if [ -z $PROFILE ];
+then
+	help "Require PROFILE"
+	exit 1
+fi
+
+# 절대경로/상대경로 확인
+if [[ "$DIR" != /* ]] ;
+then
+	# handle relative path
+	DIR=$PWD"/"$DIR
+fi
+
+# save a current directory
+pushd . > /dev/null
+
+# Go to a working directory
+cd "$DIR"
+
+DATE=$(date "+%Y%m%d")
+if [ -f $DATE ];
+then
+	echo
+	echo " * * * * * Cannot create a $DATE directory. It seems like a file."
+	echo
+	ls -al $(pwd)/$DATE
+	echo
+	exit 1
+fi
+
+if [ -d $DATE ];
+then
+	rm -rf $DATE
+	mkdir $DATE
+fi
+
+ls -l "$DIR" | grep '^d' | awk '{print $9}' | while read subdir;
+do
+    echo
+    echo "-------------------------------------------------------------"
+    echo "- * * * * * Project: $subdir"
+    echo "-------------------------------------------------------------"
+    # Go to a target directory
+    cd "$subdir"
+
+	if [ $(ls | tr [:upper:] [:lower:] | grep pom.xml | wc -l) -lt 1 ];
+	then
+		echo
+		echo "  * * * Here is not a MAVEN project"
+		cd ..
+		continue;
+	fi
+
+	echo
+	build_name=$(cat workdir/service.properties | grep -E "^build.name" | cut -d"=" -f2)
+	if [ -z ${build_name} ];
+	then
+		echo
+		echo "    * * * There is not a ./workdir/service.properties."
+		cd ..
+		continue;
+	fi
+
+	profile_dir=$(pwd)/deploy/$PROFILE	
+	if [ ! -d "$profile_dir" ];
+	then
+		echo
+		echo "    * * * There is not a directory, '$profile_dir'."
+		echo
+		ls -al $profile_dir
+		exit 1
+	fi
+
+	# tar archiving...
+#	echo "tar -zcvf $DIR/$DATE/${build_name}_$DATE.tar.gz $profile_dir/"
+	tar -zcvf $DIR/$DATE/${build_name}_$DATE.tar.gz $profile_dir/
+
+	# Go to a parent directory.	
+	cd ..
+	echo " <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<"
+done
+
+# restore a current directory
+popd > /dev/null
+
+exit 0
