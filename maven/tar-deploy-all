@@ -73,10 +73,10 @@ fi
 
 if [ -d $DATE ];
 then
-	rm -rf $DATE
+	rm -rf $DATE/bin
 fi
 
-mkdir $DATE
+mkdir -p $DATE/bin
 
 ls -l "$DIR" | grep '^d' | awk '{print $9}' | while read subdir;
 do
@@ -110,14 +110,26 @@ do
 	then
 		echo
 		echo "    * * * There is not a directory, '$profile_dir'."
+		echo "    * * * There is not a directory, '$profile_dir'."
+		echo "    * * * There is not a directory, '$profile_dir'."
 		echo
 		ls -al $profile_dir
-		exit 1
+		cd ..
+		continue;
 	fi
 
 	# tar archiving...
-#	echo "tar -zcvf $DIR/$DATE/${build_name}_$DATE.tar.gz $profile_dir/"
-	tar -zcvf $DIR/$DATE/${build_name}_$DATE.tar.gz $profile_dir/
+	# create a directory named of '$build_name'
+	mkdir $profile_dir/$build_name
+	# move file temporarily
+	mv $profile_dir/*.* $profile_dir/$build_name/
+	
+	tar -zcvf $DIR/$DATE/${build_name}_$DATE.tar.gz -C $profile_dir ./$build_name
+
+	# restore files.
+	mv $profile_dir/$build_name/*.* $profile_dir/
+	# delete a temporary directory.
+	rm -rf $profile_dir/$build_name
 
 	# Go to a parent directory.	
 	cd ..
