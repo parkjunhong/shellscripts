@@ -1,0 +1,121 @@
+#!/bin/bash
+
+help(){
+	if [ $# -gt 0 ];
+	then
+		echo
+		echo "['${FUNCNAME[1]}' says] " $1
+	fi
+	echo
+	echo "[Usage]"
+	echo "build-deploy-all -p <profile> -d -t -u "
+	echo
+	echo "[Parameters]"
+	echo " -d: (optional) deploy after build."
+	echo " -p: Profile"
+	echo " -t: (optional) run Test"
+	echo " -u: (optional) update codes using 'git pull'"
+	
+}
+PROFILE=""
+DEPLOY=0
+TEST="true"
+GIT_PULL="false"
+DIR="$PWD"
+while [ ! -z "$1" ];
+do
+	case "$1" in
+		-p | --profile)
+			shift
+			PROFILE=$1
+			;;
+		-d)
+			DEPLOY=1
+			;;
+		-u)
+			GIT_PULL="true"
+			;;
+		-t | --test)
+			TEST="false"
+			;;
+		-h | --help)
+			help
+			exit 0
+			;;
+		*)
+			DIR="$1"
+			;;
+	esac
+	shift
+done
+
+if [ ! -d "$DIR" ];
+then
+	help "Invalid a directory. dir=$DIR"
+	exit 1
+fi
+
+if [ -z $PROFILE ];
+then
+	help "Require PROFILE"
+	exit 1
+fi
+
+# 절대경로/상대경로 확인
+if [[ "$DIR" != /* ]] ;
+then
+	# handle relative path
+	DIR=$PWD"/"$DIR
+fi
+
+PARAMS="-p $PROFILE"
+# deploy
+if [ "$DEPLOY" == "1" ];
+then
+	PARAMS="$PARAMS -d"
+fi
+# git pull
+if [ "$GIT_PULL" == "true" ];
+then
+	PARAMS="$PARAMS -u"
+fi
+# test
+if [ "$TEST" == "false" ];
+then
+	PARAMS="$PARAMS -t"
+fi
+
+# save a current directory
+pushd . > /dev/null
+
+# Go to a working directory
+cd "$DIR"
+
+ls -l "$DIR" | grep '^d' | awk '{print $9}' | while read subdir;
+do
+    echo
+    echo "-------------------------------------------------------------"
+    echo "- * * * * * Project: $subdir"
+    echo "-------------------------------------------------------------"
+    # Go to a target directory
+    cd "$subdir"
+
+	if [ $(ls | tr [:upper:] [:lower:] | grep pom.xml | wc -l) -lt 1 ];
+	then
+		echo
+		echo "Here is not a MAVEN project"
+		continue;
+	fi
+		
+	echo
+	build-maven-deploy $PARAMS
+#	./build-deploy.sh $PARAMS
+	# Go to a parent directory
+	cd ..
+	echo " <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<"
+done
+
+# restore a current directory
+popd > /dev/null
+
+exit 0
