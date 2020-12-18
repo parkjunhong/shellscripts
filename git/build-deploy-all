@@ -109,7 +109,6 @@ do
 		
 	echo
 	build-maven-deploy $PARAMS
-#	./build-deploy.sh $PARAMS
 	# Go to a parent directory
 	cd ..
 	echo " <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<"
