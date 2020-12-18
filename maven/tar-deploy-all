@@ -74,8 +74,9 @@ fi
 if [ -d $DATE ];
 then
 	rm -rf $DATE
-	mkdir $DATE
 fi
+
+mkdir $DATE
 
 ls -l "$DIR" | grep '^d' | awk '{print $9}' | while read subdir;
 do
