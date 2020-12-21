@@ -108,7 +108,7 @@ do
 	fi
 		
 	echo
-	build-maven-deploy $PARAMS
+	build-mvn-package $PARAMS
 	# Go to a parent directory
 	cd ..
 	echo " <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<"
