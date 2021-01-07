@@ -5,6 +5,7 @@
 # @title  : rename filenames.
 # @license: Apache License 2.0
 # @since  : 2021-01-07
+# @desc   : support Ubuntu 18.04, CentOS 7
 # =======================================
 
 CURDIR="$(pwd)"
@@ -130,7 +131,7 @@ do
 		eval $CMD "$targetdir/$file" "$targetdir/$output"
 	fi
 
-done <<< $(ls $targetdir) # list files.
+done <<< "$(ls $targetdir)" # list files.
 
 
 exit 0
