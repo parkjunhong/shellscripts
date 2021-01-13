@@ -139,7 +139,7 @@ do
 		then
 			echo "[error] '$newfile' is a directory."
 		else
-			if [ $FORCE -ne 1 ];
+			if [ $FORCE -ne 1 ] && [ -f "$newfile" ];
 			then
 				printf "[warn] '$srcfile'\n  --> "
 			fi
