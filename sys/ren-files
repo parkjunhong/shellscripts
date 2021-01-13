@@ -119,6 +119,8 @@ CMD="mv -v"
 if [ $FORCE -eq 1 ];
 then
 	CMD="$CMD -f"
+else
+	CMD="$CMD -i"
 fi
 
 # rename filename(s).
