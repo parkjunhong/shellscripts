@@ -123,19 +123,30 @@ else
 	CMD="$CMD -i"
 fi
 
+
 # rename filename(s).
-while IFS="" read file
+for file in $(ls $targetdir);
 do
 	output=$(rename "$file" "$regex_input" "$regex_output")
 	
 	if [ "$file" != "$output" ];
 	then
-		eval $CMD "$targetdir/$file" "$targetdir/$output"
+		srcfile="$targetdir/$file"
+		newfile="$targetdir/$output"
+		__exec__="$CMD $srcfile $newfile"
+
+		if [ -d "$newfile" ];
+		then
+			echo "[error] '$newfile' is a directory."
+		else
+			if [ $FORCE -ne 1 ];
+			then
+				printf "[warn] '$srcfile'\n  --> "
+			fi
+			eval "$__exec__"
+		fi
 	fi
-
-done <<< "$(ls $targetdir)" # list files.
-
+done
 
 exit 0
-
 
