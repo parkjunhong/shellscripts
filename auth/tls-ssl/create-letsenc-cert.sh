@@ -72,22 +72,32 @@ DN_REGEX="^([a-z0-9]+(-[a-z0-9]+)*\.)+[a-z]{2,}$"
 DOMAIN_ARR=()
 
 # read from '-f' arguments, a file.
-while IFS= read -r domain
-do
-	if [ ! -z ${domain} ];
-	then
-		DOMAIN_ARR+=("${domain}")
-	fi
-done < "${FILE}"
+if [ -z "$FILE" ];then
+    echo "[INFO] No file for domain list."
+else
+    while IFS= read -r domain
+    do
+        if [ ! -z ${domain} ];
+        then
+            DOMAIN_ARR+=("${domain}")
+        fi
+    done < "${FILE}"
+fi
 
 # read from '-ds' arguments
-while IFS="," read -r domain
+IFS="," read -a domains <<< "${DOMAINS}"
+for domain in "${domains[@]}"
 do
-	if [ ! -z ${domain} ];
-	then
-		DOMAIN_ARR+=("${domain}")
-	fi
-done <<< "${DOMAINS}"
+    echo "[INFO] Read domain: ${domain}"
+
+    if [ ! -z ${domain} ];
+    then
+        DOMAIN_ARR+=("${domain}")
+    fi
+done
+
+
+
 
 # @param $1 <string> a name of an array
 create-set(){
