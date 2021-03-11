@@ -1,0 +1,175 @@
+#!/bin/bash
+
+# =======================================
+# @auther : parkjunhong77@gmail.com
+# @title  : git merge from A to B
+# @license: Apache License 2.0
+# @since  : 2020-08-18
+# =======================================
+
+help(){
+	
+	if [ $# -gt 0 ];then
+		echo
+		echo "['${FUNCNAME[1]}' says] " $1
+	fi
+    echo
+    echo "[Usage]"
+    echo "git-merge.sh -s <source> -t <target>"
+    echo
+    echo "[Arguments]"
+    echo " -s | --source: a source branch. If not set, search automatically."
+    echo " -t | --target: a target branch"
+}
+
+SOURCE=""
+TARGET=""
+
+while [ "$1" != "" ];
+do
+    case $1 in
+        -s | --source)
+            shift
+            SOURCE="$1"
+            ;;
+        -t | --target)
+            shift
+            TARGET="$1"
+            ;;
+        -h | --help)
+            help
+            exit 0
+            ;;
+        *)
+            ;;
+    esac
+    shift
+done
+
+# Read current branches.
+read-branches(){
+	local _branches=()
+	uuid=$(uuidgen)
+	while read -r branch
+	do
+		if [[ "$branch" == \** ]];then
+			_branches+=(${branch:2})
+		elif [ "$branch" = "$uuid" ];then
+			_branches=()
+			break
+		else
+			_branches+=($branch)
+		fi
+	done <<< $(git branch 2>/dev/null || echo $uuid)
+
+	echo "${_branches[@]}"
+}
+
+# Show branches.
+show-branches(){
+	echo
+	echo "* Current branches"
+	for idx in "${!BRANCHES[@]}";
+	do
+		((idx=idx+1))
+		printf " [%2s] %s\n" $idx "${BRANCHES[$idx-1]}"
+	done
+	echo
+}
+
+# Select a branch.
+# $1 {string}: title or purpose.
+select-branch(){
+	read -p "Select '$1' branch [1 ~ ${#BRANCHES[@]}]: " index
+	if [ $index -lt 1 ];then
+		index=$(date +%s)
+	fi
+	echo ${BRANCHES[$index-1]}
+}
+
+# @param $1 {string}: a name of an array
+# @param $2 {any}: value
+# @return 0 means no, 1 yes
+has-value(){
+	c=0
+	ar="\${$1[@]}"
+	for v in $(eval "echo ${ar}");
+	do
+		if [ "$v" == "$2" ];then
+			c=1
+			break
+		fi
+	done
+
+	echo $c
+}
+
+BRANCHES=($(read-branches))
+if [ ${#BRANCHES[@]} -lt 1 ];then
+	echo "[ERROR] * * * (A current or one of above folders) is not a git repository."
+	help
+	exit 1
+fi
+
+if [ -z "$SOURCE" ];then
+	show-branches
+	SOURCE=$(select-branch 'source')
+
+	if [ -z "$SOURCE" ];then
+		echo
+    	echo "[ERRROR] * * * Invalid merge branch. source=${SOURCE}"    
+		help 
+		exit 1
+	fi
+fi
+
+if [ -z "$TARGET" ];then
+	show-branches
+	TARGET=$(select-branch 'target')
+
+	if [ -z "$TARGET" ];then
+		echo
+    	echo "[ERRROR] * * * Invalid merge branch. target=${TARGET}"
+		help 
+		exit 1
+	fi
+fi
+
+#for _arg_branch in "$SOURCE" "$TARGET";
+#do
+#	if [ $(has-value "BRANCHES" "$_arg_branch") -eq 0 ];then
+#		echo
+#    	echo "[ERRROR] * * * Invalid merge branches. source=${SOURCE}, target=${TARGET}"    
+#		help 
+#		exit 1
+#	fi
+#done
+
+if [ "$SOURCE" == "$TARGET" ];then
+	echo
+	echo "[ERROR] * * * Invalid a source and a target branches. source (=) target."
+	help
+	exit 1
+fi
+
+CUR_BRANCH=$(git branch 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/\1/')
+
+echo
+echo " > > > git checkout \"${TARGET}\""
+git checkout "${TARGET}"
+
+echo
+echo " > > > git merge \"${SOURCE}\""
+git merge "${SOURCE}"
+
+echo
+echo " > > > git push"
+git push
+
+echo 
+echo " > > > git checkout \"${CUR_BRANCH}\""
+git checkout "${CUR_BRANCH}"
+
+exit 0
+
+
