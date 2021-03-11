@@ -117,7 +117,7 @@ if [ -z "$SOURCE" ];then
 
 	if [ -z "$SOURCE" ];then
 		echo
-    	echo "[ERRROR] * * * Invalid merge branch. source=${SOURCE}"    
+		echo "[ERRROR] * * * Invalid merge branch. source=${SOURCE}"    
 		help 
 		exit 1
 	fi
@@ -129,21 +129,11 @@ if [ -z "$TARGET" ];then
 
 	if [ -z "$TARGET" ];then
 		echo
-    	echo "[ERRROR] * * * Invalid merge branch. target=${TARGET}"
+		echo "[ERRROR] * * * Invalid merge branch. target=${TARGET}"
 		help 
 		exit 1
 	fi
 fi
-
-#for _arg_branch in "$SOURCE" "$TARGET";
-#do
-#	if [ $(has-value "BRANCHES" "$_arg_branch") -eq 0 ];then
-#		echo
-#    	echo "[ERRROR] * * * Invalid merge branches. source=${SOURCE}, target=${TARGET}"    
-#		help 
-#		exit 1
-#	fi
-#done
 
 if [ "$SOURCE" == "$TARGET" ];then
 	echo
