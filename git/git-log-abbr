@@ -1,0 +1,9 @@
+#!/bin/bash
+
+echo
+echo "git log --abbrev-commit --pretty=oneline"
+echo
+git log --abbrev-commit --pretty=oneline
+echo
+
+exit 0
