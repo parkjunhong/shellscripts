@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 ####################################################################
 # Compresses directories into individual file using 'tar' command'

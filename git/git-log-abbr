@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 echo
 echo "git log --abbrev-commit --pretty=oneline"

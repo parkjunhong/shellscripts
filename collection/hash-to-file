@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # @param $1 {string} filepath
 # @param $2 {string} hashtable name

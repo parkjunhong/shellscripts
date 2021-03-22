@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =======================================
 # @auther : parkjunhong77@gmail.com
 # @title  : 가장 최근의 gz 파일 압축풀기

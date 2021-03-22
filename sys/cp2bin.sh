@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # =======================================
 # @auther: parkjunhong77@gmail.com

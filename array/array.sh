@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # 전달받은 파라미터의 3번째부터 처리 하는 예제
 

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 GLOBAL_REMATCH=""
 global_rematch() {

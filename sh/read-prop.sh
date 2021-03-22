@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # $1 {string} absolute file path.
 # $2 {string} prop_name

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # 'starts with'
 [[ $STRING == z* ]]   # True if $STRING starts with an "z" (pattern matching).
