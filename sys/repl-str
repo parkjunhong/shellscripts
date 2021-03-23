@@ -106,6 +106,17 @@ if [ ! -f "$TARGET" ] && [ ! -d "$TARGET" ];then
 	exit 1
 fi
 
+
+replace-on-mac(){
+	echo "sed -i '' 's/$OLD_STR/$NEW_STR/gi'" "$1"
+	eval "sed -i '' 's/$OLD_STR/$NEW_STR/gi' '$1'"
+}
+
+replace-on-linux(){
+	echo "sed -i 's/$OLD_STR/$NEW_STR/gi'" "$1"
+	eval "sed -i 's/$OLD_STR/$NEW_STR/gi' '$1'"
+}
+
 # @param $1 {string} a full filepath
 replace-file(){
 	local __filepath="$1"
@@ -118,8 +129,19 @@ replace-file(){
 	elif [ ! -z "$EXC_REGEX" ] && [[ $file =~ $EXC_REGEX ]];then
 		echo " * * * Passed by [E]xcluded regex. file=$file, regex=$EXC_REGEX"
 	else
-		echo "sed -i '' 's/$OLD_STR/$NEW_STR/gi'" "${__filepath//\/\//\/}"
-		eval "sed -i '' 's/$OLD_STR/$NEW_STR/gi' '${__filepath//\/\//\/}'"
+		local __ostype=$(echo $OSTYPE | tr [:upper:] [:lower:])
+		__filepath=$"{__filepath//\/\//\/}"
+		case "$__ostype" in
+			linux-gnu*)
+				replace-on-linux $__filepath
+				;;
+			darwin*)
+				replace-on-mac  $__filepath
+				;;
+			*)
+				echo "[ERROR] Unsupported Operating System: $OSTYPE"
+				;;
+		esac
 	fi
 }
 
