@@ -130,13 +130,13 @@ replace-file(){
 		echo " * * * Passed by [E]xcluded regex. file=$file, regex=$EXC_REGEX"
 	else
 		local __ostype=$(echo $OSTYPE | tr [:upper:] [:lower:])
-		__filepath=$"{__filepath//\/\//\/}"
+		__filepath="${__filepath//\/\//\/}"
 		case "$__ostype" in
 			linux-gnu*)
-				replace-on-linux $__filepath
+				replace-on-linux "$__filepath"
 				;;
 			darwin*)
-				replace-on-mac  $__filepath
+				replace-on-mac  "$__filepath"
 				;;
 			*)
 				echo "[ERROR] Unsupported Operating System: $OSTYPE"
