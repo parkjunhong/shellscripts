@@ -40,8 +40,8 @@ help(){
 	echo "[Arguments]"
 	echo " -o: old string"
 	echo " -n: new string"
-	echo " -i: (optional) a regex to include files or directories"
-	echo " -x: (optional) a regex to exclude files or directories"
+	echo " -i: (optional) a regex to include files"
+	echo " -x: (optional) a regex to exclude files"
 }
 
 OLD_STR=""
