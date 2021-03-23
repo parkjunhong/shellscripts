@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+
+# =======================================
+# @auther : parkjunhong77@gmail.com
+# @title  : replace strings in files.
+# @license: Apache License 2.0
+# @since  : 2021-03-23
+# @desc   : support macOS 11.2.3, Ubuntu 18.04, CentOS 7
+# =======================================
+
+FILENAME="$0"
+
+help(){
+	if [ ! -z "$1" ];
+	then
+		local indent=10
+		local formatl=" - %-"$indent"s: %s\n"
+		local formatr=" - %"$indent"s: %s\n"
+		echo
+		echo "================================================================================"
+		printf "$formatl" "filename" "$FILENAME"
+		printf "$formatl" "line" "$2"
+		printf "$formatl" "callstack"
+		local idx=1
+		for func in ${FUNCNAME[@]:1}
+		do
+			printf "$formatr" "["$idx"]" $func
+			((idx++))
+		done
+		printf "$formatl" "cause" "$1"
+		echo "================================================================================"
+	fi
+	echo
+	echo "Usage:"
+	echo "repl-str [-o] <old-string> [-n] <new-string> [-r] [-d] [-i] <include-pattern> [-x] <exclude-pattern] <directory-or-file>"
+	echo
+	echo "[Options]"
+	echo " -r : retrieve directories recursive"
+	echo
+	echo "[Arguments]"
+	echo " -d: (optional) dry run. Not replace But show cli."
+	echo " -o: old string"
+	echo " -n: new string"
+	echo " -i: (optional) a regex to include files"
+	echo " -x: (optional) a regex to exclude files"
+}
+
+OLD_STR=""
+NEW_STR=""
+R=0
+INC_REGEX=""
+EXC_REGEX=""
+TARGET=""
+DRY_RUN=0
+while [ "$1" != "" ];
+do
+	case "$1" in
+		-d | --dry-run)
+			DRY_RUN=1
+			;;
+		-n | --new-str)
+			shift
+			NEW_STR="$1"
+			NEW_STR="${NEW_STR//\//\\/}"
+
+			echo " * * * detected 'new string': $NEW_STR"
+			;;
+		-h | --help)
+			help
+			exit 0
+			;;
+		-o | --old-str)
+			shift
+			OLD_STR="$1"
+			OLD_STR="${OLD_STR//\//\\/}"
+			
+			echo " * * * detected 'old string': $1"
+			;;
+		-i)
+			shift
+			INC_REGEX="$1"
+
+			echo " * * * detected 'included pattern': $1"
+			;;
+		-r)
+			R=1
+			;;
+		-x)
+			shift
+			EXC_REGEX="$1"
+			
+			echo " * * * detected 'excluded pattern': $1"
+			;;
+		*)
+			TARGET="$1"
+			
+			echo " * * * detected 'target': $1"
+			;;
+	esac
+	shift
+done
+
+
+if [ -z "$TARGET" ] || [ -z "$OLD_STR" ] || [ -z "$NEW_STR" ];then
+	help "Invalid string >> old: $OLD_STR, new: $NEW_STR" $LINENO
+	exit 1
+fi
+
+if [ ! -f "$TARGET" ] && [ ! -d "$TARGET" ];then
+	help "Invalid target >> $TARGET" $LINENO
+	exit 1
+fi
+
+
+replace-on-mac(){
+	echo " + + + sed -i '' 's/$OLD_STR/$NEW_STR/gi'" "$1"
+	if [ $DRY_RUN -eq 0 ];then
+		eval "sed -i '' 's/$OLD_STR/$NEW_STR/gi' '$1'"
+	fi
+}
+
+replace-on-linux(){
+	echo " + + + sed -i 's/$OLD_STR/$NEW_STR/gi'" "$1"
+	if [ $DRY_RUN -eq 0 ];then
+		eval "sed -i 's/$OLD_STR/$NEW_STR/gi' '$1'"
+	fi
+}
+
+# @param $1 {string} a full filepath
+replace-file(){
+	local __filepath="$1"
+
+	IFS="/" read -a paths <<< "$__filepath"
+	local file=${paths[-1]}
+
+	if [ ! -z "$INC_REGEX" ] && [[ ! $file =~ $INC_REGEX ]];then
+		echo " - - - Passed by [I]ncluded regex. file=$file, regex=$INC_REGEX"
+	elif [ ! -z "$EXC_REGEX" ] && [[ $file =~ $EXC_REGEX ]];then
+		echo " - - - Passed by [E]xcluded regex. file=$file, regex=$EXC_REGEX"
+	else
+		local __ostype=$(echo $OSTYPE | tr [:upper:] [:lower:])
+		__filepath="${__filepath//\/\//\/}"
+		case "$__ostype" in
+			linux-gnu*)
+				replace-on-linux "$__filepath"
+				;;
+			darwin*)
+				replace-on-mac  "$__filepath"
+				;;
+			*)
+				echo "[ERROR] Unsupported Operating System: $OSTYPE"
+				;;
+		esac
+	fi
+}
+
+if [ -f "$TARGET" ];then
+	replace-file "$TARGET"
+	exit 0
+fi
+
+# @param $1 {string} a full directory
+retrieve-dir(){
+	local __dir="$1"
+	
+	while read -r file
+	do
+#		echo " >> $file"
+		if [[ $file == */ ]];then
+			if [ $R -eq 1 ];then
+				retrieve-dir "$__dir/$file"
+			else
+				continue
+			fi
+		else
+			replace-file "$__dir/$file"
+		fi
+	done <<< $(ls -p $__dir)
+}
+
+
+retrieve-dir "$TARGET" 
+
+
+exit 0
