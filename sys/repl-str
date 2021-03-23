@@ -113,14 +113,14 @@ fi
 
 
 replace-on-mac(){
-	echo "sed -i '' 's/$OLD_STR/$NEW_STR/gi'" "$1"
+	echo " + + + sed -i '' 's/$OLD_STR/$NEW_STR/gi'" "$1"
 	if [ $DRY_RUN -eq 0 ];then
 		eval "sed -i '' 's/$OLD_STR/$NEW_STR/gi' '$1'"
 	fi
 }
 
 replace-on-linux(){
-	echo "sed -i 's/$OLD_STR/$NEW_STR/gi'" "$1"
+	echo " + + + sed -i 's/$OLD_STR/$NEW_STR/gi'" "$1"
 	if [ $DRY_RUN -eq 0 ];then
 		eval "sed -i 's/$OLD_STR/$NEW_STR/gi' '$1'"
 	fi
@@ -134,9 +134,9 @@ replace-file(){
 	local file=${paths[-1]}
 
 	if [ ! -z "$INC_REGEX" ] && [[ ! $file =~ $INC_REGEX ]];then
-		echo " * * * Passed by [I]ncluded regex. file=$file, regex=$INC_REGEX"
+		echo " - - - Passed by [I]ncluded regex. file=$file, regex=$INC_REGEX"
 	elif [ ! -z "$EXC_REGEX" ] && [[ $file =~ $EXC_REGEX ]];then
-		echo " * * * Passed by [E]xcluded regex. file=$file, regex=$EXC_REGEX"
+		echo " - - - Passed by [E]xcluded regex. file=$file, regex=$EXC_REGEX"
 	else
 		local __ostype=$(echo $OSTYPE | tr [:upper:] [:lower:])
 		__filepath="${__filepath//\/\//\/}"
