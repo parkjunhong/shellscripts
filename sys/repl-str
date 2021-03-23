@@ -114,12 +114,16 @@ fi
 
 replace-on-mac(){
 	echo "sed -i '' 's/$OLD_STR/$NEW_STR/gi'" "$1"
-	eval "sed -i '' 's/$OLD_STR/$NEW_STR/gi' '$1'"
+	if [ $DRY_RUN -eq 0 ];then
+		eval "sed -i '' 's/$OLD_STR/$NEW_STR/gi' '$1'"
+	fi
 }
 
 replace-on-linux(){
 	echo "sed -i 's/$OLD_STR/$NEW_STR/gi'" "$1"
-	eval "sed -i 's/$OLD_STR/$NEW_STR/gi' '$1'"
+	if [ $DRY_RUN -eq 0 ];then
+		eval "sed -i 's/$OLD_STR/$NEW_STR/gi' '$1'"
+	fi
 }
 
 # @param $1 {string} a full filepath
