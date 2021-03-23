@@ -32,12 +32,13 @@ help(){
 	fi
 	echo
 	echo "Usage:"
-	echo "repl-str [-o] <old-string> [-n] <new-string> [-r] [-i] <include-pattern> [-x] <exclude-pattern] <directory-or-file>"
+	echo "repl-str [-o] <old-string> [-n] <new-string> [-r] [-d] [-i] <include-pattern> [-x] <exclude-pattern] <directory-or-file>"
 	echo
 	echo "[Options]"
 	echo " -r : retrieve directories recursive"
 	echo
 	echo "[Arguments]"
+	echo " -d: (optional) dry run. Not replace But show cli."
 	echo " -o: old string"
 	echo " -n: new string"
 	echo " -i: (optional) a regex to include files"
@@ -50,9 +51,13 @@ R=0
 INC_REGEX=""
 EXC_REGEX=""
 TARGET=""
+DRY_RUN=0
 while [ "$1" != "" ];
 do
 	case "$1" in
+		-d | --dry-run)
+			DRY_RUN=1
+			;;
 		-n | --new-str)
 			shift
 			NEW_STR="$1"
