@@ -1,5 +1,18 @@
 #!/usr/bin/env bash
 
+# =======================================
+# @auther : parkjunhong77@gmail.com
+# @title  : build maven projects with user-custom 'profile' for build.
+# @license: Apache License 2.0
+# @since  : 2020-12-21
+# @desc   : support macOS 11.2.3, Ubuntu 18.04, CentOS 7
+# @completion: 
+#
+#
+#
+# =======================================
+
+
 PROFILE=""
 DEPLOY=0
 TEST="true"
