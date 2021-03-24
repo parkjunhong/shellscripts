@@ -52,6 +52,7 @@ INC_REGEX=""
 EXC_REGEX=""
 TARGET=""
 DRY_RUN=0
+IGNORE_PASS=1
 while [ "$1" != "" ];
 do
 	case "$1" in
@@ -84,6 +85,9 @@ do
 			;;
 		-r)
 			R=1
+			;;
+		-v)
+			IGNORE_PASS=0
 			;;
 		-x)
 			shift
@@ -134,9 +138,19 @@ replace-file(){
 	local file=${paths[-1]}
 
 	if [ ! -z "$INC_REGEX" ] && [[ ! $file =~ $INC_REGEX ]];then
-		echo " - - - Passed by [I]ncluded regex. file=$file, regex=$INC_REGEX"
+		local __msg=" - - - Passed by [I]ncluded regex. file=$file, regex=$INC_REGEX"
+		if [ $IGNORE_PASS -eq 0 ];then
+			echo $__msg
+		else
+			echo $__msg >/dev/null
+		fi
 	elif [ ! -z "$EXC_REGEX" ] && [[ $file =~ $EXC_REGEX ]];then
-		echo " - - - Passed by [E]xcluded regex. file=$file, regex=$EXC_REGEX"
+		local __msg=" - - - Passed by [E]xcluded regex. file=$file, regex=$EXC_REGEX"
+		if [ $IGNORE_PASS -eq 0 ];then
+			echo $__msg
+		else
+			echo $__msg >/dev/null
+		fi
 	else
 		local __ostype=$(echo $OSTYPE | tr [:upper:] [:lower:])
 		__filepath="${__filepath//\/\//\/}"
