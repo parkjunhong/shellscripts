@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+
+# initialize arguments
+declare -A ARGS
+ARGS["-d"]="--deploy-after-build"
+ARGS["-h"]="--help"
+ARGS["-p"]="--profile"
+ARGS["-r"]="--run-test"
+
+# $1: found
+# $2: added
+_add_if_new(){
+	local __new=1
+	for word in ${COMP_WORDS[@]}
+	do
+		if [ "$word" = "$1" ];then
+			__new=0
+			break
+		fi
+	done
+
+	if [ $__new -eq 1 ];then
+		COMPREPLY+=("$2")
+	fi
+}
+
+_add_default_options(){
+	local _keys=(${!ARGS[@]})
+
+	for key in ${_keys[@]}
+	do
+		_add_if_new "$key" "${ARGS[$key]}"
+	done
+}
+
+# $1: current
+# $2: previous
+_handle_current(){
+	_log "in '_handle_current' " $@
+	case "$1" in
+		-d | --d*)
+			COMPREPLY+=("-d")
+			;;
+		-h | --h*)
+			COMPREPLY+=("-h")
+			;;
+		-r | --r*)
+			COMPREPLY+=("-r")
+			;;
+		-p | --p*)
+			COMPREPLY+=("-p")
+			;;
+		*)
+			_add_default_options
+			;;
+	esac
+}
+
+# $1: current
+# $2: previous
+_handle_previous(){
+	_log "in '_handle_previous' " $@
+	case "$2" in
+		-d | --d*)
+			COMPREPLY+=("-d")
+			;;
+		-h | --h*)
+			COMPREPLY+=("-h")
+			;;
+		-r | --r*)
+			COMPREPLY+=("-r")
+			;;
+		-p | --p*)
+			if [ -z "$1" ];then
+				COMPREPLY+=( $(compgen -W "$(find $PWD/config -mindepth 1 -maxdepth 1 -type d -printf '%P ')"))
+			else
+				local _words=$(compgen -W "$(find $PWD/config -mindepth 1 -maxdepth 1 -type d -printf '%P ')" -- $1)
+				_log "_words=${_words[@]}"
+				if [ ${#_words[@]} -gt 0 ];then
+					COMPREPLY+=(${_words[@]})
+				fi
+			fi
+			;;
+		*)
+			_handle_current "$2" "$3"
+#3			_add_default_options
+			;;
+	esac
+}
+
+_log(){
+	echo "$@" >> ~/build-mvn-package_completion.log
+}
+
+# $1: command
+# $2: current
+# $3: previous
+_profile(){
+	_log "-----------------------------------------------------"
+	_log $(printf "[%s] %-15s: %s" "$(date +'%Y/%m/%d %H:%M:%S')" "COMP_WORDS" "${COMP_WORDS[@]}")
+	_log $(printf "[%s] %-15s: %s" "$(date +'%Y/%m/%d %H:%M:%S')" "COMP_LINE" "${COMP_LINE}")
+	_log $(printf "[%s] %-15s: %s, %s: %s" "$(date +'%Y/%m/%d %H:%M:%S')" "COMP_CWORD" "$COMP_CWORD" "#WORDS" "${#COMP_WORDS[@]}") 
+	_log $(printf "[%s] %s: %s, %s: %s" "$(date +'%Y/%m/%d %H:%M:%S')" "CURRENT" "$2" "PREVIOUS" "$3")
+
+	if [ $COMP_CWORD -eq 1 ];then
+		_handle_current "$2" "$3"
+	else
+		_handle_previous "$2" "$3"
+#		case "$3" in
+#			-d | --d*)
+#				COMPREPLY+=("-d")
+#				;;
+#			-h | --h*)
+#				COMPREPLY+=("-h")
+#				;;
+#			-r | --r*)
+#				COMPREPLY+=("-r")
+#				;;
+#			-p | --p*)
+#				COMPREPLY+=( $(compgen -W "$(find $PWD/config -mindepth 1 -maxdepth 1 -type d -printf '%P ')" -- $2))
+#				;;
+#			*)
+#				_add_default_options
+#				;;
+#		esac
+	fi
+}
+
+complete -F _profile build-mvn-package
