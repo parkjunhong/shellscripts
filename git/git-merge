@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
 # =======================================
 # @auther : parkjunhong77@gmail.com
@@ -8,11 +8,26 @@
 # =======================================
 
 help(){
-	
-	if [ $# -gt 0 ];then
+	if [ ! -z "$1" ];
+	then
+		local indent=10
+		local formatl=" - %-"$indent"s: %s\n"
+		local formatr=" - %"$indent"s: %s\n"
 		echo
-		echo "['${FUNCNAME[1]}' says] " $1
+		echo "================================================================================"
+		printf "$formatl" "filename" "$FILENAME"
+		printf "$formatl" "line" "$2"
+		printf "$formatl" "callstack"
+		local idx=1
+		for func in ${FUNCNAME[@]:1}
+		do
+			printf "$formatr" "["$idx"]" $func
+			((idx++))
+		done
+		printf "$formatl" "cause" "$1"
+		echo "================================================================================"
 	fi
+
     echo
     echo "[Usage]"
     echo "git-merge.sh -s <source> -t <target>"
@@ -81,8 +96,7 @@ show-branches(){
 # $1 {string}: title or purpose.
 select-branch(){
 	read -p "Select '$1' branch [1 ~ ${#BRANCHES[@]}]: " index
-	re="^[0-9]+$"
-	if [ -z "$index" ] || ! [[ $index =~ $re ]] || [ $index -gt ${#BRANCHES[@]} ] || [ $index -lt 1 ]; then
+	if [ $index -lt 1 ];then
 		index=$(date +%s)
 	fi
 	echo ${BRANCHES[$index-1]}
