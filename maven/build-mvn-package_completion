@@ -18,10 +18,11 @@
 
 # initialize arguments
 declare -A ARGS
-ARGS["-d"]="--deploy-after-build"
+ARGS["-d"]="--deploy"
 ARGS["-h"]="--help"
 ARGS["-p"]="--profile"
-ARGS["-r"]="--run-test"
+ARGS["-t"]="--test"
+ARGS["-u"]="--update"
 
 # $1: found
 # $2: added
@@ -30,13 +31,24 @@ _add_if_new(){
 	for word in ${COMP_WORDS[@]}
 	do
 		if [ "$word" = "$1" ];then
+			_log "'$word' already exists"
 			__new=0
 			break
 		fi
 	done
 
 	if [ $__new -eq 1 ];then
-		COMPREPLY+=("$2")
+		for word in ${COMP_WORDS[@]}
+		do
+			if [ "$word" = "$2" ];then
+				_log "'$2' already exists"
+				__new=0
+				break
+			fi
+		done
+		if [ $__new -eq 1 ];then
+			COMPREPLY+=("$2")
+		fi
 	fi
 }
 
@@ -60,11 +72,14 @@ _handle_current(){
 		-h | --h*)
 			COMPREPLY+=("-h")
 			;;
-		-r | --r*)
-			COMPREPLY+=("-r")
-			;;
 		-p | --p*)
 			COMPREPLY+=("-p")
+			;;
+		-t | --t*)
+			COMPREPLY+=("-t")
+			;;
+		-u | --u*)
+			COMPREPLY+=("-u")
 			;;
 		*)
 			_add_default_options
@@ -75,20 +90,17 @@ _handle_current(){
 # $1: current
 # $2: previous
 _handle_previous(){
-	_log "in '_handle_previous' " $@
+	_log "in '_handle_previous' \$1: $1, \$2:$2"
 	case "$2" in
 		-d | --d*)
-			COMPREPLY+=("-d")
+			_handle_current "$1"
 			;;
 		-h | --h*)
-			COMPREPLY+=("-h")
-			;;
-		-r | --r*)
-			COMPREPLY+=("-r")
+			_handle_current "$1"
 			;;
 		-p | --p*)
 			if [ -z "$1" ];then
-				COMPREPLY+=( $(compgen -W "$(find $PWD/config -mindepth 1 -maxdepth 1 -type d -printf '%P ')"))
+				COMPREPLY+=( $(compgen -W "$(find $PWD/config -mindepth 1 -maxdepth 1 -type d -printf '%P ')") )
 			else
 				local _words=$(compgen -W "$(find $PWD/config -mindepth 1 -maxdepth 1 -type d -printf '%P ')" -- $1)
 				_log "_words=${_words[@]}"
@@ -96,16 +108,23 @@ _handle_previous(){
 					COMPREPLY+=(${_words[@]})
 				fi
 			fi
+			;;	
+		-t | --t*)
+			_handle_current "$1" 
+			;;
+		-u | --u*)
+			_handle_current "$1"
 			;;
 		*)
-			_handle_current "$2" "$3"
-#3			_add_default_options
+			_handle_current "$1"
+			#_add_default_options
 			;;
 	esac
 }
 
 _log(){
-	echo "$@" >> ~/build-mvn-package_completion.log
+#	echo "$@" >> ~/build-mvn-package_completion.log
+	echo "$@" >/dev/null
 }
 
 # $1: command
@@ -122,24 +141,11 @@ _profile(){
 		_handle_current "$2" "$3"
 	else
 		_handle_previous "$2" "$3"
-#		case "$3" in
-#			-d | --d*)
-#				COMPREPLY+=("-d")
-#				;;
-#			-h | --h*)
-#				COMPREPLY+=("-h")
-#				;;
-#			-r | --r*)
-#				COMPREPLY+=("-r")
-#				;;
-#			-p | --p*)
-#				COMPREPLY+=( $(compgen -W "$(find $PWD/config -mindepth 1 -maxdepth 1 -type d -printf '%P ')" -- $2))
-#				;;
-#			*)
-#				_add_default_options
-#				;;
-#		esac
 	fi
 }
+
+# create a log file.
+
+
 
 complete -F _profile build-mvn-package
