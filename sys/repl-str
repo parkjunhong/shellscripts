@@ -64,7 +64,7 @@ do
 			NEW_STR="$1"
 			NEW_STR="${NEW_STR//\//\\/}"
 
-			echo " * * * detected 'new string': $NEW_STR"
+			printf " * * * detected '%-16s': %s\n" "new string" "$NEW_STR"
 			;;
 		-h | --help)
 			help
@@ -75,13 +75,13 @@ do
 			OLD_STR="$1"
 			OLD_STR="${OLD_STR//\//\\/}"
 			
-			echo " * * * detected 'old string': $1"
+			printf " * * * detected '%-16s': %s\n" "old string" "$1"
 			;;
 		-i)
 			shift
 			INC_REGEX="$1"
 
-			echo " * * * detected 'included pattern': $1"
+			printf " * * * detected '%-16s': %s\n" "included pattern" "$1"
 			;;
 		-r)
 			R=1
@@ -93,12 +93,12 @@ do
 			shift
 			EXC_REGEX="$1"
 			
-			echo " * * * detected 'excluded pattern': $1"
+			printf " * * * detected '%-16s': %s\n" "excluded pattern" "$1"
 			;;
 		*)
 			TARGET="$1"
 			
-			echo " * * * detected 'target': $1"
+			printf " * * * detected '%-16s': %s\n" "target" "$1"
 			;;
 	esac
 	shift
