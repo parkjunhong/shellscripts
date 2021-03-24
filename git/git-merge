@@ -7,6 +7,8 @@
 # @since  : 2020-08-18
 # =======================================
 
+# need for log.
+FILENAME=$0
 help(){
 	if [ ! -z "$1" ];
 	then
@@ -96,6 +98,11 @@ show-branches(){
 # $1 {string}: title or purpose.
 select-branch(){
 	read -p "Select '$1' branch [1 ~ ${#BRANCHES[@]}]: " index
+	
+	if ! [[ $index =~ ^[1-9][0-9]*$ ]];then
+		index=0
+	fi
+
 	if [ $index -lt 1 ];then
 		index=$(date +%s)
 	fi
@@ -121,8 +128,7 @@ has-value(){
 
 BRANCHES=($(read-branches))
 if [ ${#BRANCHES[@]} -lt 1 ];then
-	echo "[ERROR] * * * (A current or one of above folders) is not a git repository."
-	help
+	help "[ERROR] * * * (A current or one of above folders) is not a git repository." $LINENO
 	exit 1
 fi
 
@@ -132,8 +138,7 @@ if [ -z "$SOURCE" ];then
 
 	if [ -z "$SOURCE" ];then
 		echo
-		echo "[ERRROR] * * * Invalid merge branch. source=${SOURCE}"    
-		help 
+		help "[ERRROR] * * * Invalid merge branch. source=${SOURCE}" $LINENO    
 		exit 1
 	fi
 fi
@@ -144,16 +149,14 @@ if [ -z "$TARGET" ];then
 
 	if [ -z "$TARGET" ];then
 		echo
-		echo "[ERRROR] * * * Invalid merge branch. target=${TARGET}"
-		help 
+		help "[ERRROR] * * * Invalid merge branch. target=${TARGET}" $LINENO
 		exit 1
 	fi
 fi
 
 if [ "$SOURCE" == "$TARGET" ];then
 	echo
-	echo "[ERROR] * * * Invalid a source and a target branches. source (=) target."
-	help
+	help "[ERROR] * * * Invalid a source and a target branches. source (=) target." $LINENO
 	exit 1
 fi
 
