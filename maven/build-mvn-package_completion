@@ -61,6 +61,20 @@ _add_default_options(){
 	done
 }
 
+# $1: directory path
+ _read_profiles(){
+ 	local _profiles=()
+	if [ ! -d "$PWD/config" ];then
+		echo ""
+	else
+		for dir in $(ls -p "$PWD/config" | grep -E "^[^/]+/$" 2>/dev/null);
+		do
+			_profiles+=(${dir::-1})
+		done
+		echo ${_profiles[@]}
+	fi
+}
+
 # $1: current
 # $2: previous
 _handle_current(){
@@ -100,9 +114,11 @@ _handle_previous(){
 			;;
 		-p | --p*)
 			if [ -z "$1" ];then
-				COMPREPLY+=( $(compgen -W "$(find $PWD/config -mindepth 1 -maxdepth 1 -type d -printf '%P ')") )
+				#COMPREPLY+=( $(compgen -W "$(find $PWD/config -mindepth 1 -maxdepth 1 -type d -printf '%P ')") )
+				COMPREPLY+=( $(compgen -W "$(_read_profiles)") )
 			else
-				local _words=$(compgen -W "$(find $PWD/config -mindepth 1 -maxdepth 1 -type d -printf '%P ')" -- $1)
+				#local _words=$(compgen -W "$(find $PWD/config -mindepth 1 -maxdepth 1 -type d -printf '%P ')" -- $1)
+				local _words=$(compgen -W "$(_read_profiles)" -- $1)
 				_log "_words=${_words[@]}"
 				if [ ${#_words[@]} -gt 0 ];then
 					COMPREPLY+=(${_words[@]})
