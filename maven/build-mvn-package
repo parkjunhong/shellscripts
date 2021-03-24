@@ -7,7 +7,7 @@
 # @since  : 2020-12-21
 # @desc   : support macOS 11.2.3, Ubuntu 18.04, CentOS 7
 # @completion: build-mvn-package_completion
-#            1. copy the above file to ~/bin/ for a personal usage.
+#            1. insert 'source <path>/build-mvn-packet_completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
 #            2. copy the above file to /etc/bash_completion.d/ for all users.
 # =======================================
 
