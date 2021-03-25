@@ -6,12 +6,43 @@
 # @license: Apache License 2.0
 # @since  : 2020-12-21
 # @desc   : support macOS 11.2.3, Ubuntu 18.04, CentOS 7
-# @completion: 
-#
-#
-#
+# @completion: build-mvn-package_completion
+#            1. insert 'source <path>/build-mvn-packet_completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#            2. copy the above file to /etc/bash_completion.d/ for all users.
 # =======================================
 
+
+help(){
+	if [ ! -z "$1" ];
+	then
+		local indent=10
+		local formatl=" - %-"$indent"s: %s\n"
+		local formatr=" - %"$indent"s: %s\n"
+		echo
+		echo "================================================================================"
+		printf "$formatl" "filename" "$FILENAME"
+		printf "$formatl" "line" "$2"
+		printf "$formatl" "callstack"
+		local idx=1
+		for func in ${FUNCNAME[@]:1}
+		do
+			printf "$formatr" "["$idx"]" $func
+			((idx++))
+		done
+		printf "$formatl" "cause" "$1"
+		echo "================================================================================"
+	fi
+	echo
+	echo "Usage:"
+	echo "./build-mvn-package [-h|--help] [-d|--deploy] -p <profile> [-t|--test] [-u|--update]"
+	echo
+	echo "Options:"
+	echo " -d | --deploy: deploy after build."
+	echo " -h | --help: show help messages."
+	echo " -p | --profile: Profile"
+	echo " -t | --test: run Junit TestCase"
+	echo " -u | --update: 'git pull' before build sources."
+}
 
 PROFILE=""
 DEPLOY=0
@@ -20,18 +51,22 @@ GIT_PULL="false"
 while [ ! -z "$1" ];
 do
 	case "$1" in
+		-d | --deploy)
+			DEPLOY=1
+			;;
+		-h | --help)
+			help
+			exit 0
+			;;
 		-p | --profile)
 			shift
 			PROFILE=$1
 			;;
-		-d)
-			DEPLOY=1
-			;;
-		-u)
-			GIT_PULL="true"
-			;;
 		-t | --test)
 			TEST="false"
+			;;
+		-u | --update)
+			GIT_PULL="true"
 			;;
 		*)
 			;;
@@ -41,13 +76,7 @@ done
 
 if [ -z $PROFILE ];
 then
-	echo
-	echo "Require PROFILE"
-	echo
-	echo "./build-mvn-package -p <profile> -d"
-	echo " -p: Profile"
-	echo " -t: run Test"
-	echo " -d: deploy after build."
+	help "Please, input a PROFILE"
 	exit 1
 fi
 
