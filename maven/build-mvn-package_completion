@@ -28,16 +28,10 @@
 # - $3: arg3
 
 # initialize arguments
-declare -A ARGS
-ARGS["-d"]="--deploy"
-ARGS["-h"]="--help"
-ARGS["-p"]="--profile"
-ARGS["-t"]="--test"
-ARGS["-u"]="--update"
 
 # $1: found
 # $2: added
-_add_if_new(){
+_bldmvnpkg-add_if_new(){
 	local __new=1
 	for word in ${COMP_WORDS[@]}
 	do
@@ -63,17 +57,24 @@ _add_if_new(){
 	fi
 }
 
-_add_default_options(){
-	local _keys=(${!ARGS[@]})
+_bldmvnpkg-add_default_options(){
+	declare -A __ARGS__
+	__ARGS__["-d"]="--deploy"
+	__ARGS__["-h"]="--help"
+	__ARGS__["-p"]="--profile"
+	__ARGS__["-t"]="--test"
+	__ARGS__["-u"]="--update"
+
+	local _keys=(${!__ARGS__[@]})
 
 	for key in ${_keys[@]}
 	do
-		_add_if_new "$key" "${ARGS[$key]}"
+		_bldmvnpkg-add_if_new "$key" "${__ARGS__[$key]}"
 	done
 }
 
 # $1: directory path
- _read_profiles(){
+ _bldmvnpkg-read_profiles(){
  	local _profiles=()
 	if [ ! -d "$PWD/config" ];then
 		echo ""
@@ -88,8 +89,8 @@ _add_default_options(){
 
 # $1: current
 # $2: previous
-_handle_current(){
-	_log "in '_handle_current' " $@
+_bldmvnpkg-handle_current(){
+	_log "in '_bldmvnpkg-handle_current' " $@
 	case "$1" in
 		-d | --d*)
 			COMPREPLY+=("-d")
@@ -107,29 +108,29 @@ _handle_current(){
 			COMPREPLY+=("-u")
 			;;
 		*)
-			_add_default_options
+			_bldmvnpkg-add_default_options
 			;;
 	esac
 }
 
 # $1: current
 # $2: previous
-_handle_previous(){
-	_log "in '_handle_previous' \$1: $1, \$2:$2"
+_bldmvnpkg-handle_previous(){
+	_log "in '_bldmvnpkg-handle_previous' \$1: $1, \$2:$2"
 	case "$2" in
 		-d | --d*)
-			_handle_current "$1"
+			_bldmvnpkg-handle_current "$1"
 			;;
 		-h | --h*)
-			_handle_current "$1"
+			_bldmvnpkg-handle_current "$1"
 			;;
 		-p | --p*)
 			if [ -z "$1" ];then
 				#COMPREPLY+=( $(compgen -W "$(find $PWD/config -mindepth 1 -maxdepth 1 -type d -printf '%P ')") )
-				COMPREPLY+=( $(compgen -W "$(_read_profiles)") )
+				COMPREPLY+=( $(compgen -W "$(_bldmvnpkg-read_profiles)") )
 			else
 				#local _words=$(compgen -W "$(find $PWD/config -mindepth 1 -maxdepth 1 -type d -printf '%P ')" -- $1)
-				local _words=$(compgen -W "$(_read_profiles)" -- $1)
+				local _words=$(compgen -W "$(_bldmvnpkg-read_profiles)" -- $1)
 				_log "_words=${_words[@]}"
 				if [ ${#_words[@]} -gt 0 ];then
 					COMPREPLY+=(${_words[@]})
@@ -137,13 +138,13 @@ _handle_previous(){
 			fi
 			;;	
 		-t | --t*)
-			_handle_current "$1" 
+			_bldmvnpkg-handle_current "$1" 
 			;;
 		-u | --u*)
-			_handle_current "$1"
+			_bldmvnpkg-handle_current "$1"
 			;;
 		*)
-			_handle_current "$1"
+			_bldmvnpkg-handle_current "$1"
 			;;
 	esac
 }
@@ -151,7 +152,7 @@ _handle_previous(){
 # print logs to a external file.
 _log(){
 	# To log messages, change a comment '#'.
-	#echo "$@" >> $LOGFILE
+	#logger -t "[build-mvn-package] -i" "$@" 2>/dev/null
 	echo "$@" >/dev/null
 }
 
@@ -159,21 +160,17 @@ _log(){
 # $2: current
 # $3: previous
 _profile(){
-	_log "-----------------------------------------------------"
-	_log $(printf "[%s] %-15s: %s" "$(date +'%Y/%m/%d %H:%M:%S')" "COMP_WORDS" "${COMP_WORDS[@]}")
-	_log $(printf "[%s] %-15s: %s" "$(date +'%Y/%m/%d %H:%M:%S')" "COMP_LINE" "${COMP_LINE}")
-	_log $(printf "[%s] %-15s: %s, %s: %s" "$(date +'%Y/%m/%d %H:%M:%S')" "COMP_CWORD" "$COMP_CWORD" "#WORDS" "${#COMP_WORDS[@]}") 
-	_log $(printf "[%s] %s: %s, %s: %s" "$(date +'%Y/%m/%d %H:%M:%S')" "CURRENT" "$2" "PREVIOUS" "$3")
+	_log "====================================================="
+	_log $(printf "%-15s: %s" "COMP_WORDS" "${COMP_WORDS[@]}")
+	_log $(printf "%-15s: %s" "COMP_LINE" "${COMP_LINE}")
+	_log $(printf "%-15s: %s, %s: %s" "COMP_CWORD" "$COMP_CWORD" "#WORDS" "${#COMP_WORDS[@]}") 
+	_log $(printf "%s: %s, %s: %s" "CURRENT" "$2" "PREVIOUS" "$3")
 
 	if [ $COMP_CWORD -eq 1 ];then
-		_handle_current "$2" "$3"
+		_bldmvnpkg-handle_current "$2" "$3"
 	else
-		_handle_previous "$2" "$3"
+		_bldmvnpkg-handle_previous "$2" "$3"
 	fi
 }
-
-# create a log file.
-# set a filepath for a log file.
-LOGFILE="~/build-mvn-package_completion.log"
 
 complete -F _profile build-mvn-package
