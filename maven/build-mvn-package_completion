@@ -148,8 +148,10 @@ _handle_previous(){
 	esac
 }
 
+# print logs to a external file.
 _log(){
-#	echo "$@" >> ~/build-mvn-package_completion.log
+	# To log messages, change a comment '#'.
+	#echo "$@" >> $LOGFILE
 	echo "$@" >/dev/null
 }
 
@@ -171,7 +173,7 @@ _profile(){
 }
 
 # create a log file.
-
-
+# set a filepath for a log file.
+LOGFILE="~/build-mvn-package_completion.log"
 
 complete -F _profile build-mvn-package
