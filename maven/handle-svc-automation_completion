@@ -144,10 +144,10 @@ _hdlsvcauto_handle_previous(){
 # print logs to a external file.
 _hdlsvcauto_log(){
 	# To log messages, change a comment '#'.
-	local _category="hdlsvcauto"
-	printf "[%s] [%-10s] " "$(date '+%Y/%m/%d %H:%M:%S')" "$_category"  >>  ~/user-custom-completion.log
-	echo -e "$@" >> ~/user-custom-completion.log
-	#echo "$@" >/dev/null
+	#local _category="hdlsvcauto"
+	#printf "[%s] [%-10s] " "$(date '+%Y/%m/%d %H:%M:%S')" "$_category"  >>  ~/user-custom-completion.log
+	#echo -e "$@" >> ~/user-custom-completion.log
+	echo "$@" >/dev/null
 }
 
 # $1: command
