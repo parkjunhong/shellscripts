@@ -58,18 +58,18 @@ _bldmvnpkg-add_if_new(){
 }
 
 _bldmvnpkg-add_default_options(){
-	declare -A __ARGS__
-	__ARGS__["-d"]="--deploy"
-	__ARGS__["-h"]="--help"
-	__ARGS__["-p"]="--profile"
-	__ARGS__["-t"]="--test"
-	__ARGS__["-u"]="--update"
+	declare -A ARG
+	ARG["-d"]="--deploy"
+	ARG["-h"]="--help"
+	ARG["-p"]="--profile"
+	ARG["-t"]="--test"
+	ARG["-u"]="--update"
 
-	local _keys=(${!__ARGS__[@]})
+	local _keys=(${!ARG[@]})
 
 	for key in ${_keys[@]}
 	do
-		_bldmvnpkg-add_if_new "$key" "${__ARGS__[$key]}"
+		_bldmvnpkg-add_if_new "$key" "${ARG[$key]}"
 	done
 }
 
