@@ -1,5 +1,16 @@
 #!/usr/bin/env bash
 
+# =======================================
+# @author		: parkjunhong77@gmail.com
+# @title		: build maven projects with user-custom 'profile' for build.
+# @license		: Apache License 2.0
+# @since		: 2021-03-25
+# @desc			: support macOS 11.2.3, Ubuntu 18.04, CentOS 7
+# @installation	: 
+#		1. insert 'source <path>/build-mvn-package_completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#		2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/build-mvn-package_completion' into /etc/bashrc for all users.
+# =======================================
+
 # Global Reserved Variables
 # 1. COMP_WORDS: an array, contains all arguments
 # 2. COMP_CWORD: a index of a cursor
