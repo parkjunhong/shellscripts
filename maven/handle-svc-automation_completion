@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+
+# =======================================
+# @author		: parkjunhong77@gmail.com
+# @title		: Modify two properties: auto-start and register as a service.
+# @license		: Apache License 2.0
+# @since		: 2021-03-25
+# @desc			: support macOS 11.2.3, Ubuntu 18.04, CentOS 7
+# @installation	: 
+#		1. insert 'source <path>/<this-file>" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#		2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/<thi-file>' into /etc/bashrc for all users.
+# =======================================
+
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+
+
+# $1: argument
+_hdlsvcauto_add_if_new(){
+	local __new=1
+	for word in ${COMP_WORDS[@]}
+	do
+		if [ "$word" = "$1" ];then
+			_hdlsvcauto_log "'$word' already exists"
+			__new=0
+			break
+		fi
+	done
+
+	if [ $__new -eq 1 ];then
+		COMPREPLY+=("$1")
+	fi
+}
+
+# @param $1 {string}: prefix of ..
+_hdlsvcauto_add_default_options(){
+	local _prefix="$1"
+	local _args=()
+	_args+=("-f")
+	_args+=("--no-reg")
+	_args+=("--no-start")
+	
+	_hdlsvcauto_log "Prefix: $_prefix"
+
+	for _arg in ${_args[@]}
+	do
+		if [ -z "$_prefix" ] || [[ $_arg == $_prfix* ]];then
+			_hdlsvcauto_add_if_new "$_arg"
+		fi
+	done
+}
+
+# $1: directory path
+_hdlsvcauto_read_files(){
+ 	local _files=()
+	if [ ! -d "$PWD" ];then
+		echo ""
+	else
+		for file in $(ls -p "$PWD" | grep -E "^.+[^/]$" 2>/dev/null);
+		do
+			_files+=($file)
+		done
+		echo ${_files[@]}
+	fi
+}
+
+# $1: current
+# $2: previous
+_hdlsvcauto_handle_current(){
+	_hdlsvcauto_log "in '_handle_current' \$1: $1, \$2:$2"
+	case "$1" in
+		-f)
+			COMPREPLY+=("-f")
+			;;
+		--no-r*)
+			COMPREPLY+=("--no-reg")
+			;;
+		--no-s*)
+			COMPREPLY+=("--no-start")
+			;;
+		--n*)
+			COMPREPLY+=("--no-reg")
+			COMPREPLY+=("--no-start")
+			;;
+		--*)
+			COMPREPLY+=("--no-reg")
+			COMPREPLY+=("--no-start")
+			;;
+		*)
+			_hdlsvcauto_add_default_options "$1"
+			;;
+	esac
+}
+
+# $1: current
+# $2: previous
+_hdlsvcauto_handle_previous(){
+	_hdlsvcauto_log "in '_handle_previous' \$1: $1, \$2:$2"
+
+	case "$2" in
+		-f)
+			if [ -z "$1" ];then
+				COMPREPLY+=( $(compgen -W "$(_read_files)") )
+			else
+				local _words=$(compgen -W "$(_read_files)" -- $1)
+				#_hdlsvcauto_log "_words=${_words[@]}"
+				if [ ${#_words[@]} -gt 0 ];then
+					COMPREPLY+=(${_words[@]})
+				fi
+			fi
+
+			;;
+		--no-r*)
+			_hdlsvcauto_handle_current "$1"
+			;;
+		--no-s*)
+			_hdlsvcauto_handle_current "$1"
+			;;
+		--n*)
+			_hdlsvcauto_handle_current "$1"
+			;;
+		--*)
+			_hdlsvcauto_handle_current "$1"
+			;;
+		*)
+			_hdlsvcauto_handle_current "$1"
+			;;
+	esac
+}
+
+# print logs to a external file.
+_hdlsvcauto_log(){
+	# To log messages, change a comment '#'.
+	local _category="hdlsvcauto"
+	printf "[%s] [%-10s] " "$(date '+%Y/%m/%d %H:%M:%S')" "$_category"  >>  ~/user-custom-completion.log
+	echo -e "$@" >> ~/user-custom-completion.log
+	#echo "$@" >/dev/null
+}
+
+# $1: command
+# $2: current
+# $3: previous
+_hdlsvcauto_suggestion(){
+	_hdlsvcauto_log "====================================================="
+	_hdlsvcauto_log $(printf "%-15s: %s" "COMP_WORDS" "${COMP_WORDS[@]}")
+	_hdlsvcauto_log $(printf "%-15s: %s" "COMP_LINE" "${COMP_LINE}")
+	_hdlsvcauto_log $(printf "%-15s: %s, %s: %s" "COMP_CWORD" "$COMP_CWORD" "#WORDS" "${#COMP_WORDS[@]}") 
+	_hdlsvcauto_log $(printf "%s: %s, %s: %s" "CURRENT" "$2" "PREVIOUS" "$3")
+
+	if [ $COMP_CWORD -eq 1 ];then
+		_hdlsvcauto_handle_current "$2" "$3"
+	else
+		_hdlsvcauto_handle_previous "$2" "$3"
+	fi
+}
+
+complete -F _hdlsvcauto_suggestion handle-svc-automation.sh

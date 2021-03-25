@@ -36,7 +36,7 @@ _bldmvnpkg-add_if_new(){
 	for word in ${COMP_WORDS[@]}
 	do
 		if [ "$word" = "$1" ];then
-			_log "'$word' already exists"
+			_bldmvnpkg-log "'$word' already exists"
 			__new=0
 			break
 		fi
@@ -46,7 +46,7 @@ _bldmvnpkg-add_if_new(){
 		for word in ${COMP_WORDS[@]}
 		do
 			if [ "$word" = "$2" ];then
-				_log "'$2' already exists"
+				_bldmvnpkg-log "'$2' already exists"
 				__new=0
 				break
 			fi
@@ -74,7 +74,7 @@ _bldmvnpkg-add_default_options(){
 }
 
 # $1: directory path
- _bldmvnpkg-read_profiles(){
+_bldmvnpkg-read_profiles(){
  	local _profiles=()
 	if [ ! -d "$PWD/config" ];then
 		echo ""
@@ -90,7 +90,7 @@ _bldmvnpkg-add_default_options(){
 # $1: current
 # $2: previous
 _bldmvnpkg-handle_current(){
-	_log "in '_bldmvnpkg-handle_current' " $@
+	_bldmvnpkg-log "in '_bldmvnpkg-handle_current' " $@
 	case "$1" in
 		-d | --d*)
 			COMPREPLY+=("-d")
@@ -116,7 +116,7 @@ _bldmvnpkg-handle_current(){
 # $1: current
 # $2: previous
 _bldmvnpkg-handle_previous(){
-	_log "in '_bldmvnpkg-handle_previous' \$1: $1, \$2:$2"
+	_bldmvnpkg-log "in '_bldmvnpkg-handle_previous' \$1: $1, \$2:$2"
 	case "$2" in
 		-d | --d*)
 			_bldmvnpkg-handle_current "$1"
@@ -131,7 +131,7 @@ _bldmvnpkg-handle_previous(){
 			else
 				#local _words=$(compgen -W "$(find $PWD/config -mindepth 1 -maxdepth 1 -type d -printf '%P ')" -- $1)
 				local _words=$(compgen -W "$(_bldmvnpkg-read_profiles)" -- $1)
-				_log "_words=${_words[@]}"
+				_bldmvnpkg-log "_words=${_words[@]}"
 				if [ ${#_words[@]} -gt 0 ];then
 					COMPREPLY+=(${_words[@]})
 				fi
@@ -150,21 +150,23 @@ _bldmvnpkg-handle_previous(){
 }
 
 # print logs to a external file.
-_log(){
+_bldmvnpkg-log(){
 	# To log messages, change a comment '#'.
-	#logger -t "[build-mvn-package] -i" "$@" 2>/dev/null
+	#local _category="bldmvnpkg"
+	#printf "[%s] [%-10s] " "$(date '+%Y/%m/%d %H:%M:%S')" "$_category"  >>  ~/user-custom-completion.log
+	#echo -e "$@" >> ~/user-custom-completion.log
 	echo "$@" >/dev/null
 }
 
 # $1: command
 # $2: current
 # $3: previous
-_profile(){
-	_log "====================================================="
-	_log $(printf "%-15s: %s" "COMP_WORDS" "${COMP_WORDS[@]}")
-	_log $(printf "%-15s: %s" "COMP_LINE" "${COMP_LINE}")
-	_log $(printf "%-15s: %s, %s: %s" "COMP_CWORD" "$COMP_CWORD" "#WORDS" "${#COMP_WORDS[@]}") 
-	_log $(printf "%s: %s, %s: %s" "CURRENT" "$2" "PREVIOUS" "$3")
+_bldmvnpkg-profile(){
+	_bldmvnpkg-log "====================================================="
+	_bldmvnpkg-log $(printf "%-15s: %s" "COMP_WORDS" "${COMP_WORDS[@]}")
+	_bldmvnpkg-log $(printf "%-15s: %s" "COMP_LINE" "${COMP_LINE}")
+	_bldmvnpkg-log $(printf "%-15s: %s, %s: %s" "COMP_CWORD" "$COMP_CWORD" "#WORDS" "${#COMP_WORDS[@]}") 
+	_bldmvnpkg-log $(printf "%s: %s, %s: %s" "CURRENT" "$2" "PREVIOUS" "$3")
 
 	if [ $COMP_CWORD -eq 1 ];then
 		_bldmvnpkg-handle_current "$2" "$3"
@@ -173,4 +175,4 @@ _profile(){
 	fi
 }
 
-complete -F _profile build-mvn-package
+complete -F _bldmvnpkg-profile build-mvn-package
