@@ -113,9 +113,9 @@ _hdlsvcauto_handle_previous(){
 	case "$2" in
 		-f)
 			if [ -z "$1" ];then
-				COMPREPLY+=( $(compgen -W "$(_read_files)") )
+				COMPREPLY+=( $(compgen -W "$(_hdlsvcauto_read_files)") )
 			else
-				local _words=$(compgen -W "$(_read_files)" -- $1)
+				local _words=$(compgen -W "$(_hdlsvcauto_read_files)" -- $1)
 				#_hdlsvcauto_log "_words=${_words[@]}"
 				if [ ${#_words[@]} -gt 0 ];then
 					COMPREPLY+=(${_words[@]})
