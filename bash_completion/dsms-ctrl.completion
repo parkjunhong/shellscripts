@@ -1,0 +1,439 @@
+#!/usr/bin/env bash
+
+# =======================================
+# @author		: parkjunhong77@gmail.com
+# @title		: build maven projects with user-custom 'profile' for build.
+# @license		: Apache License 2.0
+# @since		: 2021-04-07
+# @desc			: support macOS 11.2.3, Ubuntu 18.04, CentOS 6,7
+# @installation	: 
+#		1. insert 'source <path>/dsms-ctrl.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#		2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/dsms-ctrl.completion' into /etc/bashrc for all users.
+# =======================================
+
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+
+##
+#
+# @param $1 {string} error message.
+error-log(){
+	COMPREPLY+=("$1" "see '~/user-custom-completion.log'")
+}
+
+##
+# read a character of a string
+# @param $1 {string} string to read
+# @param $2 {number} index to read
+readchar(){
+	local _str=$1
+	local _idx=$2
+	echo ${_str:$_idx:0}
+}
+
+##
+# read a completion word.
+# @param $1 {number} an index
+read-comp-words(){
+	echo ${COMP_WORDS[$1]}
+}
+
+##
+# return a length of ${COMP_WORDS[@]}
+len-comp-words(){
+	echo ${#COMP_WORDS[@]}
+}
+
+##
+# show string of $COMP_WORDS
+#
+show-comp-words(){
+	for _idx in ${!COMP_WORDS[@]};
+	do
+		_dsmsctrl-log $(printf "COMP_WORDS[%s] = %s" "$_idx" "${COMP_WORDS[$_idx]}")
+	done
+}
+
+##
+# check whether an index is end of ${COMP_WORDS[@]} or not
+# @param $1 {number} an index
+# @return 'True' if end, 'False' if not.
+end-of-comp-words(){
+	[ $1 -eq $((${#COMP_WORDS[@]}-1)) ] && echo "True" || echo "False"	
+}
+
+
+# print logs to a external file.
+_dsmsctrl-log(){
+	# To log messages, change a comment '#'.
+	local _category="dsmsctrl"
+	printf "[%s] [%-10s] " "$(date '+%Y/%m/%d %H:%M:%S')" "$_category"  >>  ~/user-custom-completion.log
+	echo -e "$@" >> ~/user-custom-completion.log
+	#echo "$@" >/dev/null
+}
+
+
+##
+# provide a list of '--service'.
+_dsmsctrl-services(){
+	echo "tossiu"
+}
+##
+# Provide services.
+# @param $1 {string} typed string.
+_dsmsctrl-load-services(){
+	_dsmsctrl-log "f'$FUNCNAME' " $@
+	candidate "$1,$(_dsmsctrl-services),1"
+}
+
+##
+# provide a list of '--job'.
+_dsmsctrl-jobs(){
+	echo "insert delete"
+}
+##
+# provide jobs.
+# @param $1 {string} typed string.
+_dsmsctrl-load-jobs(){
+	_dsmsctrl-log "f'$FUNCNAME' " $@
+	candidate "$1,$(_dsmsctrl-jobs),1"
+}
+
+##
+# provide a list of '-target'.
+_dsmsctrl-targets(){
+	echo "db file"
+}
+##
+# provide targets.
+# @param $1 {string} typed string.
+_dsmsctrl-load-targets(){
+	_dsmsctrl-log "f'$FUNCNAME' "$@
+	candidate "$1,$(_dsmsctrl-targets),1"
+}
+
+##
+# @param $1 {string} directory path
+# @param $2 {number} whether only files(0) or only directories(1).
+# @param $3 {number} whether only name(2) or fullpath(1)
+list-dir(){
+	local _path="$1"
+	local _onlydir="$2"
+	local _fullpath="$3"
+ 	local _list=()
+
+	_dsmsctrl-log "f'$FUNCNAME' path=$1, target=$2($([ $2 -eq 0 ] && echo 'file' || echo 'directory')), path=$3($([ $3 -eq 0 ] && echo 'name' || echo 'fullpath'))"
+
+	# modify to absolute path.
+	if ! [[ "$_path" == /* ]];then
+		_path="$PWD/$_path"
+	fi
+		
+	if [ ! -d "$_path" ];then
+		echo ""
+	else
+		local _cmd="ls -apd1 $_path/*"
+
+		# file or directory
+		case "$_onlydir" in
+			# only files
+			0)
+				_cmd="$_cmd | grep -E \"^.*[^/]$\""
+				;;
+			# only directories
+			1)
+				_cmd="$_cmd | grep -E \"^[^/]+/$\""
+				;;
+			*)
+				# illegal arguments
+				echo ""
+				return 1
+				;;
+		esac
+
+		_cmd="$_cmd 2>/dev/null"
+
+		for _sub in $(eval $_cmd);
+		do
+			if [ $_onlydir -eq 0 ];then
+				_list+=($_sub)
+			else
+				_list+=(${_sub::-1})
+			fi
+		done
+
+		# filename or fullpath
+		case "$_fullpath" in
+			# only name
+			0)
+				local _files=()
+				for _file in ${_list[@]};
+				do
+					IFS="/" read -a _filearr <<< "$_file"
+					_files+=(${_filearr[$((${#_filearr[@]}-1))]})
+				done 
+				echo "${_files[@]}"
+				;;
+			1)
+				echo "${_list[@]}"
+				;;
+			*)
+				# illeagl arguments
+				echo ""
+				return 1
+				;;
+		esac
+	fi
+}
+
+##
+# 목록 중에서 접두어로 시작하는 것들만 추가한다.
+# 단, 하나도 없는 경우 전체 목록을 추가한다.
+# @param $1 {string} 콤마(,)로 접두어와 목록을 구분한 하나의 문자열
+candidate(){
+	IFS="," read -a  _arguments <<< "$@"
+	local _prefix="${_arguments[0]}"
+	local _args=(${_arguments[1]})
+	local _forcely=${_arguments[2]}
+
+	if [ -z "$_prefix" ]; then
+		COMPREPLY+=( $(compgen -W "$(echo ${_args[@]})") )
+	else
+		local _candi=()
+		for _opt in ${_args[@]};
+		do
+			if [[ $_opt =~ $_prefix(.)* ]];then
+			_candi+=($_opt)
+			fi
+		done
+
+		_dsmsctrl-log "f'$FUNCNAME' candidates=${_candi[@]}"
+
+		if [ ${#_candi[@]} -gt 0 ];then
+			COMPREPLY+=( $(compgen -W "$(echo ${_args[@]})" -- $_prefix) )
+		elif [ $_forcely -eq 1 ];then
+			COMPREPLY+=( $(compgen -W "$(echo ${_args[@]})") )
+		fi
+	fi 
+}
+
+##
+# Candidate words if end of $COMP_WORDS, treat a next if not.
+#
+# @param $1 {number} an index of $COMP_WORDS
+# @param $2 {string} a current typed string.
+# @param $3 {string} a latest string
+# @param $4 {string} candidated list. Blank Separated String.
+# @param $5 {number} forcely. 1: add <candidates words> to $COMPREPLY, 0: no
+_dsmsctrl-candidate-or-gonext(){
+	_dsmsctrl-log "f'$FUNCNAME' idx=$1, typed(\$2)=$2, lastest(\$3)=$3, words=$4, forcely=$5, eow=$(end-of-comp-words $_idx)"
+	
+	local _idx=$1
+	local _candidates="$4"
+
+	if [ "$(end-of-comp-words $_idx)" = "True" ];then
+		# candidates words
+		if [ -z "$2" ];then
+			candidate "$2,$_candidates,$5"
+		else
+			candidate "$2,$2,$5"
+		fi
+	else
+		# next
+		_dsmsctrl-log "f'$FUNCNAME' idx=$_idx, idx-eow=$((_idx+1)), eow=$(read-comp-words $((_idx+1)) )"
+	
+		if [ -z "$(read-comp-words $((_idx+1)) )" ]; then
+			candidate "$2,$_candidates,$5"
+		else
+			_dsmsctrl-handle-tossiu $((_idx+1)) "$2" "$3"
+		fi	
+	fi
+}
+
+##
+# handle 'tossiu' service.
+#
+# @param $1 {number} a index of '${COMP_WORDS[@]}'
+# @param $2 {string} a current typed string.
+# @param $3 {string} a latest string.
+_dsmsctrl-handle-tossiu(){
+	# an index of ${COMP_WORDS[@]}	
+	local _idx=$1
+ 	local _arg=$(read-comp-words $_idx)
+	local _cwlen=$(len-comp-words)
+
+	_dsmsctrl-log "f'$FUNCNAME' idx=$_idx, arg=$_arg, len=$_cwlen, typed(\$2)=$2, latest(\$3)=$3"
+	
+	case "$_idx" in
+		# accept to '--job'
+		2)
+			_dsmsctrl-candidate-or-gonext $_idx "$2" "$3" "--job" 1
+			;;
+		# opt: --job
+		3)
+			case "$_arg" in
+				--job)
+					_dsmsctrl-candidate-or-gonext $_idx "$2" "$3" "$(_dsmsctrl-jobs)" 1
+					;;
+				*)
+					candidate "$2,--job,1"
+					;;
+			esac
+			;;
+		# a value of '--job'. one of [insert|delete]
+		4)
+			case "$_arg" in
+				delete)
+					_dsmsctrl-candidate-or-gonext $_idx "$2" "$3" "--dhcpsvrs" 1
+					;;
+				insert)
+					_dsmsctrl-candidate-or-gonext $_idx "$2" "$3" "--target" 1
+					;;
+				*)
+					_dsmsctrl-load-jobs "$2"
+					;;
+			esac
+			;;
+		# opt: --target | --dhcpsvrs
+		5)
+			case "$_arg" in
+				--dhcpsvrs)
+					# write a list of IPv4
+					;;
+				--target)
+					_dsmsctrl-candidate-or-gonext $_idx "$2" "$3" "$(_dsmsctrl-targets)" 1
+					;;
+				*)
+					case "$3" in
+						delete)
+							candidate "$2,--dhcpsvrs,1"
+							;;
+						insert)
+							candidate "$2,--target,1"
+							;;
+					esac
+					;;
+			esac
+			;;
+		# a value of '--target': [db|file], of '--dhcpsvrs': comma separated IPv4
+		6)
+			local _before=$(read-comp-words $((_idx-1)) )
+			case "$_before" in
+				--dhcpsvrs)
+					;;
+				--target)
+					case "$_arg" in
+						db)
+							# end of command
+							;;
+						file)
+							_dsmsctrl-candidate-or-gonext $_idx "$2" "$3" "--file" 1
+							;;
+						*)
+							candidate "$2,db file,1"
+							;;
+					esac
+					;;
+			esac
+			;;
+		# opt: --file
+		7)
+			case "$_arg" in
+				--file)
+					# list only files in current directory.
+					_dsmsctrl-candidate-or-gonext $_idx "$2" "$3" "$(list-dir '.' 0 0)" 1
+					;;
+				*)
+					candidate "$2,--file,1"
+#					_dsmsctrl-candidate-or-gonext $_idx "$2" "$3" "--file" 1
+					;;
+			esac
+			;;
+		# a value of '--file'
+		8)
+			if [ "$(end-of-comp-words $_idx)" = "True" ];then
+				candidate "$2,$(list-dir '.' 0 0 ),1"
+			else
+				_dsmsctrl-candidate-or-gonext $_idx "$2" "$3" "--date" 1
+			fi
+			;;
+		# opt: --date
+		9)
+			case "$_arg" in
+				--date)
+					_dsmsctrl-candidate-or-gonext $_idx "$2" "$3" "Write a date. year{4}month{2}day{2}hour{2}minute{2}second{2}" 1
+					;;
+				*)
+					_dsmsctrl-candidate-or-gonext $_idx "$2" "$3" "--date" 1
+					;;
+			esac
+			;;
+		# a value of '--date'
+		10)
+			;;
+		# unrecognized...
+		*)
+			;;
+	esac		
+}
+
+
+# $1: command
+# $2: current
+# $3: previous
+_dsmsctrl-handle-cli(){
+	_dsmsctrl-log "\n\n====================================================="
+	_dsmsctrl-log $(printf "%-15s: %s" "COMP_WORDS" "${COMP_WORDS[@]}")
+	_dsmsctrl-log $(printf "%-15s: %s" "COMP_LINE" "${COMP_LINE}")
+	_dsmsctrl-log $(printf "%-15s: %s, %s: %s" "COMP_CWORD" "$COMP_CWORD" "#WORDS" "${#COMP_WORDS[@]}") 
+	_dsmsctrl-log $(printf "%s: %s, %s: %s" "CURRENT(\$2)" "$2" "PREVIOUS(\$3)" "$3")
+
+	show-comp-words
+
+	local _idx=1
+ 	local _arg=$(read-comp-words $_idx)
+	local _cwlen=$(len-comp-words)
+
+	_dsmsctrl-log "f'$FUNCNAME' idx=$_idx, argument=$_arg, cwlen=$_cwlen"
+
+	if [ -z "$_arg" ];then
+		candidate ",--service,1"
+	elif [ "$_arg" = "--service" ];then
+		# parse service
+		if [ $(end-of-comp-words $_idx) = 'True' ];then
+			# suggest services
+			_dsmsctrl-load-services ""
+		else
+			((_idx++))
+			_arg=$(read-comp-words $_idx)
+			if [ "$_arg" = "tossiu" ];then
+				_dsmsctrl-handle-tossiu $_idx "$2" "$3"
+			else
+				_dsmsctrl-load-services "$_arg"
+			fi
+		fi
+	elif [ $(end-of-comp-words $_idx) = 'True' ];then
+		candidate "$_arg,--service,1"
+	else
+		# Unsupported service.
+		_dsmsctrl-log "f'$FUNCNAME' Unsupported service: $_arg"
+		error-log "Unsupported service:'$_arg'"
+	fi
+}
+
+
+
+complete -F _dsmsctrl-handle-cli dsms-ctrl
