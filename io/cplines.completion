@@ -59,152 +59,12 @@ candidate(){
 	fi 
 }
 
-
 ##
 #
-# @param $1 {string} error message.
-error-log(){
-	COMPREPLY+=("$1" "see '~/user-custom-completion.log'")
-}
-
-##
-# check whether an index is end of ${COMP_WORDS[@]} or not
-# @param $1 {number} an index
-# @return 'True' if end, 'False' if not.
-end-of-comp-words(){
-	[ $1 -eq $((${#COMP_WORDS[@]}-1)) ] && echo "True" || echo "False"	
-}
-
-##
-# return a length of ${COMP_WORDS[@]}
-len-comp-words(){
-	echo ${#COMP_WORDS[@]}
-}
-
-##
-# read a completion word.
-# @param $1 {number} an index
-read-comp-words(){
-	echo ${COMP_WORDS[$1]}
-}
-
-##
-# show string of $COMP_WORDS
-#
-show-comp-words(){
-	for _idx in ${!COMP_WORDS[@]};
-	do
-		_cplines-log $(printf "COMP_WORDS[%s] = %s" "$_idx" "${COMP_WORDS[$_idx]}")
-	done
-}
-
-##
-# 1. splite by the specific delimiter. The result is an array.
-# 2. remove a final element.
-# 3. concatenate elements of an array  with the specific delimiter.
-# 4. return a string.
-# @param $1 {string} string
-# @param $2 {string} delimiter
-# @param $3 {number} an index of an element to be removed. (inclusive)
-get-upper-dir(){
-	_cplines-log "f'$FUNCNAME' str=$1, delim=$2, index=$3"
-	local _searching="${1##*$2}"
-
-	IFS="$2" read -r -a _arr <<< "$1"
-	unset IFS
-	local _patharr=()
-	for _ii in ${!_arr[@]};
-	do
-		_cplines-log "f'$FUNCNAME' all: _patharr[$_ii]=${_arr[$_ii]}"
-		if [ $_ii -ge $(expr ${#_arr[@]} - $3) ];then
-			break
-		fi
-		if [ ! -z "${_arr[$_ii]}" ];then
-			_patharr+=(${_arr[$_ii]})
-			_cplines-log "f'$FUNCNAME' _patharr[$_ii]=${_arr[$_ii]}"
-		fi
-	done
-	local _con=$(printf "$2%s" "${_patharr[@]}")
-	_cplines-log "f'$FUNCNAME' concatenated=$_con"
-
-	echo "$_con"
-}
-
-##
-# @param $1 {string} directory path
-# @param $2 {number} whether only files(0) or only directories(1).
-# @param $3 {number} whether only name(0) or fullpath(1)
+# @param $1 {string} path
 list-dir(){
-	local _path="$3"
-	local _onlydir="$1"
-	local _fullpath="$2"
- 	local _list=()
-
-#	_cplines-log "f'$FUNCNAME' path=$1, target=$2($([ $2 -eq 0 ] && echo 'file' || echo 'directory')), path=$3($([ $3 -eq 0 ] && echo 'name' || echo 'fullpath'))"
-	_cplines-log "f'$FUNCNAME' path=$3, target=$1($([ $1 -eq 0 ] && echo 'file' || echo 'directory')), path=$2($([ $2 -eq 0 ] && echo 'name' || echo 'fullpath'))"
-
-	# modify to absolute path.
-	if ! [[ "$_path" == /* ]];then
-		_path="$PWD/$_path"
-	fi
-
-	_cplines-log "f'$FUNCNAME' (validate path) path=$_path"
-
-	# split a parent directory and leaf string
-	local _pdir=$(get-upper-dir "$_path" "/" 1)
-	local _cmd="ls -apd1 $_pdir/*"
-
-	# file or directory
-	case "$_onlydir" in
-		# only files
-		0)
-			_cmd="$_cmd | grep -E \"^.*[^/]$\""
-			;;
-		# only directories
-		1)
-			_cmd="$_cmd | grep -E \"^[^/]+/$\""
-			;;
-		*)
-			# illegal arguments
-			echo ""
-			return 1
-			;;
-	esac
-
-	_cmd="$_cmd 2>/dev/null"
-
-	for _sub in $(eval $_cmd);
-	do
-		if [ $_onlydir -eq 0 ];then
-			_list+=($_sub)
-		else
-			_list+=(${_sub::-1})
-		fi
-	done
-
-	# filename or fullpath
-	case "$_fullpath" in
-		# only name
-		0)
-			local _files=()
-			for _file in ${_list[@]};
-			do
-				IFS="/" read -a _filearr <<< "$_file"
-				_files+=(${_filearr[$((${#_filearr[@]}-1))]})
-			done 
-			echo "${_files[@]}"
-			;;
-		1)
-			echo "${_list[@]}"
-			;;
-		*)
-			# illeagl arguments
-			echo ""
-			return 1
-			;;
-	esac
+	COMPREPLY=( $(compgen -f $1) )
 }
-
 
 ##
 # print logs to a external file.
@@ -218,210 +78,44 @@ _cplines-log(){
 	#echo "$@" >/dev/null
 }
 
-
-##
-# provide a list of '--service'.
-_cplines-services(){
-	echo "tossiu"
-}
-##
-# Provide services.
-# @param $1 {string} typed string.
-_cplines-load-services(){
-	_cplines-log "f'$FUNCNAME' " $@
-	candidate "$1,$(_cplines-services),1"
+_cplines-load-options(){
+	echo "--src --dst --linenumber --count --help"
 }
 
-##
-# provide a list of '--job'.
-_cplines-jobs(){
-	echo "insert delete"
-}
-##
-# provide jobs.
-# @param $1 {string} typed string.
-_cplines-load-jobs(){
-	_cplines-log "f'$FUNCNAME' " $@
-	candidate "$1,$(_cplines-jobs),1"
-}
+# $1: argument
+_cplines-add-if-new(){
+	_cplines-log "f'$FUNCNAME' arguments=$@"
 
-##
-# provide a list of '-target'.
-_cplines-targets(){
-	echo "db file"
-}
-##
-# provide targets.
-# @param $1 {string} typed string.
-_cplines-load-targets(){
-	_cplines-log "f'$FUNCNAME' "$@
-	candidate "$1,$(_cplines-targets),1"
-}
-
-##
-# Candidate words if end of $COMP_WORDS, treat a next if not.
-#
-# @param $1 {number} an index of $COMP_WORDS
-# @param $2 {string} a current typed string.
-# @param $3 {string} a latest string
-# @param $4 {string} candidated list. Blank Separated String.
-# @param $5 {number} forcely. 1: add <candidates words> to $COMPREPLY, 0: no
-_cplines-candidate-or-gonext(){
-	_cplines-log "f'$FUNCNAME' idx=$1, typed(\$2)=$2, lastest(\$3)=$3, candidates(\$4)=$4, forcely(\$5)=$5, eow=$(end-of-comp-words $_idx)"
-	
-	local _idx=$1
-	local _candidates="$4"
-
-	if [ "$(end-of-comp-words $_idx)" = "True" ];then
-		# candidates words
-		if [ -z "$2" ];then
-			candidate "$2,$_candidates,$5"
-		else
-			candidate "$2,$2,$5"
+	local __new=1
+	for word in ${COMP_WORDS[@]}
+	do
+		if [ "$word" = "$1" ];then
+			_cplines-log "'$word' already exists"
+			__new=0
+			break
 		fi
-	else
-		# next
-		_cplines-log "f'$FUNCNAME' idx=$_idx, idx-eow=$((_idx+1)), woe=$(read-comp-words $((_idx+1)) )"
-	
-		_cplines-handle-tossiu $((_idx+1)) "$2" "$3"
+	done
+
+	if [ $__new -eq 1 ];then
+		COMPREPLY+=("$1")
 	fi
 }
 
-##
-# handle 'tossiu' service.
-#
-# @param $1 {number} a index of '${COMP_WORDS[@]}'
-# @param $2 {string} a current typed string.
-# @param $3 {string} a latest string.
-_cplines-handle-tossiu(){
-	# an index of ${COMP_WORDS[@]}	
-	local _idx=$1
- 	local _arg=$(read-comp-words $_idx)
-	local _cwlen=$(len-comp-words)
-
-	_cplines-log "f'$FUNCNAME' idx=$_idx, arg=$_arg, len=$_cwlen, typed(\$2)=$2, latest(\$3)=$3"
+# @param $1 {string}: prefix of ..
+_cplines-add-default-options(){
+	local _prefix="$1"
+	local _args=($(_cplines-load-options))
 	
-	case "$_idx" in
-		# opt: --job
-		1)
-			case "$_arg" in
-				--job)
-					_cplines-candidate-or-gonext $_idx "$2" "$3" "$(_cplines-jobs)" 1
-					;;
-				*)
-					candidate "$2,--job,1"
-					;;
-			esac
-			;;
-		# a value of '--job'. one of [insert|delete]
-		2)
-			case "$_arg" in
-				delete)
-					_cplines-candidate-or-gonext $_idx "$2" "$3" "--dhcpsvrs" 1
-					;;
-				insert)
-					_cplines-candidate-or-gonext $_idx "$2" "$3" "--target" 1
-					;;
-				*)
-					_cplines-load-jobs "$2"
-					;;
-			esac
-			;;
-		# opt: --target | --dhcpsvrs
-		3)
-			case "$_arg" in
-				--dhcpsvrs)
-					# write a list of IPv4
-					_cplines-candidate-or-gonext $_idx "$2" "$3" "Please! 1.Write_IPv4_of_DHCP_Servers. 2.Comma(\,)_separates_each_IPv4" 1
-					;;
-				--target)
-					_cplines-candidate-or-gonext $_idx "$2" "$3" "$(_cplines-targets)" 1
-					;;
-				*)
-					case "$3" in
-						delete)
-							candidate "$2,--dhcpsvrs,1"
-							;;
-						insert)
-							candidate "$2,--target,1"
-							;;
-					esac
-					;;
-			esac
-			;;
-		# a value of '--target': [db|file], of '--dhcpsvrs': comma separated IPv4
-		4)
-			local _before=$(read-comp-words $((_idx-1)) )
-			case "$_before" in
-				--dhcpsvrs)
-					# write a list of IPv4
-					candidate ",Please! 1.Write_IPv4_of_DHCP_Servers. 2.Comma(\,)_separates_each_IPv4.,1"
-					;;
-				--target)
-					case "$_arg" in
-						db)
-							# end of command
-							;;
-						file)
-							_cplines-candidate-or-gonext $_idx "$2" "$3" "--file" 1
-							;;
-						*)
-							candidate "$2,db file,1"
-							;;
-					esac
-					;;
-			esac
-			;;
-		# opt: --file
-		5)
-			case "$_arg" in
-				--file)
-					# list only files in current directory.
-					local _path=$( [ -z "$2" ] && echo "." || echo "$2" )
-					#_cplines-candidate-or-gonext $_idx "$2" "$3" "$(list-dir $_path 0 0 )" 1
-					local _searching="${_path##*/}"
-					_cplines-candidate-or-gonext $_idx "$2" "$3" "$(list-dir 0 0 $_path)" 1
-					;;
-				*)
-					candidate "$2,--file,1"
-					;;
-			esac
-			;;
-		# a value of '--file'
-		6)
-			if [ "$(end-of-comp-words $_idx)" = "True" ];then
-				local _path=$( [ -z "$2" ] && echo "." || echo "$2" )
-				#candidate "$2,$(list-dir $_path 0 0 ),1"
-				
-				#local _searching="${_path##*/}"
-				#candidate "$_searching,$(list-dir $_path 0 0 ),1"
-				
-				local _searching="${2##*/}"
-				candidate "$_searching,$(list-dir 0 0 $2),1"
-				echo
-			else
-				_cplines-candidate-or-gonext $_idx "$2" "$3" "--date" 1
-			fi
-			;;
-		# opt: --date
-		7)
-			case "$_arg" in
-				--date)
-					_cplines-candidate-or-gonext $_idx "$2" "$3" "Write a date. year{4}month{2}day{2}hour{2}minute{2}second{2}" 1
-					;;
-				*)
-					_cplines-candidate-or-gonext $_idx "$2" "$3" "--date" 1
-					;;
-			esac
-			;;
-		# a value of '--date'
-		8)
-			;;
-		# unrecognized...
-		*)
-			;;
-	esac		
+	_cplines-log "f'$FUNCNAME' Prefix: $_prefix, options=${_args[@]}"
+
+	for _arg in ${_args[@]}
+	do
+		if [ -z "$_prefix" ] || [[ $_arg == $_prefix* ]];then
+			_cplines-add-if-new "$_arg"
+		fi
+	done
 }
+
 
 
 # $1: command
@@ -434,17 +128,34 @@ _cplines-handle-cli(){
 	_cplines-log $(printf "%-15s: %s, %s: %s" "COMP_CWORD" "$COMP_CWORD" "#WORDS" "${#COMP_WORDS[@]}") 
 	_cplines-log $(printf "%s: %s, %s: %s" "CURRENT(\$2)" "$2" "PREVIOUS(\$3)" "$3")
 
-	show-comp-words
-
-	local _idx=1
- 	local _arg=$(read-comp-words $_idx)
-	local _cwlen=$(len-comp-words)
-
-	_cplines-log "f'$FUNCNAME' idx=$_idx, argument=$_arg, cwlen=$_cwlen"
-	
-#	_cplines-handle-tossiu $_idx "$2" "$3"
+	case ${#COMP_WORDS[@]} in
+		2)
+			candidate "$2,$(_cplines-load-options),1"
+			;;
+		*)
+			case "$3" in
+				--src)
+					# suggest files
+					list-dir "$2"
+					;;
+				--dst)
+					# suggest files
+					list-dir "$2"
+					;;
+				--linenumber)
+					# input line number to begin to copy
+					;;
+				--count)
+					# input count to copy
+					;;
+				*)
+					_cplines-add-default-options "$2"
+					;;
+			esac
+			;;
+	esac
 }
 
 
 
-complete -F _cplines-handle-cli -o filenames cplines
+complete -F _cplines-handle-cli -o nospace cplines

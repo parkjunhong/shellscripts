@@ -33,16 +33,18 @@ help(){
 	fi
 	echo
 	echo "Usage:"
-	echo "cplines [-h|--help] --src <source-file> --dst <destination-file> --count <line count to copy>"
+	echo "cplines [-h|--help] --src <source-file> --dst <destination-file> --linenumber <line number to begin to copy> --count <line count to copy>"
 	echo
 	echo "Options:"
-	echo " -c | --count: line count to copy"
-	echo " -d | --dst  : destination filepath"
-	echo " -h | --help : show help messages."
-	echo " -s | --src  : source filepath"
+	echo " -c | --count : line count to copy"
+	echo " -d | --dst   : destination filepath"
+	echo " -h | --help  : show help messages."
+	echo " -l | --linenumber: line number to begin to copy"
+	echo " -s | --src   : source filepath"
 }
 
-COUNT=0
+LINENUMBER=-1
+COUNT=-1
 DST=""
 SRC=""
 while [ ! -z "$1" ];
@@ -78,6 +80,14 @@ do
 			help
 			exit 0
 			;;
+		-l | --linenumber)
+			shift
+			if ! [[ $1 =~ [0-9]+ ]];then
+				help "Invalid 'line' offset: $1"
+				exit 1
+			fi
+			LINENUMBER=$1
+			;;
 		-s | --src)
 			shift
 			if [ ! -f "$1" ];then
@@ -92,8 +102,8 @@ do
 	shift
 done
 
-if [ -z "$SRC" ] || [ -z "$DST" ] || [ $COUNT -eq 0 ];then
-	help "Invalid parameters: source=$SRC, destination=$DST, line-count=$COUNT"
+if [ -z "$SRC" ] || [ -z "$DST" ] || [ $LINENUMBER -eq 0 ] || [ $COUNT -eq 0 ];then
+	help "Invalid parameters: source=$SRC, destination=$DST, offset=$LINENUMBER, line-count=$COUNT"
 	exit 1
 fi 
 
@@ -101,6 +111,7 @@ _fmt_=" * * * %-12s"
 echo
 printf "$_fmt_: %s \n" "Source" "$SRC"
 printf "$_fmt_: %s \n" "Destination" "$DST"
+printf "$_fmt_: %'d\n" "Begin Line" $LINENUMBER
 printf "$_fmt_: %'d\n" "Line Count" $COUNT
 
 
@@ -119,24 +130,31 @@ dotprogress(){
 ##
 # @param $1 {string} source filepath.
 # @param $2 {string} destinatin filepath.
-# @param $3 {number} line count to copy
+# @param $3 {number} line number to begin to copy
+# @param $4 {number} line count to copy
 #
 copy-lines(){
 	local _src="$1"
 	local _dst="$2"
-	local _cnt=$3
+	local _begin=$3
+	local _max_cnt=$4
 
 	echo
-	local _ln=0
 	printf "" > "$_dst"
 
+	local _ln=0
+	local _cnt=0
 	progress=($(dotprogress))
 	while IFS= read -r line
 	do
-		printf "$line\n" >> "$_dst"
 		((_ln++))
-		printf "\r\033[K + + + Copied Lines: %'d | %s" ${_ln} ${progress[((${_ln}%${PROG_MOD}))]}
-		if [ $_ln -ge $_cnt ];then
+		if [ $_ln -ge $_begin ];then
+			#printf "$line\n" >> "$_dst"
+			echo "$line" >> "$_dst"
+			((_cnt++))
+		fi
+		printf "\r\033[K + + + Lines: %'d | %s" ${_ln} ${progress[((${_ln}%${PROG_MOD}))]}
+		if [ $_cnt -ge $_max_cnt ];then
 			break
 		fi
 	done < "$_src"
@@ -147,6 +165,6 @@ copy-lines(){
 
 
 
-copy-lines "$SRC" "$DST" $COUNT
+copy-lines "$SRC" "$DST" $LINENUMBER $COUNT
 
 exit 0
