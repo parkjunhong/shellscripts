@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+
+# =======================================
+# @auther : parkjunhong77@gmail.com
+# @title  : copy lines as many as specified.
+# @license: Apache License 2.0
+# @since  : 2021-04-19
+# @desc   : support macOS 11.2.3, Ubuntu 18.04, CentOS 7 or higher
+# @completion: cplines.completion
+#			 1. insert 'source <path>/cplines.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#			 2. copy the above file to /etc/bash_completion.d/ for all users.
+# =======================================
+
+help(){
+	if [ ! -z "$1" ];
+	then
+		local indent=10
+		local formatl=" - %-"$indent"s: %s\n"
+		local formatr=" - %"$indent"s: %s\n"
+		echo
+		echo "================================================================================"
+		printf "$formatl" "filename" "$FILENAME"
+		printf "$formatl" "line" "$2"
+		printf "$formatl" "callstack"
+		local idx=1
+		for func in ${FUNCNAME[@]:1}
+		do
+			printf "$formatr" "["$idx"]" $func
+			((idx++))
+		done
+		printf "$formatl" "cause" "$1"
+		echo "================================================================================"
+	fi
+	echo
+	echo "Usage:"
+	echo "cplines [-h|--help] --src <source-file> --dst <destination-file> --count <line count to copy>"
+	echo
+	echo "Options:"
+	echo " -c | --count: line count to copy"
+	echo " -d | --dst  : destination filepath"
+	echo " -h | --help : show help messages."
+	echo " -s | --src  : source filepath"
+}
+
+COUNT=0
+DST=""
+SRC=""
+while [ ! -z "$1" ];
+do
+	case "$1" in
+		-c | --count)
+			shift
+			if ! [[ $1 =~ [0-9]+ ]];then
+				help "Invalid 'line' count: $1"
+				exit 1
+			fi
+			COUNT=$1
+			;;
+		-d | --dst)
+			shift
+			if [ -d "$1" ];then
+				help "Invalid 'destination'. May a directory: $1"
+				exit 1
+			fi
+
+			if [ -f "$1" ];then
+				echo
+				read -p "Already exists. Overwrite? [Y/N] " answer
+				if [ $(echo $answer | tr [:lower:] [:upper:]) != "Y" ];then
+					help "Invalid 'destination' filepath: $1"
+					echo "Bye~"
+					exit 0
+				fi
+			fi
+			DST="$1"
+			;;
+		-h | --help)
+			help
+			exit 0
+			;;
+		-s | --src)
+			shift
+			if [ ! -f "$1" ];then
+				help "Invalid 'source' filepath: $1"
+				exit 1
+			fi
+			SRC="$1"
+			;;
+		*)
+			;;
+	esac
+	shift
+done
+
+if [ -z "$SRC" ] || [ -z "$DST" ] || [ $COUNT -eq 0 ];then
+	help "Invalid parameters: source=$SRC, destination=$DST, line-count=$COUNT"
+	exit 1
+fi 
+
+_fmt_=" * * * %-12s"
+echo
+printf "$_fmt_: %s \n" "Source" "$SRC"
+printf "$_fmt_: %s \n" "Destination" "$DST"
+printf "$_fmt_: %'d\n" "Line Count" $COUNT
+
+
+PROG_MOD=100
+dotprogress(){
+	local idx=0
+	prog=""
+	while [ ${idx} -lt ${PROG_MOD} ];
+	do
+		prog=${prog}"."
+		echo ${prog}
+		((idx++))
+	done
+}
+
+##
+# @param $1 {string} source filepath.
+# @param $2 {string} destinatin filepath.
+# @param $3 {number} line count to copy
+#
+copy-lines(){
+	local _src="$1"
+	local _dst="$2"
+	local _cnt=$3
+
+	echo
+	local _ln=0
+	printf "" > "$_dst"
+
+	progress=($(dotprogress))
+	while IFS= read -r line
+	do
+		printf "$line\n" >> "$_dst"
+		((_ln++))
+		printf "\r\033[K + + + Copied Lines: %'d | %s" ${_ln} ${progress[((${_ln}%${PROG_MOD}))]}
+		if [ $_ln -ge $_cnt ];then
+			break
+		fi
+	done < "$_src"
+
+	echo
+	echo "<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<"
+}
+
+
+
+copy-lines "$SRC" "$DST" $COUNT
+
+exit 0
