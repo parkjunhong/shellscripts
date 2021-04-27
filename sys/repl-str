@@ -106,7 +106,7 @@ done
 
 
 if [ -z "$TARGET" ] || [ -z "$OLD_STR" ] || [ -z "$NEW_STR" ];then
-	help "Invalid string >> old: $OLD_STR, new: $NEW_STR" $LINENO
+	help "Invalid replacement >> target: $TARGET, old: $OLD_STR, new: $NEW_STR" $LINENO
 	exit 1
 fi
 
