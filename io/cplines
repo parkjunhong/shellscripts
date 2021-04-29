@@ -4,13 +4,14 @@
 # @auther : parkjunhong77@gmail.com
 # @title  : copy lines as many as specified.
 # @license: Apache License 2.0
-# @since  : 2021-04-26
+# @since  : 2021-04-19
 # @desc   : support macOS 11.2.3, Ubuntu 18.04, CentOS 7 or higher
 # @completion: cplines.completion
 #			 1. insert 'source <path>/cplines.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
 #			 2. copy the above file to /etc/bash_completion.d/ for all users.
 # =======================================
 
+# get a filename
 FILENAME=$(basename $0)
 
 help(){
@@ -66,6 +67,16 @@ do
 				help "Invalid 'destination'. May a directory: $1" $LINENO
 				exit 1
 			fi
+
+			if [ -f "$1" ];then
+				echo
+				read -p "Already exists. Overwrite? [Y/N] " answer
+				if [ $(echo $answer | tr [:lower:] [:upper:]) != "Y" ];then
+					help "Invalid 'destination' filepath: $1" $LINENO
+					echo "Bye~"
+					exit 0
+				fi
+			fi
 			DST="$1"
 			;;
 		-h | --help)
@@ -99,25 +110,15 @@ if [ -z "$SRC" ] || [ -z "$DST" ] || [ $LINENUMBER -eq 0 ] || [ $COUNT -eq 0 ];t
 	exit 1
 fi 
 
-if [ -f "$DST" ];then
-	echo
-	read -p "Already exists. Overwrite? [Y/N] " answer
-	if [ $(echo $answer | tr [:lower:] [:upper:]) != "Y" ];then
-		help "Invalid 'destination' filepath: $DST" $LINENO
-		echo "Bye~"
-		exit 0
-	fi
-fi
-
 _fmt_=" * * * %-12s"
 echo
 printf "$_fmt_: %s \n" "Source" "$SRC"
 printf "$_fmt_: %s \n" "Destination" "$DST"
-printf "$_fmt_: %'d\n" "Begin Line" $LINENUMBER
-printf "$_fmt_: %'d\n" "Line Count" $COUNT
+printf "$_fmt_: %'d\n" "Line.Begin" $LINENUMBER
+printf "$_fmt_: %'d\n" "Line.Counts" $COUNT
 
 
-PROG_MOD=100
+PROG_MOD=10
 dotprogress(){
 	local idx=0
 	prog=""
@@ -127,6 +128,20 @@ dotprogress(){
 		echo ${prog}
 		((idx++))
 	done
+}
+
+##
+# convert timestamp to {hours}h {minutes}m {seconds}h.
+# @param $1 {number} timestamp
+# @return 
+timestamp-to-hms(){
+	# 1234567890
+	local _sec_r=$(($1%60)) # 'second' remainder
+	local _min_q=$(($1/60)) # 'minutes' quotient
+	local _min_r=$(($1/60%60)) # 'minutes' remainder
+	local _hour_q=$(($1/60/60)) # 'hour' quotient
+
+	printf "%'dh %sm %ss" $_hour_q $_min_r $_sec_r
 }
 
 ##
@@ -141,12 +156,16 @@ copy-lines(){
 	local _begin=$3
 	local _max_cnt=$4
 
-	echo
-	printf "" > "$_dst"
 
 	local _ln=0
 	local _cnt=0
 	progress=($(dotprogress))
+
+	local _begin_date=$(date +"%Y/%m/%d %H:%M:%S")
+	local _begin_ts=$(date +"%s")
+
+	echo
+	printf "" > "$_dst"
 	while IFS= read -r line
 	do
 		((_ln++))
@@ -155,11 +174,24 @@ copy-lines(){
 			echo "$line" >> "$_dst"
 			((_cnt++))
 		fi
-		printf "\r\033[K + + + Lines: %'d | %s" ${_ln} ${progress[((${_ln}%${PROG_MOD}))]}
+		printf "\r\033[K + + + %-12s: %'d | %s" "Line.Reading" ${_ln} ${progress[((${_ln}%${PROG_MOD}))]}
 		if [ $_cnt -ge $_max_cnt ];then
 			break
 		fi
 	done < "$_src"
+
+	printf "\r\033[K + + + %-12s: %'d\n" "Completed" ${_ln}
+	
+	local _end_date=$(date +"%Y/%m/%d %H:%M:%S")
+	local _end_ts=$(date +"%s")	
+
+	echo
+	printf " - - - %-12s: %s\n" "Read.begin" "$_begin_date"	
+	# Convert timestamp to hour/minite/second
+	# Referenced: https://stackoverflow.com/questions/29405432/how-to-convert-timestamp-to-hour-minutes-seconds-in-shell-script
+	local _diff=$(($_end_ts-$_begin_ts))
+	printf " - - - %-12s: %s\n" "Read.elapsed" "$(timestamp-to-hms $(($_end_ts-$_begin_ts)))"
+	printf " - - - %-12s: %s\n" "Read.end" "$_end_date"	
 
 	echo
 	echo "<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<"
