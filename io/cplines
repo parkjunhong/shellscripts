@@ -11,6 +11,8 @@
 #			 2. copy the above file to /etc/bash_completion.d/ for all users.
 # =======================================
 
+FILENAME=$(basename $0)
+
 help(){
 	if [ ! -z "$1" ];
 	then
@@ -53,7 +55,7 @@ do
 		-c | --count)
 			shift
 			if ! [[ $1 =~ [0-9]+ ]];then
-				help "Invalid 'line' count: $1"
+				help "Invalid 'line' count: $1" $LINENO
 				exit 1
 			fi
 			COUNT=$1
@@ -61,7 +63,7 @@ do
 		-d | --dst)
 			shift
 			if [ -d "$1" ];then
-				help "Invalid 'destination'. May a directory: $1"
+				help "Invalid 'destination'. May a directory: $1" $LINENO
 				exit 1
 			fi
 
@@ -69,7 +71,7 @@ do
 				echo
 				read -p "Already exists. Overwrite? [Y/N] " answer
 				if [ $(echo $answer | tr [:lower:] [:upper:]) != "Y" ];then
-					help "Invalid 'destination' filepath: $1"
+					help "Invalid 'destination' filepath: $1" $LINENO
 					echo "Bye~"
 					exit 0
 				fi
@@ -83,7 +85,7 @@ do
 		-l | --linenumber)
 			shift
 			if ! [[ $1 =~ [0-9]+ ]];then
-				help "Invalid 'line' offset: $1"
+				help "Invalid 'line' offset: $1" $LINENO
 				exit 1
 			fi
 			LINENUMBER=$1
@@ -91,7 +93,7 @@ do
 		-s | --src)
 			shift
 			if [ ! -f "$1" ];then
-				help "Invalid 'source' filepath: $1"
+				help "Invalid 'source' filepath: $1" $LINENO
 				exit 1
 			fi
 			SRC="$1"
@@ -103,7 +105,7 @@ do
 done
 
 if [ -z "$SRC" ] || [ -z "$DST" ] || [ $LINENUMBER -eq 0 ] || [ $COUNT -eq 0 ];then
-	help "Invalid parameters: source=$SRC, destination=$DST, offset=$LINENUMBER, line-count=$COUNT"
+	help "Invalid parameters: source=$SRC, destination=$DST, offset=$LINENUMBER, line-count=$COUNT" $LINENO
 	exit 1
 fi 
 
