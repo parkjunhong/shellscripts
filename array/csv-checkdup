@@ -120,7 +120,7 @@ printf "$_fmt_: %s \n" "Delimiter" "$DELIMITER"
 printf "$_fmt_: %s \n" "QuoteChar" "$QUOTECHAR"
 printf "$_fmt_: %s \n" "Skip.Line" $SKIP_LINECOUNT
 printf "$_fmt_: %s \n" "Target.Index" $TARGET_INDEX
-printf "$_fmt_: %s \n" "Error.logfile" "$RESULT_FILE"
+printf "$_fmt_: %s \n" "Result.logfile" "$RESULT_FILE"
 
 PROG_MOD=$(expr $(tput cols) - 50)
 dotprogress(){
