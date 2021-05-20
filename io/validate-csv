@@ -47,7 +47,7 @@ help(){
 	echo
 	echo "Options:"
 	echo " -c | --count     : count of data"
-	echo " -d | --delim     : line count to copy"
+	echo " -d | --delim     : a delimiter of line"
 	echo " -d | --empty     : a string if a value between a delimiter and a delimiter is empty."
 	echo "                    default: \"$EMPTY_VALUE\""
 	echo " -h | --help      : show help messages"
