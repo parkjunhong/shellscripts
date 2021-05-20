@@ -1,0 +1,198 @@
+#!/usr/bin/env bash
+
+# =======================================
+# @auther : parkjunhong77@gmail.com
+# @title  : check a duplication of data in csv file.
+# @license: Apache License 2.0
+# @since  : 2021-05-20
+# @desc   : support macOS 11.2.3, Ubuntu 18.04, CentOS 7 or higher
+# @completion: validate-csv.completion
+#			 1. insert 'source <path>/validate-csv.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#			 2. copy the above file to /etc/bash_completion.d/ for all users.
+# =======================================
+
+FILE=""
+DELIMITER=""
+QUOTECHAR="\""
+TARGET_INDEX=-1
+RESULT_FILE=""
+SKIP_LINECOUNT=0
+VERBOSE=0
+
+# get a filename
+FILENAME=$(basename $0)
+help(){
+	if [ ! -z "$1" ];
+	then
+		local indent=10
+		local formatl=" - %-"$indent"s: %s\n"
+		local formatr=" - %"$indent"s: %s\n"
+		echo
+		echo "================================================================================"
+		printf "$formatl" "filename" "$FILENAME"
+		printf "$formatl" "line" "$2"
+		printf "$formatl" "callstack"
+		local idx=1
+		for func in ${FUNCNAME[@]:1}
+		do
+			printf "$formatr" "["$idx"]" $func
+			((idx++))
+		done
+		printf "$formatl" "cause" "$1"
+		echo "================================================================================"
+	fi
+	echo
+	echo "Usage:"
+	echo "csv-checkdup [-h|--help] --file <filepath> --delim <delimiter> --quotechar <quote char> --skipline <skil line count> --target <target index> --verbose"
+	echo
+	echo "Options:"
+	echo " -d | --delim     : a delimiter of line"
+	echo " -h | --help      : show help messages"
+	echo " -f | --file      : input filepath"
+	echo " -q | --quotechar : quoted character. default: double quoted ($QUOTECHAR)."
+	echo " -v | --verbose   : show error message."
+	echo " -s | --skipline  : skip line count"
+	echo " -t | --target    : a index of a target column."
+}
+
+while [ ! -z "$1" ];
+do
+	case "$1" in
+		-d | --delim)
+			shift
+			DELIMITER="$1"
+			;;
+		-f | --file)
+			shift
+			if [ ! -f "$1" ];then
+				help "Invalid 'input file': filepath: $1" $LINENO
+				exit 1
+			fi
+			FILE="$1"
+			RESULT_FILE="$1.validated"
+			;;
+		-h | --help)
+			help
+			exit 0
+			;;
+		-q | --quotechar)
+			shift
+			if [ -z "$1" ] || [ "${#1}" -ne 1 ];then
+				help "Invalid 'quote char'. input: $1" $LINENO
+				exit 1
+			fi
+			QUOTECHAR="$1"
+			;;
+		-v | --verbose)
+			VERBOSE=1
+			;;
+		-s | --skipline)
+			shift 
+			if ! [[ $1 =~ [0-9]+ ]];then
+				help "Invalid 'line' count: $1" $LINENO
+				exit 1
+			fi
+			SKIP_LINECOUNT=$1
+			;;
+		-t | --target )
+			shift
+			if ! [[ $1 =~ [0-9]+ ]];then
+				help "Invalid 'line' count: $1" $LINENO
+				exit 1
+			fi
+			TARGET_INDEX=$1
+            ;;
+		*)
+			;;
+	esac
+	shift
+done
+
+if [ ! -f "$FILE" ] || [ -z "$DELIMITER" ] || [ $TARGET_INDEX -lt 0 ];then
+	help "Invalid parameters: file='$FILE', delimiter='$DELIMITER', target-index=$TARGET_INDEX" $LINENO
+	exit 1
+fi
+
+_fmt_=" * * * %-13s"
+echo
+printf "$_fmt_: %s \n" "File" "$FILE"
+printf "$_fmt_: %s \n" "Delimiter" "$DELIMITER"
+printf "$_fmt_: %s \n" "QuoteChar" "$QUOTECHAR"
+printf "$_fmt_: %s \n" "Skip.Line" $SKIP_LINECOUNT
+printf "$_fmt_: %s \n" "Target.Index" $TARGET_INDEX
+printf "$_fmt_: %s \n" "Error.logfile" "$RESULT_FILE"
+
+PROG_MOD=$(expr $(tput cols) - 50)
+dotprogress(){
+	local idx=0
+	prog=""
+	while [ $idx -lt $PROG_MOD ];
+	do
+		prog=${prog}"."
+		echo ${prog}
+		((idx++))
+	done
+}
+
+join-by()
+{ 
+	local IFS="$1"; shift; echo "$*";
+}
+
+## write a hashtable to file as a property
+# @param $1 {string} hashtable name
+# @param $2 {string} filepath
+write-hashtable(){
+	local count=0
+	local size=$(eval echo "\${#$1[@]}")
+	for key in $(eval echo "\${!$1[@]}")
+	do
+		echo "${key}="$(eval echo "\${$1['${key}']}") >> "$2"
+		((count++))
+		printf "\r\033[K [%s] %-13s: %'d / %'d | %s" "$(date +'%Y/%m/%d %H:%M:%S')" "Data.Writing" $count $size ${progress[(($linenumber%$PROG_MOD))]}
+	done
+
+	printf "\r\033[K [%s] %-13s: %'d / %'d\n" "$(date +'%Y/%m/%d %H:%M:%S')" "Writed" $count $size
+}
+
+## print hashtable
+# @param {string} hashtable name
+# 
+print-hashtable(){
+	for key in $(eval echo "\${!$1[@]}")
+	do
+		echo "${key}="$(eval echo "\${$1['${key}']}")
+	done
+}
+
+declare -A devices
+
+linenumber=0
+progress=($(dotprogress))
+ipaddr=""
+{
+	for (( i=$SKIP_LINECOUNT;i--;)) ;do
+		read
+	done
+
+	echo
+	echo " > > > Begin to analysis a file: '$FILE'"
+	while IFS="$DELIMITER" read -a readline;
+	do
+		((linenumber++))
+
+		ipaddr=${readline[2]}
+		devices[${ipaddr}]=$(join-by "," ${readline[@]})
+		printf "\r\033[K [%s] %-13s: %'d / %'d | %s" "$(date +'%Y/%m/%d %H:%M:%S')" "Line.Reading" ${#devices[@]} $linenumber ${progress[(($linenumber%$PROG_MOD))]}
+	done 
+
+} < "$FILE"
+
+printf "\r\033[K [%s] %-13s: %'d / %'d\n" "$(date +'%Y/%m/%d %H:%M:%S')" "Completed" ${#devices[@]} $linenumber
+
+echo
+echo " > > > Begin to write data: '$RESULT_FILE'"
+write-hashtable "devices" "$RESULT_FILE" 
+
+echo
+exit 0
