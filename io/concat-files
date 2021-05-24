@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+
+# =======================================
+# @auther : parkjunhong77@gmail.com
+# @title  : concatenate files.
+# @license: Apache License 2.0
+# @since  : 2021-05-24
+# @desc   : support macOS 11.2.3, Ubuntu 18.04, CentOS 7 or higher
+# @completion: concat-files.completion
+#			 1. insert 'source <path>/concat-files.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#			 2. copy the above file to /etc/bash_completion.d/ for all users.
+# =======================================
+
+# get a filename
+FILENAME=$(basename $0)
+
+help(){
+	if [ ! -z "$1" ];
+	then
+		local indent=10
+		local formatl=" - %-"$indent"s: %s\n"
+		local formatr=" - %"$indent"s: %s\n"
+		echo
+		echo "================================================================================"
+		printf "$formatl" "filename" "$FILENAME"
+		printf "$formatl" "line" "$2"
+		printf "$formatl" "callstack"
+		local idx=1
+		for func in ${FUNCNAME[@]:1}
+		do
+			printf "$formatr" "["$idx"]" $func
+			((idx++))
+		done
+		printf "$formatl" "cause" "$1"
+		echo "================================================================================"
+	fi
+	echo
+	echo "Usage:"
+	echo "concat-files [-h|--help] --src <source-files> --dst <destination-file>"
+	echo
+	echo "Options:"
+	echo " -d | --dst   : destination filepath"
+	echo " -h | --help  : show help messages."
+	echo " -s | --src   : source filepath"
+	echo
+	echo "e.g.:"
+	echo "concat-files --src a.txt b.txt c.txt --dst result.txt"
+}
+
+DST=""
+SRC=()
+
+while [ ! -z "$1" ];
+do
+	case "$1" in
+		-s | --src )
+			shift
+			if [ ! -f "$1" ];then
+				help "올바른 파일 경로가 아닙니다: 입력=$1" $LINENO
+				exit 1
+			fi
+			SRC+=("$1")
+			;;
+		-d | --dst )
+			shift
+			DST="$1"
+			;;
+		*)
+			if [ ! -f "$1" ];then
+				help "올바른 파일 경로가 아닙니다. 입력=$1" $LINENO
+				exit 1;
+			fi
+
+			if [ ${#SRC[@]} -lt 1 ];then
+				help "입력 파일 옵션을 설정하지 않았습니다: $@" $LINENO
+			fi
+
+			SRC+=("$1")
+			;;
+	esac
+
+	shift
+done
+
+if [ -z "$DST" ] || [ ${#SRC[@]} -lt 1 ];then
+	help "입력 정보가 올바르지 않습니다: destination=$DST, sources=${SRC[@]}" $LINENO
+	exit 1
+fi
+
+echo
+_fmt_=" * * * %-12s: %s"
+printf "$_fmt_\n" "destination" "$DST"
+printf "$_fmt_" "sources" "${SRC[0]}"
+for _f in ${SRC[@]:1};
+do
+	printf " %s" $_f
+done
+printf "\n"
+
+
+##
+# @param $1 {string} file
+line-count(){
+	printf "%'d" $(wc -l "$1" | awk '{print $1'})
+}
+
+_fmt_=" + + + '%s (%d)' <<< '%s (%d)'"
+
+##
+# @param $1 {string} cmd
+# @param $2 {string} source
+# @param $3 {string} destination
+cp-cat(){
+	local slen=$(line-count "$2")
+	local dlen=0
+	if [ -f "$3" ];then
+		dlen=$(line-count "$3")
+	fi
+
+	case "$1" in
+		'cp')
+			dlen=0
+			cp "$2" "$3"
+			;;
+		'cat')
+			cat "$2" >> "$3"
+			;;
+		*)
+			;;
+	esac
+	printf "$_fmt_\n" "$3" $dlen "$2" $slen
+}
+echo
+echo " > > > Begin"
+
+echo
+cp-cat "cp" "${SRC[0]}" "$DST"
+for _f in ${SRC[@]:1};
+do
+	cp-cat "cat" "$_f" "$DST"
+done
+
+echo
+printf " < < < Completed: %s (%'d)\n" "$DST" $(line-count "$DST")
+echo
+
+exit 0
