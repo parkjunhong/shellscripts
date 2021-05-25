@@ -6,9 +6,9 @@
 # @license: Apache License 2.0
 # @since  : 2021-05-24
 # @desc   : support macOS 11.2.3, Ubuntu 18.04, CentOS 7 or higher
-# @completion: find-str.completion
-#			 1. insert 'source <path>/find-str.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#			 2. copy 'find-str.completion' file to /etc/bash_completion.d/ for all users.
+# @completion: count-str.completion
+#			 1. insert 'source <path>/count-str.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#			 2. copy 'count-str.completion' file to /etc/bash_completion.d/ for all users.
 # =======================================
 
 # get a filename
@@ -37,7 +37,7 @@ help(){
 	fi
 	echo
 	echo "Usage:"
-	echo "find-str [-h|--help] --targets <strings to find> --file <input file>"
+	echo "count-str [-h|--help] --targets <strings to find> --file <input file>"
 	echo
 	echo "Options:"
 	echo " -f | --file   : input filepath"
@@ -46,7 +46,7 @@ help(){
 	echo " -t | --targets: strings to find"
 	echo
 	echo "e.g.:"
-	echo "find-str --file ./input.log --targets car bike bicycle"
+	echo "count-str --file ./input.log --targets car bike bicycle"
 }
 
 TARGETS=()
