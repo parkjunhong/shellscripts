@@ -8,7 +8,7 @@
 # @desc   : support macOS 11.2.3, Ubuntu 18.04, CentOS 7 or higher
 # @completion: concat-files.completion
 #			 1. insert 'source <path>/concat-files.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#			 2. copy the above file to /etc/bash_completion.d/ for all users.
+#			 2. copy 'concat-files.completion' file to /etc/bash_completion.d/ for all users.
 # =======================================
 
 # get a filename
@@ -104,7 +104,7 @@ line-count(){
 	printf "%'d" $(wc -l "$1" | awk '{print $1'})
 }
 
-_fmt_=" + + + '%s (%d)' <<< '%s (%d)'"
+_fmt_=" + + + '%s (%s)' <<< '%s (%s)'"
 
 ##
 # @param $1 {string} cmd
@@ -141,7 +141,7 @@ do
 done
 
 echo
-printf " < < < Completed: %s (%'d)\n" "$DST" $(line-count "$DST")
+printf " < < < Completed: %s (%s)\n" "$DST" $(line-count "$DST")
 echo
 
 exit 0
