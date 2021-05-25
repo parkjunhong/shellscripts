@@ -2,13 +2,13 @@
 
 # =======================================
 # @author		: parkjunhong77@gmail.com
-# @title		: build maven projects with user-custom 'profile' for build.
+# @title		: validate a csv file.
 # @license		: Apache License 2.0
 # @since		: 2021-04-07
 # @desc			: support macOS 11.2.3, Ubuntu 18.04, CentOS 6,7
-# @installation	: 
-#		1. insert 'source <path>/dsms-ctrl.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#		2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/dsms-ctrl.completion' into /etc/bashrc for all users.
+# @installation : 
+#       1. insert 'source <path>/${this file}" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#       2. copy ${this file} to /etc/bash_completion.d/ or insert 'source <path>/${this file}' into /etc/bashrc for all users.
 # =======================================
 
 # Global Reserved Variables
