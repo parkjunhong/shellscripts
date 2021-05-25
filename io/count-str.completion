@@ -138,10 +138,6 @@ _count-str-handle-cli(){
 					# suggest files
 					list-dir "$2"
 					;;
-				-f)
-					# suggest files
-					list-dir "$2"
-					;;
 				--targets)
 					# input line number to begin to copy
 					;;
