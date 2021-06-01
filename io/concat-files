@@ -48,8 +48,6 @@ help(){
 	echo "concat-files --src a.txt b.txt c.txt --dst result.txt "
 }
 
-echo ">>> $@"
-
 DST=""
 SRC=()
 REM=""
