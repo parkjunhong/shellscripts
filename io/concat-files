@@ -36,23 +36,38 @@ help(){
 	fi
 	echo
 	echo "Usage:"
-	echo "concat-files [-h|--help] --src <source-files> --dst <destination-file>"
+	echo "concat-files [-h|--help] --src <source-files> --dst <destination-file> --r <removed strings>"
 	echo
 	echo "Options:"
-	echo " -d | --dst   : destination filepath"
+	echo " -d | --dst   : (m) destination filepath"
 	echo " -h | --help  : show help messages."
-	echo " -s | --src   : source filepath"
+	echo " -r | --remove: (o) remove lines that contain a string."
+	echo " -s | --src   : (m) source filepath"
 	echo
 	echo "e.g.:"
-	echo "concat-files --src a.txt b.txt c.txt --dst result.txt"
+	echo "concat-files --src a.txt b.txt c.txt --dst result.txt "
 }
+
+echo ">>> $@"
 
 DST=""
 SRC=()
-
+REM=""
 while [ ! -z "$1" ];
 do
 	case "$1" in
+		-h | --help)
+			help
+			exit 0
+			;;
+		-d | --dst )
+			shift
+			DST="$1"
+			;;
+		-r | --remove)
+			shift
+			REM="$1"
+			;;
 		-s | --src )
 			shift
 			if [ ! -f "$1" ];then
@@ -60,10 +75,6 @@ do
 				exit 1
 			fi
 			SRC+=("$1")
-			;;
-		-d | --dst )
-			shift
-			DST="$1"
 			;;
 		*)
 			if [ ! -f "$1" ];then
@@ -78,7 +89,6 @@ do
 			SRC+=("$1")
 			;;
 	esac
-
 	shift
 done
 
@@ -96,7 +106,7 @@ do
 	printf " %s" $_f
 done
 printf "\n"
-
+printf "$_fmt_\n" "removed" "$REM"
 
 ##
 # @param $1 {string} file
@@ -133,12 +143,21 @@ cp-cat(){
 echo
 echo " > > > Begin"
 
+# 1. concate files
 echo
 cp-cat "cp" "${SRC[0]}" "$DST"
 for _f in ${SRC[@]:1};
 do
 	cp-cat "cat" "$_f" "$DST"
 done
+
+# 2. remove lines that contains a string.
+if [ ! -z "$REM" ];then
+	lc=$(grep "$REM" "$DST" | wc -l)
+	printf "\n + + + removing lines contain '%s'\n" "$REM"
+	eval sed -i '/$REM/d' "$DST"
+	printf " + + + removed %'d lines from %s. Removed lines contain '%s'\n" $lc "$DST" "$REM"
+fi
 
 echo
 printf " < < < Completed: %s (%s)\n" "$DST" $(line-count "$DST")
