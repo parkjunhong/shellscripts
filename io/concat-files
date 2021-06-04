@@ -159,14 +159,6 @@ do
 	cp-cat "cat" "$_f" "$DST" "$REM"
 done
 
-# 2. remove lines that contains a string.
-#if [ ! -z "$REM" ];then
-#	lc=$(grep "$REM" "$DST" | wc -l)
-#	printf "\n + + + removing lines that contains '%s'\n" "$REM"
-#	eval sed -i '/$REM/d' "$DST"
-#	printf " + + + removed %'d lines from %s.\n" $lc "$DST"
-#fi
-
 echo
 printf " < < < [%s] Completed: %s (%s)\n" "$(date +'%Y/%m/%d %H:%M:%S')" "$DST" $(line-count "$DST")
 echo
