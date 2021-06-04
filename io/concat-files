@@ -104,7 +104,7 @@ do
 	printf " %s" $_f
 done
 printf "\n"
-printf "$_fmt_\n" "removed" "$REM"
+[[ ! -z "$REM" ]] && printf "$_fmt_\n" "removed" "$REM"
 
 ##
 # @param $1 {string} file
@@ -112,53 +112,63 @@ line-count(){
 	printf "%'d" $(wc -l "$1" | awk '{print $1'})
 }
 
-_fmt_=" + + + '%s (%s)' <<< '%s (%s)'"
+_fmt_=" + + + '%s (%s) : %s (%s)' <<< '%s (%s)'"
 
 ##
 # @param $1 {string} cmd
 # @param $2 {string} source
 # @param $3 {string} destination
+# @param $4 {string} removed string
 cp-cat(){
 	local slen=$(line-count "$2")
-	local dlen=0
+	local dlenb=0
 	if [ -f "$3" ];then
-		dlen=$(line-count "$3")
+		dlenb=$(line-count "$3")
+	fi
+
+	local cli=""
+	if [ ! -z "$4" ];then
+		cli="grep -v '$4'"
+	else
+		cli="cat"
 	fi
 
 	case "$1" in
 		'cp')
-			dlen=0
-			cp "$2" "$3"
+			dlenb=0
+			eval $cli $2 > $3
 			;;
 		'cat')
-			cat "$2" >> "$3"
+			eval $cli $2 >> $3
 			;;
 		*)
 			;;
 	esac
-	printf "$_fmt_\n" "$3" $dlen "$2" $slen
+
+	local dlena=$(line-count "$3")
+	printf "$_fmt_\n" "$3" $dlena "$3" $dlenb "$2" $slen
 }
 echo
-echo " > > > Begin"
+printf " > > > [%s] Begin\n" "$(date +'%Y/%m/%d %H:%M:%S')"
 
 # 1. concate files
 echo
-cp-cat "cp" "${SRC[0]}" "$DST"
+cp-cat "cp" "${SRC[0]}" "$DST" "$REM"
 for _f in ${SRC[@]:1};
 do
-	cp-cat "cat" "$_f" "$DST"
+	cp-cat "cat" "$_f" "$DST" "$REM"
 done
 
 # 2. remove lines that contains a string.
-if [ ! -z "$REM" ];then
-	lc=$(grep "$REM" "$DST" | wc -l)
-	printf "\n + + + removing lines that contains '%s'\n" "$REM"
-	eval sed -i '/$REM/d' "$DST"
-	printf " + + + removed %'d lines from %s.\n" $lc "$DST"
-fi
+#if [ ! -z "$REM" ];then
+#	lc=$(grep "$REM" "$DST" | wc -l)
+#	printf "\n + + + removing lines that contains '%s'\n" "$REM"
+#	eval sed -i '/$REM/d' "$DST"
+#	printf " + + + removed %'d lines from %s.\n" $lc "$DST"
+#fi
 
 echo
-printf " < < < Completed: %s (%s)\n" "$DST" $(line-count "$DST")
+printf " < < < [%s] Completed: %s (%s)\n" "$(date +'%Y/%m/%d %H:%M:%S')" "$DST" $(line-count "$DST")
 echo
 
 exit 0
