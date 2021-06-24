@@ -1,0 +1,397 @@
+#!/usr/bin/env bash
+
+# =======================================
+# @auther : parkjunhong77@gmail.com
+# @title  : create a map by a specific indexed value.
+# @license: Apache License 2.0
+# @since  : 2021-06-24
+# @desc   : support macOS 11.2.3, Ubuntu 18.04, CentOS 7 or higher
+# @completion: csv2map.completion
+#			 1. insert 'source <path>/csv2map.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#			 2. copy the above file to /etc/bash_completion.d/ for all users.
+# =======================================
+
+# get a filename
+FILENAME=$(basename $0)
+
+INPUT_FILE=""
+DELIMITER=""
+QUOTECHAR="\""
+RESULT_FILE=""
+SKIP=0
+KEY=-1
+VALUE=-1
+WRITE_CNT=2
+VERBOSE=0
+help(){
+	if [ ! -z "$1" ];
+	then
+		local indent=10
+		local formatl=" - %-"$indent"s: %s\n"
+		local formatr=" - %"$indent"s: %s\n"
+		echo
+		echo "================================================================================"
+		printf "$formatl" "filename" "$FILENAME"
+		printf "$formatl" "line" "$2"
+		printf "$formatl" "callstack"
+		local idx=1
+		for func in ${FUNCNAME[@]:1}
+		do
+			printf "$formatr" "["$idx"]" $func
+			((idx++))
+		done
+		printf "$formatl" "cause" "$1"
+		echo "================================================================================"
+	fi
+	echo
+	echo "Usage:"
+	echo "csv2map [-h|--help] <filepath> -d <delimiter> -ik <index-of-key> -iv <index-of-value> -q <quote char> -w <write-count> -s -v"
+	echo "csv2map [-h|--help] <filepath> --delim <delimiter> --index-key <index-of-key> --index-value <index-of-value> --quotechar <quote char> --write-count <write-count> --skip --verbose"
+	echo
+	echo "Options:"
+	echo " -d  | --delim      : line count to copy"
+	echo " -h  | --help       : show help messages"
+	echo " -ik | --index-key  : index of a key"
+	echo " -iv | --index-value: index of a value"
+	echo " -q  | --quotechar  : quoted character. default: double quoted ($QUOTECHAR)."
+	echo " -s  | --skip       : skip a first line."
+	echo " -v  | --verbose    : show error message."
+	echo " -w  | --write-count: count for writing data."
+}
+
+while [ ! -z "$1" ];
+do
+	case "$1" in
+		-d | --delim)
+			shift
+			DELIMITER="$1"
+			;;
+		-h | --help)
+			help
+			exit 0
+			;;
+		-ik | --index-key)
+			shift
+			if ! [[ "$1" =~ [0-9]+ ]];then
+				help "Invalid 'key'. input: $1" $LINENO
+				exit 1
+			fi
+			KEY=$1
+			;;
+		-iv | --index-value)
+			shift
+			if ! [[ "$1" =~ [0-9]+ ]];then
+				help "Invalid 'value'. input: $1" $LINENO
+				exit 1
+			fi
+			VALUE=$1
+			;;
+		-q | --quotechar)
+			shift
+			if [ -z "$1" ] || [ "${#1}" -ne 1 ];then
+				help "Invalid 'quote char'. input: $1" $LINENO
+				exit 1
+			fi
+			QUOTECHAR="$1"
+			;;
+		-v | --verbose)
+			VERBOSE=1
+			;;
+		-s | --skip)
+			SKIP=1
+			;;
+		-w | --write-count)
+			shift
+			if ! [[ "$1" =~ [0-9]+ ]];then
+				help "Invalid 'write-count'. input: $1" $LINENO
+				exit 1
+			fi
+			WRITE_CNT=$1
+			;;
+		*)
+			if [ ! -f "$1" ];then
+				help "Invalid 'input file': filepath: $1" $LINENO
+				exit 1
+			fi
+			INPUT_FILE="$1"
+			RESULT_FILE="$1.map"
+			;;
+	esac
+	shift
+done
+
+if [ -z "$DELIMITER" ] || [ ! -f "$INPUT_FILE" ] || [ $KEY -lt 0 ] || [ $VALUE -lt 0 ];then
+	help "Invalid parameters: file='$INPUT_FILE', delimiter='$DELIMITER', key='$KEY', value='$VALUE'" $LINENO
+	exit 1
+fi 
+
+_fmt_=" * * * %-13s"
+echo
+printf "$_fmt_: %s \n" "File" "$INPUT_FILE"
+printf "$_fmt_: %s \n" "Delimiter" "$DELIMITER"
+printf "$_fmt_: %s \n" "QuoteChar" "$QUOTECHAR"
+printf "$_fmt_: %s \n" "Map.file" "$RESULT_FILE"
+printf "$_fmt_: %s \n" "Skip" $SKIP
+printf "$_fmt_: %s \n" "Index.Key" $KEY
+printf "$_fmt_: %s \n" "Index.Value" $VALUE
+printf "$_fmt_: %s \n" "Write.Count" $WRITE_CNT
+printf "$_fmt_: %s \n" "Verbose" $VERBOSE
+
+PROG_MOD=10
+dotprogress(){
+	local idx=0
+	prog=""
+	while [ $idx -lt $PROG_MOD ];
+	do
+		prog=${prog}"."
+		echo ${prog}
+		((idx++))
+	done
+}
+
+##
+# convert timestamp to {hours}h {minutes}m {seconds}h.
+# @param $1 {number} timestamp
+# @return 
+timestamp-to-hms(){
+	# 1234567890
+	local _sec_r=$(($1%60)) # 'second' remainder
+	local _min_q=$(($1/60)) # 'minutes' quotient
+	local _min_r=$(($1/60%60)) # 'minutes' remainder
+	local _hour_q=$(($1/60/60)) # 'hour' quotient
+
+	printf "%'dh %sm %ss" $_hour_q $_min_r $_sec_r
+}
+
+
+__parse_line__=()
+##
+# read a string as csv data.
+#
+# @param $1 {string} string
+# @param $2 {char} delimiter
+# @param $3 {char} quote character 
+# @return update __parse_line__
+read-csv-str(){
+	local _str="$1"
+	local _delim="$2"
+	local _quote="$3"
+
+	local _len=${#_str}
+	local _idx=0
+	
+	local _buf=""
+	local _oq=0
+	local _c=""
+
+	local _empty="\"\""
+
+#	echo "str  : $_str, len=$_len"
+#	echo "delim: $_delim"
+#	echo "quote: $_quote"
+
+	local _flush=1
+	__parse_line__=()
+	while [ $_idx -lt $_len ];
+	do
+		_c=${_str:$_idx:1}
+#		echo "oq=$_oq, index=$_idx, char=>$_c<"
+		if [ "$_c" = "$_delim" ];then
+			if [ $_oq -eq 1 ];then
+				_buf="$_buf$_c"
+				_flush=0
+			# empty between $_delim and $_delim
+			elif [ $_flush -eq 1 ];then
+				__parse_line__+=($_empty)
+			else
+				__parse_line__+=("$_buf")
+				_buf=""
+				_flush=1
+			fi
+		elif [ "$_c" = "$_quote" ];then
+			if [ $_oq -eq 0 ];then
+				_oq=1
+			else
+				__parse_line__+=("$_buf")
+				_buf=""
+				_flush=1
+				_oq=0
+			fi
+		else
+			_buf="$_buf$_c"
+			_flush=0
+		fi
+		((_idx++))
+	done
+
+	if [ ! -z "$_buf" ];then
+		__parse_line__+=("$_buf")
+		_buf=""
+		_flush=1
+#		echo "_buf=$_buf"
+	fi
+}
+
+
+##
+# @param $1 {string} source filepath.
+# @param $2 {char} delimiter
+# @param $3 {char} quotechar
+# @param $4 {number} key
+# @param $5 {number} value
+# @param $6 {number} skip
+# @param $7 {number} verbose
+#
+handle-file(){
+	local _inputfile="$1"
+	local _delim="$2"
+	local _quotechar="$3"
+	local _kindex=$4
+	local _vindex=$5
+	local _skip=$6
+	local _verbose=$7
+
+	local key=""
+	local value=""
+	local values=""
+
+	local _ln=0
+	progress=($(dotprogress))
+
+	local _begin_date=$(date +"%Y/%m/%d %H:%M:%S")
+	local _begin_ts=$(date +"%s")
+
+	echo
+	if [ $_verbose -eq 1 ];then
+		echo " ????????????????????????????????????????????????"
+	fi
+
+	local _linelen=-1
+	while IFS= read -r line
+	do
+		((_ln++))
+		if [ $_ln -eq 1 ] && [ $_skip -eq 1 ];then
+			continue
+		fi
+
+		read-csv-str "$line" "$_delim" "$_quotechar"
+		_linelen=${#__parse_line__[@]}
+
+		if [ $_kindex -ge $_linelen ] || [ $_vindex -gt $_linelen ];then
+			help "index of a key or a value is greater than a length of a line or equal. key-index=$_kindex, value-index=$_vindex, line-length=$_linelen" $LINENO
+			exit 1
+		fi
+
+		value="${__parse_line__[$_vindex]}"
+		if [ ! -z "$value" ];then
+			key="${__parse_line__[$_kindex]}"
+			values=${MAP_DATA[$key]}
+			if [ ! -z "$values" ];then
+				values="$values "
+			fi
+			values="$values$value"
+			MAP_DATA[$key]="$values"
+		fi
+	
+		if [ $_verbose -eq 1 ];then
+			printf "\r\033[K > > > | %'10d | %s\n" $_ln "$line"
+		fi
+
+		printf "\r\033[K + + + %-13s: %'d | %s" "Line.Reading" $_ln ${progress[(($_ln%$PROG_MOD))]}
+	done < "$_inputfile"
+
+	if [ $_verbose -eq 1 ];then
+		printf "\r\033[K"
+		echo " ????????????????????????????????????????????????"
+		echo
+	fi
+
+	printf "\r\033[K + + + %-13s: %'d\n" "Completed" $_ln
+	
+	local _end_date=$(date +"%Y/%m/%d %H:%M:%S")
+	local _end_ts=$(date +"%s")	
+
+	echo
+	printf " - - - %-13s: %s\n" "Read.begin" "$_begin_date"	
+	# Convert timestamp to hour/minite/second
+	# Referenced: https://stackoverflow.com/questions/29405432/how-to-convert-timestamp-to-hour-minutes-seconds-in-shell-script
+	local _diff=$(($_end_ts-$_begin_ts))
+	printf " - - - %-13s: %s\n" "Read.elapsed" "$(timestamp-to-hms $(($_end_ts-$_begin_ts)))"
+	printf " - - - %-13s: %s\n" "Read.end" "$_end_date"	
+
+	echo
+}
+
+#
+# @param $1 {string} hashtable name
+# @param $2 {string} filepath
+# @param $3 {number} write count
+# @param $4 {number} verbose
+write-file(){
+	local _wc=$3
+	local _verbose=$4
+
+	progress=($(dotprogress))
+
+	local _begin_date=$(date +"%Y/%m/%d %H:%M:%S")
+	local _begin_ts=$(date +"%s")
+
+	echo
+	if [ $_verbose -eq 1 ];then
+		echo " ????????????????????????????????????????????????"
+	fi
+	printf "" > "$2"
+
+	local _ln=0
+	local _value=""
+	for key in $(eval echo "\${!$1[@]}")
+	do
+		((_ln++))
+		_value=$(eval echo "\${$1['$key']}")
+		IFS=" " read -a _valuear <<< "$_value"
+		if [ ${#_valuear[@]} -ge $_wc ];then
+			echo "$key="$_value >> "$2"
+
+			if [ $_verbose -eq 1 ];then
+				printf "\r\033[K > > > | %'10d | %s\n" $_ln "$key"
+			fi
+		fi
+
+		printf "\r\033[K + + + %-13s: %'d | %s" "Map.Writing" $_ln ${progress[(($_ln%$PROG_MOD))]}
+	done
+
+	if [ $_verbose -eq 1 ];then
+		printf "\r\033[K"
+		echo " ????????????????????????????????????????????????"
+		echo
+	fi
+
+	printf "\r\033[K + + + %-13s: %'d\n" "Completed" $_ln
+	
+	local _end_date=$(date +"%Y/%m/%d %H:%M:%S")
+	local _end_ts=$(date +"%s")	
+
+	echo
+	printf " - - - %-13s: %s\n" "Write.begin" "$_begin_date"	
+	# Convert timestamp to hour/minite/second
+	# Referenced: https://stackoverflow.com/questions/29405432/how-to-convert-timestamp-to-hour-minutes-seconds-in-shell-script
+	local _diff=$(($_end_ts-$_begin_ts))
+	printf " - - - %-13s: %s\n" "Write.elapsed" "$(timestamp-to-hms $(($_end_ts-$_begin_ts)))"
+	printf " - - - %-13s: %s\n" "Write.end" "$_end_date"	
+
+	echo
+}
+
+
+# create a map
+declare -A MAP_DATA
+
+# handle source file
+handle-file "$INPUT_FILE" "$DELIMITER" "$QUOTECHAR" $KEY $VALUE $SKIP $VERBOSE
+echo "-----------------------------------------------"
+
+# write map to file
+write-file "MAP_DATA" "$RESULT_FILE" $WRITE_CNT $VERBOSE
+echo "<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<"
+
+exit 0
