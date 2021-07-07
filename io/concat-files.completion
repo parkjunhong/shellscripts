@@ -49,7 +49,7 @@ candidate(){
 			fi
 		done
 
-		_cplines-log "f'$FUNCNAME' candidates=${_candi[@]}, prefix=$_prefix"
+		_concat-files-log "f'$FUNCNAME' candidates=${_candi[@]}, prefix=$_prefix"
 
 		if [ ${#_candi[@]} -gt 0 ];then
 			COMPREPLY+=( $(compgen -W "$(echo ${_args[@]})" -- $_prefix) )
@@ -68,29 +68,29 @@ list-dir(){
 
 ##
 # print logs to a external file.
-_cplines-log(){
+_concat-files-log(){
 	# To log messages, change a comment '#'.
-	local _category="cplines"
-	printf "[%s] [%-10s] " "$(date '+%Y/%m/%d %H:%M:%S')" "$_category"  >>  ~/user-custom-completion.log
-	echo -e "$@" >> ~/user-custom-completion.log
+	#local _category="concat-files"
+	#printf "[%s] [%-10s] " "$(date '+%Y/%m/%d %H:%M:%S')" "$_category"  >>  ~/user-custom-completion.log
+	#echo -e "$@" >> ~/user-custom-completion.log
 	
 	# ignore logs
-	#echo "$@" >/dev/null
+	echo "$@" >/dev/null
 }
 
-_cplines-load-options(){
-	echo "--src --dst --linenumber --count --help"
+_concat-files-load-options(){
+	echo "--src --dst --remove --help"
 }
 
 # $1: argument
-_cplines-add-if-new(){
-	_cplines-log "f'$FUNCNAME' arguments=$@"
+_concat-files-add-if-new(){
+	_concat-files-log "f'$FUNCNAME' arguments=$@"
 
 	local __new=1
 	for word in ${COMP_WORDS[@]}
 	do
 		if [ "$word" = "$1" ];then
-			_cplines-log "'$word' already exists"
+			_concat-files-log "'$word' already exists"
 			__new=0
 			break
 		fi
@@ -102,16 +102,16 @@ _cplines-add-if-new(){
 }
 
 # @param $1 {string}: prefix of ..
-_cplines-add-default-options(){
+_concat-files-add-default-options(){
 	local _prefix="$1"
-	local _args=($(_cplines-load-options))
+	local _args=($(_concat-files-load-options))
 	
-	_cplines-log "f'$FUNCNAME' Prefix: $_prefix, options=${_args[@]}"
+	_concat-files-log "f'$FUNCNAME' Prefix: $_prefix, options=${_args[@]}"
 
 	for _arg in ${_args[@]}
 	do
 		if [ -z "$_prefix" ] || [[ $_arg == $_prefix* ]];then
-			_cplines-add-if-new "$_arg"
+			_concat-files-add-if-new "$_arg"
 		fi
 	done
 }
@@ -121,16 +121,16 @@ _cplines-add-default-options(){
 # $1: command
 # $2: current
 # $3: previous
-_cplines-handle-cli(){
-	_cplines-log "\n\n====================================================="
-	_cplines-log $(printf "%-15s: %s" "COMP_WORDS" "${COMP_WORDS[@]}")
-	_cplines-log $(printf "%-15s: %s" "COMP_LINE" "${COMP_LINE}")
-	_cplines-log $(printf "%-15s: %s, %s: %s" "COMP_CWORD" "$COMP_CWORD" "#WORDS" "${#COMP_WORDS[@]}") 
-	_cplines-log $(printf "%s: %s, %s: %s" "CURRENT(\$2)" "$2" "PREVIOUS(\$3)" "$3")
+_concat-files-handle-cli(){
+	_concat-files-log "\n\n====================================================="
+	_concat-files-log $(printf "%-15s: %s" "COMP_WORDS" "${COMP_WORDS[@]}")
+	_concat-files-log $(printf "%-15s: %s" "COMP_LINE" "${COMP_LINE}")
+	_concat-files-log $(printf "%-15s: %s, %s: %s" "COMP_CWORD" "$COMP_CWORD" "#WORDS" "${#COMP_WORDS[@]}") 
+	_concat-files-log $(printf "%s: %s, %s: %s" "CURRENT(\$2)" "$2" "PREVIOUS(\$3)" "$3")
 
 	case ${#COMP_WORDS[@]} in
 		2)
-			candidate "$2,$(_cplines-load-options),1"
+			candidate "$2,$(_concat-files-load-options),1"
 			;;
 		*)
 			case "$3" in
@@ -142,20 +142,16 @@ _cplines-handle-cli(){
 					# suggest files
 					list-dir "$2"
 					;;
-				--linenumber)
-					# input line number to begin to copy
-					;;
-				--count)
-					# input count to copy
+				--remove)
+					# input string to remove
 					;;
 				*)
-					_cplines-add-default-options "$2"
+					_concat-files-add-default-options "$2"
 					;;
 			esac
 			;;
 	esac
 }
 
-
-
-complete -F _cplines-handle-cli -o nospace cplines
+#complete -F _concat-files-handle-cli -o nospace concat-files
+complete -F _concat-files-handle-cli concat-files

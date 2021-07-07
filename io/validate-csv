@@ -1,0 +1,301 @@
+#!/usr/bin/env bash
+
+# =======================================
+# @auther : parkjunhong77@gmail.com
+# @title  : validate a csv file.
+# @license: Apache License 2.0
+# @since  : 2021-04-29
+# @desc   : support macOS 11.2.3, Ubuntu 18.04, CentOS 7 or higher
+# @completion: validate-csv.completion
+#			 1. insert 'source <path>/validate-csv.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#			 2. copy the above file to /etc/bash_completion.d/ for all users.
+# =======================================
+
+# get a filename
+FILENAME=$(basename $0)
+
+INPUT_FILE=""
+DELIMITER=""
+QUOTECHAR="\""
+EMPTY_VALUE="__EMPTY__"
+DATA_COUNT=0
+RESULT_FILE=""
+VERBOSE=0
+help(){
+	if [ ! -z "$1" ];
+	then
+		local indent=10
+		local formatl=" - %-"$indent"s: %s\n"
+		local formatr=" - %"$indent"s: %s\n"
+		echo
+		echo "================================================================================"
+		printf "$formatl" "filename" "$FILENAME"
+		printf "$formatl" "line" "$2"
+		printf "$formatl" "callstack"
+		local idx=1
+		for func in ${FUNCNAME[@]:1}
+		do
+			printf "$formatr" "["$idx"]" $func
+			((idx++))
+		done
+		printf "$formatl" "cause" "$1"
+		echo "================================================================================"
+	fi
+	echo
+	echo "Usage:"
+	echo "validate-csv [-h|--help] --file <filepath> --delim <delimiter> --quotechar <quote char> --empty <empty value> --count <count> --verbose"
+	echo
+	echo "Options:"
+	echo " -c | --count     : count of data"
+	echo " -d | --delim     : a delimiter of line"
+	echo " -d | --empty     : a string if a value between a delimiter and a delimiter is empty."
+	echo "                    default: \"$EMPTY_VALUE\""
+	echo " -h | --help      : show help messages"
+	echo " -f | --file      : input filepath"
+	echo " -q | --quotechar : quoted character. default: double quoted ($QUOTECHAR)."
+	echo " -v | --verbose   : show error message."
+}
+
+while [ ! -z "$1" ];
+do
+	case "$1" in
+		-c | --count)
+			shift
+			if ! [[ $1 =~ [0-9]+ ]];then
+				help "Invalid 'line' count: $1" $LINENO
+				exit 1
+			fi
+            DATA_COUNT=$1
+            ;;
+		-d | --delim)
+			shift
+			DELIMITER="$1"
+			;;
+		-e | --empty)
+			shift
+			if [ -z "$1" ];then
+				help "Invalid 'empty value'. input: $1" $LINENO
+				exit 1
+			fi
+			EMPTY_VALUE="$1"
+			;;
+		-f | --file)
+			shift
+			if [ ! -f "$1" ];then
+				help "Invalid 'input file': filepath: $1" $LINENO
+				exit 1
+			fi
+			INPUT_FILE="$1"
+			RESULT_FILE="$1.validated"
+			;;
+		-h | --help)
+			help
+			exit 0
+			;;
+		-q | --quotechar)
+			shift
+			if [ -z "$1" ] || [ "${#1}" -ne 1 ];then
+				help "Invalid 'quote char'. input: $1" $LINENO
+				exit 1
+			fi
+			QUOTECHAR="$1"
+			;;
+		-v | --verbose)
+			VERBOSE=1
+			;;
+		*)
+			;;
+	esac
+	shift
+done
+
+if [ -z "$DELIMITER" ] || ! [ $DATA_COUNT -gt 0 ] || [ -z "$EMPTY_VALUE" ];then
+	help "Invalid parameters: delimiter='$DELIMITER', data-count=$DATA_COUNT, empty-string='$EMPTY_VALUE'" $LINENO
+	exit 1
+fi 
+
+_fmt_=" * * * %-13s"
+echo
+printf "$_fmt_: %s \n" "File" "$INPUT_FILE"
+printf "$_fmt_: %s \n" "Delimiter" "$DELIMITER"
+printf "$_fmt_: %s \n" "QuoteChar" "$QUOTECHAR"
+printf "$_fmt_: %s \n" "Empty.Str" "$EMPTY_VALUE"
+printf "$_fmt_: %s \n" "Data.Count" $DATA_COUNT
+printf "$_fmt_: %s \n" "Error.logfile" "$RESULT_FILE"
+
+
+PROG_MOD=10
+dotprogress(){
+	local idx=0
+	prog=""
+	while [ $idx -lt $PROG_MOD ];
+	do
+		prog=${prog}"."
+		echo ${prog}
+		((idx++))
+	done
+}
+
+##
+# convert timestamp to {hours}h {minutes}m {seconds}h.
+# @param $1 {number} timestamp
+# @return 
+timestamp-to-hms(){
+	# 1234567890
+	local _sec_r=$(($1%60)) # 'second' remainder
+	local _min_q=$(($1/60)) # 'minutes' quotient
+	local _min_r=$(($1/60%60)) # 'minutes' remainder
+	local _hour_q=$(($1/60/60)) # 'hour' quotient
+
+	printf "%'dh %sm %ss" $_hour_q $_min_r $_sec_r
+}
+
+
+__parse_line__=()
+##
+# read a string as csv data.
+#
+# @param $1 {string} string
+# @param $2 {char} delimiter
+# @param $3 {char} quote character 
+# @param $4 {string} a string if a value between a delimiter and a delimiter is empty
+# @return update __parse_line__
+read-csv-str(){
+	local _str="$1"
+	local _delim="$2"
+	local _quote="$3"
+
+	local _len=${#_str}
+	local _idx=0
+	
+	local _buf=""
+	local _oq=0
+	local _c=""
+
+	local _empty="$4"
+
+#	echo "str  : $_str, len=$_len"
+#	echo "delim: $_delim"
+#	echo "quote: $_quote"
+
+	local _flush=1
+	__parse_line__=()
+	while [ $_idx -lt $_len ];
+	do
+		_c=${_str:$_idx:1}
+#		echo "oq=$_oq, index=$_idx, char=>$_c<"
+		if [ "$_c" = "$_delim" ];then
+			if [ $_oq -eq 1 ];then
+				_buf="$_buf$_c"
+				_flush=0
+			# empty between $_delim and $_delim
+			elif [ $_flush -eq 1 ];then
+				__parse_line__+=($_empty)
+			else
+				__parse_line__+=("$_buf")
+				_buf=""
+				_flush=1
+			fi
+		elif [ "$_c" = "$_quote" ];then
+			if [ $_oq -eq 0 ];then
+				_oq=1
+			else
+				__parse_line__+=("$_buf")
+				_buf=""
+				_flush=1
+				_oq=0
+			fi
+		else
+			_buf="$_buf$_c"
+			_flush=0
+		fi
+		((_idx++))
+	done
+
+	if [ ! -z "$_buf" ];then
+		__parse_line__+=("$_buf")
+		_buf=""
+		_flush=1
+#		echo "_buf=$_buf"
+	fi
+}
+
+
+##
+# @param $1 {string} source filepath.
+# @param $2 {char} delimiter
+# @param $3 {char} quotechar
+# @param $4 {string} a string if a value between a delimiter and a delimiter is empty
+# @param $5 {number} a length of splitted string by a delimiter
+# @param $6 {string} a invalid string's log filepath.
+#
+validate(){
+	local _inputfile="$1"
+	local _delim="$2"
+	local _quotechar="$3"
+	local _empty="$4"
+	local _count=$5
+	local _resultfile="$6"
+
+	local _ln=0
+	local _errcnt=0
+	progress=($(dotprogress))
+
+	local _begin_date=$(date +"%Y/%m/%d %H:%M:%S")
+	local _begin_ts=$(date +"%s")
+
+	echo
+	if [ $VERBOSE -eq 1 ];then
+		echo " ????????????????????????????????????????????????"
+	fi
+	printf "" > "$_resultfile"
+
+	local _hit=0
+	while IFS= read -r line
+	do
+		_hit=0
+		((_ln++))
+
+		read-csv-str "$line" "$_delim" "$_quotechar" "$_empty"
+		if [ ${#__parse_line__[@]} -ne $_count ];then
+			printf "%'10d | " $_ln >> "$_resultfile"
+			echo $line >> "$_resultfile"
+			((_errcnt++))
+	
+			if [ $VERBOSE -eq 1 ];then
+				printf "\r\033[K > > > | %'10d | %s\n" $_ln "$line"
+				_hit=1
+			fi
+		fi
+
+		printf "\r\033[K + + + %-13s: %'d / %'d | %s" "Line.Reading" $_errcnt $_ln ${progress[(($_ln%$PROG_MOD))]}
+	done < "$_inputfile"
+
+	if [ $VERBOSE -eq 1 ] && [ $_hit -eq 1 ];then
+		printf "\r\033[K"
+		echo " ????????????????????????????????????????????????"
+		echo
+	fi
+
+	printf "\r\033[K + + + %-13s: %'d / %'d\n" "Completed" ${_errcnt} $_ln
+	
+	local _end_date=$(date +"%Y/%m/%d %H:%M:%S")
+	local _end_ts=$(date +"%s")	
+
+	echo
+	printf " - - - %-13s: %s\n" "Read.begin" "$_begin_date"	
+	# Convert timestamp to hour/minite/second
+	# Referenced: https://stackoverflow.com/questions/29405432/how-to-convert-timestamp-to-hour-minutes-seconds-in-shell-script
+	local _diff=$(($_end_ts-$_begin_ts))
+	printf " - - - %-13s: %s\n" "Read.elapsed" "$(timestamp-to-hms $(($_end_ts-$_begin_ts)))"
+	printf " - - - %-13s: %s\n" "Read.end" "$_end_date"	
+
+	echo
+	echo "<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<"
+}
+
+
+
+validate "$INPUT_FILE" "$DELIMITER" "$QUOTECHAR" "$EMPTY_VALUE" "$DATA_COUNT" "$RESULT_FILE" $VERBOSE
+
+exit 0

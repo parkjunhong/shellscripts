@@ -2,13 +2,13 @@
 
 # =======================================
 # @author		: parkjunhong77@gmail.com
-# @title		: copy lines from a file to another file.
+# @title		: validate a csv file.
 # @license		: Apache License 2.0
 # @since		: 2021-04-07
 # @desc			: support macOS 11.2.3, Ubuntu 18.04, CentOS 6,7
-# @installation	: 
-#		1. insert 'source <path>/${this file}" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#		2. copy ${this file} to /etc/bash_completion.d/ or insert 'source <path>/${this file}' into /etc/bashrc for all users.
+# @installation : 
+#       1. insert 'source <path>/${this file}" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#       2. copy ${this file} to /etc/bash_completion.d/ or insert 'source <path>/${this file}' into /etc/bashrc for all users.
 # =======================================
 
 # Global Reserved Variables
@@ -49,7 +49,7 @@ candidate(){
 			fi
 		done
 
-		_cplines-log "f'$FUNCNAME' candidates=${_candi[@]}, prefix=$_prefix"
+		_validatecsv-log "f'$FUNCNAME' candidates=${_candi[@]}, prefix=$_prefix"
 
 		if [ ${#_candi[@]} -gt 0 ];then
 			COMPREPLY+=( $(compgen -W "$(echo ${_args[@]})" -- $_prefix) )
@@ -68,9 +68,9 @@ list-dir(){
 
 ##
 # print logs to a external file.
-_cplines-log(){
+_validatecsv-log(){
 	# To log messages, change a comment '#'.
-	local _category="cplines"
+	local _category="validatecsv"
 	printf "[%s] [%-10s] " "$(date '+%Y/%m/%d %H:%M:%S')" "$_category"  >>  ~/user-custom-completion.log
 	echo -e "$@" >> ~/user-custom-completion.log
 	
@@ -78,19 +78,19 @@ _cplines-log(){
 	#echo "$@" >/dev/null
 }
 
-_cplines-load-options(){
-	echo "--src --dst --linenumber --count --help"
+_validatecsv-load-options(){
+	echo "--count --delim --empty --help --file --quotechar"
 }
 
 # $1: argument
-_cplines-add-if-new(){
-	_cplines-log "f'$FUNCNAME' arguments=$@"
+_validatecsv-add-if-new(){
+	_validatecsv-log "f'$FUNCNAME' arguments=$@"
 
 	local __new=1
 	for word in ${COMP_WORDS[@]}
 	do
 		if [ "$word" = "$1" ];then
-			_cplines-log "'$word' already exists"
+			_validatecsv-log "'$word' already exists"
 			__new=0
 			break
 		fi
@@ -102,16 +102,16 @@ _cplines-add-if-new(){
 }
 
 # @param $1 {string}: prefix of ..
-_cplines-add-default-options(){
+_validatecsv-add-default-options(){
 	local _prefix="$1"
-	local _args=($(_cplines-load-options))
+	local _args=($(_validatecsv-load-options))
 	
-	_cplines-log "f'$FUNCNAME' Prefix: $_prefix, options=${_args[@]}"
+	_validatecsv-log "f'$FUNCNAME' Prefix: $_prefix, options=${_args[@]}"
 
 	for _arg in ${_args[@]}
 	do
 		if [ -z "$_prefix" ] || [[ $_arg == $_prefix* ]];then
-			_cplines-add-if-new "$_arg"
+			_validatecsv-add-if-new "$_arg"
 		fi
 	done
 }
@@ -121,35 +121,41 @@ _cplines-add-default-options(){
 # $1: command
 # $2: current
 # $3: previous
-_cplines-handle-cli(){
-	_cplines-log "\n\n====================================================="
-	_cplines-log $(printf "%-15s: %s" "COMP_WORDS" "${COMP_WORDS[@]}")
-	_cplines-log $(printf "%-15s: %s" "COMP_LINE" "${COMP_LINE}")
-	_cplines-log $(printf "%-15s: %s, %s: %s" "COMP_CWORD" "$COMP_CWORD" "#WORDS" "${#COMP_WORDS[@]}") 
-	_cplines-log $(printf "%s: %s, %s: %s" "CURRENT(\$2)" "$2" "PREVIOUS(\$3)" "$3")
+_validatecsv-handle-cli(){
+	_validatecsv-log "\n\n====================================================="
+	_validatecsv-log $(printf "%-15s: %s" "COMP_WORDS" "${COMP_WORDS[@]}")
+	_validatecsv-log $(printf "%-15s: %s" "COMP_LINE" "${COMP_LINE}")
+	_validatecsv-log $(printf "%-15s: %s, %s: %s" "COMP_CWORD" "$COMP_CWORD" "#WORDS" "${#COMP_WORDS[@]}") 
+	_validatecsv-log $(printf "%s: %s, %s: %s" "CURRENT(\$2)" "$2" "PREVIOUS(\$3)" "$3")
 
 	case ${#COMP_WORDS[@]} in
 		2)
-			candidate "$2,$(_cplines-load-options),1"
+			candidate "$2,$(_validatecsv-load-options),1"
 			;;
 		*)
 			case "$3" in
-				--src)
-					# suggest files
-					list-dir "$2"
-					;;
-				--dst)
-					# suggest files
-					list-dir "$2"
-					;;
-				--linenumber)
-					# input line number to begin to copy
-					;;
 				--count)
-					# input count to copy
+					# input a count of splitted data
+					COMPREPLY+=( $(compgen -W "1.input 2.a_count_of 3.splitted_data") )
+					;;
+				--delim)
+					# input a delimiter
+					COMPREPLY+=( $(compgen -W "1.input 2.a_delimiter") )
+					;;
+				--file)
+					# input file
+					list-dir "$2"
+					;;
+				--empty)
+					# input a string means 'empty value'
+					COMPREPLY+=( $(compgen -W "1.input 2.a_string_for 3.'empty_value'") )
+					;;
+				--quotechar)
+					# input a char for 'quoted'
+					COMPREPLY+=( $(compgen -W "1.input 2.a_char_for 3.'quoted'") )
 					;;
 				*)
-					_cplines-add-default-options "$2"
+					_validatecsv-add-default-options "$2"
 					;;
 			esac
 			;;
@@ -158,4 +164,4 @@ _cplines-handle-cli(){
 
 
 
-complete -F _cplines-handle-cli -o nospace cplines
+complete -F _validatecsv-handle-cli -o nospace validate-csv

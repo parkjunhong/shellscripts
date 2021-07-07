@@ -2,9 +2,9 @@
 
 # =======================================
 # @author		: parkjunhong77@gmail.com
-# @title		: copy lines from a file to another file.
+# @title		: create a map by a specific indexed value.
 # @license		: Apache License 2.0
-# @since		: 2021-04-07
+# @since		: 2021-06-24
 # @desc			: support macOS 11.2.3, Ubuntu 18.04, CentOS 6,7
 # @installation	: 
 #		1. insert 'source <path>/${this file}" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
@@ -49,7 +49,7 @@ candidate(){
 			fi
 		done
 
-		_cplines-log "f'$FUNCNAME' candidates=${_candi[@]}, prefix=$_prefix"
+		_csvtomap-log "f'$FUNCNAME' candidates=${_candi[@]}, prefix=$_prefix"
 
 		if [ ${#_candi[@]} -gt 0 ];then
 			COMPREPLY+=( $(compgen -W "$(echo ${_args[@]})" -- $_prefix) )
@@ -68,9 +68,9 @@ list-dir(){
 
 ##
 # print logs to a external file.
-_cplines-log(){
+_csvtomap-log(){
 	# To log messages, change a comment '#'.
-	local _category="cplines"
+	local _category="csvtomap"
 	printf "[%s] [%-10s] " "$(date '+%Y/%m/%d %H:%M:%S')" "$_category"  >>  ~/user-custom-completion.log
 	echo -e "$@" >> ~/user-custom-completion.log
 	
@@ -78,19 +78,19 @@ _cplines-log(){
 	#echo "$@" >/dev/null
 }
 
-_cplines-load-options(){
+_csvtomap-load-options(){
 	echo "--src --dst --linenumber --count --help"
 }
 
 # $1: argument
-_cplines-add-if-new(){
-	_cplines-log "f'$FUNCNAME' arguments=$@"
+_csvtomap-add-if-new(){
+	_csvtomap-log "f'$FUNCNAME' arguments=$@"
 
 	local __new=1
 	for word in ${COMP_WORDS[@]}
 	do
 		if [ "$word" = "$1" ];then
-			_cplines-log "'$word' already exists"
+			_csvtomap-log "'$word' already exists"
 			__new=0
 			break
 		fi
@@ -102,16 +102,16 @@ _cplines-add-if-new(){
 }
 
 # @param $1 {string}: prefix of ..
-_cplines-add-default-options(){
+_csvtomap-add-default-options(){
 	local _prefix="$1"
-	local _args=($(_cplines-load-options))
+	local _args=($(_csvtomap-load-options))
 	
-	_cplines-log "f'$FUNCNAME' Prefix: $_prefix, options=${_args[@]}"
+	_csvtomap-log "f'$FUNCNAME' Prefix: $_prefix, options=${_args[@]}"
 
 	for _arg in ${_args[@]}
 	do
 		if [ -z "$_prefix" ] || [[ $_arg == $_prefix* ]];then
-			_cplines-add-if-new "$_arg"
+			_csvtomap-add-if-new "$_arg"
 		fi
 	done
 }
@@ -121,16 +121,16 @@ _cplines-add-default-options(){
 # $1: command
 # $2: current
 # $3: previous
-_cplines-handle-cli(){
-	_cplines-log "\n\n====================================================="
-	_cplines-log $(printf "%-15s: %s" "COMP_WORDS" "${COMP_WORDS[@]}")
-	_cplines-log $(printf "%-15s: %s" "COMP_LINE" "${COMP_LINE}")
-	_cplines-log $(printf "%-15s: %s, %s: %s" "COMP_CWORD" "$COMP_CWORD" "#WORDS" "${#COMP_WORDS[@]}") 
-	_cplines-log $(printf "%s: %s, %s: %s" "CURRENT(\$2)" "$2" "PREVIOUS(\$3)" "$3")
+_csvtomap-handle-cli(){
+	_csvtomap-log "\n\n====================================================="
+	_csvtomap-log $(printf "%-15s: %s" "COMP_WORDS" "${COMP_WORDS[@]}")
+	_csvtomap-log $(printf "%-15s: %s" "COMP_LINE" "${COMP_LINE}")
+	_csvtomap-log $(printf "%-15s: %s, %s: %s" "COMP_CWORD" "$COMP_CWORD" "#WORDS" "${#COMP_WORDS[@]}") 
+	_csvtomap-log $(printf "%s: %s, %s: %s" "CURRENT(\$2)" "$2" "PREVIOUS(\$3)" "$3")
 
 	case ${#COMP_WORDS[@]} in
 		2)
-			candidate "$2,$(_cplines-load-options),1"
+			candidate "$2,$(_csvtomap-load-options),1"
 			;;
 		*)
 			case "$3" in
@@ -149,7 +149,7 @@ _cplines-handle-cli(){
 					# input count to copy
 					;;
 				*)
-					_cplines-add-default-options "$2"
+					_csvtomap-add-default-options "$2"
 					;;
 			esac
 			;;
@@ -158,4 +158,4 @@ _cplines-handle-cli(){
 
 
 
-complete -F _cplines-handle-cli -o nospace cplines
+complete -F _csvtomap-handle-cli -o nospace csvtomap

@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+
+# =======================================
+# @auther : parkjunhong77@gmail.com
+# @title  : concatenate files.
+# @license: Apache License 2.0
+# @since  : 2021-05-24
+# @desc   : support macOS 11.2.3, Ubuntu 18.04, CentOS 7 or higher
+# @completion: chg-str.completion
+#			 1. insert 'source <path>/chg-str.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#			 2. copy 'chg-str.completion' file to /etc/bash_completion.d/ for all users.
+# =======================================
+
+# get a filename
+FILENAME=$(basename $0)
+
+help(){
+	if [ ! -z "$1" ];
+	then
+		local indent=10
+		local formatl=" - %-"$indent"s: %s\n"
+		local formatr=" - %"$indent"s: %s\n"
+		echo
+		echo "================================================================================"
+		printf "$formatl" "filename" "$FILENAME"
+		printf "$formatl" "line" "$2"
+		printf "$formatl" "callstack"
+		local idx=1
+		for func in ${FUNCNAME[@]:1}
+		do
+			printf "$formatr" "["$idx"]" $func
+			((idx++))
+		done
+		printf "$formatl" "cause" "$1"
+		echo "================================================================================"
+	fi
+	echo
+	echo "Usage:"
+	echo "chg-str [-h|--help] --file <target-file> --old <old string> --new <new string>"
+	echo
+	echo "Options:"
+	echo " -f | --file: (m) target filepath"
+	echo " -h | --help: show help messages."
+	echo " -n | --new : (m) new string"
+	echo " -o | --old : (m) old string"
+	echo
+	echo "e.g.:"
+	echo "chg-str --file a.txt --old ',' --new ';'"
+}
+
+FILE=""
+OLD=""
+NEW=""
+while [ ! -z "$1" ];
+do
+	case "$1" in
+		-f | --file )
+			shift
+			if [ ! -f "$1" ];then
+				help "올바른 파일 경로가 아닙니다: --file=$1" $LINENO
+				exit 1
+			fi
+			FILE="$1"
+			;;
+		-h | --help)
+			help
+			exit 0
+			;;
+		-n | --new)
+			shift
+			if [ -z "$1" ];then
+				help "올바른 문자열 정보가 아닙니다: --new=$1" $LINENO
+				exit 1
+			fi
+			NEW="$1"
+			;;
+		-o | --old)
+			shift
+			if [ -z "$1" ];then
+				help "올바른 문자열 정보가 아닙니다: --new=$1" $LINENO
+				exit 1
+			fi
+			OLD="$1"
+			;;
+		*)
+			;;
+	esac
+	shift
+done
+
+if [ ! -f "$FILE" ] || [ -z "$OLD" ] || [ -z "$NEW" ];then
+	help "입력정보가 올바르지 않습니다: --file=$FILE, --old=$OLD, --new=$NEW" $LINENO
+	exit 1
+fi
+
+
+echo
+_fmt_=" * * * %-4s: %s"
+printf "$_fmt_\n" "file" "$FILE"
+printf "$_fmt_\n" "old" "$OLD"
+printf "$_fmt_\n" "new" "$NEW"
+
+echo
+echo " > > > [$(date +'%Y/%m/%D %H:%M:%S')] begin ... "
+
+echo
+sed -i "s/$OLD/$NEW/g" "$FILE"
+old_count=$(grep -n "$OLD" "$FILE" | wc -l)
+echo " + + + count of '$OLD': $old_count"
+
+echo
+echo " < < < [$(date +'%Y/%m/%D %H:%M:%S')] completed !!! "
+
+exit 0
+

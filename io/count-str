@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+
+# =======================================
+# @auther : parkjunhong77@gmail.com
+# @title  : concatenate files.
+# @license: Apache License 2.0
+# @since  : 2021-05-24
+# @desc   : support macOS 11.2.3, Ubuntu 18.04, CentOS 7 or higher
+# @completion: count-str.completion
+#			 1. insert 'source <path>/count-str.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#			 2. copy 'count-str.completion' file to /etc/bash_completion.d/ for all users.
+# =======================================
+
+# get a filename
+FILENAME=$(basename $0)
+
+help(){
+	if [ ! -z "$1" ];
+	then
+		echo "\$1=>$1<"
+		local indent=10
+		local formatl=" - %-"$indent"s: %s\n"
+		local formatr=" - %"$indent"s: %s\n"
+		echo
+		echo "================================================================================"
+		printf "$formatl" "filename" "$FILENAME"
+		printf "$formatl" "line" "$2"
+		printf "$formatl" "callstack"
+		local idx=1
+		for func in ${FUNCNAME[@]:1}
+		do
+			printf "$formatr" "["$idx"]" $func
+			((idx++))
+		done
+		printf "$formatl" "cause" "$1"
+		echo "================================================================================"
+	fi
+	echo
+	echo "Usage:"
+	echo "count-str [-h|--help] --targets <strings to find> --file <input file>"
+	echo
+	echo "Options:"
+	echo " -f | --file   : input filepath"
+	echo " -h | --help   : show help messages."
+	echo " -s | --skip   : strings to skip lines"
+	echo " -t | --targets: strings to find"
+	echo
+	echo "e.g.:"
+	echo "count-str --file ./input.log --targets car bike bicycle"
+}
+
+TARGETS=()
+FILE=""
+SKIP=""
+
+while [ ! -z "$1" ];
+do
+	case "$1" in
+		-f | --file)
+			shift
+			if [ ! -f "$1" ];then
+				help "올바르 파일이 아닙니다: 입력=$1" $LINENO
+				exit 1
+			fi
+			FILE="$1"
+			;;
+		-h | --help)
+			help
+			exit 0
+			;;
+		-s | --skip)
+			shift
+			SKIP="$1"
+			;;
+		-t | --targets)
+			shift
+			TARGETS+=("$1")
+			;;
+		*)
+			if [ ${#TARGETS[@]} -lt 1 ];then
+				help "찾을 문자열 옵션을 설정하지 않았습니다: $@" $LINENO
+				exit 1
+			fi
+			TARGETS+=("$1")
+			;;
+	esac
+	shift
+done
+
+if [ ! -f "$FILE" ] || [ ${#TARGETS[@]} -lt 1 ];then
+    help "입력 정보가 올바르지 않습니다: 파일='$FILE', 찾을 문자열='${TARGETS[@]}'" $LINENO
+    exit 1
+fi
+
+##
+# @param $1 {string} a full filepath.
+# @param $2 {string} a word to find.
+line-count(){
+    if [ ! -z "$2" ];then
+        printf "%'d" $(cat $1 | grep -v "$2" | wc -l)
+    else 
+        printf "%'d" $(cat $1 | wc -l)
+    fi  
+}
+
+maxTargetLen=1
+for idx in ${!TARGETS[@]}
+do
+	curLen=$(echo "${TARGETS[$idx]}" | wc -L)
+	if [ $maxTargetLen -lt $curLen ];then
+		maxTargetLen=$curLen
+	fi
+done
+maxTargetLen=$(expr $maxTargetLen + 2)
+total=$(line-count "$FILE" "$SKIP")
+fmt=" * * * %-${maxTargetLen}s: %${#total}s"
+
+echo
+echo " > > > [검색 결과]"
+echo " > > > File: $FILE"
+echo
+for idx in ${!TARGETS[@]};
+do
+	_count=$(printf "%'d" $(grep "${TARGETS[$idx]}" $FILE | wc -l) )
+    printf "$fmt\n" "${TARGETS[$idx]}" $_count
+done
+echo
+printf "$fmt\n" "전체" $total
+echo " < < <"
+echo
+
+exit 0
+

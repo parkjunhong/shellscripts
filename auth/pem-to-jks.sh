@@ -4,70 +4,57 @@ echo
 echo "=============================================="
 echo "=== Convert PEM to JKS" 
 echo "=== Author: fafanmama@naver.com, parkjunhong77@gmail.com"
-echo "=== DATE: 2018.12.19"
+echo "=== LICENSE: MIT"
+echo "=== DATE: 2018.12.20"
 
 usage(){
-	echo
-	echo ">>> CALLED BY [[ $1 ]]"
-	echo
-	echo "[Usage]"
-	echo
-	echo "./pem-to-jks -pi {pem-file} -pk {pem-key-file} -pp {pem-password} -jks {jks-output} -jp {jks-password}"
-	echo
-	echo "[Option]"
-	echo " -pi  | --pem-in       : PEM Certification file."
-	echo " -pk  | --pem-inkey    : PEM Certification Key file."
-	echo " -pp  | --pem-passwd : PEM Password (Optional: if to not set, enter when prompt.)"
-	echo " -jks | --jks-out      : JKS output name."
-	echo " -jp  | --jks-passwd : JKS Password (Optinal: if do not set, enter when prompt.)"
-	echo " -h   | --help: help messages"
-	echo
-	echo "[Caution]"
-	echo "1. If a password contains a '!'(exclamation mark), you MUST set a '\'(back slash) as a escape character before each '!'."
-	echo "1.1 A password may be one or all of '-pp | --pem-passwd' and '-jp | --jks-passwd'"
+    echo
+    echo ">>> CALLED BY [[ $1 ]]"
+    echo
+    echo "[Usage]"
+    echo
+    echo "./pem-to-jks -pi {pem-file} -pk {pem-key-file} -jks {jks-output}"
+    echo
+    echo "[Option]"
+    echo " -pi  | -in           : PEM Certification file."
+    echo " -pk  | -inkey        : PEM Certification Key file."
+    echo " -jks | -destkeystore : JKS output name."
+    echo " -h   | --help        : help messages"
 
 }
 
-# 파라미터가 없는 경우 종료
-if [ "$1" == "" ];
+# If no parameter.
+if [ $# -lt 1 ];
 then
-	usage "No Parameters."
-	exit 1
+    usage "No Parameter."
+    exit 1
 fi
 
-## 파라미터 읽기
+## Read parameters
 while [ "$1" != "" ]; do
-	case $1 in
-	-pi | --pem-in)
-		shift
-		PEM_IN=$1
-		;;
-	-pk | --pem-inkey)
-		shift
-		PEM_INKEY=$1
-		;;
-	-pp | --pem-passwd)
-		shift
-		PEM_PASSWD=$1
-		;;
-	-jks | --jks-out)
-		shift
-		JKS_OUTPUT=$1
-		;;
-	-jp  | --jks-passwd)
-		shift
-		JKS_PASSWD=$1
-		;;
-	-h | --help)
-		usage "--help"
-		exit 0
-		;;
-	esac
-	shift
+    case $1 in
+    -pi | -in)
+        shift
+        PEM_IN=$1
+        ;;
+    -pk | -inkey)
+        shift
+        PEM_INKEY=$1
+        ;;
+    -jks | -destkeystore)
+        shift
+        JKS_OUTPUT=$1
+        ;;
+    -h | --help)
+        usage "--help"
+        exit 0
+        ;;
+    esac
+    shift
 done
 
-# print if not null
-pinn(){
+# print if not empty
+pine(){
 	if [ ! -z $2 ];
 	then
 		echo " >>> $1: $2"
@@ -75,11 +62,9 @@ pinn(){
 }
 
 print_params(){
-	pinn "-pi" "$PEM_IN"
-	pinn "-pk" "$PEM_INKEY"
-	pinn "-pp" "$PEM_PASSWD"
-	pinn "-jks" "$JKS_OUTPUT"
-	pinn "-jp" "$JKS_PASSWD"
+	pine "-pi" "$PEM_IN"
+	pine "-pk" "$PEM_INKEY"
+	pine "-jks" "$JKS_OUTPUT"
 }
 
 
@@ -113,6 +98,8 @@ validate_file(){
 	fi
 }
 
+
+
 # validate_name certification & key
 echo
 echo " >>> validate 'certification.pem'"
@@ -122,28 +109,13 @@ sleep 0.5
 
 echo
 echo " >>> validate 'certification key.pem'"
-validate_file "Certification Key" $PEM_INKEY
+validate_file "Certification Key"  $PEM_INKEY
 
 sleep 0.5
-
-echo
-echo " >>> validate 'certification password'"
-validate_name "Certification Password" $PEM_PASSWD "allow"
-
-#sleep 0.5
 
 # validate p12 output
 P12_OUTPUT=$(uuidgen).p12
 P12_PASSWD=$P12_OUTPUT
-#echo
-#echo " >>> validate 'p12 output name'"
-#validate_name "P12 Output" $P12_OUTPUT
-
-#sleep 0.5
-
-#echo
-#echo " >>> validate 'p12 password'"
-#validate_name "P12 Password" $P12_PASSWD
 
 sleep 0.5
 
@@ -183,7 +155,17 @@ fi
 
 sleep 0.5
 
+# read a password for 'pem'.
 echo
+read -p " !!! Insert a password for 'PEM' file: " PEM_PASSWD
+echo " >>> validate 'certification password'"
+validate_name "Certification Password" $PEM_PASSWD "allow"
+
+sleep 0.5
+
+# read a password for 'jks'.
+echo
+read -p " !!! Insert a password for 'JKS' file: " JKS_PASSWD
 echo " >>> validate 'jks password'"
 validate_name "JKS Password" $JKS_PASSWD "allow"
 
@@ -211,10 +193,10 @@ execute(){
 	CMD=$1
 	if [ ! -z $3 ];
 	then
-		CMD=$CMD" "$2$3
+		CMD=$CMD" "$2"\""$3"\""
 	fi
-		echo " >>> $CMD"
-	$CMD
+	echo " >>> $CMD"
+	eval $CMD
 }
 
 # 1 'pem' to 'p12'
