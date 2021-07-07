@@ -1,0 +1,160 @@
+#!/usr/bin/env bash
+
+# =======================================
+# @auther : parkjunhong77@gmail.com
+# @title  : execute a command, 'git pull' for projects.
+# @license: Apache License 2.0
+# @since  : 2021-04-19
+# @desc   : support macOS 11.2.3, Ubuntu 18.04, CentOS 7 or higher
+# =======================================
+
+
+# get a filename
+FILENAME=$(basename $0)
+
+help(){
+	if [ ! -z "$1" ];
+	then
+		local indent=10
+		local formatl=" - %-"$indent"s: %s\n"
+		local formatr=" - %"$indent"s: %s\n"
+		echo
+		echo "================================================================================"
+		printf "$formatl" "filename" "$FILENAME"
+		printf "$formatl" "line" "$2"
+		printf "$formatl" "callstack"
+		local idx=1
+		for func in ${FUNCNAME[@]:1}
+		do
+			printf "$formatr" "["$idx"]" $func
+			((idx++))
+		done
+		printf "$formatl" "cause" "$1"
+		echo "================================================================================"
+	fi
+
+	echo
+	echo "[Usage]"
+	echo "git-pull-all -p <project ...> -d <directory> -l <level>"
+	echo
+	echo "[Parameters]"
+	echo " -d: directory. If '-p' does not occurs, you can set a directory without '-d'."
+	echo "     If '-p' occurs, you must use '-d' to set a directory."
+	echo " -l: level. Indicates a depth which you should go down a directory where projects are."
+	echo " -p: projects. You can set project one or more if use '-p' once."
+	echo
+}
+
+PROJECTS=()
+PRJ_FLAG=0
+DIR="$PWD"
+LEVEL=0
+while [ ! -z "$1" ];
+do
+	case "$1" in
+		-d | --dir)
+			shift
+			if [ ! -d "$1" ];then
+				help "Invalid 'directory'. input=$1" $LINENO
+				exit 1
+			fi
+			DIR="$1"
+			;;
+		-h | --help)
+			help 
+			exit 0
+			;;
+		-l | --level)
+			shift
+			if ! [[ "$1" =~ [0-9]+ ]];then
+				help "Invalid 'level'. input=$1" $LINENO
+				exit 1
+			fi
+			LEVEL=$1
+			;;
+		-p)
+			shift
+			PROJECTS+=("$1")
+			PRJ_FLAG=1
+			;;
+		*)
+			if [ $PRJ_FLAG -eq 1 ];
+			then
+				PROJECTS+=("$1")
+			else
+				DIR="$1"
+			fi
+			;;
+	esac
+	shift
+done
+
+if [ ! -d "$DIR" ];
+then
+	help  "Invalid a directory. dir=$DIR" $LINENO
+	exit 1
+fi
+
+let "RTV = 0"
+# 배열 내 데이터가 주어진 문자열로 시작하는 것이 있는지 여부를 제공한다.
+# @param $1 {string} 배열 이름
+# @param $2 {string}  문자열
+starts_with(){
+    arr="\${$1[@]}"
+    for val in $(eval "echo ${arr}");
+    do  
+        if [[ "${val}" == $2* ]]; 
+        then
+            RTV=1
+            return    
+        fi
+    done
+    RTV=0
+}
+
+# 절대경로/상대경로 확인
+if [[ "$DIR" != /* ]] ;
+then
+	# handle relative path
+	DIR=$PWD"/"$DIR
+fi
+
+# save a current directory
+pushd . > /dev/null
+
+# Go to a working directory
+cd "$DIR"
+
+ls -l "$DIR" | grep '^d' | awk '{print $9}' | while read subdir;
+do
+	if [ ${#PROJECTS[@]} -gt 0 ];
+	then
+		starts_with "PROJECTS" "$subdir"
+		if [ $RTV -ne 1 ];
+		then
+			continue
+		fi
+	fi
+
+    echo
+    echo "-------------------------------------------------------------"
+    echo "- * * * * * Project: $subdir"
+    echo "-------------------------------------------------------------"
+	# Go to a target directory
+	cd "$subdir"
+	
+	if [ ! -f "./.git/config" ];then
+		echo " ! ! ! This does NOT USE git as a SCM."
+		cd ..
+		continue
+	fi
+
+	git pull
+	
+	cd ..
+done
+
+# restore a current directory
+popd > /dev/null
+
+exit 0
