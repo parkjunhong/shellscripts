@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+
+help(){
+	if [ $# -gt 0 ];
+	then
+		echo
+		echo "Call by $FUNCNAME[1]. message=$1"
+	fi
+	echo
+	echo "Create a shell file to connect a target server using SSH connection."
+	echo 
+	echo "Usage:"
+	echo " ssh-con-gen.sh -user <username> -pwd <password> -host <host> -port <port> -file <filename> -title <title>"
+	echo
+	echo "Parameter:"
+	echo " -user: username"
+	echo " -pwd: password"
+	echo " -host: ssh host or domain name"
+	echo " -port: ssh port"
+	echo " -file: filename"
+	echo " -title: title of this command"
+}
+
+
+while [ ! -z "$1" ];
+do
+	case "$1" in
+		-user | --username)
+			shift
+			username=$1
+			;;
+		-pwd | --password)
+			shift
+			password=$1
+			;;
+		-host)
+			shift
+			host=$1
+			;;
+		-port)
+			shift
+			port=$1
+			;;
+		-file)
+			shift
+			filename=$1
+			;;
+		-title)
+			shift
+			title=$1
+			;;
+		-help)
+			help
+			exit 0
+			;;
+	*)
+			;;
+	esac
+	shift
+done
+
+echo
+args=("$username" "$password" "$host" "$port" "$filename")
+idx=0
+for arg in "${args[@]}"
+do
+	if [ -z "$arg" ];
+	then
+		help "arguments is empy."
+		exit 1
+	fi
+	((idx++))
+done
+
+FILENAME="$(pwd)/bin/$filename"
+if [ -d $FILENAME ];
+then
+	help "$FILENAME is not valid. It is a directory."
+	exit 1
+fi
+
+if [ -f $FILENAME ];
+then
+	read -p "'$FILENAME' already exists. Overwrite ? (Y/N) " confirm
+	confirm=$(echo $confirm | tr [:lower:] [:upper:])
+	if [ "$confirm" != "Y" ];
+	then
+		exit 1
+	fi
+fi
+
+echo "#!/usr/bin/env bash" > "$FILENAME"
+echo "echo" >> "$FILENAME"
+if [ ! -z "$title" ];
+then
+	echo "TITLE=$title" >> "$FILENAME"
+fi
+echo "USERNAME=$username" >> "$FILENAME"
+echo "PASSWORD=$password" >> "$FILENAME"
+echo "HOST=$host" >> "$FILENAME"
+echo "PORT=$port" >> "$FILENAME"
+if [ ! -z "$title" ];
+then
+	echo "echo \"title : \$TITLE\"" >> "$FILENAME"
+fi
+echo "echo \"account: \$USERNAME / \$PASSWORD\"" >> "$FILENAME"
+echo "CMD=\"ssh \$USERNAME@\$HOST -p \$PORT\"" >> "$FILENAME"
+echo "echo" >> "$FILENAME"
+echo "echo \$CMD" >> "$FILENAME"
+echo "echo" >> "$FILENAME"
+echo "eval \$CMD" >> "$FILENAME"
+echo "echo" >> "$FILENAME"
+echo "exit 0" >> "$FILENAME"
+echo
+echo "'$filename' is created at $(pwd)/bin"
+echo
+echo "chmod +x $FILENAME"
+chmod +x $FILENAME
+
+echo
+exit 0
+
+
+

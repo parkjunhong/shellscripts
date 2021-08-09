@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+
+# =======================================
+# @author		: parkjunhong77@gmail.com
+# @title		: build maven projects with user-custom 'profile' for build.
+# @license		: Apache License 2.0
+# @since		: 2021-04-07
+# @desc			: support macOS 11.2.3, Ubuntu 18.04, CentOS 6,7
+# @installation	: 
+#		1. insert 'source <path>/dsms-ctrl.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#		2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/dsms-ctrl.completion' into /etc/bashrc for all users.
+# =======================================
+
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+
+
+##
+# 목록 중에서 접두어로 시작하는 것들만 추가한다.
+# 단, 하나도 없는 경우 전체 목록을 추가한다.
+# @param $1 {string} 콤마(,)로 접두어와 목록을 구분한 하나의 문자열
+candidate(){
+	IFS="," read -a  _arguments <<< "$@"
+	local _prefix="${_arguments[0]}"
+	local _args=(${_arguments[1]})
+	local _forcely=${_arguments[2]}
+
+	if [ -z "$_prefix" ]; then
+		COMPREPLY+=( $(compgen -W "$(echo ${_args[@]})") )
+	else
+		local _candi=()
+		for _opt in ${_args[@]};
+		do
+			if [[ $_opt =~ $_prefix(.)* ]];then
+			_candi+=($_opt)
+			fi
+		done
+
+		_ssh-con-gen-log "f'$FUNCNAME' candidates=${_candi[@]}, prefix=$_prefix"
+
+		if [ ${#_candi[@]} -gt 0 ];then
+			COMPREPLY+=( $(compgen -W "$(echo ${_args[@]})" -- $_prefix) )
+		elif [ $_forcely -eq 1 ];then
+			COMPREPLY+=( $(compgen -W "$(echo ${_args[@]})") )
+		fi
+	fi 
+}
+
+##
+#
+# @param $1 {string} path
+list-dir(){
+	COMPREPLY=( $(compgen -f $1) )
+}
+
+##
+# print logs to a external file.
+_ssh-con-gen-log(){
+	# To log messages, change a comment '#'.
+#	local _category="ssh-con-gen"
+#	printf "[%s] [%-10s] " "$(date '+%Y/%m/%d %H:%M:%S')" "$_category"  >>  ~/user-custom-completion.log
+#	echo -e "$@" >> ~/user-custom-completion.log
+	
+	# ignore logs
+	echo "$@" >/dev/null
+}
+
+_ssh-con-gen-load-options(){
+	echo "-user -pwd -host -port -file -title -help"
+}
+
+# $1: argument
+_ssh-con-gen-add-if-new(){
+	_ssh-con-gen-log "f'$FUNCNAME' arguments=$@"
+
+	local __new=1
+	for word in ${COMP_WORDS[@]}
+	do
+		if [ "$word" = "$1" ];then
+			_ssh-con-gen-log "'$word' already exists"
+			__new=0
+			break
+		fi
+	done
+
+	if [ $__new -eq 1 ];then
+		COMPREPLY+=("$1")
+	fi
+}
+
+# @param $1 {string}: prefix of ..
+_ssh-con-gen-add-default-options(){
+	local _prefix="$1"
+	local _args=($(_ssh-con-gen-load-options))
+	
+	_ssh-con-gen-log "f'$FUNCNAME' Prefix: $_prefix, options=${_args[@]}"
+
+	for _arg in ${_args[@]}
+	do
+		if [ -z "$_prefix" ] || [[ $_arg == $_prefix* ]];then
+			_ssh-con-gen-add-if-new "$_arg"
+		fi
+	done
+}
+
+
+
+# $1: command
+# $2: current
+# $3: previous
+_ssh-con-gen-handle-cli(){
+	_ssh-con-gen-log "\n\n====================================================="
+	_ssh-con-gen-log $(printf "%-15s: %s" "COMP_WORDS" "${COMP_WORDS[@]}")
+	_ssh-con-gen-log $(printf "%-15s: %s" "COMP_LINE" "${COMP_LINE}")
+	_ssh-con-gen-log $(printf "%-15s: %s, %s: %s" "COMP_CWORD" "$COMP_CWORD" "#WORDS" "${#COMP_WORDS[@]}") 
+	_ssh-con-gen-log $(printf "%s: %s, %s: %s" "CURRENT(\$2)" "$2" "PREVIOUS(\$3)" "$3")
+
+	case ${#COMP_WORDS[@]} in
+		2)
+			candidate "$2,$(_ssh-con-gen-load-options),1"
+			;;
+		*)
+			case "$3" in
+				-user | -pwd | -host | -port | -file | -title)
+					# input a value
+					;;
+				*)
+					_ssh-con-gen-add-default-options "$2"
+					;;
+			esac
+			;;
+	esac
+}
+
+
+
+complete -F _ssh-con-gen-handle-cli -o nospace ssh-con-gen
