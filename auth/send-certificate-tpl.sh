@@ -13,7 +13,8 @@ PKCS12_DESTS=( ... )
 
 # R3-wildcar file name
 CERT_NAME="..."
-# password for P12
+# name & password for P12
+P12_NAME="..."
 P12_PWD="..."
 
 validate-file(){
@@ -56,7 +57,7 @@ convert-to-p12(){
 	#1. clear old files.
 	rm -rf $PKCS12_DIR
 	mkdir $PKCS12_DIR
-	openssl pkcs12 -export -out "${PKCS12_DIR}/${CERT_NAME}.p12" -passout pass:$P12_PWD -in "$FILE_CERT" -inkey "$FILE_PRIVKEY" -CAfile "$FILE_FULLCHAIN" -name ymtech
+	openssl pkcs12 -export -out "${PKCS12_DIR}/${CERT_NAME}.p12" -passout pass:$P12_PWD -in "$FILE_CERT" -inkey "$FILE_PRIVKEY" -CAfile "$FILE_FULLCHAIN" -name "$P12_NAME"
 	ls -al "${PKCS12_DIR}/${CERT_NAME}.p12"
 
 	echo " < < < end:"
