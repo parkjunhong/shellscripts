@@ -7,29 +7,12 @@
 # @since  : 2020-08-18
 # =======================================
 
-# need for log.
-FILENAME=$0
 help(){
-	if [ ! -z "$1" ];
-	then
-		local indent=10
-		local formatl=" - %-"$indent"s: %s\n"
-		local formatr=" - %"$indent"s: %s\n"
+	
+	if [ $# -gt 0 ];then
 		echo
-		echo "================================================================================"
-		printf "$formatl" "filename" "$FILENAME"
-		printf "$formatl" "line" "$2"
-		printf "$formatl" "callstack"
-		local idx=1
-		for func in ${FUNCNAME[@]:1}
-		do
-			printf "$formatr" "["$idx"]" $func
-			((idx++))
-		done
-		printf "$formatl" "cause" "$1"
-		echo "================================================================================"
+		echo "['${FUNCNAME[1]}' says] " $1
 	fi
-
     echo
     echo "[Usage]"
     echo "git-merge.sh -s <source> -t <target>"
@@ -98,12 +81,8 @@ show-branches(){
 # $1 {string}: title or purpose.
 select-branch(){
 	read -p "Select '$1' branch [1 ~ ${#BRANCHES[@]}]: " index
-	
-	if ! [[ $index =~ ^[1-9][0-9]*$ ]];then
-		index=0
-	fi
-
-	if [ $index -lt 1 ];then
+	re="^[0-9]+$"
+	if [ -z "$index" ] || ! [[ $index =~ $re ]] || [ $index -gt ${#BRANCHES[@]} ] || [ $index -lt 1 ]; then
 		index=$(date +%s)
 	fi
 	echo ${BRANCHES[$index-1]}
@@ -128,7 +107,8 @@ has-value(){
 
 BRANCHES=($(read-branches))
 if [ ${#BRANCHES[@]} -lt 1 ];then
-	help "[ERROR] * * * (A current or one of above folders) is not a git repository." $LINENO
+	echo "[ERROR] * * * (A current or one of above folders) is not a git repository."
+	help
 	exit 1
 fi
 
@@ -138,7 +118,8 @@ if [ -z "$SOURCE" ];then
 
 	if [ -z "$SOURCE" ];then
 		echo
-		help "[ERRROR] * * * Invalid merge branch. source=${SOURCE}" $LINENO    
+		echo "[ERRROR] * * * Invalid merge branch. source=${SOURCE}"    
+		help 
 		exit 1
 	fi
 fi
@@ -149,31 +130,44 @@ if [ -z "$TARGET" ];then
 
 	if [ -z "$TARGET" ];then
 		echo
-		help "[ERRROR] * * * Invalid merge branch. target=${TARGET}" $LINENO
+		echo "[ERRROR] * * * Invalid merge branch. target=${TARGET}"
+		help 
 		exit 1
 	fi
 fi
 
 if [ "$SOURCE" == "$TARGET" ];then
 	echo
-	help "[ERROR] * * * Invalid a source and a target branches. source (=) target." $LINENO
+	echo "[ERROR] * * * Invalid a source and a target branches. source (=) target."
+	help
 	exit 1
 fi
 
 CUR_BRANCH=$(git branch 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/\1/')
 
+# 1. update from 'remote' of 'source' branch
+echo
+echo " > > > git checkout \"${SOURCE}\""
+git checkout "${SOURCE}"
+git pull
+
+# 2. update from 'remote' of 'target' branch
 echo
 echo " > > > git checkout \"${TARGET}\""
 git checkout "${TARGET}"
+git pull
 
+# 3. merge from 'source' to 'target'
 echo
 echo " > > > git merge \"${SOURCE}\""
 git merge "${SOURCE}"
 
+# 4. push to 'remote' of 'target'
 echo
 echo " > > > git push"
 git push
 
+# 5. come back to 'current'
 echo 
 echo " > > > git checkout \"${CUR_BRANCH}\""
 git checkout "${CUR_BRANCH}"
