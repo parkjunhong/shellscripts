@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+
+help(){
+    if [ $# -gt 0 ];
+    then
+        echo
+        echo "['${FUNCNAME[1]}' says] " $1
+    fi
+
+    echo
+    echo "[Usage]"
+    echo "auto-deploy-ddc.sh -b <branch> -p <profile>"
+    echo
+    echo "[Parameters]"
+    echo " -b: git branch name"
+    echo " -d: absolute filepath of a git/maven project"
+    echo " -p: profile of configuration"
+    echo
+}
+
+BRANCH=""
+PROFILE=""
+DIR="/home/ymtech/dsmsv6/sources/dsmsv6-dhcp-data-collector"
+while [ ! -z "$1" ];
+do
+    case "$1" in
+        -b | --branch)
+            shift
+            BRANCH="$1"
+            ;;
+        -d | --directory)
+            shift
+            DIR="$1"
+            ;;
+        -p | --profile)
+            shift
+            PROFILE="$1"
+            ;;
+        -h | --help)
+            help
+            exit 0
+            ;;
+        *)
+            ;;
+    esac
+done
+
+if [ -z "$BRANCH" ];
+then
+    echo
+    echo "'Git Branch'가 설정되지 않았습니다."
+    cd $"DIR"
+    echo 
+    echo "[branch list]"
+    git branch
+    echo
+
+    exit 1
+fi
+
+if [ -z "$PROFILE" ];
+then
+    echo
+    echo "'빌드  Profile'이 설정되지 않았습니다."
+    cd "$DIR/config/"
+    echo
+    echo "[Profile list]"
+    for i in $(ls -d */); do echo ${i%%/}; done
+    echo
+fi
+
+# Backend Servcie
+cd "$DIR"
+git checkout $BRANCH
+git pull
+mvn clean package -Dbuild.profile=$PROFILE -Dmaven.test.skip=true -U
+cd deploy/dev
+./deploy.sh
+
+exit 0
