@@ -50,11 +50,13 @@ if [ -z "$BRANCH" ];
 then
     echo
     echo "'Git Branch'가 설정되지 않았습니다."
-    cd $"DIR"
+    cd "$DIR"
     echo 
     echo "[branch list]"
     git branch
     echo
+
+	help
 
     exit 1
 fi
@@ -68,6 +70,10 @@ then
     echo "[Profile list]"
     for i in $(ls -d */); do echo ${i%%/}; done
     echo
+
+	help
+
+	exit 1
 fi
 
 # Backend Servcie
