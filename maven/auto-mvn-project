@@ -81,7 +81,7 @@ cd "$DIR"
 git checkout $BRANCH
 git pull
 mvn clean package -Dbuild.profile=$PROFILE -Dmaven.test.skip=true -U
-cd deploy/dev
+cd "./deploy/$PROFILE"
 ./deploy.sh
 
 exit 0
