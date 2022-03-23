@@ -43,6 +43,7 @@ do
         *)
             ;;
     esac
+	shift
 done
 
 if [ -z "$BRANCH" ];
