@@ -20,7 +20,7 @@ help(){
 
 BRANCH=""
 PROFILE=""
-DIR="/home/ymtech/dsmsv6/sources/dsmsv6-dhcp-data-collector"
+DIR=""
 while [ ! -z "$1" ];
 do
     case "$1" in
