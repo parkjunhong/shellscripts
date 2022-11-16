@@ -72,11 +72,13 @@ done
 
 echo
 echo "#1. Create a target directory if not exist"
+echo " \$ ssh -p ${PORT} ${USER_NAME}@${HOST} mkdir -p ${DEST}"
 sshpass -p ${PASSWD} ssh -p ${PORT} ${USER_NAME}@${HOST} mkdir -p ${DEST}
 
 echo
 echo "#2. Copy a directory to target."
 echo " \$ scp -r -P ${PORT} ${SOURCE} ${USER_NAME}@${HOST}:${DEST}"
-sshpash -p ${PASSWD} scp -r -P ${PORT} ${SOURCE} ${USER_NAME}@${HOST}:${DEST}
+sshpass -p ${PASSWD} scp -r -P ${PORT} ${SOURCE} ${USER_NAME}@${HOST}:${DEST}
 
+echo
 exit
