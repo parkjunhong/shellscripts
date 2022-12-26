@@ -11,7 +11,7 @@ usage(){
 	echo "[Usage]"
 	echo " A shell script that send files or directory using 'sshpass'"
 	echo 
-	echo "./scp-eash.sh -u <username> -i <passwd> -h <target-host> -p <target-port> -s <source> -d <destionation> [-h]"
+	echo "./scp-dir.sh -u <username> -i <passwd> -h <target-host> -p <target-port> -s <source> -d <destionation> [-h]"
 	echo
 	echo "[Option]"
 	echo " -u | --username: username of target server."
@@ -73,12 +73,12 @@ done
 echo
 echo "#1. Create a target directory if not exist"
 echo " \$ ssh -p ${PORT} ${USER_NAME}@${HOST} mkdir -p ${DEST}"
-sshpass -p ${PASSWD} ssh -p ${PORT} ${USER_NAME}@${HOST} mkdir -p ${DEST}
+sshpass -p ${PASSWD} ssh -o StrictHostKeyChecking=no -p ${PORT} ${USER_NAME}@${HOST} mkdir -p ${DEST}
 
 echo
 echo "#2. Copy a directory to target."
 echo " \$ scp -r -P ${PORT} ${SOURCE} ${USER_NAME}@${HOST}:${DEST}"
-sshpass -p ${PASSWD} scp -r -P ${PORT} ${SOURCE} ${USER_NAME}@${HOST}:${DEST}
+sshpass -p ${PASSWD} scp -o StrictHostKeyChecking=no -r -P ${PORT} ${SOURCE} ${USER_NAME}@${HOST}:${DEST}
 
 echo
 exit
