@@ -72,7 +72,7 @@ do
 	((idx++))
 done
 
-FILENAME="$(pwd)/bin/$filename"
+FILENAME="$HOME/bin/$filename"
 if [ -d $FILENAME ];
 then
 	help "$FILENAME is not valid. It is a directory."
@@ -90,26 +90,34 @@ then
 fi
 
 echo "#!/usr/bin/env bash" > "$FILENAME"
+
+echo "" >> "$FILENAME"
+
+echo "USERNAME=\"$username\"" >> "$FILENAME"
+echo "PASSWORD=\"$password\"" >> "$FILENAME"
+echo "HOST=\"$host\"" >> "$FILENAME"
+echo "PORT=\"$port\"" >> "$FILENAME"
+
+echo "" >> "$FILENAME"
+
 echo "echo" >> "$FILENAME"
 if [ ! -z "$title" ];
 then
-	echo "TITLE=$title" >> "$FILENAME"
-fi
-echo "USERNAME=$username" >> "$FILENAME"
-echo "PASSWORD=$password" >> "$FILENAME"
-echo "HOST=$host" >> "$FILENAME"
-echo "PORT=$port" >> "$FILENAME"
-if [ ! -z "$title" ];
-then
-	echo "echo \"title : \$TITLE\"" >> "$FILENAME"
+	echo "echo \"$title\"" >> "$FILENAME"
 fi
 echo "echo \"account: \$USERNAME / \$PASSWORD\"" >> "$FILENAME"
-echo "CMD=\"ssh \$USERNAME@\$HOST -p \$PORT\"" >> "$FILENAME"
+echo "CMD=\"ssh -o StrictHostKeyChecking=no \$USERNAME@\$HOST -p \$PORT\"" >> "$FILENAME"
 echo "echo" >> "$FILENAME"
 echo "echo \$CMD" >> "$FILENAME"
+
+echo "" >> "$FILENAME"
+
 echo "echo" >> "$FILENAME"
-echo "eval \$CMD" >> "$FILENAME"
+echo "sshpass -p $password \$CMD" >> "$FILENAME"
 echo "echo" >> "$FILENAME"
+
+echo "" >> "$FILENAME"
+
 echo "exit 0" >> "$FILENAME"
 echo
 echo "'$filename' is created at $(pwd)/bin"
@@ -119,6 +127,4 @@ chmod +x $FILENAME
 
 echo
 exit 0
-
-
 
