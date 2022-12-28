@@ -7,14 +7,14 @@ help(){
 		echo "Call by $FUNCNAME[1]. message=$1"
 	fi
 	echo
-	echo "Create a shell file to connect a target server using SSH connection."
+	echo "Create a shell file to connect a target server using 'ssh' & 'sshpass'."
 	echo 
 	echo "Usage:"
 	echo " ssh-con-gen.sh -user <username> -pwd <password> -host <host> -port <port> -file <filename> -title <title>"
 	echo
 	echo "Parameter:"
 	echo " -user: username"
-	echo " -pwd: password"
+	echo " -pwd: password. if password contains '!', wrap with single quotation."
 	echo " -host: ssh host or domain name"
 	echo " -port: ssh port"
 	echo " -file: filename"
@@ -103,7 +103,7 @@ echo "" >> "$FILENAME"
 echo "echo" >> "$FILENAME"
 if [ ! -z "$title" ];
 then
-	echo "echo \"$title\"" >> "$FILENAME"
+	echo "echo title\"$title\"" >> "$FILENAME"
 fi
 echo "echo \"account: \$USERNAME / \$PASSWORD\"" >> "$FILENAME"
 echo "CMD=\"ssh -o StrictHostKeyChecking=no \$USERNAME@\$HOST -p \$PORT\"" >> "$FILENAME"
@@ -124,6 +124,13 @@ echo "'$filename' is created at $(pwd)/bin"
 echo
 echo "chmod +x $FILENAME"
 chmod +x $FILENAME
+
+echo
+echo "---------------------------------------------------------------------------------------------------------"
+echo "---------------------------------------------------------------------------------------------------------"
+cat $FILENAME
+echo "---------------------------------------------------------------------------------------------------------"
+echo "---------------------------------------------------------------------------------------------------------"
 
 echo
 exit 0
