@@ -74,6 +74,7 @@ then
     git checkout "$CUR_BRANCH"
     exit 1
 fi
+cd ..
 
 echo
 echo "--- execute 'maven package for 'target profile'"
