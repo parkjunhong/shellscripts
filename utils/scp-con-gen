@@ -7,18 +7,18 @@ help(){
 		echo "Call by $FUNCNAME[1]. message=$1"
 	fi
 	echo
-	echo "Create a shell file to connect a target server using 'ssh' & 'sshpass'."
+	echo "Create a shell file to send a target server using 'ssh', 'scp' & 'sshpass'."
 	echo 
 	echo "Usage:"
-	echo " ssh-con-gen.sh -user <username> -pwd <password> -host <host> -port <port> -file <filename> -title <title>"
+	echo " scp-con-gen.sh -user <username> -pwd <password> -host <host> -port <port> -dir <remote dir> -file <filename>"
 	echo
 	echo "Parameter:"
 	echo " -user: username"
-	echo " -pwd: password. if password contains '!', wrap with single quotation."
+	echo " -pwd : password. if password contains '!', wrap with single quotation."
 	echo " -host: ssh host or domain name"
 	echo " -port: ssh port"
+	echo " -dir : remote directory to install files"
 	echo " -file: filename"
-	echo " -title: title of this command"
 }
 
 
@@ -27,27 +27,27 @@ do
 	case "$1" in
 		-user | --username)
 			shift
-			username=$1
+			username="$1"
 			;;
 		-pwd | --password)
 			shift
-			password=$1
+			password="$1"
 			;;
 		-host)
 			shift
-			host=$1
+			host="$1"
 			;;
 		-port)
 			shift
-			port=$1
+			port="$1"
+			;;
+		-dir)
+			shift
+			dir="$1"
 			;;
 		-file)
 			shift
-			filename=$1
-			;;
-		-title)
-			shift
-			title=$1
+			filename="$1"
 			;;
 		-help)
 			help
@@ -60,7 +60,7 @@ do
 done
 
 echo
-args=("$username" "$password" "$host" "$port" "$filename")
+args=("$username" "$password" "$host" "$port" "$filename" "$dir")
 idx=0
 for arg in "${args[@]}"
 do
@@ -81,7 +81,7 @@ fi
 
 if [ -f $FILENAME ];
 then
-	read -p "'$FILENAME' already exists. Overwrite ? (Y/N) " confirm
+	read -p "*** '$FILENAME' already exists. Overwrite ? (Y/N) " confirm
 	confirm=$(echo $confirm | tr [:lower:] [:upper:])
 	if [ "$confirm" != "Y" ];
 	then
@@ -93,36 +93,38 @@ echo "#!/usr/bin/env bash" > "$FILENAME"
 
 echo "" >> "$FILENAME"
 
-echo "USERNAME=\"$username\"" >> "$FILENAME"
-echo "PASSWORD=\"$password\"" >> "$FILENAME"
-echo "HOST=\"$host\"" >> "$FILENAME"
-echo "PORT=\"$port\"" >> "$FILENAME"
+echo "USER_NAME=\"$username\"" >> "$FILENAME"
+echo "PASSWD=\"$password\"" >> "$FILENAME"
+echo "DATE=\$(date \"+%Y%m%d\")" >> "$FILENAME"
 
 echo "" >> "$FILENAME"
 
-echo "echo" >> "$FILENAME"
-if [ ! -z "$title" ];
-then
-	echo "echo title\"$title\"" >> "$FILENAME"
-fi
-echo "echo \"account: \$USERNAME / \$PASSWORD\"" >> "$FILENAME"
-echo "CMD=\"ssh -o StrictHostKeyChecking=no \$USERNAME@\$HOST -p \$PORT\"" >> "$FILENAME"
-echo "echo" >> "$FILENAME"
-echo "echo \$CMD" >> "$FILENAME"
+echo "SRC_DIR=\"\$1\"" >> "$FILENAME"
+echo "TARGET_IP=\"$host\"" >> "$FILENAME"
+echo "TARGET_PORT=\"$port\"" >> "$FILENAME"
+echo "TARGET_DIR=\"$dir/\${DATE}\"" >> "$FILENAME"
 
 echo "" >> "$FILENAME"
 
-echo "echo" >> "$FILENAME"
-echo "sshpass -p $password \$CMD" >> "$FILENAME"
-echo "echo" >> "$FILENAME"
+echo "if [ -z \"\$SRC_DIR\" ] || [ ! -d \"\$SRC_DIR\" ];" >> "$FILENAME"
+echo "then" >> "$FILENAME"
+echo "    echo" >> "$FILENAME"
+echo "    echo \"배포할 디렉토리가 올바르지 않습니다. 입력=\$SRC_DIR\"" >> "$FILENAME"
+echo "    exit 1" >> "$FILENAME"
+echo "fi" >> "$FILENAME"
+
+echo "" >> "$FILENAME"
+
+echo "scp-dir.sh -u \"\$USER_NAME\" -i \"\$PASSWD\" -h \"\$TARGET_IP\" -p \"\$TARGET_PORT\" -s \"\$SRC_DIR\" -d \"\$TARGET_DIR\"" >> "$FILENAME"
 
 echo "" >> "$FILENAME"
 
 echo "exit 0" >> "$FILENAME"
+
 echo
-echo "'$filename' is created at $(pwd)/bin"
+echo "*** '$filename' was created at $HOME/bin"
 echo
-echo "chmod +x $FILENAME"
+echo "*** chmod +x $FILENAME"
 chmod +x $FILENAME
 
 echo

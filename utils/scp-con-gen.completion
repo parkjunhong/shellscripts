@@ -49,7 +49,7 @@ candidate(){
 			fi
 		done
 
-		_ssh-con-gen-log "f'$FUNCNAME' candidates=${_candi[@]}, prefix=$_prefix"
+		_scp-con-gen-log "f'$FUNCNAME' candidates=${_candi[@]}, prefix=$_prefix"
 
 		if [ ${#_candi[@]} -gt 0 ];then
 			COMPREPLY+=( $(compgen -W "$(echo ${_args[@]})" -- $_prefix) )
@@ -68,7 +68,7 @@ list-dir(){
 
 ##
 # print logs to a external file.
-_ssh-con-gen-log(){
+_scp-con-gen-log(){
 	# To log messages, change a comment '#'.
 #	local _category="ssh-con-gen"
 #	printf "[%s] [%-10s] " "$(date '+%Y/%m/%d %H:%M:%S')" "$_category"  >>  ~/user-custom-completion.log
@@ -78,19 +78,19 @@ _ssh-con-gen-log(){
 	echo "$@" >/dev/null
 }
 
-_ssh-con-gen-load-options(){
-	echo "-user -pwd -host -port -file -title -help"
+_scp-con-gen-load-options(){
+	echo "-user -pwd -host -port -file -dir -help"
 }
 
 # $1: argument
-_ssh-con-gen-add-if-new(){
-	_ssh-con-gen-log "f'$FUNCNAME' arguments=$@"
+_scp-con-gen-add-if-new(){
+	_scp-con-gen-log "f'$FUNCNAME' arguments=$@"
 
 	local __new=1
 	for word in ${COMP_WORDS[@]}
 	do
 		if [ "$word" = "$1" ];then
-			_ssh-con-gen-log "'$word' already exists"
+			_scp-con-gen-log "'$word' already exists"
 			__new=0
 			break
 		fi
@@ -102,16 +102,16 @@ _ssh-con-gen-add-if-new(){
 }
 
 # @param $1 {string}: prefix of ..
-_ssh-con-gen-add-default-options(){
+_scp-con-gen-add-default-options(){
 	local _prefix="$1"
-	local _args=($(_ssh-con-gen-load-options))
+	local _args=($(_scp-con-gen-load-options))
 	
-	_ssh-con-gen-log "f'$FUNCNAME' Prefix: $_prefix, options=${_args[@]}"
+	_scp-con-gen-log "f'$FUNCNAME' Prefix: $_prefix, options=${_args[@]}"
 
 	for _arg in ${_args[@]}
 	do
 		if [ -z "$_prefix" ] || [[ $_arg == $_prefix* ]];then
-			_ssh-con-gen-add-if-new "$_arg"
+			_scp-con-gen-add-if-new "$_arg"
 		fi
 	done
 }
@@ -121,24 +121,24 @@ _ssh-con-gen-add-default-options(){
 # $1: command
 # $2: current
 # $3: previous
-_ssh-con-gen-handle-cli(){
-	_ssh-con-gen-log "\n\n====================================================="
-	_ssh-con-gen-log $(printf "%-15s: %s" "COMP_WORDS" "${COMP_WORDS[@]}")
-	_ssh-con-gen-log $(printf "%-15s: %s" "COMP_LINE" "${COMP_LINE}")
-	_ssh-con-gen-log $(printf "%-15s: %s, %s: %s" "COMP_CWORD" "$COMP_CWORD" "#WORDS" "${#COMP_WORDS[@]}") 
-	_ssh-con-gen-log $(printf "%s: %s, %s: %s" "CURRENT(\$2)" "$2" "PREVIOUS(\$3)" "$3")
+_scp-con-gen-handle-cli(){
+	_scp-con-gen-log "\n\n====================================================="
+	_scp-con-gen-log $(printf "%-15s: %s" "COMP_WORDS" "${COMP_WORDS[@]}")
+	_scp-con-gen-log $(printf "%-15s: %s" "COMP_LINE" "${COMP_LINE}")
+	_scp-con-gen-log $(printf "%-15s: %s, %s: %s" "COMP_CWORD" "$COMP_CWORD" "#WORDS" "${#COMP_WORDS[@]}") 
+	_scp-con-gen-log $(printf "%s: %s, %s: %s" "CURRENT(\$2)" "$2" "PREVIOUS(\$3)" "$3")
 
 	case ${#COMP_WORDS[@]} in
 		2)
-			candidate "$2,$(_ssh-con-gen-load-options),1"
+			candidate "$2,$(_scp-con-gen-load-options),1"
 			;;
 		*)
 			case "$3" in
-				-user | -pwd | -host | -port | -file | -title)
+				-user | -pwd | -host | -port | -file | -dir)
 					# input a value
 					;;
 				*)
-					_ssh-con-gen-add-default-options "$2"
+					_scp-con-gen-add-default-options "$2"
 					;;
 			esac
 			;;
@@ -147,4 +147,4 @@ _ssh-con-gen-handle-cli(){
 
 
 
-complete -F _ssh-con-gen-handle-cli -o nospace ssh-con-gen
+complete -F _scp-con-gen-handle-cli -o nospace scp-con-gen
