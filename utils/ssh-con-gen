@@ -81,7 +81,7 @@ fi
 
 if [ -f $FILENAME ];
 then
-	read -p "'$FILENAME' already exists. Overwrite ? (Y/N) " confirm
+	read -p "*** '$FILENAME' already exists. Overwrite ? (Y/N) " confirm
 	confirm=$(echo $confirm | tr [:lower:] [:upper:])
 	if [ "$confirm" != "Y" ];
 	then
@@ -103,9 +103,8 @@ echo "" >> "$FILENAME"
 echo "echo" >> "$FILENAME"
 if [ ! -z "$title" ];
 then
-	echo "echo title: \"$title\"" >> "$FILENAME"
+	echo "echo \"title: $title\"" >> "$FILENAME"
 fi
-echo "echo \"account: \$USERNAME / \$PASSWORD\"" >> "$FILENAME"
 echo "CMD=\"ssh -o StrictHostKeyChecking=no \$USERNAME@\$HOST -p \$PORT\"" >> "$FILENAME"
 echo "echo" >> "$FILENAME"
 echo "echo \$CMD" >> "$FILENAME"
@@ -113,16 +112,16 @@ echo "echo \$CMD" >> "$FILENAME"
 echo "" >> "$FILENAME"
 
 echo "echo" >> "$FILENAME"
-echo "sshpass -p $password \$CMD" >> "$FILENAME"
+echo "sshpass -p \$PASSWORD \$CMD" >> "$FILENAME"
 echo "echo" >> "$FILENAME"
 
 echo "" >> "$FILENAME"
 
 echo "exit 0" >> "$FILENAME"
 echo
-echo "'$filename' is created at $(pwd)/bin"
+echo "*** '$filename' was created at $HOME/bin"
 echo
-echo "chmod +x $FILENAME"
+echo "*** chmod +x $FILENAME"
 chmod +x $FILENAME
 
 echo
