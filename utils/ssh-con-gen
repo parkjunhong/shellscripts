@@ -103,7 +103,7 @@ echo "" >> "$FILENAME"
 echo "echo" >> "$FILENAME"
 if [ ! -z "$title" ];
 then
-	echo "echo title\"$title\"" >> "$FILENAME"
+	echo "echo title: \"$title\"" >> "$FILENAME"
 fi
 echo "echo \"account: \$USERNAME / \$PASSWORD\"" >> "$FILENAME"
 echo "CMD=\"ssh -o StrictHostKeyChecking=no \$USERNAME@\$HOST -p \$PORT\"" >> "$FILENAME"
