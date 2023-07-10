@@ -8,7 +8,7 @@ help(){
 	echo "$1"
 	echo 
 	echo "Usage:"
-	echo " cp-suffix [-d|-t] [-e]  <filename> -s <suffix> -o <outputdir>"
+	echo " copy-suffix.sh [-d|-t] [-e]  <filename> -s <suffix> -o <outputdir>"
 	echo
 	echo "[Parameters]"
 	echo " filename     : absolute/relative filepath."
@@ -18,11 +18,11 @@ help(){
 	echo
 	echo "[Options]"
 	echo " -d | --date: (optional) Add current 'date' string."
-	echo "               e.g.) cp-suffix abc.txt -d -> abc-20200114.txt"
+	echo "               e.g.) copy-suffix.sh abc.txt -d -> abc-20200114.txt"
 	echo " -e | --ext : (optional) Add a suffix to end of a filename."
 	echo "              e.g.) cpsuffix  abc.txt -e -d -> abc.txt-20200114"
 	echo " -t | --time: (optional) Add current 'time' string."
-	echo "               e.g.) cp-suffix abc.txt -t -> abc-20200114191212.txt"
+	echo "               e.g.) copy-suffix.sh abc.txt -t -> abc-20200114191212.txt"
 	echo
 }
 

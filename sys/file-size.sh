@@ -43,13 +43,13 @@ do
         f)
             if [ ! $SEARCH_TYPE ]
             then
-                SEARCH_TYPE="file"
+                SEARCH_TYPE="f"
             fi
         ;;
         d)
             if [ ! $SEARCH_TYPE ]
             then
-                SEARCH_TYPE="directory"
+                SEARCH_TYPE="d"
             fi
         ;;
         w)
@@ -112,7 +112,7 @@ adjust_filesize(){
     prettyfilesize=`expr $filesize / $bs`
 }
 
-FILETYPE_FORMAT="%9s"
+FILETYPE_FORMAT="%1s"
 FILESIZE_FORMAT="%10d"
 # $1 searched list
 filesize_length(){
@@ -151,7 +151,8 @@ filesize_length(){
 
             if [ $filetype_max_len -lt $fml ];
             then
-                filetype_max_len=$fml
+                #filetype_max_len=$fml
+                filetype_max_len=1
             fi
         fi
 
@@ -187,9 +188,9 @@ search_target(){
         else
             if [ -d $item ];
             then  
-                filetype="directory"
+                filetype="d"
             else
-                filetype="file"
+                filetype="f"
             fi
 
             if [ $filetype == $1 ]
@@ -233,9 +234,9 @@ print_result(){
             
             if [ -d $item ];
             then    
-                filetype=$(printf $FILETYPE_FORMAT "directory")
+                filetype=$(printf $FILETYPE_FORMAT "d")
             else
-                filetype=$(printf $FILETYPE_FORMAT "file")
+                filetype=$(printf $FILETYPE_FORMAT "f")
             fi
             
             echo "$prettyfilesize $blocksize ( $filesize, $filetype ) $item"

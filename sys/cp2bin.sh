@@ -16,7 +16,7 @@ help(){
 	fi
 
 	echo "Usage:"
-	echo " cp2bin <command> [-u] [-f]"
+	echo " cp2bin.sh <command> [-u] [-f]"
 	echo
 	echo "[Arguments]"
 	echo " command: a command to be copied to."

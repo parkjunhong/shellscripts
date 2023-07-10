@@ -35,7 +35,7 @@ usage(){
 	echo "Change filenames using a regular expression (sed)"
 	echo
 	echo "[Usage]"
-	echo "ren-files -d <directory> -i <input regex> -o <output regex> -f"
+	echo "ren-files.sh -d <directory> -i <input regex> -o <output regex> -f"
 	echo
 	echo "[Parameters]"
 	echo " -d: directory"
@@ -45,7 +45,7 @@ usage(){
 	echo
 	echo "[Examples]"
 	echo " before: a-b.txt, a-c.txt, b-c.txt"
-	echo " [command] ren-files -d . -i '(a)-(.+)' -o '\2-\1'"
+	echo " [command] ren-files.sh -d . -i '(a)-(.+)' -o '\2-\1'"
 	echo " after: b-a.txt, c-a.txt, b-c.txt"
 	echo
 }
