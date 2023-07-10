@@ -212,6 +212,11 @@ read-csv-str(){
 		((_idx++))
 	done
 
+	# 마지막 데이터가 비어 있는 경우
+	if [ "$_c" = "$_delim" ];then
+		_buf="$_buf""$_delim"
+	fi
+
 	if [ ! -z "$_buf" ];then
 		__parse_line__+=("$_buf")
 		_buf=""
