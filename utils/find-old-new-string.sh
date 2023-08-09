@@ -101,13 +101,13 @@ echo
 echo "*******************************************************************************"
 echo "* * * 'OLD' string files * * *"
 echo
-find . -name "$TARGET_FILE" | xargs grep -I "$OLD_STR"
+find . -name "$TARGET_FILE" | xargs grep -Hn "$OLD_STR"
 
 echo
 echo "*******************************************************************************"
 echo "* * * 'NEW' string files * * *"
 echo
-find . -name "$TARGET_FILE" | xargs grep -I "$NEW_STR"
+find . -name "$TARGET_FILE" | xargs grep -Hn "$NEW_STR"
 
 
 exit 0
