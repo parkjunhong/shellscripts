@@ -147,4 +147,4 @@ _modify-string-in-file-handle-cli(){
 
 
 
-complete -F _modify-string-in-file-handle-cli -o nospace modify-string-in-file
+complete -F _modify-string-in-file-handle-cli -o nospace modify-string-in-file.sh

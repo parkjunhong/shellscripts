@@ -147,4 +147,4 @@ _find-old-new-string-handle-cli(){
 
 
 
-complete -F _find-old-new-string-handle-cli -o nospace find-old-new-string
+complete -F _find-old-new-string-handle-cli -o nospace find-old-new-string.sh
