@@ -5,7 +5,7 @@
 # @title  : modify string in files.
 # @license: Apache License 2.0
 # @since  : 2023-08-08
-# @desc   : support macOS 11.2.3, Ubuntu 18.04, CentOS 7 or higher
+# @desc   : support macOS 11.2.3, Ubuntu 20.04, CentOS 7 or higher
 # @completion: fine-old-new-string.sh.completion
 #            1. insert 'source <path>/fine-old-new-string.sh.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
 #            2. copy the above file to /etc/bash_completion.d/ for all users.
@@ -36,11 +36,11 @@ help(){
     fi  
     echo
     echo "Usage:"
-    echo "fine-old-new-string.sh.sh -d <target-directory> -f <file> -o <old string> -n <new string> [-h|--help]"
+    echo "$FILENAME -d <target-directory> -f <file> -o <old string> -n <new string> [-h|--help]"
     echo
     echo "Options:"
     echo " -d | --dir    : target directory"
-	echo " -f | --file   : target file"
+	echo " -f | --file   : target or representation of target"
     echo " -o | --old-str: string to be delete"
     echo " -n | --new-str: string to be insert"
 }

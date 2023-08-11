@@ -1,11 +1,11 @@
-#!/bin/env bash
-
+#!/usr/bin/env bash
+ 
 # =======================================
 # @auther : parkjunhong77@gmail.com
-# @title  : modify string in files.
+# @title  : tail files after they appears.
 # @license: Apache License 2.0
-# @since  : 2023-08-08
-# @desc   : support macOS 11.2.3, Ubuntu 18.04, CentOS 7 or higher
+# @since  : 2023-08-11
+# @desc   : support macOS 11.2.3, Ubuntu 20.04, CentOS 7 or higher
 # @completion: <this-filename>.completion
 #            1. insert 'source <path>/<this-filename>.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
 #            2. copy the above file to /etc/bash_completion.d/ for all users.
@@ -36,68 +36,62 @@ help(){
     fi  
     echo
     echo "Usage:"
-    echo "$FILENAME -d <target-directory> -f <file> -o <old string> -n <new string> [-h|--help]"
+    echo "$FILENAME -n <init-line-count> -f <target> [-h|--help]"
     echo
     echo "Options:"
-    echo " -d | --dir    : target directory"
-	echo " -f | --file   : target file"
-    echo " -o | --old-str: string to be delete"
-    echo " -n | --new-str: string to be insert"
+    echo " -n : initial line count to show"
+    echo " -f : target file or representation of target"
 }
 
-TARGET_DIR=""
+INIT_LINE=""
 TARGET_FILE=""
-OLD_STR=""
-NEW_STR=""
-
 while [ ! -z "$1" ];
 do
-	case "$1" in
-		-d | --dir)
-			shift
-			if [[ $1 == /* ]];then
-				TARGET_DIR=$1
-			else
-				TARGET_DIR=$(pwd)/$1
-			fi
-			;;
-		-f | --file)
-			shift
-			TARGET_FILE="$1"
-			;;
-		-o | --old-str)
-			shift
-			OLD_STR="$1"
-			;;
-		-n | --new-str)
-			shift
-			NEW_STR="$1"
-			;;
+    case "$1" in
+        -n)
+            shift
+            if [[ $1 =~ ^[0-9]+$ ]];then
+                INIT_LINE="$1"
+            fi
+            ;;
+        -f)
+            shift
+            TARGET_FILE="$1"
+            ;;
 		-h | --help)
-			help "user help" $LINENO
+			help "User Request" $LINENUMBER
 			exit 0
 			;;
-	esac
-	shift
+        *)
+            ;;
+    esac
+    shift
 done
 
-if [ -z "$TARGET_DIR" ] || [ -z "$TARGET_FILE" ] || [ -z "$OLD_STR" ] || [ -z "$NEW_STR" ];then
-	help "입력한 데이터가 올바르지 않습니다." $LINENO
-	exit 1
+if [ -z "$TARGET_FILE" ];then
+    echo
+    help "* * * Input target or representation for target. !!! " $LINENUMBER
+    exit 1
 fi
 
-
-if [ ! -d "$TARGET_DIR" ];then
-	help "입력한 경로가 올바르지 않습니다. TARGET_DIR=$TARGET_DIR" $LINENO
-	exit 1
+CMD="tail"
+if [ ! -z "$INIT_LINE" ];then
+    CMD=$CMD" -n $INIT_LINE"
 fi
 
-cd "$TARGET_DIR"
-TARGET_DIR=$(pwd)
-CMD="find $TARGET_DIR -name $TARGET_FILE -exec sed -i 's/$OLD_STR/$NEW_STR/g' {} ';'"
-echo $CMD
+CMD=$CMD" -f $TARGET_FILE"
+
+_file_count=$(ls $TARGET_FILE 2>/dev/null | wc -l)
+_retry=0
+while [ $_file_count -lt 1 ];
+do
+    sleep 1
+    ((_retry++))
+    printf "\r\033[K * * * [%'d retry] Searching result for %s." ${_retry}
+    _file_count=$(ls $TARGET_FILE 2>/dev/null | wc -l)
+done
+
 eval $CMD
 
 exit 0
-
 

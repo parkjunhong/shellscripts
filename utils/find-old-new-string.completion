@@ -70,7 +70,7 @@ list-dir(){
 # print logs to a external file.
 _find-old-new-string-log(){
 	# To log messages, change a comment '#'.
-#	local _category="ssh-con-gen"
+#	local _category="find-old-new-string"
 #	printf "[%s] [%-10s] " "$(date '+%Y/%m/%d %H:%M:%S')" "$_category"  >>  ~/user-custom-completion.log
 #	echo -e "$@" >> ~/user-custom-completion.log
 	
@@ -134,7 +134,10 @@ _find-old-new-string-handle-cli(){
 			;;
 		*)
 			case "$3" in
-				-d | --dir | -f | --file | -o | --old | -n | --new | -h | --help)
+				-d | --dir)
+					list-dir "$2"
+					;;
+				-f | --file | -o | --old | -n | --new | -h | --help)
 					# input a value
 					;;
 				*)

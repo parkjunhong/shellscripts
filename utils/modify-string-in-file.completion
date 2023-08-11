@@ -134,7 +134,10 @@ _modify-string-in-file-handle-cli(){
 			;;
 		*)
 			case "$3" in
-				-d | --dir | -f | --file | -o | --old-str | -n | --new-str | -h | --help)
+				-d | --dir)
+					list-dir "$2"
+					;;
+				-f | --file | -o | --old-str | -n | --new-str | -h | --help)
 					# input a value
 					;;
 				*)
