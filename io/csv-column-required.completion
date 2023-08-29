@@ -49,7 +49,7 @@ candidate(){
 			fi
 		done
 
-		_validatecsv-log "f'$FUNCNAME' candidates=${_candi[@]}, prefix=$_prefix"
+		_csv-column-required-log "f'$FUNCNAME' candidates=${_candi[@]}, prefix=$_prefix"
 
 		if [ ${#_candi[@]} -gt 0 ];then
 			COMPREPLY+=( $(compgen -W "$(echo ${_args[@]})" -- $_prefix) )
@@ -68,7 +68,7 @@ list-dir(){
 
 ##
 # print logs to a external file.
-_validatecsv-log(){
+_csv-column-required-log(){
 	# To log messages, change a comment '#'.
 	local _category="validatecsv"
 	printf "[%s] [%-10s] " "$(date '+%Y/%m/%d %H:%M:%S')" "$_category"  >>  ~/user-custom-completion.log
@@ -78,19 +78,19 @@ _validatecsv-log(){
 	#echo "$@" >/dev/null
 }
 
-_validatecsv-load-options(){
-	echo "--count --delim --empty --help --file --quotechar -c -d -e -f -q"
+_csv-column-required-load-options(){
+	echo "--clmn-names -n --count -c --delim -d --empty -e --help --file -f --quotechar -q --read-count -r"
 }
 
 # $1: argument
-_validatecsv-add-if-new(){
-	_validatecsv-log "f'$FUNCNAME' arguments=$@"
+_csv-column-required-add-if-new(){
+	_csv-column-required-log "f'$FUNCNAME' arguments=$@"
 
 	local __new=1
 	for word in ${COMP_WORDS[@]}
 	do
 		if [ "$word" = "$1" ];then
-			_validatecsv-log "'$word' already exists"
+			_csv-column-required-log "'$word' already exists"
 			__new=0
 			break
 		fi
@@ -102,16 +102,16 @@ _validatecsv-add-if-new(){
 }
 
 # @param $1 {string}: prefix of ..
-_validatecsv-add-default-options(){
+_csv-column-required-add-default-options(){
 	local _prefix="$1"
-	local _args=($(_validatecsv-load-options))
+	local _args=($(_csv-column-required-load-options))
 	
-	_validatecsv-log "f'$FUNCNAME' Prefix: $_prefix, options=${_args[@]}"
+	_csv-column-required-log "f'$FUNCNAME' Prefix: $_prefix, options=${_args[@]}"
 
 	for _arg in ${_args[@]}
 	do
 		if [ -z "$_prefix" ] || [[ $_arg == $_prefix* ]];then
-			_validatecsv-add-if-new "$_arg"
+			_csv-column-required-add-if-new "$_arg"
 		fi
 	done
 }
@@ -121,16 +121,16 @@ _validatecsv-add-default-options(){
 # $1: command
 # $2: current
 # $3: previous
-_validatecsv-handle-cli(){
-	_validatecsv-log "\n\n====================================================="
-	_validatecsv-log $(printf "%-15s: %s" "COMP_WORDS" "${COMP_WORDS[@]}")
-	_validatecsv-log $(printf "%-15s: %s" "COMP_LINE" "${COMP_LINE}")
-	_validatecsv-log $(printf "%-15s: %s, %s: %s" "COMP_CWORD" "$COMP_CWORD" "#WORDS" "${#COMP_WORDS[@]}") 
-	_validatecsv-log $(printf "%s: %s, %s: %s" "CURRENT(\$2)" "$2" "PREVIOUS(\$3)" "$3")
+_csv-column-required-handle-cli(){
+	_csv-column-required-log "\n\n====================================================="
+	_csv-column-required-log $(printf "%-15s: %s" "COMP_WORDS" "${COMP_WORDS[@]}")
+	_csv-column-required-log $(printf "%-15s: %s" "COMP_LINE" "${COMP_LINE}")
+	_csv-column-required-log $(printf "%-15s: %s, %s: %s" "COMP_CWORD" "$COMP_CWORD" "#WORDS" "${#COMP_WORDS[@]}") 
+	_csv-column-required-log $(printf "%s: %s, %s: %s" "CURRENT(\$2)" "$2" "PREVIOUS(\$3)" "$3")
 
 	case ${#COMP_WORDS[@]} in
 		2)
-			candidate "$2,$(_validatecsv-load-options),1"
+			candidate "$2,$(_csv-column-required-load-options),1"
 			;;
 		*)
 			case "$3" in
@@ -138,9 +138,17 @@ _validatecsv-handle-cli(){
 					# input a count of splitted data
 					COMPREPLY+=( $(compgen -W "1.input 2.a_count_of 3.splitted_data") )
 					;;
+				--read-count | -r)
+					# input a count of read data
+					COMPREPLY+=( $(compgen -W "1.input 2.a_count_of 3.read_data") )
+					;;
 				--delim | -d)
 					# input a delimiter
 					COMPREPLY+=( $(compgen -W "1.input 2.a_delimiter") )
+					;;
+				--clmn-names | -n)
+					# input column names
+					COMPREPLY+=( $(compgen -W "1.input 2.column_names") )
 					;;
 				--file | -f)
 					# input file
@@ -155,7 +163,7 @@ _validatecsv-handle-cli(){
 					COMPREPLY+=( $(compgen -W "1.input 2.a_char_for 3.'quoted'") )
 					;;
 				*)
-					_validatecsv-add-default-options "$2"
+					_csv-column-required-add-default-options "$2"
 					;;
 			esac
 			;;
@@ -164,4 +172,4 @@ _validatecsv-handle-cli(){
 
 
 
-complete -F _validatecsv-handle-cli -o nospace validate-csv
+complete -F _csv-column-required-handle-cli -o nospace csv-column-required

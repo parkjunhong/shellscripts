@@ -2,11 +2,11 @@
 
 # =======================================
 # @auther : parkjunhong77@gmail.com
-# @title  : execute vim to edit a command only with the name of it.
+# @title  : execute cat to edit a command only with the name of it.
 # @license: Apache License 2.0
 # @since  : 2021-03-21
 # @description: To find commands automatically, run this command after download a this file.
-#               cp vim-cli ~/bin/;complete -c -W "-h -v" vim-cli
+#               cp cat-cli ~/bin/;complete -c -W "-h -v" cat-cli
 # =======================================
 
 CMD=""
@@ -17,7 +17,7 @@ do
 	case $1 in
 		-h | --help)
 			echo
-			echo "vim-cli [-v] <command>"
+			echo "cat-cli.sh [-v] <command>"
 			echo
 			echo "[Options]"
 			echo " -v : show a fullpath of a command."
@@ -61,7 +61,7 @@ if [ $VERBOSE -eq 1 ];then
 fi
 
 # check a editor command
-editor=$(command -v vim)
+editor=$(command -v cat)
 check-empty-or-notfile "$editor" 0
 if [ $RTV -ne 0 ];then
 	editor=$(command -v vi)

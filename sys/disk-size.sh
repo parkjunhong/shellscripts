@@ -16,7 +16,7 @@ help(){
 	
 	echo
 	echo "Usage:"
-	echo "disk-size <directory> -s[a|d]r"
+	echo "disk-size.sh <directory> -s[a|d]r"
 	echo
 	echo "[Optons]"
 	echo " -s: sort."

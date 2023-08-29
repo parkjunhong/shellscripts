@@ -2,12 +2,12 @@
 
 # =======================================
 # @auther : parkjunhong77@gmail.com
-# @title  : validate a csv file.
+# @title  : Check nullable of CSV columns.
 # @license: Apache License 2.0
-# @since  : 2021-04-29
+# @since  : 2023-07-10
 # @desc   : support macOS 11.2.3, Ubuntu 18.04, CentOS 7 or higher
-# @completion: validate-csv.completion
-#			 1. insert 'source <path>/validate-csv.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# @completion: csv-column-requried.completion
+#			 1. insert 'source <path>/csv-column-required.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
 #			 2. copy the above file to /etc/bash_completion.d/ for all users.
 # =======================================
 
@@ -18,7 +18,10 @@ INPUT_FILE=""
 DELIMITER=""
 QUOTECHAR="\""
 EMPTY_VALUE="__EMPTY__"
-DATA_COUNT=0
+COLUMN_COUNT=0
+READ_COUNT=-1
+CLMN_NAMES=()
+CLMN_REQUIRED=()
 RESULT_FILE=""
 VERBOSE=0
 help(){
@@ -43,16 +46,18 @@ help(){
 	fi
 	echo
 	echo "Usage:"
-	echo "validate-csv [-h|--help] --file <filepath> --delim <delimiter> --quotechar <quote char> --empty <empty value> --count <count> --verbose"
+	echo "csv-column-required.sh [-h|--help] --file <filepath> --delim <delimiter> --quotechar <quote char> --empty <empty value> --count <column count> --read-count <read count> --clmn-names <column names> --verbose"
 	echo
 	echo "Options:"
-	echo " -c | --count     : count of data"
-	echo " -d | --delim     : line count to copy"
-	echo " -d | --empty     : a string if a value between a delimiter and a delimiter is empty."
+	echo " -c | --count     : count of column"
+	echo " -d | --delim     : a delimiter of column"
+	echo " -e | --empty     : a string if a value between a delimiter and a delimiter is empty."
 	echo "                    default: \"$EMPTY_VALUE\""
 	echo " -h | --help      : show help messages"
 	echo " -f | --file      : input filepath"
+	echo " -n | --clmn-names: column name list. separated by comma(,)."
 	echo " -q | --quotechar : quoted character. default: double quoted ($QUOTECHAR)."
+	echo " -r | --read-count: read lines."
 	echo " -v | --verbose   : show error message."
 }
 
@@ -65,7 +70,7 @@ do
 				help "Invalid 'line' count: $1" $LINENO
 				exit 1
 			fi
-            DATA_COUNT=$1
+            COLUMN_COUNT=$1
             ;;
 		-d | --delim)
 			shift
@@ -92,6 +97,10 @@ do
 			help
 			exit 0
 			;;
+		-n | --clmn-names)
+			shift
+			IFS="," read -ra CLMN_NAMES <<< "$1"
+			;;
 		-q | --quotechar)
 			shift
 			if [ -z "$1" ] || [ "${#1}" -ne 1 ];then
@@ -100,6 +109,14 @@ do
 			fi
 			QUOTECHAR="$1"
 			;;
+		-r | --read-count)
+			shift
+			if ! [[ $1 =~ [0-9]+ ]];then
+				help "Invalid 'line' count: $1" $LINENO
+				exit 1
+			fi
+            READ_COUNT=$1
+            ;;
 		-v | --verbose)
 			VERBOSE=1
 			;;
@@ -109,20 +126,56 @@ do
 	shift
 done
 
-if [ -z "$DELIMITER" ] || ! [ $DATA_COUNT -gt 0 ] || [ -z "$EMPTY_VALUE" ];then
-	help "Invalid parameters: delimiter='$DELIMITER', data-count=$DATA_COUNT, empty-string='$EMPTY_VALUE'" $LINENO
+# 필수 데이터 검증
+if [ -z "$DELIMITER" ] || ! [ $COLUMN_COUNT -gt 0 ] || [ -z "$EMPTY_VALUE" ];then
+	help "Invalid parameters: delimiter='$DELIMITER', data-count=$COLUMN_COUNT, empty-string='$EMPTY_VALUE'" $LINENO
 	exit 1
 fi 
 
-_fmt_=" * * * %-13s"
+# 컬럼 길이와 컬럼명 검증
+clmn_idx=0
+if [ ${#CLMN_NAMES[@]} -lt 1 ];
+then
+	while [ $clmn_idx -lt $COLUMN_COUNT ];
+	do
+		CLMN_NAMES+=("clmn-$clmn_idx")
+		((clmn_idx++))
+	done
+else
+	clmn_count=${#CLMN_NAMES[@]}
+	if [ $clmn_count -lt $COLUMN_COUNT ];
+	then
+		clmn_idx=$clmn_count
+		while [ $clmn_idx -lt $COLUMN_COUNT ];
+		do
+			CLMN_NAMES+=("clmn-$clmn_idx")
+			((clmn_idx++))
+		done
+	elif [ $clmn_count -gt $COLUMN_COUNT ];
+	then
+		CLMN_NAMES=("${CLMN_NAMES[@]:0:$COLUMN_COUNT}")
+	fi
+fi
+
+# 컬럼 요구사항 배열 초기화
+clmn_idx=0
+while [ $clmn_idx -lt $COLUMN_COUNT ];
+do
+	CLMN_REQUIRED+=(1)
+	((clmn_idx++))
+done
+
+_fmt_=" * * * %-15s"
 echo
 printf "$_fmt_: %s \n" "File" "$INPUT_FILE"
 printf "$_fmt_: %s \n" "Delimiter" "$DELIMITER"
 printf "$_fmt_: %s \n" "QuoteChar" "$QUOTECHAR"
 printf "$_fmt_: %s \n" "Empty.Str" "$EMPTY_VALUE"
-printf "$_fmt_: %s \n" "Data.Count" $DATA_COUNT
-printf "$_fmt_: %s \n" "Error.logfile" "$RESULT_FILE"
-
+printf "$_fmt_: %s \n" "Data.Count" $COLUMN_COUNT
+printf "$_fmt_: %s \n" "Read.Count" $READ_COUNT
+printf "$_fmt_: %s \n" "Column.Names" $(IFS=$','; echo "${CLMN_NAMES[*]}")
+printf "$_fmt_: %s \n" "Column.Required" $(IFS=$','; echo "${CLMN_REQUIRED[*]}")
+printf "$_fmt_: %s \n\n" "Error.logfile" "$RESULT_FILE"
 
 PROG_MOD=10
 dotprogress(){
@@ -178,13 +231,12 @@ read-csv-str(){
 
 	local _empty="$4"
 
-#	echo "str  : $_str, len=$_len"
-#	echo "delim: $_delim"
-#	echo "quote: $_quote"
-
-	# buf 비운 상태 여부
+	# buf 비운 상태 여부 
 	local _flush=1
 	__parse_line__=()
+
+#	 echo 
+
 	while [ $_idx -lt $_len ];
 	do
 		_c=${_str:$_idx:1}
@@ -220,10 +272,10 @@ read-csv-str(){
 		((_idx++))
 	done
 
-    # 마지막 데이터가 비어 있는 경우
-    if [ "$_c" = "$_delim" ];then
-        _buf="$_buf""$_empty"
-    fi
+	# 마지막 데이터가 비어 있는 경우
+	if [ "$_c" = "$_delim" ];then
+		_buf="$_buf""$_empty"
+	fi
 
 	if [ ! -z "$_buf" ];then
 		__parse_line__+=("$_buf")
@@ -240,7 +292,8 @@ read-csv-str(){
 # @param $3 {char} quotechar
 # @param $4 {string} a string if a value between a delimiter and a delimiter is empty
 # @param $5 {number} a length of splitted string by a delimiter
-# @param $6 {string} a invalid string's log filepath.
+# @param $6 {number} a count of read lines
+# @param $7 {string} a invalid string's log filepath.
 #
 validate(){
 	local _inputfile="$1"
@@ -248,7 +301,8 @@ validate(){
 	local _quotechar="$3"
 	local _empty="$4"
 	local _count=$5
-	local _resultfile="$6"
+	local _read_count=$6
+	local _resultfile="$7"
 
 	local _ln=0
 	local _errcnt=0
@@ -263,14 +317,21 @@ validate(){
 	fi
 	printf "" > "$_resultfile"
 
+	local _read=0
 	local _hit=0
 	while IFS= read -r line
 	do
 		_hit=0
 		((_ln++))
 
+		_clmn_req_cnt=$_count
 		read-csv-str "$line" "$_delim" "$_quotechar" "$_empty"
-		if [ ${#__parse_line__[@]} -ne $_count ];then
+		_parse_count=${#__parse_line__[@]}
+#		echo
+#		echo "__parse_line__=${__parse_line__[@]}"
+#		echo "_parse_count=$_parse_count"
+#		echo
+		if [ $_parse_count -ne $_count ];then
 			printf "%'10d | " $_ln >> "$_resultfile"
 			echo $line >> "$_resultfile"
 			((_errcnt++))
@@ -279,9 +340,30 @@ validate(){
 				printf "\r\033[K > > > | %'10d | %s\n" $_ln "$line"
 				_hit=1
 			fi
+			
+			if [ $_parse_count -lt $_count ];then
+				_clmn_req_cnt=$_parse_count
+			fi
 		fi
 
-		printf "\r\033[K + + + %-13s: %'d / %'d | %s" "Line.Reading" $_errcnt $_ln ${progress[(($_ln%$PROG_MOD))]}
+		_idx_req_cnt=0
+		while [ $_idx_req_cnt -lt $_clmn_req_cnt ];
+		do
+			if [ "${__parse_line__[$_idx_req_cnt]}" = "$_empty" ];then
+				CLMN_REQUIRED[$_idx_req_cnt]=$((CLMN_REQUIRED[$_idx_req_cnt] * 0))
+			else
+				CLMN_REQUIRED[$_idx_req_cnt]=$((CLMN_REQUIRED[$_idx_req_cnt] * 1))
+			fi
+			((_idx_req_cnt++))
+		done
+		
+		printf "\r\033[F + + + %-15s: %s\n" "Column.Required" $(IFS=$','; echo "${CLMN_REQUIRED[*]}")		
+		printf "\r\033[K + + + %-15s: %'d / %'d | %s" "Line.Reading" $_errcnt $_ln ${progress[(($_ln%$PROG_MOD))]}
+
+		((_read++))
+		if [ $_read_count -gt -1 ] && [ $_read -ge $_read_count ];then
+			break
+		fi
 	done < "$_inputfile"
 
 	if [ $VERBOSE -eq 1 ] && [ $_hit -eq 1 ];then
@@ -290,7 +372,8 @@ validate(){
 		echo
 	fi
 
-	printf "\r\033[K + + + %-13s: %'d / %'d\n" "Completed" ${_errcnt} $_ln
+	printf "\r\033[F + + + %-15s: %s \n" "Column.Required" $(IFS=$','; echo "${CLMN_REQUIRED[*]}")		
+	printf "\r\033[K + + + %-15s: %'d / %'d\n" "Completed" ${_errcnt} $_ln
 	
 	local _end_date=$(date +"%Y/%m/%d %H:%M:%S")
 	local _end_ts=$(date +"%s")	
@@ -309,6 +392,6 @@ validate(){
 
 
 
-validate "$INPUT_FILE" "$DELIMITER" "$QUOTECHAR" "$EMPTY_VALUE" "$DATA_COUNT" "$RESULT_FILE" $VERBOSE
+validate "$INPUT_FILE" "$DELIMITER" "$QUOTECHAR" "$EMPTY_VALUE" "$COLUMN_COUNT" "$READ_COUNT" "$RESULT_FILE" $VERBOSE
 
 exit 0
