@@ -23,10 +23,11 @@ cd "$EXEC_DIR"
 CMD="$LINK_PATH"
 shift 
 while [ ! -z "$1" ];do
-	CMD="$CMD ""$1"""
+	echo "$1"
+	CMD="$CMD '$1'"
 	shift
 done
-
+echo $CMD
 eval $CMD
 
 exit 0
