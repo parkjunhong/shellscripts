@@ -42,12 +42,14 @@ help(){
 	echo " -p | --profile: Profile"
 	echo " -t | --test: run Junit TestCase"
 	echo " -u | --update: 'git pull' before build sources."
+	echo " -x | --debug: enable maven 'debug' mode"
 }
 
 PROFILE=""
 DEPLOY=0
 TEST="true"
 GIT_PULL="false"
+DEBUG=""
 while [ ! -z "$1" ];
 do
 	case "$1" in
@@ -68,6 +70,9 @@ do
 		-u | --update)
 			GIT_PULL="true"
 			;;
+		-x | --debug)
+			DEBUG="-X"
+			;;
 		*)
 			;;
 	esac
@@ -87,9 +92,12 @@ then
 	git pull
 fi
 
+
+CMD="mvn clean package $DEBUG -Dmaven.test.skip=${TEST} -Dbuild.profile=$PROFILE -U -up"
 echo
-echo " > mvn clean package -Dmaven.test.skip=${TEST} -Dbuild.profile=$PROFILE -U -up"
-mvn clean package -Dmaven.test.skip=${TEST} -Dbuild.profile=$PROFILE -U -up
+echo " > $CMD"
+#mvn clean package -Dmaven.test.skip=${TEST} -Dbuild.profile=$PROFILE -U -up
+eval $CMD
 
 if [ $DEPLOY -ne 1 ];
 then

@@ -1,1 +1,1 @@
-complete -c -W "-v -h" vim-cli.sh
+complete -c -W "-v -h" vim-cli
