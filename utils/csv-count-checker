@@ -177,7 +177,7 @@ check-data(){
 		
 		_ldc=$(expr $(echo "$line" | grep -o "$_delim" | wc -l) + 1)
 		if [ $_count -ne $_ldc ];then
-			printf "%10s: %'d, %s\n" $_ln $_ldc "$line" >> "$_dst"
+			printf "%10s: %'d : %s\n" $_ln $_ldc "$line" >> "$_dst"
 			((_err_count++))
 		fi
 		printf "\r\033[K + + + %-12s: %'d | %s" "Line.Reading" ${_ln} ${progress[((${_ln}%${PROG_MOD}))]}
