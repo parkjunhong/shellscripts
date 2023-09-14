@@ -1,0 +1,212 @@
+#!/usr/bin/env bash
+
+# =======================================
+# @auther : parkjunhong77@gmail.com
+# @title  : check count of csv line.
+# @license: Apache License 2.0
+# @since  : 2023-09014
+# @desc   : support macOS 11.2.3, Ubuntu 18.04, CentOS 7 or higher
+# @completion: cplines.completion
+#			 1. insert 'source <path>/csv-count-checker.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#			 2. copy the above file to /etc/bash_completion.d/ for all users.
+# =======================================
+
+# get a filename
+FILENAME=$(basename $0)
+
+help(){
+	if [ ! -z "$1" ];
+	then
+		local indent=10
+		local formatl=" - %-"$indent"s: %s\n"
+		local formatr=" - %"$indent"s: %s\n"
+		echo
+		echo "================================================================================"
+		printf "$formatl" "filename" "$FILENAME"
+		printf "$formatl" "line" "$2"
+		printf "$formatl" "callstack"
+		local idx=1
+		for func in ${FUNCNAME[@]:1}
+		do
+			printf "$formatr" "["$idx"]" $func
+			((idx++))
+		done
+		printf "$formatl" "cause" "$1"
+		echo "================================================================================"
+	fi
+	echo
+	echo "Usage:"
+	echo "csv-count-checker [-h|--help] [-f|--file] <source-file> [-d|--delim] <delimeter> [-c|--count] <expected data count> [-n|--number] <check line number>"
+	echo
+	echo "Options:"
+	echo " -c | --count : expected data count"
+	echo " -d | --delim : csv data delimeter"
+	echo " -f | --file  : source filepath"
+	echo " -h | --help  : show help messages."
+	echo " -n | --number: check line number count."
+}
+
+_COUNT=-1
+_DELIM=""
+_FILE=""
+_NUM=-1
+while [ ! -z "$1" ];
+do
+	case "$1" in
+		-c | --count)
+			shift
+			if ! [[ $1 =~ ^[0-9]+$ ]];then
+				help "Invalid 'data' count: $1" $LINENO
+				exit 1
+			fi
+			_COUNT=$1
+			;;
+		-d | --delim)
+			shift
+			if [ -z "$1" ];then
+				help "Invalid 'delimeter: $1" $LINENO
+				exit 1
+			fi
+			_DELIM="$1"
+			;;
+		-f | --file)
+			shift
+			if [ ! -f "$1" ];then
+				help "Invalid 'source' filepath: $1" $LINENO
+				exit 1
+			fi
+			_FILE="$1"
+			;;
+		-h | --help)
+			help
+			exit 0
+			;;
+		-n | --number)
+			shift
+			if ! [[ $1 =~ ^[0-9]+$ ]];then
+				help "Invalid 'line' number: $1" $LINENO
+				exit 1
+			fi
+			_NUM=$1
+			;;
+		*)
+			;;
+	esac
+	shift
+done
+
+if [ -z "$_FILE" ] || [ -z "$_DELIM" ] || [ $_COUNT -eq 0 ];then
+	help "Invalid parameters: source=$_FILE, delimeter=$_DELIM, data.count=$_COUNT" $LINENO
+	exit 1
+fi 
+
+_fmt_=" * * * %-12s"
+echo
+printf "$_fmt_: %s \n" "Source" "$_FILE"
+printf "$_fmt_: %s \n" "Delimeter" "$_DELIM"
+printf "$_fmt_: %'d\n" "Data.Count" $_COUNT
+printf "$_fmt_: %'d\n" "Line.Count" $_NUM
+
+
+PROG_MOD=10
+dotprogress(){
+	local idx=0
+	prog=""
+	while [ ${idx} -lt ${PROG_MOD} ];
+	do
+		prog=${prog}"."
+		echo ${prog}
+		((idx++))
+	done
+}
+
+##
+# convert timestamp to {hours}h {minutes}m {seconds}h.
+# @param $1 {number} timestamp
+# @return 
+timestamp-to-hms(){
+	# 1234567890
+	local _sec_r=$(($1%60)) # 'second' remainder
+	local _min_q=$(($1/60)) # 'minutes' quotient
+	local _min_r=$(($1/60%60)) # 'minutes' remainder
+	local _hour_q=$(($1/60/60)) # 'hour' quotient
+
+	printf "%'dh %sm %ss" $_hour_q $_min_r $_sec_r
+}
+
+##
+# @param $1 {string} source filepath
+# @param $2 {string} delimeter
+# @param $3 {number} csv data count
+# @param $4 {number} check line count
+#
+check-data(){
+	local _src="$1"
+	local _dst="$1.checkcount"
+	local _delim="$2"
+	local _count=$3
+	local _num=$4
+
+
+	local _ln=0
+	local _cnt=0
+	progress=($(dotprogress))
+
+	local _begin_date=$(date +"%Y/%m/%d %H:%M:%S")
+	local _begin_ts=$(date +"%s")
+
+	echo
+	rm -f $_dst
+	printf "" > "$_dst"
+
+	echo
+	echo " ! ! ! Please, tail -f $_dst to monitor illegal lines."
+	echo
+	read -p " * * * Ready to begin ? (enter any key) " input_key
+
+	echo
+	# line data count
+	local _ldc=""
+	local _err_count=0
+	while IFS= read -r line
+	do
+		((_ln++))
+		if [ -z "$line" ];then
+			continue
+		fi
+		
+		_ldc=$(expr $(echo "$line" | grep -o "$_delim" | wc -l) + 1)
+		if [ $_count -ne $_ldc ];then
+			printf "%10s: %'d, %s\n" $_ln $_ldc "$line" >> "$_dst"
+			((_err_count++))
+		fi
+		printf "\r\033[K + + + %-12s: %'d | %s" "Line.Reading" ${_ln} ${progress[((${_ln}%${PROG_MOD}))]}
+
+		if [ $_num -ne -1 ] && [ $_ln -ge $_num ];then
+			break
+		fi
+	done < "$_src"
+
+	printf "\r\033[K + + + %-12s: %'d\n" "Completed" ${_ln}
+	printf "\r\033[K + + + %-12s: %'d\n" "Data.Error" ${_err_count}
+	
+	local _end_date=$(date +"%Y/%m/%d %H:%M:%S")
+	local _end_ts=$(date +"%s")	
+
+	echo
+	printf " - - - %-12s: %s\n" "Read.begin" "$_begin_date"	
+	# Convert timestamp to hour/minite/second
+	# Referenced: https://stackoverflow.com/questions/29405432/how-to-convert-timestamp-to-hour-minutes-seconds-in-shell-script
+	local _diff=$(($_end_ts-$_begin_ts))
+	printf " - - - %-12s: %s\n" "Read.elapsed" "$(timestamp-to-hms $(($_end_ts-$_begin_ts)))"
+	printf " - - - %-12s: %s\n" "Read.end" "$_end_date"	
+
+	echo
+	echo "<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<"
+}
+
+
+
+check-data "$_FILE" "$_DELIM" $_COUNT $_NUM
+
+exit 0

@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+
+_target=""
+_profile=""
+_update=""
+while [ ! -z "$1" ];
+do
+	case $1 in
+		-d)
+			shift
+			if [ ! -d "$1" ]; then
+				echo
+				echo "'$1'은 올바른 경로가 아닙니다."
+				
+				exit 1
+			fi
+			_target="$1"
+			;;
+		-p)
+			shift 
+			_profile="$1"
+			;;
+		-u)
+			_update="-u"
+			;;
+		-x)
+			_debug="-x"
+			;;
+		*)
+			;;
+	esac
+	shift
+done
+
+
+if [ -z "$_profile" ] || [ -z "$_target" ];then
+	echo
+	echo "빌드할 '프로파일(-p) 정보 또는 대상 경로(-d)를 확인하시기 바랍니다."
+	
+	exit 1
+fi
+
+remove_left_zero() {
+    echo $1|sed -e "s/^0*//"
+}
+
+
+latest-num(){
+	local filename="$1"
+	list=($(ls $filename-*.tar.gz &2>/dev/null))
+   	latestfile=${list[-1]}
+    latestfile=$(echo ${latestfile/$filename-/})
+   	num=$(echo ${latestfile/.tar.gz/})
+    num=$(remove_left_zero $num)
+	if [ $num -lt 10 ];then
+		num="0"$num
+	fi
+
+	echo $num
+}
+
+_curdate=$(date +'%Y%m%d')
+_logfile="$(pwd)/build-all-error-$_curdate.log"
+
+_build_aggr_dir="${HOME}/Downloads/twampgw-$_curdate"
+echo $_build_aggr_dir
+if [ ! -d "$_build_aggr_dir" ];then
+	rm -f "$_build_aggr_dir"
+	mkdir -p "$_build_aggr_dir"
+fi
+
+pushd .
+
+cd $_target
+_subdir=( $(find . -maxdepth 1 -type d) )
+
+for _dir in ${_subdir[@]} ;
+do
+	echo "> > > dir=$_dir" >> $_logfile
+
+	if [ ! -d "$_dir" ]; then
+		echo " !!! $_dir 은 올바른 경로가 아닙니다." >> $_logfile
+		continue
+	fi
+	if [ ! -d "$_dir/config/$_profile" ]; then
+		echo " !!! $_dir/config/$_profile 은 프로파일 경로가 아닙니다." >> $_logfile
+		continue
+	fi
+
+	cd $_dir
+
+	echo
+	echo " >>>>>>>> begin: '$_dir' project >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"
+	
+	# 1. 프로젝트 빌드 
+	build-mvn-package -p $_profile -u $_debug
+	# 2. 빌드 결과 압축
+	cd deploy
+	tar-zcf-deploy-profile.sh $_profile
+	paths=($(echo $_dir | tr "/" " "))
+	build_name=${paths[1]}"-"$_profile"-"$_curdate
+	num=$(latest-num $build_name)
+
+	cp $build_name"-"$num".tar.gz" "$_build_aggr_dir/"
+
+	echo " <<<<<<<< e n d: '$_dir' project <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<"
+
+	echo "> > > [빌드 성공] $_dir" >> $_logfile
+
+	# 상위 디렉토리로 이동
+	cd ../..
+done
+
+popd 
+
+exit 0
+

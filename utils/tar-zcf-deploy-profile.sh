@@ -63,6 +63,6 @@ if [ ${#list[@]} -gt 0 ];then
 	fi
 fi
 
-tar -zcvf $filename-$num.tar.gz $profile
+tar -zcf $filename-$num.tar.gz $profile
 
 exit 0

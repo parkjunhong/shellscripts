@@ -18,8 +18,8 @@ help(){
     echo "git-merge.sh -s <source> -t <target>"
     echo
     echo "[Arguments]"
-    echo " -s | --source: a source branch. If not set, search automatically."
-    echo " -t | --target: a target branch"
+    echo " -s | --source: a source branch. If not set, search automatically. Just select !"
+    echo " -t | --target: a target branch. If not set, search automatically. Just select !"
 }
 
 SOURCE=""
@@ -105,6 +105,25 @@ has-value(){
 	echo $c
 }
 
+# @param $1 {string} branch type. [source|target]
+assign-branch(){
+	show-branches
+	local branch=$(select-branch "$1")
+
+	if [ -z "$branch" ];then
+		echo
+		echo "[ERROR] * * * The selected 'source' branch is invalid, empty"
+		help	
+		exit 1
+	fi
+	
+	if [ "$1" == "source" ];then
+		SOURCE="$branch"
+	elif [ "$1" == "target" ];then
+		TARGET="$branch"
+	fi
+}
+
 BRANCHES=($(read-branches))
 if [ ${#BRANCHES[@]} -lt 1 ];then
 	echo "[ERROR] * * * (A current or one of above folders) is not a git repository."
@@ -112,29 +131,28 @@ if [ ${#BRANCHES[@]} -lt 1 ];then
 	exit 1
 fi
 
-if [ -z "$SOURCE" ];then
-	show-branches
-	SOURCE=$(select-branch 'source')
+CUR_BRANCH=$(git branch 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/\1/')
 
-	if [ -z "$SOURCE" ];then
-		echo
-		echo "[ERRROR] * * * Invalid merge branch. source=${SOURCE}"    
-		help 
-		exit 1
-	fi
+if [ -z "$SOURCE" ] && [ -z "$TARGET" ];then
+	assign-branch "source"
+	assign-branch "target"
+elif [ -z "$SOURCE" ];then
+	SOURCE="$CUR_BRANCH"
+elif [ -z "$TARGET" ];then
+	TARGET="$CUR_BRANCH"
 fi
 
-if [ -z "$TARGET" ];then
-	show-branches
-	TARGET=$(select-branch 'target')
-
-	if [ -z "$TARGET" ];then
+# check source and target
+_branches=( $SOURCE $TARGET )
+for _branch in ${_branches[@]};
+do
+	if [ $(has-value "BRANCHES" "$_branch") -lt 1 ];then
 		echo
-		echo "[ERRROR] * * * Invalid merge branch. target=${TARGET}"
-		help 
+		echo "*** branch('$_branch') DOES NOT exists."
+		help
 		exit 1
-	fi
-fi
+	fi 
+done
 
 if [ "$SOURCE" == "$TARGET" ];then
 	echo
@@ -142,8 +160,6 @@ if [ "$SOURCE" == "$TARGET" ];then
 	help
 	exit 1
 fi
-
-CUR_BRANCH=$(git branch 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/\1/')
 
 # 1. update from 'remote' of 'source' branch
 echo
