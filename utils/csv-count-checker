@@ -4,7 +4,7 @@
 # @auther : parkjunhong77@gmail.com
 # @title  : check count of csv line.
 # @license: Apache License 2.0
-# @since  : 2023-09014
+# @since  : 2023-09-14
 # @desc   : support macOS 11.2.3, Ubuntu 18.04, CentOS 7 or higher
 # @completion: cplines.completion
 #			 1. insert 'source <path>/csv-count-checker.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
@@ -49,6 +49,7 @@ help(){
 _COUNT=-1
 _DELIM=""
 _FILE=""
+_REC_FILE=""
 _NUM=-1
 while [ ! -z "$1" ];
 do
@@ -76,6 +77,7 @@ do
 				exit 1
 			fi
 			_FILE="$1"
+			_REC_FILE="$1.checkcount-$(date +'%Y%m%d%H%M')"
 			;;
 		-h | --help)
 			help
@@ -106,6 +108,15 @@ printf "$_fmt_: %s \n" "Source" "$_FILE"
 printf "$_fmt_: %s \n" "Delimeter" "$_DELIM"
 printf "$_fmt_: %'d\n" "Data.Count" $_COUNT
 printf "$_fmt_: %'d\n" "Line.Count" $_NUM
+printf "$_fmt_: %s \n" "Record.File" "$_REC_FILE"
+
+# save to file
+printf "$_fmt_: %s \n" "Source" "$_FILE" > $_REC_FILE
+printf "$_fmt_: %s \n" "Delimeter" "$_DELIM" >> $_REC_FILE
+printf "$_fmt_: %'d\n" "Data.Count" $_COUNT >> $_REC_FILE
+printf "$_fmt_: %'d\n" "Line.Count" $_NUM >> $_REC_FILE
+
+
 
 
 PROG_MOD=10
@@ -139,10 +150,11 @@ timestamp-to-hms(){
 # @param $2 {string} delimeter
 # @param $3 {number} csv data count
 # @param $4 {number} check line count
+# @param $5 {string} record filepath
 #
 check-data(){
 	local _src="$1"
-	local _dst="$1.checkcount"
+	local _dst="$5"
 	local _delim="$2"
 	local _count=$3
 	local _num=$4
@@ -156,7 +168,6 @@ check-data(){
 	local _begin_ts=$(date +"%s")
 
 	echo
-	rm -f $_dst
 	printf "" > "$_dst"
 
 	echo
@@ -207,6 +218,6 @@ check-data(){
 
 
 
-check-data "$_FILE" "$_DELIM" $_COUNT $_NUM
+check-data "$_FILE" "$_DELIM" $_COUNT $_NUM "$_REC_FILE"
 
 exit 0

@@ -1,0 +1,225 @@
+#!/usr/bin/env bash
+
+# =======================================
+# @auther : parkjunhong77@gmail.com
+# @title  : build maven projects with user-custom 'profile' for build.
+# @license: Apache License 2.0
+# @since  : 2023-09-15
+# @desc   : support macOS 11.2.3, Ubuntu 18.04, CentOS 7
+# @completion: modify-enc-str_completion
+#            1. insert 'source <path>/modify-enc-str_completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#            2. copy the above file to /etc/bash_completion.d/ for all users.
+# =======================================
+
+
+help(){
+    if [ ! -z "$1" ];
+    then
+        local indent=10
+        local formatl=" - %-"$indent"s: %s\n"
+        local formatr=" - %"$indent"s: %s\n"
+        echo
+        echo "================================================================================"
+        printf "$formatl" "filename" "$FILENAME"
+        printf "$formatl" "line" "$2"
+        printf "$formatl" "callstack"
+        local idx=1
+        for func in ${FUNCNAME[@]:1}
+        do
+            printf "$formatr" "["$idx"]" $func
+            ((idx++))
+        done
+        printf "$formatl" "cause" "$1"
+        echo "================================================================================"
+    fi  
+    echo
+    echo "Usage:"
+    echo "./modify-enc-str.sh [-d|--dir] <dir> [-f|--files] <pattern> [-o|--old] <old plain string> [-n|--new] <new plain string> [-h|--help]"
+    echo
+    echo "Options:"
+    echo " -d | --dir   : a directory to search files."
+    echo " -f | --files : file names to to search. separated by comma(,) for multi patterns. Support only '*', no regex."
+    echo " -h | --help  : show help messages."
+    echo " -n | --new   : New string"
+    echo " -o | --old   : Old string"
+}
+
+
+OLD_STR_P=""
+OLD_STR_E=""
+NEW_STR_P=""
+NEW_STR_E=""
+
+TARGET=""
+FILES=""
+
+while [ ! -z "$1" ];
+do
+	case "$1" in
+		-d | --dir)
+			shift
+			if [ -z "$1" ] || [ ! -d "$1" ];then
+				help "Invalid a directory." 
+				exit 0
+			fi
+			TARGET="$1"
+			;;
+		-f | --files)
+			shift
+			FILES=( $(echo $1 | sed -e 's/,/ /g') )
+			;;
+		-o | --old)
+			shift
+			if [ -z "$1" ];then
+				help "Invalid a old string"
+				exit 0
+			fi
+			OLD_STR_P="$1"
+			;;
+		-n | --new)
+			shift
+			if [ -z "$1" ];then
+				help "Invalid new string"
+				exit 0
+			fi
+			NEW_STR_P="$1"
+			;;
+		*)
+			;;
+	esac
+	shift
+done
+
+if [ -z "$OLD_STR_P" ] || [ -z "$NEW_STR_P" ] || [ -z "$TARGET" ] || [ -z "$FILES" ];then
+	help "Invalid arguments. str.old=$OLD_STR_P, str.new=$NEW_STR_P, target=$TARGET, names=${FILES[@]}"
+	exit 0
+fi
+
+
+#
+# @param {$1} old string
+# @param {$2} new string
+set-string(){
+	if [ -z "$1" ] || [ -z "$2" ];then
+		echo
+		echo "Illegal string."
+		
+		exit 0
+	fi
+
+	OLD_STR_P="$1"
+	NEW_STR_P="$2"
+	
+	OLD_STR_E=$(tgw-cipher-enc.sh "$1")
+	NEW_STR_E=$(tgw-cipher-enc.sh "$2")
+}
+
+set-string "$OLD_STR_P" "$NEW_STR_P"
+
+CONFIRM="R"
+while [ "$CONFIRM" = "R" ];
+do
+	echo
+	echo "* Please, check old & new string."
+	echo 
+	echo "* * * Target Dir: $TARGET"
+	echo "* * * Files     : ${FILES[@]}"
+	echo "* * * Old String: $OLD_STR_P ($OLD_STR_E)"
+	echo "* * * New String: $NEW_STR_P ($NEW_STR_E)"
+	echo
+	echo "* Confirm to update a string!"
+	echo "* * * (Y): Update a string"
+	echo "* * * (N): Stop"
+	echo "* * * (R): Re-Input string"
+	echo
+	read -p "* => " CONFIRM
+	CONFIRM=$(echo $CONFIRM | tr [:lower:] [:upper:])
+
+	case "$CONFIRM" in
+		Y)
+			break
+			;;
+		R)
+			echo "* * ==================================================="
+			echo 
+			read -p "* * Input OLD string: " OLD_STR_P
+			read -p "* * Input NEW string: " NEW_STR_P
+			set-string "$OLD_STR_P" "$NEW_STR_P"
+			;;
+		N)
+			exit 0
+			;;
+		*)
+			echo
+			echo "i* Illegal input..."
+
+			exit 0
+			;;
+	esac
+done
+
+#
+#
+# @param {$1} encrypted string
+normalize-pwd(){
+	str="$1"
+	echo $str | sed -e 's/\//\\\//g'
+}
+
+OLD_STR_EN=$(normalize-pwd "$OLD_STR_E")
+NEW_STR_EN=$(normalize-pwd "$NEW_STR_E")
+
+cd $TARGET
+
+echo
+echo "* BASE_DIR: $TARGET"
+CMD_FIND="find . -name '${FILES[0]}'"
+if [ ${#FILES[@]} -gt 1 ];then
+	for _name in ${FILES[@]:1};
+	do
+		CMD_FIND=$CMD_FIND" -o -name '$_name'"
+	done
+fi
+BEFORE=$(eval "$CMD_FIND | xargs grep -n '$OLD_STR_E'")
+if [ -z "$BEFORE" ];then
+	echo
+	echo "! ! ! NO exists file that contains '$OLD_STR_P' ($OLD_STR_E)"
+	
+	exit 0
+fi
+
+
+echo
+echo "* * *"
+echo "* * * [before] : '$OLD_STR_P' * * *"
+echo
+printf "! ! ! FIND %'d files.\n" $(eval "$CMD_FIND | xargs grep -n '$OLD_STR_E' | wc -l")
+echo "> > >"
+eval "$CMD_FIND | xargs grep -n '$OLD_STR_E'"
+echo "< < <"
+
+echo
+echo " ----------------------------------------------"
+read -p "* * * Check target files. Go? (Y or ...) " CONFIRM
+echo " ----------------------------------------------"
+if [ ! -z "$CONFIRM" ] && [ $(echo $CONFIRM | tr [:lower:] [:upper:]) = "Y" ];then
+	CMD="$CMD_FIND | xargs sed -i 's/$OLD_STR_EN/$NEW_STR_EN/g'"
+	#echo ">>> $CMD <<<"
+	eval $CMD
+
+	echo
+	echo "* * *"
+	echo "* * * [after] : '$NEW_STR_P' * * *"
+	echo
+	printf "! ! ! FIND %'d files.\n" $(eval "$CMD_FIND | xargs grep -n '$NEW_STR_E' | wc -l")
+	echo "> > >"
+	eval "$CMD_FIND | xargs grep -n '$NEW_STR_E'"
+	echo "< < <"
+fi
+
+echo
+echo "* Finish process...."
+echo
+
+exit 0
+
