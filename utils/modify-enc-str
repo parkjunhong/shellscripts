@@ -34,7 +34,7 @@ help(){
     fi  
     echo
     echo "Usage:"
-    echo "./modify-enc-str.sh [-d|--dir] <dir> [-f|--files] <pattern> [-o|--old] <old plain string> [-n|--new] <new plain string> [-h|--help]"
+    echo "./modify-enc-str.sh [-d|--dir] <dir> [-f|--files] <pattern> [-o|--old] <old plain string> [-n|--new] <new plain string> [-c|--cipher] <function script file> [-h|--help]"
     echo
     echo "Options:"
     echo " -d | --dir   : a directory to search files."
@@ -42,6 +42,8 @@ help(){
     echo " -h | --help  : show help messages."
     echo " -n | --new   : New string"
     echo " -o | --old   : Old string"
+	echo " -c | --cipher: encrypt or decript script file."
+	echo "                - MUST HAVE only 1 argument, plain or encrypted text."
 }
 
 
@@ -52,10 +54,19 @@ NEW_STR_E=""
 
 TARGET=""
 FILES=""
+CIPHER=""
 
 while [ ! -z "$1" ];
 do
 	case "$1" in
+		-c | --cipher)
+			shift
+			if [ -z "$1" ] || ( [ ! -f "$1" ] && [ -z $(command -v "$1") ] ) ;then
+				help "Invalid a cipher script file."
+				exit 0
+			fi
+			CIPHER="$1"
+			;;
 		-d | --dir)
 			shift
 			if [ -z "$1" ] || [ ! -d "$1" ];then
@@ -90,8 +101,8 @@ do
 	shift
 done
 
-if [ -z "$OLD_STR_P" ] || [ -z "$NEW_STR_P" ] || [ -z "$TARGET" ] || [ -z "$FILES" ];then
-	help "Invalid arguments. str.old=$OLD_STR_P, str.new=$NEW_STR_P, target=$TARGET, names=${FILES[@]}"
+if [ -z "$OLD_STR_P" ] || [ -z "$NEW_STR_P" ] || [ -z "$TARGET" ] || [ -z "$FILES" ] || [ -z "$CIPHER" ];then
+	help "Invalid arguments. str.old=$OLD_STR_P, str.new=$NEW_STR_P, target=$TARGET, files=${FILES[@]}, cipher=$CIPHER"
 	exit 0
 fi
 
@@ -110,8 +121,8 @@ set-string(){
 	OLD_STR_P="$1"
 	NEW_STR_P="$2"
 	
-	OLD_STR_E=$(tgw-cipher-enc.sh "$1")
-	NEW_STR_E=$(tgw-cipher-enc.sh "$2")
+	OLD_STR_E=$($CIPHER "$1")
+	NEW_STR_E=$($CIPHER "$2")
 }
 
 set-string "$OLD_STR_P" "$NEW_STR_P"
@@ -122,10 +133,11 @@ do
 	echo
 	echo "* Please, check old & new string."
 	echo 
-	echo "* * * Target Dir: $TARGET"
-	echo "* * * Files     : ${FILES[@]}"
-	echo "* * * Old String: $OLD_STR_P ($OLD_STR_E)"
-	echo "* * * New String: $NEW_STR_P ($NEW_STR_E)"
+	echo "* * * Cipher.Func: "$(command -v "$CIPHER")
+	echo "* * * Target Dir : $TARGET"
+	echo "* * * Files      : ${FILES[@]}"
+	echo "* * * Old String : $OLD_STR_P ($OLD_STR_E)"
+	echo "* * * New String : $NEW_STR_P ($NEW_STR_E)"
 	echo
 	echo "* Confirm to update a string!"
 	echo "* * * (Y): Update a string"
