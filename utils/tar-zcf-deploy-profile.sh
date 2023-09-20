@@ -51,7 +51,12 @@ cur_date=$(date +%Y%m%d)
 filename=$build_name"-"$profile"-"$cur_date
 
 num="01"
-list=($(ls $filename-*.tar.gz &2>/dev/null))
+if [ $(find . -maxdepth 1 -name $filename-\*.tar.gz | wc -l) -lt 1 ];then
+	list=()
+else
+	list=($(ls $filename-*.tar.gz &2>/dev/null))
+fi
+
 if [ ${#list[@]} -gt 0 ];then
 	latestfile=${list[-1]}
 	latestfile=$(echo ${latestfile/$filename-/})
@@ -63,6 +68,11 @@ if [ ${#list[@]} -gt 0 ];then
 	fi
 fi
 
-tar -zcf $filename-$num.tar.gz $profile
+CMD="tar -zcvf $filename-$num.tar.gz $profile"
+echo
+echo "$CMD"
+echo
+eval $CMD
+echo
 
 exit 0

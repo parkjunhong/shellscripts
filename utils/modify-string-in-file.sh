@@ -92,9 +92,17 @@ if [ ! -d "$TARGET_DIR" ];then
 	exit 1
 fi
 
+
+#
+# @param {$1} encrypted string
+normalize(){
+    str="$1"
+    echo $str | sed -e 's/\//\\\//g'
+}
+
 cd "$TARGET_DIR"
 TARGET_DIR=$(pwd)
-CMD="find $TARGET_DIR -name $TARGET_FILE -exec sed -i 's/$OLD_STR/$NEW_STR/g' {} ';'"
+CMD="find '$TARGET_DIR' -name '$TARGET_FILE' | xargs sed -i 's/$(normalize $OLD_STR)/$(normalize $NEW_STR)/g'"
 echo $CMD
 eval $CMD
 
