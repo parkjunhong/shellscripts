@@ -61,9 +61,11 @@ _bldmvnpkg-add_default_options(){
 	declare -A ARG
 	ARG["-d"]="--deploy"
 	ARG["-h"]="--help"
+	ARG["-o"]="--offline"
 	ARG["-p"]="--profile"
 	ARG["-t"]="--test"
 	ARG["-u"]="--update"
+	ARG["-x"]="--debug"
 
 	local _keys=(${!ARG[@]})
 
@@ -92,11 +94,14 @@ _bldmvnpkg-read_profiles(){
 _bldmvnpkg-handle_current(){
 	_bldmvnpkg-log "in '_bldmvnpkg-handle_current' " $@
 	case "$1" in
-		-d | --d*)
+		-dep | --dep*)
 			COMPREPLY+=("-d")
 			;;
 		-h | --h*)
 			COMPREPLY+=("-h")
+			;;
+		-o | --o*)
+			COMPREPLY+=("-o")
 			;;
 		-p | --p*)
 			COMPREPLY+=("-p")
@@ -106,6 +111,9 @@ _bldmvnpkg-handle_current(){
 			;;
 		-u | --u*)
 			COMPREPLY+=("-u")
+			;;
+		-x | --deb*)
+			COMPREPLY+=("-x")
 			;;
 		*)
 			_bldmvnpkg-add_default_options
