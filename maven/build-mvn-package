@@ -34,11 +34,12 @@ help(){
 	fi
 	echo
 	echo "Usage:"
-	echo "./build-mvn-package [-h|--help] [-d|--deploy] -p <profile> [-t|--test] [-u|--update]"
+	echo "./build-mvn-package [-h|--help] [-d|--deploy] -p <profile> [-t|--test] [-u|--update] [-x|--debug] [-o | --offline]"
 	echo
 	echo "Options:"
 	echo " -d | --deploy: deploy after build."
 	echo " -h | --help: show help messages."
+	echo " -o | --offline: build with offline dependencies."
 	echo " -p | --profile: Profile"
 	echo " -t | --test: run Junit TestCase"
 	echo " -u | --update: 'git pull' before build sources."
@@ -50,6 +51,8 @@ DEPLOY=0
 TEST="true"
 GIT_PULL="false"
 DEBUG=""
+OFFLINE=""
+
 while [ ! -z "$1" ];
 do
 	case "$1" in
@@ -59,6 +62,9 @@ do
 		-h | --help)
 			help
 			exit 0
+			;;
+		-o | --offline)
+			OFFLINE="-o"
 			;;
 		-p | --profile)
 			shift
@@ -85,6 +91,12 @@ then
 	exit 1
 fi
 
+echo
+echo " ################################################"
+echo " JAVA_HOME  = $(update-java-home.sh)"
+echo " MAVEN_HOME = $M2_HOME"
+echo " ################################################"
+
 if [ "${GIT_PULL}" == "true" ];
 then
 	echo
@@ -92,11 +104,9 @@ then
 	git pull
 fi
 
-
-CMD="mvn clean package $DEBUG -Dmaven.test.skip=${TEST} -Dbuild.profile=$PROFILE -U -up"
+CMD="mvn $OFFLINE clean package $DEBUG -Dmaven.test.skip=${TEST} -Dbuild.profile=$PROFILE -U -up"
 echo
 echo " > $CMD"
-#mvn clean package -Dmaven.test.skip=${TEST} -Dbuild.profile=$PROFILE -U -up
 eval $CMD
 
 if [ $DEPLOY -ne 1 ];
