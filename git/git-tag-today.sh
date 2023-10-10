@@ -12,10 +12,12 @@ at(){
 
 
 help(){
-    if [ $# -gt 0 ];
-    then
+	if [ $# -eq 1 ];then
+		echo
+        echo "['${FUNCNAME[1]}' says] $1"
+	elif [ $# -eq 2 ];then
         echo
-        echo "['${FUNCNAME[1]}' says] " $1
+        echo "['${FUNCNAME[1]}' says] $1 ($FILENAME:$2)"
     fi
     echo
     echo "[Usage]"
@@ -63,7 +65,7 @@ do
 			;;
 		*)
 			if [ ! -d "$1" ];then
-				echo "! ! ! [INVALID] '$1' is not a directory. $(at $LINENO)" 
+				help "! ! ! [INVALID] '$1' is not a directory." $LINENO 
 				exit 1
 			fi
 			DIR="$1"
@@ -73,7 +75,7 @@ do
 done
 
 if [ -z "$BRANCH" ];then
-	echo "! ! ! [INVALID] 'branch' MUST BE assigned. $(at $LINENO)"
+	help "! ! ! [INVALID] 'branch' MUST BE assigned." $LINENO
 	exit 1
 fi
 
@@ -109,8 +111,8 @@ do
 		_exist=0
 		if [ ! -z "$(git rev-parse --verify $BRANCH 2>/dev/null)" ] || [ ! -z "$(git rev-parse --verify remotes/origin/$BRANCH 2>/dev/null)" ];then
 			_exist=1
-		else
-			echo "! ! ! [NOT EXIST] $_prj:$BRANCH $(at $LINENO)"
+		#else
+		#	echo "! ! ! [NOT EXIST] $_prj:$BRANCH $(at $LINENO)"
 		fi
 
 		if [ $_exist -eq 1 ];then
