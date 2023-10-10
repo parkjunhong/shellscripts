@@ -102,9 +102,31 @@ normalize(){
 
 cd "$TARGET_DIR"
 TARGET_DIR=$(pwd)
-CMD="find '$TARGET_DIR' -name '$TARGET_FILE' | xargs sed -i 's/$(normalize $OLD_STR)/$(normalize $NEW_STR)/g'"
-echo $CMD
-eval $CMD
+CMD_FIND="find '$TARGET_DIR' -name '$TARGET_FILE' -type f"
+CMD_OLD_FILES="$CMD_FIND | xargs grep -Hn '$OLD_STR'"
+_OFCOUNT=$(eval "$CMD_OLD_FILES | wc -l")
+if [  $_OFCOUNT -gt 0 ];then
+	echo
+	echo "* * * 이전 파일목록($_OFCOUNT)"
+	eval $CMD_OLD_FILES
+
+	echo
+	read -p "* * * 발견된 파일에 대해서 변경을 하겠습니까? " confirm
+	if [ ! -z "$confirm" ] && [ $(echo $confirm | tr [:lower:] [:upper:]) = "Y" ];then
+		CMD="$CMD_FIND | xargs sed -i 's/$(normalize $OLD_STR)/$(normalize $NEW_STR)/g'"
+		echo $CMD
+		eval $CMD
+		
+		CMD_NEW_FILES="$CMD_FIND | xargs grep -Hn '$NEW_STR'"
+		_NFCOUNT=$(eval "$CMD_NEW_FILES | wc -l")
+		echo
+		echo "* * * 변경 후 파일 정보($_NFCOUNT)"
+		eval "$CMD_FIND | xargs grep -Hn '$NEW_STR'"
+	fi
+fi
+
+echo
+echo "* * * Bye ..."
 
 exit 0
 
