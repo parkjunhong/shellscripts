@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+
+# =======================================
+# @author		: parkjunhong77@gmail.com
+# @title		: build maven projects with user-custom 'profile' for build.
+# @license		: Apache License 2.0
+# @since		: 2023-10-11
+# @desc			: support macOS 11.2.3, Ubuntu 18.04, CentOS 7
+# @installation	: 
+#		1. insert 'source <path>/git-tags.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#		2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/git-tags.completion' into /etc/bashrc for all users.
+# =======================================
+
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+
+# initialize arguments
+
+# $1: found
+# $2: added
+_git_tags-add_if_new(){
+	local __new=1
+	for word in ${COMP_WORDS[@]}
+	do
+		if [ "$word" = "$1" ];then
+			_git_tags-log "'$word' already exists"
+			__new=0
+			break
+		fi
+	done
+
+	if [ $__new -eq 1 ];then
+		for word in ${COMP_WORDS[@]}
+		do
+			if [ "$word" = "$2" ];then
+				_git_tags-log "'$2' already exists"
+				__new=0
+				break
+			fi
+		done
+		if [ $__new -eq 1 ];then
+			COMPREPLY+=("$2")
+		fi
+	fi
+}
+
+_git_tags-add_default_options(){
+	declare -A ARG
+	ARG["-b"]="--branch"
+	ARG["-h"]="--help"
+	ARG["-m"]="--message"
+	ARG["-t"]="--type"
+	ARG["-p"]="--prefix"
+	ARG["-s"]="--suffix"
+
+	local _keys=(${!ARG[@]})
+
+	for key in ${_keys[@]}
+	do
+		_git_tags-add_if_new "$key" "${ARG[$key]}"
+	done
+}
+
+# $1: current
+# $2: previous
+_git_tags-handle_current(){
+	_git_tags-log "in '_git_tags-handle_current' " $@
+	case "$1" in
+		-b | --b*)
+			COMPREPLY+=("--branch")
+			;;
+		-h | --h*)
+			COMPREPLY+=("--help")
+			;;
+		-m | --m*)
+			COMPREPLY+=("--message")
+			;;
+		-t | --t*)
+			COMPREPLY+=("--type")
+			;;
+		-p | --p*)
+			COMPREPLY+=("--prefix")
+			;;
+		-s | --s*)
+			COMPREPLY+=("--suffix")
+			;;
+		*)
+			_git_tags-add_default_options
+			;;
+	esac
+}
+
+# $1: current
+# $2: previous
+_git_tags-handle_previous(){
+	_git_tags-log "in '_git_tags-handle_previous' \$1: $1, \$2:$2"
+	case "$2" in
+		-b | --b*)
+			_git_tags-handle_current "$1"
+			;;
+		-m | --m*)
+			_git_tags-handle_current "$1"
+			;;
+		-t | --t*)
+			_git_tags-handle_current "$1" 
+			;;
+		-p | --p*)
+			_git_tags-handle_current "$1"
+			;;
+		-s | --s*)
+			_git_tags-handle_current "$1"
+			;;
+		*)
+			_git_tags-handle_current "$1"
+			;;
+	esac
+}
+
+# print logs to a external file.
+_git_tags-log(){
+	# To log messages, change a comment '#'.
+	#local _category="bldmvnpkg"
+	#printf "[%s] [%-10s] " "$(date '+%Y/%m/%d %H:%M:%S')" "$_category"  >>  ~/user-custom-completion.log
+	#echo -e "$@" >> ~/user-custom-completion.log
+	echo "$@" >/dev/null
+}
+
+# $1: command
+# $2: current
+# $3: previous
+_git_tags-profile(){
+	_git_tags-log "====================================================="
+	_git_tags-log $(printf "%-15s: %s" "COMP_WORDS" "${COMP_WORDS[@]}")
+	_git_tags-log $(printf "%-15s: %s" "COMP_LINE" "${COMP_LINE}")
+	_git_tags-log $(printf "%-15s: %s, %s: %s" "COMP_CWORD" "$COMP_CWORD" "#WORDS" "${#COMP_WORDS[@]}") 
+	_git_tags-log $(printf "%s: %s, %s: %s" "CURRENT" "$2" "PREVIOUS" "$3")
+
+	if [ $COMP_CWORD -eq 1 ];then
+		_git_tags-handle_current "$2" "$3"
+	else
+		_git_tags-handle_previous "$2" "$3"
+	fi
+}
+
+complete -F _git_tags-profile git-tags

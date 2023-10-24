@@ -38,11 +38,13 @@ help(){
     echo
 	echo "[Options]"
 	echo " -b | --branch : branchname"
+	echo " -h | --help   : show help message."
 	echo " -m | --message: tag message"
+	echo " -p | --prefix : tag name prefix. If empty, set a project directory as a prefix."
+	echo " -s | --suffix : tag name suffix. "
 	echo " -t | --type   : tag type. default is 'release'"
-	echo " --prefix      : tag name prefix. If empty, set a project directory as a prefix."
-	echo " --suffix      : tag name suffix. "
 }
+
 
 DIR="."
 BRANCH=""
@@ -57,21 +59,25 @@ do
 			shift
 			BRANCH="$1"
 			;;
+		-h | --help)
+			help
+			exit 0
+			;;
 		-m | --message)
 			shift
 			MSG="$1"
 			;;
-		-t | --type)
-			shift
-			TYPE="$1"
-			;;
-		--prefix)
+		-p | --prefix)
 			shift
 			PREFIX="$1"
 			;;
-		--suffix)
+		-s | --suffix)
 			shift
 			SUFFIX="$1"
+			;;
+		-t | --type)
+			shift
+			TYPE="$1"
 			;;
 		*)
 			if [ ! -d "$1" ];then

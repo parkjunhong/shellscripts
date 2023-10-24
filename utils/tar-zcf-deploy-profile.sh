@@ -27,6 +27,13 @@ fi
 profile="$1"
 profile=$(echo ${profile/\//})
 
+if [ -z "$profile" ];then
+	echo
+	echo "프로파일명은 반드시 입력하시기 바랍니다."
+	help
+	exit 0
+fi
+
 if [ ! -d "$cur_dir/$profile" ];then
 	echo
 	echo "존재하지 않는 프로파일 입니다. 입력=$profile"
