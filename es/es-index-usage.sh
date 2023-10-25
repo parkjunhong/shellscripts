@@ -128,7 +128,7 @@ do
 	size=$( echo "$result" | cut -d, -f1 )
 	idx=$( echo "$result" | cut -d, -f2 )
 
-	printf "* * * %-20s: index=%3s, size=%5s.%s gb\n" "$_index" "$idx" "$( echo $size | cut -d. -f1 )" "$(echo $size | cut -d. -f2 )"
+	printf "* * * %-25s: index=%3s, size=%5s.%s gb\n" "$_index" "$idx" "$( echo $size | cut -d. -f1 )" "$(echo $size | cut -d. -f2 )"
 done
 
 exit 0
