@@ -122,13 +122,25 @@ function calc(){
 	echo $_sum","$( eval $_curl_idx_size )
 }
 
+echo "[[ each index of ]]"
+total_idx=0
+total_size=0
 for _index in ${ES_INDICES[@]};
 do
-	result=$( calc $ES_IP $ES_PORT $_index )
-	size=$( echo "$result" | cut -d, -f1 )
-	idx=$( echo "$result" | cut -d, -f2 )
+    result=$( calc $ES_IP $ES_PORT $_index )
+    size=$( echo "$result" | cut -d, -f1 )
+    idx=$( echo "$result" | cut -d, -f2 )
 
-	printf "* * * %-25s: index=%3s, size=%5s.%s gb\n" "$_index" "$idx" "$( echo $size | cut -d. -f1 )" "$(echo $size | cut -d. -f2 )"
+    printf "* * * %-22s: index=%3s, size=%5s.%-6s gb\n" "$_index" "$idx" "$( echo $size | cut -d. -f1 )" "$(echo $size | cut -d. -f2 )"
+
+    ((total_idx+=idx))
+    total_size=$( echo "scale=6; $total_size + $size" | bc )
 done
 
+echo
+echo "[[ total indices of ]]"
+total_size=$( echo "scale=6; $total_size/1000" | bc )
+printf "* * * %-22s: index=%3s, size=%5s.%-6s tb\n" "total indices" "$total_idx" "$( echo $total_size | cut -d. -f1 )" "$(echo $total_size | cut -d. -f2 )"
+
 exit 0
+

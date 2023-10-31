@@ -158,7 +158,8 @@ search(){
 		parent=""
 	fi	
 	
-	local __tmpfile__="${HOME}/.disk-size-tmp-$(date +%s)"
+	#local __tmpfile__="${HOME}/.disk-size-tmp-$(date +%s)"
+	local __tmpfile__="${HOME}/.disk-size-tmp-$(uuidgen)"
 	printf "%s" "" > ${__tmpfile__}
 
 	for file in ${subfiles[@]}
