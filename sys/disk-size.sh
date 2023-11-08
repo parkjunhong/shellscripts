@@ -159,7 +159,8 @@ search(){
 	fi	
 	
 	#local __tmpfile__="${HOME}/.disk-size-tmp-$(date +%s)"
-	local __tmpfile__="${HOME}/.disk-size-tmp-$(uuidgen)"
+	#local __tmpfile__="${HOME}/.disk-size-tmp-$(uuidgen)"
+	local __tmpfile__="/tmp/.disk-size-tmp-$(uuidgen)"
 	printf "%s" "" > ${__tmpfile__}
 
 	for file in ${subfiles[@]}
@@ -198,10 +199,10 @@ search(){
 		then
 			printf "$RST_FORMAT" "d" ${durst[1]} ${durst[2]}
 		fi
+
+		rm -f ${__tmpfile__}
 	done <<< "$(eval ${__cmd__})"
 	# "$(cat ${__tmpfile__} | sort)"
-
-	rm -f ${__tmpfile__}
 }
 
 DIR=$(deltailslash ${DIR})
