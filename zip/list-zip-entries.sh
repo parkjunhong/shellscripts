@@ -8,10 +8,19 @@ if [ ! -d "$DIR" ];then
 	exit 0
 fi
 
+# ZIP 파일 경로 변환
+if [[ ! "$DIR" == /* ]];then
+	DIR=$(pwd)"/$DIR"
+fi
+
 while IFS= read zipfile
 do
-	unzip -l $zipfile
-done <<< "$(find $DIR -name *.zip)"
+	if [ ! -z "$zipfile" ]; then
+		unzip -l $zipfile
+	else 
+		echo "No zip files in $DIR"
+	fi
+done <<< "$(find $DIR -name '*.zip' | sort)"
 
 exit 0
 

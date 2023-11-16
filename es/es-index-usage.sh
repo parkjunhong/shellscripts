@@ -9,6 +9,7 @@
 # @completion: es-index-usages_completion
 #            1. insert 'source <path>/es-index-usage_completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
 #            2. copy the above file to /etc/bash_completion.d/ for all users.
+# @requirement: 'jq' for parsing elasticsearch response.
 # =======================================
 FILENAME=$(basename $0)
 
@@ -73,7 +74,6 @@ do
 	shift
 done
 
-#ES_INDICES=( session-dst-port-* session-dst-ip-* session-dslite-* session-user-* )
 if [ -z $ES_IP ] || [ -z $ES_PORT ] || [ -z $ES_INDICES ];then
 	help "입력값이 잘못되었습니다." $LINENO
 	
