@@ -1,0 +1,230 @@
+#!/usr/bin/env bash
+
+# =======================================
+# @auther : parkjunhong77@gmail.com
+# @title  : upload maven dependency files.
+# @license: Apache License 2.0
+# @since  : 2024-01-18
+# @desc   : support macOS 11.2.3, Ubuntu 18.04, CentOS 7
+# @completion: upload-mvn-dependencies_completion
+#            1. insert 'source <path>/upload-mvn-dependencies_completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#            2. copy the above file to /etc/bash_completion.d/ for all users.
+# =======================================
+
+FILENAME="$(basename $0)"
+
+help(){
+    if [ ! -z "$1" ];
+    then
+        local indent=10
+        local formatl=" - %-"$indent"s: %s\n"
+        local formatr=" - %"$indent"s: %s\n"
+        echo
+        echo "================================================================================"
+        printf "$formatl" "filename" "$FILENAME"
+        printf "$formatl" "line" "$2"
+        printf "$formatl" "callstack"
+        local idx=1
+        for func in ${FUNCNAME[@]:1}
+        do
+            printf "$formatr" "["$idx"]" $func
+            ((idx++))
+        done
+        printf "$formatl" "cause" "$1"
+        echo "================================================================================"
+    fi  
+    echo
+    echo "Usage:"
+    echo "./upload-mvn-dependencies [-h|--help] [-u|--url] <url> [-r|--releases] <releases_path> [-s|--snapshots] <snapshots_path>  [-m|--m2_dir] <maven_repo_dir> [--run] " 
+    echo
+    echo "Arguments:"
+    echo " -u | --url      : maven repository url. e.g.) http://local-maven"
+    echo " -r | --releases : url path for releases of maven repository. e.g.) repository/maven-releases"
+    echo " -s | --snapshots: url path for snapshots or maven repository. e.g.) repository/maven-snapshots"
+    echo " -m | --m2_dir   : a directory that contains maven dependency files."
+	echo
+	echo "Options:"
+	echo " -h | --help     : show this messages."
+	echo " --run           : execute to upload dependency files to maven repository."
+}
+
+NEXUS_URL=""
+NEXUS_PATH_RELEASES=""
+NEXUS_PATH_SNAPSHOTS=""
+M2_REPO=""
+
+while [ ! -z "$1" ];
+do
+	case "$1" in
+		-u | --url)
+			shift
+			NEXUS_URL="$1"
+			;;
+		-r | --releases)
+			shift
+			NEXUS_PATH_RELEASES="$1"
+			;;
+		-s | --snapshots)
+			shift
+			NEXUS_PATH_SNAPSHOTS="$1"
+			;;
+		-m | --m2_dir)
+			shift
+			if [ ! -d "$1" ];then
+				help "invalid maven repository directory. input=$1"
+				exit 1
+			fi
+			M2_REPO="$1"
+			;;
+		-h | --help)
+			help
+			exit 0
+			;;
+		--run)
+			ENABLE_RUN="--run"
+			;;
+		*)
+			;;
+	esac
+	shift
+done
+
+if [ -z "$NEXUS_URL" ] || [ -z "$NEXUS_PATH_RELEASES" ] || [ -z "$NEXUS_PATH_SNAPSHOTS" ] || [ -z "$M2_REPO" ];then
+	echo
+	echo "========================================="
+	printf "%-30s = %s\n" "nexus.repo.url.root" $NEXUS_URL
+	printf "%-30s = %s\n" "nexus.repo.path.releases" $NEXUS_PATH_RELEASES
+	printf "%-30s = %s\n" "nexus.repo.path.snapshots" $NEXUS_PATH_SNAPSHOTS
+	printf "%-30s = %s\n" "maven.repo.local.m2.path" $M2_REPO
+	echo "========================================="
+	echo
+
+	help "Not enough information, please check your input."
+	exit 1
+fi
+
+NEXUS_URL_RELEASES=$NEXUS_URL"/"$NEXUS_PATH_RELEASES
+NEXUS_URL_SNAPSHOTS=$NEXUS_URL"/"$NEXUS_PATH_SNAPSHOTS
+
+#
+# @param $1 {string} 실행할 명령어
+# @param $2 {string} 제어. [ --run ] 없는 경우
+exec-mvn-cli(){
+	if [ $# -lt 2 ] || [ -z "$2" ];then
+		echo $1
+	elif [ "$2" == "--run" ];then
+		echo "[* * *] mvn-cli =" $1
+		eval "$1"
+	fi
+}
+
+echo
+echo "========================================="
+printf "%-30s = %s\n" "nexus.repo.url.root" $NEXUS_URL
+printf "%-30s = %s\n" "nexus.repo.url.releases" $NEXUS_URL_RELEASES
+printf "%-30s = %s\n" "nexus.repo.url.snapshots" $NEXUS_URL_SNAPSHOTS
+printf "%-30s = %s\n" "maven.repo.local.m2.path" $M2_REPO
+echo "========================================="
+echo
+
+TOTAL_COUNT=0
+ONLY_POM_COUNT=0
+RELEASE_COUNT=0
+SNAPSHOT_COUNT=0
+_mvn_repo=$(echo $M2_REPO | sed -e 's/\//:/g' | sed -e 's/:/\\\//g')
+while IFS= read pomAbsPath;
+do
+	echo
+	echo "============================================================================="
+	echo "[* * *] directory =" $pomAbsPath
+	
+	((TOTAL_COUNT++))
+	cmd_sed="echo $pomAbsPath | sed -e 's/$_mvn_repo\///g'"
+	paths=( $(eval $cmd_sed | rev | sed -e 's/\// /g') )
+	version=$(echo ${paths[1]} | rev)
+	artifactId=$(echo ${paths[2]} | rev)
+	groupId=""
+	for _path in ${paths[@]:3};
+	do
+		if [ -z "$groupId" ];then
+			groupId=$_path
+		else
+			groupId=$groupId"."$_path
+		fi
+	done
+	groupId=$(echo $groupId | rev)
+
+	if [[ "$version" == *SNAPSHOT* ]];then
+		url=$NEXUS_URL_SNAPSHOTS	
+		repoId="snapshots"
+		((SNAPSHOT_COUNT++))
+	else
+		url=$NEXUS_URL_RELEASES
+		repoId="releases"
+		((RELEASE_COUNT++))
+	fi
+
+
+	pom_generated="false"
+	upload_jar="false"
+	# jarfile 존재
+	jarfile=$(echo $pomAbsPath | sed -e 's/.pom/.jar/g')
+	mvn_deploy_cli=""
+	if [ -f "$jarfile" ];then
+		# ...
+		mvn_deploy_cli="mvn deploy:deploy-file -Durl=$url -DrepositoryId=$repoId -DgroupId=$groupId -DartifactId=$artifactId -Dversion=$version -Dfile=$jarfile -Dpackaging=jar -DpomFile=$pomAbsPath -DgeneratePom=false"
+		exec-mvn-cli "$mvn_deploy_cli" "$ENABLE_RUN"
+		upload_jar="true"
+		pom_generated="true"
+	fi
+
+	# classifier jar 확인
+	pomAbsDirCmd="echo $pomAbsPath | sed -e 's/$artifactId\-$version\.pom//g'"
+	pomAbsDir=$(eval $pomAbsDirCmd)
+
+	if [ ! -d "$pomAbsDir" ];then
+		continue
+	fi
+	
+	# go to a subdirectory.
+	cd $pomAbsDir
+	clsf_wild="$artifactId-$version-*.jar"
+	while IFS= read _clsfFile;
+	do
+		if [ -z "$_clsfFile" ];then
+			continue
+		fi
+		clsf_cli="echo $_clsfFile | sed -e 's/.\///g' | sed -e 's/$artifactId-$version-//g' | sed -e 's/.jar//g'"
+		classifier=$(eval $clsf_cli)
+		if [ "$pom_generated" == "true" ];then
+			generatePom="false"
+		else
+			generatePom="true"
+			pom_generated="true"
+		fi
+		mvn_deploy_cli="mvn deploy:deploy-file -Durl=$url -DrepositoryId=$repoId -DgroupId=$groupId -DartifactId=$artifactId -Dversion=$version -Dclassifier=$classifier -Dfile=$pomAbsDir$(echo $_clsfFile | sed -e 's/.\///g') -Dpackaging=jar -DgeneratePom=$generatePom"
+		exec-mvn-cli "$mvn_deploy_cli" "$ENABLE_RUN"		
+		upload_jar="true"
+	done <<< $(find . -name "$clsf_wild" -type f -maxdepth 1)
+
+	# only pom file	
+	if [ "$pom_generated" == "false" ];then
+		# only pom file
+		((ONLY_POM_COUNT++))
+		mvn_deploy_cli="mvn deploy:deploy-file -Durl=$url -DrepositoryId=$repoId -DgroupId=$groupId -DartifactId=$artifactId -Dversion=$version -Dfile=$pomAbsPath -Dpackaging=pom -DpomFile=$pomAbsPath -DgeneratePom=false"
+		exec-mvn-cli "$mvn_deploy_cli" "$ENABLE_RUN"
+	fi
+
+done <<< "$(find $M2_REPO -name *.pom)"
+
+echo
+echo "-----------------------------------------------"
+printf "%-15s = %6s\n" "total.count"      $(printf "%'d" $TOTAL_COUNT)
+printf "%-15s = %6s\n" "only-pom.count"   $(printf "%'d" $ONLY_POM_COUNT)
+printf "%-15s = %6s\n" "release.count"  $(printf "%'d" $RELEASE_COUNT)
+printf "%-15s = %6s\n" "snapshot.count" $(printf "%'d" $SNAPSHOT_COUNT)
+echo "-----------------------------------------------"
+
+exit 0
+
+
