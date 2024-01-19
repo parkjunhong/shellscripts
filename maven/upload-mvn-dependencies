@@ -131,6 +131,8 @@ TOTAL_COUNT=0
 ONLY_POM_COUNT=0
 RELEASE_COUNT=0
 SNAPSHOT_COUNT=0
+DROP_RELEASE_COUNT=0
+DROP_SNAPSHOT_COUNT=0
 _mvn_repo=$(echo $M2_REPO | sed -e 's/\//:/g' | sed -e 's/:/\\\//g')
 while IFS= read pomAbsPath;
 do
@@ -158,30 +160,40 @@ do
 		url=$NEXUS_URL_SNAPSHOTS	
 		repoId="snapshots"
 		((SNAPSHOT_COUNT++))
+		isRelease="0"
 	else
 		url=$NEXUS_URL_RELEASES
 		repoId="releases"
 		((RELEASE_COUNT++))
+		isRelease="1"
 	fi
-
 
 	pom_generated="false"
 	upload_jar="false"
 	# jarfile 존재
-	jarfile=$(echo $pomAbsPath | sed -e 's/.pom/.jar/g')
+	jarAbsPath=$(echo $pomAbsPath | sed -e 's/.pom/.jar/g')
 	mvn_deploy_cli=""
-	if [ -f "$jarfile" ];then
-		# ...
-		mvn_deploy_cli="mvn deploy:deploy-file -Durl=$url -DrepositoryId=$repoId -DgroupId=$groupId -DartifactId=$artifactId -Dversion=$version -Dfile=$jarfile -Dpackaging=jar -DpomFile=$pomAbsPath -DgeneratePom=false"
-		exec-mvn-cli "$mvn_deploy_cli" "$ENABLE_RUN"
-		upload_jar="true"
-		pom_generated="true"
+	if [ -f "$jarAbsPath" ];then
+		jarfilename=$(basename $jarAbsPath)
+		if [ "$artifactId-$version.jar" == "$jarfilename" ];then
+			# ...
+			mvn_deploy_cli="mvn deploy:deploy-file -Durl=$url -DrepositoryId=$repoId -DgroupId=$groupId -DartifactId=$artifactId -Dversion=$version -Dfile=$jarAbsPath -Dpackaging=jar -DpomFile=$pomAbsPath -DgeneratePom=false"
+			exec-mvn-cli "$mvn_deploy_cli" "$ENABLE_RUN"
+			upload_jar="true"
+			pom_generated="true"
+		else
+			echo "X X X artifact=$artifactId-$version.jar, jarfile=$jarfilename"
+			if [ "$isRelease" == "1" ];then
+				((DROP_RELEASE_COUNT++))
+			else
+				((DROP_SNAPSHOT_COUNT++))
+			fi
+			continue
+		fi
 	fi
 
 	# classifier jar 확인
-	pomAbsDirCmd="echo $pomAbsPath | sed -e 's/$artifactId\-$version\.pom//g'"
-	pomAbsDir=$(eval $pomAbsDirCmd)
-
+	pomAbsDir=$(dirname $pomAbsPath)
 	if [ ! -d "$pomAbsDir" ];then
 		continue
 	fi
@@ -219,10 +231,12 @@ done <<< "$(find $M2_REPO -name *.pom)"
 
 echo
 echo "-----------------------------------------------"
-printf "%-15s = %6s\n" "total.count"      $(printf "%'d" $TOTAL_COUNT)
-printf "%-15s = %6s\n" "only-pom.count"   $(printf "%'d" $ONLY_POM_COUNT)
+printf "%-15s = %6s\n" "total.count"   $(printf "%'d" $TOTAL_COUNT)
+printf "%-15s = %6s\n" "only-pom.count" $(printf "%'d" $ONLY_POM_COUNT)
 printf "%-15s = %6s\n" "release.count"  $(printf "%'d" $RELEASE_COUNT)
 printf "%-15s = %6s\n" "snapshot.count" $(printf "%'d" $SNAPSHOT_COUNT)
+printf "%-15s = %6s\n" "drop.re.count" $(printf "%'d" $DROP_RELEASE_COUNT)
+printf "%-15s = %6s\n" "drop.sn.count" $(printf "%'d" $DROP_SNAPSHOT_COUNT)
 echo "-----------------------------------------------"
 
 exit 0
