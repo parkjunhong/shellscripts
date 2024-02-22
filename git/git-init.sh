@@ -68,7 +68,7 @@ done
 
 if [ -z "$REMOTE_GIT_REPO" ] || [ -z "$REMOTE_BRANCH" ];
 then
-	echo
+	help "git 저장소 또는 연동할 branch 이름을 확인하시기 바랍니다. git=$REMOTE_GIT_REPO, branch=$REMOTE_BRANCH" $LINENO
 	exit 1
 fi
 
