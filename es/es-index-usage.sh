@@ -32,7 +32,7 @@ help(){
         done
         printf "$formatl" "cause" "$1"
         echo "================================================================================"
-    fi
+    fi  
     echo
     echo "Usage:"
     echo "./es-index-usage.sh -i <ip> -p <port> -x <indices>"
@@ -240,3 +240,4 @@ total_size=$( echo "scale=6; $total_size/1000" | bc )
 printf "* * * %-${index_len}s: index=%5s, size=%9s.%-12s $ES_DATA_UNIT_T\n" "total indices" "$total_idx" "$( echo $total_size | cut -d. -f1 )" "$(echo $total_size | cut -d. -f2 )"
 
 exit 0
+
