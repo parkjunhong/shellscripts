@@ -73,7 +73,6 @@ do
 	shift
 done
 
-#ES_INDICES=( session-dst-port-* session-dst-ip-* session-dslite-* session-user-* )
 if [ -z $ES_IP ] || [ -z $ES_PORT ] || [ -z $ES_INDICES ];then
 	help "입력값이 잘못되었습니다." $LINENO
 	
@@ -140,6 +139,15 @@ function calc(){
 	echo $(eval $_curl_idx_size)","$_total_psc","$_total_docs","$_total_storage
 }
 
+# index 이름 최대 길이
+idx_len=16
+for _idx in ${ES_INDICES[@]};
+do
+    len=${#_idx}    
+    idx_len=$(( idx_len > len ? idx_len : len))
+done
+_format="* * * %-${idx_len}s: %3s, %5s, %15s, %5s.%-6s gb"
+
 echo "[[ of each/group index ]]"
 total_idx=0
 total_shard=0
@@ -153,8 +161,7 @@ do
 	docs_count=$( echo "$result" | cut -d, -f3 )
 	size=$( echo "$result" | cut -d, -f4 )
 
-	_index=${_index/session-/}
-	printf "* * * %-20s: %3s, %5s, %15s, %5s.%-6s gb\n" "${_index/rawdata-/}" $(printf "%'d" $idx) $(printf "%'d" $shard_count) $(printf "%'d" $docs_count) "$( echo $size | cut -d. -f1 )" "$(echo $size | cut -d. -f2 )"
+	printf "$_format\n" "$_index" $(printf "%'d" $idx) $(printf "%'d" $shard_count) $(printf "%'d" $docs_count) "$( echo $size | cut -d. -f1 )" "$(echo $size | cut -d. -f2 )"
 
 	((total_idx+=idx))
 	((total_shard+=shard_count))
@@ -165,6 +172,6 @@ done
 echo
 echo "[[ of total indices ]]"
 total_size=$( echo "scale=6; $total_size/1000" | bc )
-printf "* * * %-20s: %3s, %5s, %15s, %5s.%-6s tb\n" "total indices(*)" $(printf "%'d" $total_idx) $(printf "%'d" $total_shard) $(printf "%'d" $total_docs)  "$( echo $total_size | cut -d. -f1 )" "$(echo $total_size | cut -d. -f2 )"
+printf "$_format\n" "total indices(*)" $(printf "%'d" $total_idx) $(printf "%'d" $total_shard) $(printf "%'d" $total_docs)  "$( echo $total_size | cut -d. -f1 )" "$(echo $total_size | cut -d. -f2 )"
 
 exit 0
