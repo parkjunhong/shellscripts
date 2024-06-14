@@ -82,61 +82,83 @@ if [ -z $ES_IP ] || [ -z $ES_PORT ] || [ -z $ES_INDICES ];then
 
 	exit 0
 fi
-			
+
 # @param $1 {string} es ip
 # @param $2 {num} es port
 # @param $3 {string} index name
 function calc(){
-	local _gb=0
-	local _mb=0
-	local _kb=0
-	local _b=0
+    local _gb=0
+    local _mb=0
+    local _kb=0
+    local _b=0
+    local _total_shard=0
+    local _total_docs=0
 
-	# storage size	
-	local _curl_size="curl --silent 'http://$1:$2/_cat/indices?format=json&index=$3' | jq -r '.[][\"store.size\"]'"
-	while IFS= read -r _size;
-	do
-		_unit=$( echo $_size | sed -e "s/[0-9.]//g" 2>/dev/null )
-		_value=$( echo $_size | sed "s/$_unit//g" 2>/dev/null  )
-		case "$_unit" in
-			b)
-				_b=$( echo "scale=2; $_b + $_value" | bc )
-				;;
-			kb)
-				_kb=$( echo "scale=2; $_kb + $_value" | bc )
-				;;
-			mb)
-				_mb=$( echo "scale=2; $_mb + $_value" | bc )
-				;;
-			gb)
-				_gb=$( echo "scale=2; $_gb + $_value" | bc )
-				;;
-			*)
-		#		echo "raw=$_size, v=$_value, u=$_unit"
-				;;
-		esac
-	done <<< "$( eval $_curl_size 2>/dev/null)"
+    # check data
+    local _props=("store.size" "pri" "rep" "docs.count")
+    local _qryprops=$(printf "\"%s\", " "${_props[@]}")
+    while true;
+    do
+        # index count
+        local _curl_idx_size="curl --silent 'http://$1:$2/_cat/indices?format=json&index=$3' | jq 'length'"
+        local _idx_count=$(eval $_curl_idx_size)
+        # data
+        #local _data=( $( curl --silent "http://$1:$2/_cat/indices?format=json&index=$3" | jq -r '.[]["store.size", "pri", "rep", "docs.count"]' ) )
+        local _data=( $( curl --silent "http://$1:$2/_cat/indices?format=json&index=$3" | jq -r ".[][${_qryprops:0:$((${#_qryprops}-2))}]" ) ) 
+        # 4: property count (store.size, pri, rep, docs.count)
+        if [ ${#_data[@]} -eq $((_idx_count*${#_props[@]})) ];then
+            break
+        fi
+    done
 
-	# primary shard count
-	local _curl_shard_count="curl --silent 'http://$1:$2/_cat/indices?format=json&index=$3' | jq -r '.[][\"pri\",\"rep\"]'"
-	_total_psc=0
-	while IFS= read -r _count;
-	do
-		((_total_psc+=_count))
-	done <<< "$( eval $_curl_shard_count 2>/dev/null)"
-
-	# documents count
-	local _curl_docs_count="curl --silent 'http://$1:$2/_cat/indices?format=json&index=$3' | jq -r '.[][\"docs.count\"]'"
-	_total_docs=0
-	while IFS= read -r _count;
-	do
-		((_total_docs+=_count))
-	done <<< "$( eval $_curl_docs_count 2>/dev/null)"
-
-	# index count
-	local _curl_idx_size="curl --silent 'http://$1:$2/_cat/indices?format=json&index=$3' | jq 'length'"
-	_total_storage=$( echo "scale=6; $_gb + $_mb/1000 + $_kb/1000/1000 + $_b/1000/1000/1000" | bc)
-	echo $(eval $_curl_idx_size)","$_total_psc","$_total_docs","$_total_storage
+    # store size, shard count(primary, replica), docs count
+    local _pos=0
+    local _mod=0
+    for _v in ${_data[@]};
+    do  
+        _mod=$((_pos/_idx_count))
+        case $_mod in
+            # store size, mod==0
+            0)
+                _unit=$( echo $_v | sed -e "s/[0-9.]//g" 2>/dev/null )
+                _value=$( echo $_v | sed "s/$_unit//g" 2>/dev/null  )
+                case "$_unit" in
+                    b)
+                        _b=$( echo "scale=2; $_b + $_value" | bc )
+                        ;;
+                    kb)
+                        _kb=$( echo "scale=2; $_kb + $_value" | bc )
+                        ;;
+                    mb)
+                        _mb=$( echo "scale=2; $_mb + $_value" | bc )
+                        ;;
+                    gb)
+                        _gb=$( echo "scale=2; $_gb + $_value" | bc )
+                        ;;
+                    *)
+                #       echo "raw=$_size, v=$_value, u=$_unit"
+                        ;;
+                esac
+            ;;
+            # shard.primary, mod==1
+            1)
+                ((_total_shard+=_v))
+            ;;
+            # shard.replica, mod==2
+            2)
+                ((_total_shard+=_v))
+            ;;
+            # docs.count, mod==3
+            3)
+                ((_total_docs+=_v))
+            ;;
+            *)
+            ;;
+        esac    
+        ((_pos++))    
+    done
+    _total_storage=$( echo "scale=6; $_gb + $_mb/1000 + $_kb/1000/1000 + $_b/1000/1000/1000" | bc)
+    echo $(eval $_curl_idx_size)","$_total_shard","$_total_docs","$_total_storage
 }
 
 # index 이름 최대 길이
