@@ -47,7 +47,7 @@ help(){
 ES_IP=""
 ES_PORT=""
 ES_INDICES=""
-
+INDEX_PREFIX=""
 while [ ! -z "$1" ];
 do
 	case "$1" in
@@ -65,7 +65,11 @@ do
 			;;
 		-x | --indices)
 			shift
-			ES_INDICES=( $(echo $1 | sed 's/,/ /g') )
+			IFS=" " read -r -a ES_INDICES <<< "$(echo "$1" | sed 's/,/ /g')"
+			;;
+		-ip)
+			shift
+			INDEX_PREFIX="$1"
 			;;
 		*)
 			;;
@@ -82,108 +86,88 @@ if [ -z $ES_IP ] || [ -z $ES_PORT ] || [ -z $ES_INDICES ];then
 
 	exit 0
 fi
-
+			
 # @param $1 {string} es ip
 # @param $2 {num} es port
 # @param $3 {string} index name
 function calc(){
-    local _gb=0
-    local _mb=0
-    local _kb=0
-    local _b=0
-    local _total_shard=0
-    local _total_docs=0
+	local _gb=0
+	local _mb=0
+	local _kb=0
+	local _b=0
+	local _total_shard=0
+	local _total_docs=0
+	local _index_count=0
 
-    # check data
-    local _props=("store.size" "pri" "rep" "docs.count")
-    local _qryprops=$(printf "\"%s\", " "${_props[@]}")
-    while true;
-    do
-        # index count
-        local _curl_idx_size="curl --silent 'http://$1:$2/_cat/indices?format=json&index=$3' | jq 'length'"
-        local _idx_count=$(eval $_curl_idx_size)
-        # data
-        #local _data=( $( curl --silent "http://$1:$2/_cat/indices?format=json&index=$3" | jq -r '.[]["store.size", "pri", "rep", "docs.count"]' ) )
-        local _data=( $( curl --silent "http://$1:$2/_cat/indices?format=json&index=$3" | jq -r ".[][${_qryprops:0:$((${#_qryprops}-2))}]" ) ) 
-        # 4: property count (store.size, pri, rep, docs.count)
-        if [ ${#_data[@]} -eq $((_idx_count*${#_props[@]})) ];then
-            break
-        fi
-    done
+	local _props=("store.size" "pri" "rep" "docs.count")
+	_IFS="$IFS" IFS="," _qryprops="${_props[*]}" IFS="$_IFS"
 
-    # store size, shard count(primary, replica), docs count
-    local _pos=0
-    local _mod=0
-    for _v in ${_data[@]};
-    do  
-        _mod=$((_pos/_idx_count))
-        case $_mod in
-            # store size, mod==0
-            0)
-                _unit=$( echo $_v | sed -e "s/[0-9.]//g" 2>/dev/null )
-                _value=$( echo $_v | sed "s/$_unit//g" 2>/dev/null  )
-                case "$_unit" in
-                    b)
-                        _b=$( echo "scale=2; $_b + $_value" | bc )
-                        ;;
-                    kb)
-                        _kb=$( echo "scale=2; $_kb + $_value" | bc )
-                        ;;
-                    mb)
-                        _mb=$( echo "scale=2; $_mb + $_value" | bc )
-                        ;;
-                    gb)
-                        _gb=$( echo "scale=2; $_gb + $_value" | bc )
-                        ;;
-                    *)
-                #       echo "raw=$_size, v=$_value, u=$_unit"
-                        ;;
-                esac
-            ;;
-            # shard.primary, mod==1
-            1)
-                ((_total_shard+=_v))
-            ;;
-            # shard.replica, mod==2
-            2)
-                ((_total_shard+=_v))
-            ;;
-            # docs.count, mod==3
-            3)
-                ((_total_docs+=_v))
-            ;;
-            *)
-            ;;
-        esac    
-        ((_pos++))    
-    done
-    _total_storage=$( echo "scale=6; $_gb + $_mb/1000 + $_kb/1000/1000 + $_b/1000/1000/1000" | bc)
-    echo $(eval $_curl_idx_size)","$_total_shard","$_total_docs","$_total_storage
+	# store size, shard count(primary, replica), docs count
+	while read -a _d
+	do
+		_v=${_d[0]}
+		_unit=$( echo $_v | sed -e "s/[0-9.]//g" 2>/dev/null )
+		_value=$( echo $_v | sed "s/$_unit//g" 2>/dev/null  )
+		case "$_unit" in
+			b)
+				_b=$( echo "scale=2; $_b + $_value" | bc )
+				;;
+			kb)
+				_kb=$( echo "scale=2; $_kb + $_value" | bc )
+				;;
+			mb)
+				_mb=$( echo "scale=2; $_mb + $_value" | bc )
+				;;
+			gb)
+				_gb=$( echo "scale=2; $_gb + $_value" | bc )
+				;;
+			*)
+		#		echo "raw=$_size, v=$_value, u=$_unit"
+				;;
+		esac
+		# shard.primary
+		((_total_shard+=${_d[1]}))
+		# shard.replica
+		((_total_shard+=${_d[2]}))
+		# docs.count
+		((_total_docs+=${_d[3]}))
+		# index count
+		((_index_count++))
+	done < <(curl --silent "http://$1:$2/_cat/indices?h=$_qryprops&index=$3")
+
+	_total_storage=$( echo "scale=6; $_gb + $_mb/1000 + $_kb/1000/1000 + $_b/1000/1000/1000" | bc)
+	echo $_index_count","$_total_shard","$_total_docs","$_total_storage
 }
 
 # index 이름 최대 길이
 idx_len=16
-for _idx in ${ES_INDICES[@]};
+for _idx in "${ES_INDICES[@]}";
 do
     len=${#_idx}    
     idx_len=$(( idx_len > len ? idx_len : len))
 done
-_format="* * * %-${idx_len}s: %3s, %5s, %15s, %5s.%-6s gb"
+_format_each="* * * %-${idx_len}s: %3s, %5s, %15s, %12s, %5s.%-6s gb"
+_format_total="* * * %-${idx_len}s: %3s, %5s, %15s, %5s.%-6s tb"
 
 echo "[[ of each/group index ]]"
 total_idx=0
 total_shard=0
 total_docs=0
 total_size=0
-for _index in ${ES_INDICES[@]};
+
+for _index in "${ES_INDICES[@]}";
 do
-	result=$( calc $ES_IP $ES_PORT $_index )
+	result=$( calc $ES_IP $ES_PORT "$INDEX_PREFIX$_index" )
 	idx=$( echo "$result" | cut -d, -f1 )
 	shard_count=$( echo "$result" | cut -d, -f2 )
 	docs_count=$( echo "$result" | cut -d, -f3 )
 	size=$( echo "$result" | cut -d, -f4 )
 
-	printf "$_format\n" "$_index" $(printf "%'d" $idx) $(printf "%'d" $shard_count) $(printf "%'d" $docs_count) "$( echo $size | cut -d. -f1 )" "$(echo $size | cut -d. -f2 )"
+	if [ $shard_count -gt 0 ];then
+		printf "$_format_each\n" "$_index" $(printf "%'d" $idx) $(printf "%'d" $shard_count) $(printf "%'d" $docs_count) $(printf "%'d" $(echo "scale=0; $docs_count/$shard_count"|bc)) "$( echo $size | cut -d. -f1 )" "$(echo $size | cut -d. -f2 )" 2>/dev/null
+	else
+		printf "$_format_each\n" $(echo $_index | sed 's/\\//g') 0 0 0 0 0
+	fi
 
 	((total_idx+=idx))
 	((total_shard+=shard_count))
@@ -194,6 +178,6 @@ done
 echo
 echo "[[ of total indices ]]"
 total_size=$( echo "scale=6; $total_size/1000" | bc )
-printf "$_format\n" "total indices(*)" $(printf "%'d" $total_idx) $(printf "%'d" $total_shard) $(printf "%'d" $total_docs)  "$( echo $total_size | cut -d. -f1 )" "$(echo $total_size | cut -d. -f2 )"
+printf "$_format_total\n" "total indices(*)" $(printf "%'d" $total_idx) $(printf "%'d" $total_shard) $(printf "%'d" $total_docs)  "$( echo $total_size | cut -d. -f1 )" "$(echo $total_size | cut -d. -f2 )"
 
 exit 0
