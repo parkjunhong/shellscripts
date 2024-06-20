@@ -34,14 +34,15 @@ help(){
     fi  
     echo
     echo "Usage:"
-    echo "./es-index-usage.sh -i <ip> -p <port> -x <indices>"
+    echo "./es-index-usage.sh -i <ip> -p <port> -x <indices> [-ip <prefix>]"
     echo
     echo "Options:"
-    echo " -i | --ip     : IP address of Elasticsearch"
-    echo " -p | --port   : Port of Elasticsearch"
-    echo " -x | --indices: Index list of Elasticsearch."
-	echo "                 indices separated by comma(,)."
-    echo " -h | --help   : show help messages, like this."
+    echo " -i  | --ip          : IP address of Elasticsearch"
+    echo " -p  | --port        : Port of Elasticsearch"
+    echo " -x  | --indices     : Index list of Elasticsearch."
+	echo "                       indices separated by comma(,)."
+    echo " -ip | --index-prefix: prefix for all indices."
+    echo " -h  | --help        : show help messages, like this."
 }
 
 ES_IP=""
