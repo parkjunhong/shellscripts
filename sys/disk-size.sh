@@ -89,6 +89,12 @@ then
 	exit 1
 fi
 
+# temporary directory
+TMP_DIR="/tmp"
+TMP_FILE_PREFIX=".disk-size-tmp"
+# 이전 임시파일 삭제
+find ${TMP_DIR} -maxdepth 1 -name "${TMP_FILE_PREFIX}*" -type f -mmin +1 -exec rm -f {} ';' 2>/dev/null 
+
 # @param $1 {string} directory
 abspath(){
 	if [ -d $1 ];
@@ -158,9 +164,7 @@ search(){
 		parent=""
 	fi	
 	
-	#local __tmpfile__="${HOME}/.disk-size-tmp-$(date +%s)"
-	#local __tmpfile__="${HOME}/.disk-size-tmp-$(uuidgen)"
-	local __tmpfile__="/tmp/.disk-size-tmp-$(uuidgen)"
+	local __tmpfile__="${TMP_DIR}/${TMP_FILE_PREFIX}-$(date +%s)-$(uuidgen)"
 	printf "%s" "" > ${__tmpfile__}
 
 	for file in ${subfiles[@]}
