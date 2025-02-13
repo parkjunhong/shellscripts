@@ -24,11 +24,10 @@ help() {
   echo "  -server <서버 주소>: Let's Encrypt 인증서를 발급받을 서버 주소 (예: example.com)"
   echo ""
   echo "선택적 인자:"
-  echo "  -ide <IDE cacerts 파일 경로>: IDE (Eclipse, IntelliJ 등)의 cacerts 파일 경로"
+  echo "  -cacerts_files <파일1,파일2,...>: 콤마(,)로 구분된 추가할 cacerts 파일 경로 목록"
   echo ""
   echo "참고:"
   echo "  - Java cacerts 파일은 $JAVA_HOME/lib/security/cacerts 에 위치합니다. JAVA_HOME 환경변수가 설정되지 않은 경우, java 명령어를 찾아서 자동으로 경로를 추적합니다."
-  echo "  - IDE cacerts 파일 경로는 IDE 설치 환경에 따라 다를 수 있습니다."
   echo "  - 인증서 저장소 비밀번호는 'changeit'으로 고정되어 있습니다. 필요에 따라 스크립트를 수정하여 변경할 수 있습니다."
   echo "  - 스크립트 실행 시 sudo 권한이 필요합니다."
   echo ""
@@ -38,7 +37,7 @@ help() {
 # === 초기 변수 설정 ===
 SERVER=""
 ALIAS=""
-IDE_CACERTS=""
+CACERTS_FILES=""
 CERT_FILE="/tmp/letsencrypt-cert.crt"
 STOREPASS="changeit"
 
@@ -47,12 +46,12 @@ while [[ $# -gt 0 ]]; do
   case $1 in
     -server)
       SERVER="$2"
-	  ALIAS="$2"
+		  ALIAS="$2"
       CERT_FILE="$2-cert.crt"
       shift 2
       ;;
-    -ide)
-      IDE_CACERTS="$2"
+    -cacerts_files)
+      CACERTS_FILES="$2"
       shift 2
       ;;
     -h|--help) # help 옵션 추가
@@ -103,19 +102,22 @@ sudo keytool -delete -alias "$ALIAS" -keystore "$JAVA_CACERTS" -storepass "$STOR
 echo " Java TrustStore에 새로운 인증서를 추가합니다..."
 sudo keytool -import -trustcacerts -alias "$ALIAS" -file "$CERT_FILE" -keystore "$JAVA_CACERTS" -storepass "$STOREPASS" -noprompt
 
-# === 3. IDE Cacerts 갱신 (옵션) ===
-if [[ -n "$IDE_CACERTS" ]]; then
-  if [ ! -f "$IDE_CACERTS" ]; then
-    echo "❌ 지정된 IDE cacerts 파일을 찾을 수 없습니다! ($IDE_CACERTS)"
-    exit 1
-  fi
-  echo "✅ IDE cacerts 파일 위치: $IDE_CACERTS"
+# === 3. 추가적인 cacerts 파일 갱신 (옵션) ===
+if [[ -n "$CACERTS_FILES" ]]; then
+  IFS=',' read -ra FILES <<< "$CACERTS_FILES"
+  for CACERTS_FILE in "${FILES[@]}"; do
+    if [ ! -f "$CACERTS_FILE" ]; then
+      echo "❌ 지정된 cacerts 파일을 찾을 수 없습니다! ($CACERTS_FILE)"
+      continue
+    fi
+    echo "✅ 추가적인 cacerts 파일 위치: $CACERTS_FILE"
 
-  echo " IDE Cacerts에서 기존 '$ALIAS' 인증서를 제거합니다..."
-  keytool -delete -alias "$ALIAS" -keystore "$IDE_CACERTS" -storepass "$STOREPASS" -noprompt 2>/dev/null
+    echo " $CACERTS_FILE 에서 기존 '$ALIAS' 인증서를 제거합니다..."
+    sudo keytool -delete -alias "$ALIAS" -keystore "$CACERTS_FILE" -storepass "$STOREPASS" -noprompt 2>/dev/null
 
-  echo " IDE Cacerts에 새로운 인증서를 추가합니다..."
-  keytool -import -trustcacerts -alias "$ALIAS" -file "$CERT_FILE" -keystore "$IDE_CACERTS" -storepass "$STOREPASS" -noprompt
+    echo " $CACERTS_FILE 에 새로운 인증서를 추가합니다..."
+    sudo keytool -import -trustcacerts -alias "$ALIAS" -file "$CERT_FILE" -keystore "$CACERTS_FILE" -storepass "$STOREPASS" -noprompt
+  done
 fi
 
 # === 4. 인증서 추가 결과 검증 ===
@@ -127,21 +129,23 @@ else
   echo "❌ Java TrustStore에 인증서가 추가되지 않았습니다!"
 fi
 
-if [[ -n "$IDE_CACERTS" ]]; then
-  echo " IDE Cacerts에 추가된 인증서 확인:"
-  keytool -list -keystore "$IDE_CACERTS" -storepass "$STOREPASS" -alias "$ALIAS" 2>/dev/null | grep -i "$ALIAS"
-  if [ $? -eq 0 ]; then
-    echo "✅ IDE Cacerts에 인증서가 정상적으로 추가되었습니다!"
-  else
-    echo "❌ IDE Cacerts에 인증서가 추가되지 않았습니다!"
-  fi
+if [[ -n "$CACERTS_FILES" ]]; then
+	for CACERTS_FILE in "${FILES[@]}"; do
+		echo " $CACERTS_FILE 에 추가된 인증서 확인:"
+		sudo keytool -list -keystore "$CACERTS_FILE" -storepass "$STOREPASS" -alias "$ALIAS" 2>/dev/null | grep -i "$ALIAS"
+	  if [ $? -eq 0 ]; then
+  	  echo "✅ IDE Cacerts에 인증서가 정상적으로 추가되었습니다!"
+	  else
+    	echo "❌ IDE Cacerts에 인증서가 추가되지 않았습니다!"
+	  fi
+	done
 fi
 
 # === 5. 인증서 SHA-256 지문 확인 ===
 echo " 인증서 SHA-256 Fingerprint (확인용)"
 openssl x509 -in "$CERT_FILE" -noout -fingerprint -sha256
 
-# === 6. 정리 및 완료 ===
+# === 6. 정리 및 i완료 ===
 rm -f "$CERT_FILE"
 
 echo "✅ 인증서 갱신 및 검증 완료! (Java & IDE Cacerts)"
