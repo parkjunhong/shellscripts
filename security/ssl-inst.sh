@@ -96,14 +96,17 @@ openssl s_client -showcerts -servername "$SERVER" -connect "$SERVER:443" 2>/dev/
 echo "✅ 인증서 다운로드 완료!"
 
 # === 2. Java TrustStore 갱신 (sudo 사용) ===
+echo " [begin] >>> Java TrustStore"
 echo " Java TrustStore에서 기존 '$ALIAS' 인증서를 제거합니다..."
 sudo keytool -delete -alias "$ALIAS" -keystore "$JAVA_CACERTS" -storepass "$STOREPASS" -noprompt 2>/dev/null
 
 echo " Java TrustStore에 새로운 인증서를 추가합니다..."
 sudo keytool -import -trustcacerts -alias "$ALIAS" -file "$CERT_FILE" -keystore "$JAVA_CACERTS" -storepass "$STOREPASS" -noprompt
+echo " [end] <<< Java TrustStore"
 
 # === 3. 추가적인 cacerts 파일 갱신 (옵션) ===
 if [[ -n "$CACERTS_FILES" ]]; then
+  echo " [begin] >>> 추가적인 cacerts 파일"
   IFS=',' read -ra FILES <<< "$CACERTS_FILES"
   for CACERTS_FILE in "${FILES[@]}"; do
     if [ ! -f "$CACERTS_FILE" ]; then
@@ -118,6 +121,7 @@ if [[ -n "$CACERTS_FILES" ]]; then
     echo " $CACERTS_FILE 에 새로운 인증서를 추가합니다..."
     sudo keytool -import -trustcacerts -alias "$ALIAS" -file "$CERT_FILE" -keystore "$CACERTS_FILE" -storepass "$STOREPASS" -noprompt
   done
+  echo " [end] <<< 추가적인 cacerts 파일"
 fi
 
 # === 4. 인증서 추가 결과 검증 ===
@@ -134,9 +138,9 @@ if [[ -n "$CACERTS_FILES" ]]; then
 		echo " $CACERTS_FILE 에 추가된 인증서 확인:"
 		sudo keytool -list -keystore "$CACERTS_FILE" -storepass "$STOREPASS" -alias "$ALIAS" 2>/dev/null | grep -i "$ALIAS"
 	  if [ $? -eq 0 ]; then
-  	  echo "✅ IDE Cacerts에 인증서가 정상적으로 추가되었습니다!"
+  	  echo "✅ 인증서가 정상적으로 추가되었습니다! => $CACERTS_FILE"
 	  else
-    	echo "❌ IDE Cacerts에 인증서가 추가되지 않았습니다!"
+    	echo "❌ 인증서가 추가되지 않았습니다! => $CACERTS_FILE"
 	  fi
 	done
 fi
