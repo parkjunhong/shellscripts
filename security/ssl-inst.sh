@@ -79,7 +79,7 @@ else
   echo "❌ 지원하지 않는 운영체제입니다: $OSTYPE"
   exit 1
 fi
-JAVA_CACERTS="$JAVA_HOME/lib/security/cacerts"
+JAVA_CACERTS=$(find $JAVA_HOME -name cacerts)
 
 if [ ! -f "$JAVA_CACERTS" ]; then
   echo "❌ Java cacerts 파일을 찾을 수 없습니다! ($JAVA_CACERTS)"
