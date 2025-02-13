@@ -71,8 +71,15 @@ if [[ -z "$SERVER" || -z "$ALIAS" ]]; then
   help # help() 함수 호출
 fi
 
-# === Java cacerts 경로 자동 탐색 ===
-JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
+# === Java cacerts 경로 자동 탐색 (OS 분기) ===
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then # Linux
+  JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
+elif [[ "$OSTYPE" == "darwin"* ]]; then # macOS
+  JAVA_HOME=$(/usr/libexec/java_home)
+else
+  echo "❌ 지원하지 않는 운영체제입니다: $OSTYPE"
+  exit 1
+fi
 JAVA_CACERTS="$JAVA_HOME/lib/security/cacerts"
 
 if [ ! -f "$JAVA_CACERTS" ]; then
