@@ -82,7 +82,8 @@ fi
 JAVA_CACERTS=$(find $JAVA_HOME -name cacerts)
 
 if [ ! -f "$JAVA_CACERTS" ]; then
-  echo "❌ Java cacerts 파일을 찾을 수 없습니다! ($JAVA_CACERTS)"
+  echo "❌ Java cacerts 파일을 찾을 수 없습니다! (JAVA_HOME: $JAVA_HOME)"
+  echo "❌ Java cacerts 파일을 찾을 수 없습니다! (JAVA_CERT: $JAVA_CACERTS)"
   exit 1
 fi
 echo "✅ Java cacerts 파일 위치: $JAVA_CACERTS"
