@@ -22,6 +22,7 @@ help() {
   echo ""
   echo "필수 인자:"
   echo "  -server <서버 주소>: Let's Encrypt 인증서를 발급받을 서버 주소 (예: example.com)"
+	echo "  -alias <별칭>: 적용할 인증서 별칭"
   echo ""
   echo "선택적 인자:"
   echo "  -cacerts_files <파일1,파일2,...>: 콤마(,)로 구분된 추가할 cacerts 파일 경로 목록"
@@ -46,10 +47,13 @@ while [[ $# -gt 0 ]]; do
   case $1 in
     -server)
       SERVER="$2"
-		  ALIAS="$2"
       CERT_FILE="$2-cert.crt"
       shift 2
       ;;
+		-alias)
+			ALIAS="$2"
+			shift 2			
+			;;
     -cacerts_files)
       CACERTS_FILES="$2"
       shift 2
