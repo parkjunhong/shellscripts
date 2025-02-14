@@ -152,7 +152,7 @@ if [[ -n "$CACERTS_FILES" ]]; then
 fi
 
 # === 5. 인증서 SHA-256 지문 확인 ===
-echo " 인증서 SHA-256 Fingerprint (확인용)"
+echo "❗ 인증서 SHA-256 Fingerprint (확인용)"
 openssl x509 -in "$CERT_FILE" -noout -fingerprint -sha256
 
 # === 6. 정리 및 i완료 ===
