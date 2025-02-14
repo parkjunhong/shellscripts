@@ -97,20 +97,12 @@ if [ ! -f "$JAVA_CACERTS" ]; then
 fi
 echo "✅ Java cacerts 파일 위치: $JAVA_CACERTS"
 
-# === 1. Let's Encrypt 인증서 다운로드 ===
-# Let's Encrypt 인증서 다운로드 방법은 certbot 등 다양한 도구를 활용할 수 있습니다.
-# 여기서는 openssl을 사용하여 예시를 보여줍니다. 실제 환경에 맞는 방법을 사용하세요.
-echo " $SERVER 서버에서 Let's Encrypt 인증서를 다운로드합니다..."
-openssl s_client -showcerts -servername "$SERVER" -connect "$SERVER:443" 2>/dev/null | openssl x509 -outform PEM > "$CERT_FILE"
-# 실제 Let's Encrypt 인증서 다운로드 명령어는 certbot 등을 참고하여 작성해야 합니다.
-echo "✅ 인증서 다운로드 완료!"
-
-# === 2. Java TrustStore 갱신 (sudo 사용) ===
+# === 1. Java TrustStore 갱신 (sudo 사용) ===
 echo " [begin] >>> Java TrustStore"
 echo " Java TrustStore에서 기존 '$ALIAS' 인증서를 제거합니다..."
 sudo keytool -delete -alias "$ALIAS" -keystore "$JAVA_CACERTS" -storepass "$STOREPASS" -noprompt 2>/dev/null
 
-# === 3. 추가적인 cacerts 파일 갱신 (옵션) ===
+# === 2. 추가적인 cacerts 파일 갱신 (옵션) ===
 if [[ -n "$CACERTS_FILES" ]]; then
   echo " [begin] >>> 추가적인 cacerts 파일"
   IFS=',' read -ra FILES <<< "$CACERTS_FILES"
@@ -128,7 +120,7 @@ if [[ -n "$CACERTS_FILES" ]]; then
   echo " [end] <<< 추가적인 cacerts 파일"
 fi
 
-# === 4. 인증서 추가 결과 검증 ===
+# === 3. 인증서 추가 결과 검증 ===
 echo " Java TrustStore에 추가된 인증서 확인:"
 sudo keytool -list -keystore "$JAVA_CACERTS" -storepass "$STOREPASS" -alias "$ALIAS" 2>/dev/null | grep -i "$ALIAS"
 if [ $? -eq 0 ]; then
@@ -148,13 +140,6 @@ if [[ -n "$CACERTS_FILES" ]]; then
 	  fi
 	done
 fi
-
-# === 5. 인증서 SHA-256 지문 확인 ===
-echo "❗ 인증서 SHA-256 Fingerprint (확인용)"
-openssl x509 -in "$CERT_FILE" -noout -fingerprint -sha256
-
-# === 6. 정리 및 i완료 ===
-rm -f "$CERT_FILE"
 
 echo "✅ 인증서 샥제 완료! (Java & IDE Cacerts)"
 

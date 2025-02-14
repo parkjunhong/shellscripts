@@ -159,7 +159,7 @@ fi
 echo "❗ 인증서 SHA-256 Fingerprint (확인용)"
 openssl x509 -in "$CERT_FILE" -noout -fingerprint -sha256
 
-# === 6. 정리 및 i완료 ===
+# === 6. 정리 및 완료 ===
 rm -f "$CERT_FILE"
 
 echo "✅ 인증서 갱신 및 검증 완료! (Java & IDE Cacerts)"
