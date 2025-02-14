@@ -22,7 +22,7 @@ help() {
   echo ""
   echo "필수 인자:"
   echo "  -server <서버 주소>: Let's Encrypt 인증서를 발급받을 서버 주소 (예: example.com)"
-	echo "  -alias <별칭>: 적용할 인증서 별칭"
+  echo "  -alias <별칭>: 적용할 인증서 별칭"
   echo ""
   echo "선택적 인자:"
   echo "  -cacerts_files <파일1,파일2,...>: 콤마(,)로 구분된 추가할 cacerts 파일 경로 목록"
@@ -50,10 +50,10 @@ while [[ $# -gt 0 ]]; do
       CERT_FILE="$2-cert.crt"
       shift 2
       ;;
-		-alias)
-			ALIAS="$2"
-			shift 2			
-			;;
+    -alias)
+      ALIAS="$2"
+      shift 2     
+      ;;
     -cacerts_files)
       CACERTS_FILES="$2"
       shift 2
@@ -77,16 +77,16 @@ fi
 # === Java cacerts 경로 자동 탐색 (OS 분기) ===
 JAVA_HOME_USER=$(echo $JAVA_HOME)
 if [ -z "$JAVA_HOME_USER" ]; then
-	if [[ "$OSTYPE" == "linux-gnu"* ]]; then # Linux
-	  JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
-	elif [[ "$OSTYPE" == "darwin"* ]]; then # macOS
-	  JAVA_HOME=$(/usr/libexec/java_home)
-	else
-	  echo "❌ 지원하지 않는 운영체제입니다: $OSTYPE"
-	  exit 1
-	fi
+  if [[ "$OSTYPE" == "linux-gnu"* ]]; then # Linux
+    JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
+  elif [[ "$OSTYPE" == "darwin"* ]]; then # macOS
+    JAVA_HOME=$(/usr/libexec/java_home)
+  else
+    echo "❌ 지원하지 않는 운영체제입니다: $OSTYPE"
+    exit 1
+  fi
 else
-	JAVA_HOME=$(readlink -f "$JAVA_HOME_USER")
+  JAVA_HOME=$(readlink -f "$JAVA_HOME_USER")
 fi
 JAVA_CACERTS=$(find $JAVA_HOME -name cacerts)
 
@@ -144,15 +144,15 @@ else
 fi
 
 if [[ -n "$CACERTS_FILES" ]]; then
-	for CACERTS_FILE in "${FILES[@]}"; do
-		echo " $CACERTS_FILE 에 추가된 인증서 확인:"
-		sudo keytool -list -keystore "$CACERTS_FILE" -storepass "$STOREPASS" -alias "$ALIAS" 2>/dev/null | grep -i "$ALIAS"
-	  if [ $? -eq 0 ]; then
-  	  echo "✅ 인증서가 정상적으로 추가되었습니다! => $CACERTS_FILE"
-	  else
-    	echo "❌ 인증서가 추가되지 않았습니다! => $CACERTS_FILE"
-	  fi
-	done
+  for CACERTS_FILE in "${FILES[@]}"; do
+    echo " $CACERTS_FILE 에 추가된 인증서 확인:"
+    sudo keytool -list -keystore "$CACERTS_FILE" -storepass "$STOREPASS" -alias "$ALIAS" 2>/dev/null | grep -i "$ALIAS"
+    if [ $? -eq 0 ]; then
+      echo "✅ 인증서가 정상적으로 추가되었습니다! => $CACERTS_FILE"
+    else
+      echo "❌ 인증서가 추가되지 않았습니다! => $CACERTS_FILE"
+    fi
+  done
 fi
 
 # === 5. 인증서 SHA-256 지문 확인 ===
