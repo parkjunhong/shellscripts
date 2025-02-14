@@ -141,6 +141,6 @@ if [[ -n "$CACERTS_FILES" ]]; then
 	done
 fi
 
-echo "✅ 인증서 샥제 완료! (Java & IDE Cacerts)"
+echo "✅ 인증서 삭제 완료! (Java & IDE Cacerts)"
 
 
