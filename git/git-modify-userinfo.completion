@@ -1,0 +1,47 @@
+#!/bin/bash
+
+_git_modify_userinfo_completion() {
+    local cur prev opts descriptions
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    # 옵션 및 설명 정의
+    opts="--name --email"
+    descriptions=(
+        "--name:committer"
+        "--email:committer's mail"
+    )
+
+    case "$prev" in
+        --name)
+            COMPREPLY=()
+            return
+            ;;
+        --email)
+            COMPREPLY=()
+            return
+            ;;
+    esac
+
+    # 설명을 포함한 자동 완성 출력
+    if [[ ${COMP_CWORD} -eq 1 ]]; then
+        COMPREPLY=($(compgen -W "$opts" -- "$cur"))
+    else
+        COMPREPLY=($(compgen -W "$opts" -- "$cur"))
+    fi
+
+    # 설명을 함께 출력하는 기능 (Bash 4.4 이상에서 지원)
+    if [[ -n "${COMPREPLY[*]}" && "${BASH_VERSINFO[0]}" -ge 4 && "${BASH_VERSINFO[1]}" -ge 4 ]]; then
+        local i
+        for i in "${!COMPREPLY[@]}"; do
+            case "${COMPREPLY[i]}" in
+                --name) COMPREPLY[i]+=" (committer)" ;;
+                --email) COMPREPLY[i]+=" (committer's mail)" ;;
+            esac
+        done
+    fi
+}
+
+complete -F _git_modify_userinfo_completion git-modify-userinfo.sh
+

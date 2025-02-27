@@ -1,0 +1,24 @@
+#!/bin/bash
+
+_git_modify_remote_url_completion() {
+    local cur prev opts
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    # 스크립트에서 지원하는 옵션 목록
+    opts="-d -s -t -f -h --help"
+
+    case "$prev" in
+        -d|-s|-t|-f)
+            return
+            ;;
+    esac
+
+    # 옵션 자동 완성
+    COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+}
+
+complete -F _git_modify_remote_url_completion git-modify-remote-url.sh
+
+
