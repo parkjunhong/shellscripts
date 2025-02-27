@@ -7,18 +7,23 @@ _git_modify_userinfo_completion() {
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
     # 옵션 및 설명 정의
-    opts="--name --email"
+    opts="-d -n -e"
     descriptions=(
-        "--name:committer"
-        "--email:committer's mail"
+        "-d: parent directory of directories contains '.git' directory"
+        "-n:committer"
+        "-e:committer's mail"
     )
 
     case "$prev" in
-        --name)
+        -d)
             COMPREPLY=()
             return
             ;;
-        --email)
+        -n)
+            COMPREPLY=()
+            return
+            ;;
+        -e)
             COMPREPLY=()
             return
             ;;
@@ -36,8 +41,9 @@ _git_modify_userinfo_completion() {
         local i
         for i in "${!COMPREPLY[@]}"; do
             case "${COMPREPLY[i]}" in
-                --name) COMPREPLY[i]+=" (committer)" ;;
-                --email) COMPREPLY[i]+=" (committer's mail)" ;;
+                -d) COMPREPLY[i]+=" (parent directory of directories contains '.git' directory)" ;;
+                -n) COMPREPLY[i]+=" (committer)" ;;
+                -e) COMPREPLY[i]+=" (committer's mail)" ;;
             esac
         done
     fi
