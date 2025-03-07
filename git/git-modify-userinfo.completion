@@ -1,53 +1,79 @@
-#!/bin/bash
+# Bash completion script for git-modify-userinfo.sh
 
-_git_modify_userinfo_completion() {
-    local cur prev opts descriptions
+##
+# Bash completion for git-modify-userinfo.sh
+#
+# Supports:
+#  -d  (Multiple directories allowed, directories auto-complete)
+#  -u  (Single value, forces space after completion)
+#  -e  (Single value, forces space after completion)
+#  -verbose (No value)
+#  -h  (No value)
+##
+
+_git_modify_userinfo()
+{
+    local cur prev opts used_opts d_count
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
+    opts="-d -u -e -verbose -h"
+    used_opts=""
+    d_count=0
 
-    # 옵션 및 설명 정의
-    opts="-d -n -e"
-    descriptions=(
-        "-d: parent directory of directories contains '.git' directory"
-        "-n:committer"
-        "-e:committer's mail"
-    )
+    # Check already used options except -d (since -d can be repeated)
+    for word in "${COMP_WORDS[@]}"; do
+        case "$word" in
+            -u|-e|-verbose|-h)
+                used_opts+=" $word "
+                ;;
+            -d)
+                ((d_count++))
+                ;;
+        esac
+    done
 
-    case "$prev" in
+    # If no arguments are provided, suggest options
+    if [[ $COMP_CWORD -eq 1 ]]; then
+        available_opts=""
+        for opt in $opts; do
+            if [[ "$used_opts" != *" $opt "* || "$opt" == "-d" ]]; then
+                available_opts+="$opt "
+            fi
+        done
+        COMPREPLY=( $(compgen -W "$available_opts" -- "$cur") )
+        return 0
+    fi
+
+    case "${prev}" in
         -d)
-            COMPREPLY=()
-            return
-            ;;
-        -n)
-            COMPREPLY=()
-            return
-            ;;
-        -e)
-            COMPREPLY=()
-            return
+            # If -d is the previous argument, suggest only directories
+            COMPREPLY=( $(compgen -d -- ${cur}) )
+            # If the directory is fully typed (not ending in /), add space
+            [[ "${COMPREPLY[0]}" != */ ]] && compopt -o nospace
+            return 0
             ;;
     esac
 
-    # 설명을 포함한 자동 완성 출력
-    if [[ ${COMP_CWORD} -eq 1 ]]; then
-        COMPREPLY=($(compgen -W "$opts" -- "$cur"))
-    else
-        COMPREPLY=($(compgen -W "$opts" -- "$cur"))
+    # Ensure -u and -e automatically add space when selected
+    if [[ "$cur" == "-u" || "$cur" == "-e" ]]; then
+        COMPREPLY=( "$cur " )  # Add space after completion
+        return 0
     fi
 
-    # 설명을 함께 출력하는 기능 (Bash 4.4 이상에서 지원)
-    if [[ -n "${COMPREPLY[*]}" && "${BASH_VERSINFO[0]}" -ge 4 && "${BASH_VERSINFO[1]}" -ge 4 ]]; then
-        local i
-        for i in "${!COMPREPLY[@]}"; do
-            case "${COMPREPLY[i]}" in
-                -d) COMPREPLY[i]+=" (parent directory of directories contains '.git' directory)" ;;
-                -n) COMPREPLY[i]+=" (committer)" ;;
-                -e) COMPREPLY[i]+=" (committer's mail)" ;;
-            esac
+    if [[ ${cur} == -* ]]; then
+        # Remove already used options except -d
+        available_opts=""
+        for opt in $opts; do
+            if [[ "$used_opts" != *" $opt "* || "$opt" == "-d" ]]; then
+                available_opts+="$opt "
+            fi
         done
+        COMPREPLY=( $(compgen -W "${available_opts}" -- ${cur}) )
+        return 0
     fi
 }
 
-complete -F _git_modify_userinfo_completion git-modify-userinfo.sh
+# Enable completion for git-modify-userinfo.sh
+complete -F _git_modify_userinfo git-modify-userinfo.sh
 
