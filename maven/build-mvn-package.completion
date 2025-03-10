@@ -152,10 +152,8 @@ _bldmvnpkg-handle_previous(){
 			;;
 		-p | --p*)
 			if [ -z "$1" ];then
-				#COMPREPLY+=( $(compgen -W "$(find $PWD/config/profile -mindepth 1 -maxdepth 1 -type d -printf '%P ')") )
 				COMPREPLY+=( $(compgen -W "$(_bldmvnpkg-read_profiles)") )
 			else
-				#local _words=$(compgen -W "$(find $PWD/config/profile -mindepth 1 -maxdepth 1 -type d -printf '%P ')" -- $1)
 				local _words=$(compgen -W "$(_bldmvnpkg-read_profiles)" -- $1)
 				_bldmvnpkg-log "_words=${_words[@]}"
 				if [ ${#_words[@]} -gt 0 ];then
