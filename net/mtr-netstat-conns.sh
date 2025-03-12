@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+#set -e
+
 OPTIONS="-napt"
 FILTERS=""
 SORTER="awk '{print \$4\"@\"\$5}'"
@@ -21,6 +23,9 @@ while [ ! -z "$1" ];do
                 remote)
                     SORTER="awk '{print \$5\"@\"\$4}'"
                     ;;
+                pid)
+                    SORTER="awk '{print \$7\"@\"\$4}'"
+                    ;;
                 *)
                 echo "잘못된 정렬 기준입니다. [local|remote] 중에 1개를 선택하세요."
                     ;;
@@ -33,9 +38,12 @@ while [ ! -z "$1" ];do
     shift
 done
 
-CMD="netstat $OPTIONS"
+CMD="sudo netstat $OPTIONS | grep -v 'Active Internet connections' | grep -v 'Proto Recv-Q Send-Q'"
 if [ ! -z "$FILTERS" ]; then
-    CMD="$CMD | $FILTERS"
+    IFS='|' read -ra filter_arr <<< "$FILTERS"
+    for filter in "${filter_arr[@]}"; do
+      CMD="$CMD | grep $(echo "$filter" | xargs)"
+    done
 fi
 
 # connection info
@@ -51,10 +59,12 @@ do
     CONNS["$key"]="$con"
 done < <(eval $CMD)
 
-#exit 0
+
+# 출력 데이터 헤더 
+echo "  #   Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name"
+echo "------------------------------------------------------------------------------------------------------"
 
 # 배열 데이터를 정렬하는 방법
-
 num=0
 while IFS= read key;
 do

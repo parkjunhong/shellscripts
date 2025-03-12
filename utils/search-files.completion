@@ -1,0 +1,107 @@
+# Bash completion script for search-files.sh
+
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : search files.
+# @license  : Apache License 2.0
+# @since    : 2024-03-10
+# @desc     : support macOS 11.2.3, Ubuntu 18.04 or higher, CentOS 7 or higher
+# @installation : 
+#   1. insert 'source <path>/search-files.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/search-files.completion' into /etc/bashrc for all users.
+# =======================================
+
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+# =======================================
+
+##
+# Bash completion for search-files.sh
+#
+# Supports:
+#  -d  (Multiple directories allowed, directories auto-complete)
+#  -t  (Single value, forces space after completion)
+#  -s  (Single value, forces space after completion)
+#  -e  (Single value, auto-completes 'o' or 'x')
+#  -o  (Single value, files auto-complete)
+#  -x  (Multiple directories allowed, directories auto-complete)
+##
+
+_search_files_completion() {
+    local cur prev opts used_opts
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+    opts="-d -t -s -e -o -x -h"
+
+    used_opts=""
+
+    # 이미 사용한 옵션 확인 (`-d`, `-x`는 여러 번 가능하므로 제외)
+    for word in "${COMP_WORDS[@]}"; do
+        case "$word" in
+            -t|-s|-e|-o|-h)
+                used_opts+=" $word "
+                ;;
+        esac
+    done
+
+    # 첫 번째 인수일 경우 옵션 자동 완성
+    if [[ $COMP_CWORD -eq 1 ]]; then
+        available_opts=""
+        for opt in $opts; do
+            if [[ "$used_opts" != *" $opt "* || "$opt" == "-d" || "$opt" == "-x" ]]; then
+                available_opts+="$opt "
+            fi
+        done
+        COMPREPLY=( $(compgen -W "$available_opts" -- "$cur") )
+        return 0
+    fi
+
+    case "$prev" in
+        -d|-x)
+            # -d, -x 옵션 후에는 디렉토리 자동 완성
+            COMPREPLY=( $(compgen -d -- "$cur") )
+            return 0
+            ;;
+        -o)
+            # -o 옵션 후에는 파일 자동 완성
+            COMPREPLY=( $(compgen -f -- "$cur") )
+            return 0
+            ;;
+        -e)
+            # -e 옵션 후에는 "o" 또는 "x" 자동 완성
+            COMPREPLY=( $(compgen -W "o x" -- "$cur") )
+            return 0
+            ;;
+    esac
+
+    if [[ "$cur" == -* ]]; then
+        # 사용한 옵션을 제외하고 자동 완성
+        available_opts=""
+        for opt in $opts; do
+            if [[ "$used_opts" != *" $opt "* || "$opt" == "-d" || "$opt" == "-x" ]]; then
+                available_opts+="$opt "
+            fi
+        done
+        COMPREPLY=( $(compgen -W "$available_opts" -- "$cur") )
+        return 0
+    fi
+}
+
+# Enable completion for search-files.sh
+complete -F _search_files_completion search-files.sh
+

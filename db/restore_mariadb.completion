@@ -1,0 +1,45 @@
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : restore_mariadb command completion
+# @license  : Apache License 2.0
+# @since    : 2025-03-10
+# @desc     : support macOS 11.2.3, Ubuntu 18.04 or higher, CentOS 7 or higher
+# @installation : 
+#   1. insert 'source <path>/restore_mariadb.completion' into ~/.bashrc or ~/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/restore_mariadb.completion' into 
+#      /etc/bashrc for all users.
+# =======================================
+
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+#
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+# =======================================
+
+_restore_mariadb_completion() {
+  local cur prev opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+  
+  opts="-u --user -p --password -h --host -d --dir -f --file-pattern -h --help"
+
+  case "${prev}" in
+    -u|--user|-p|--password|-h|--host|-d|--dir|-f|--file-pattern)
+      COMPREPLY=()
+      ;;
+    *)
+      COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
+      ;;
+  esac
+}
+
+complete -F _restore_mariadb_completion restore_mariadb
+
