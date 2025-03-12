@@ -1,7 +1,3 @@
-# bashscripts
-
-
-
 # bash 자동 완성 파일 등록 방법
 
 bash 자동 완성(bash completion) 파일을 개인 사용자 및 전체 사용자에 대해 등록하는 방법은 다음과 같습니다.
