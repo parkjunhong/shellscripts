@@ -2,15 +2,42 @@
 
 # 도움말 함수
 help() {
-    echo "시스템 정보 스크립트"
-    echo "사용법: $0"
-    exit 1
+  cat <<EOF
+[사용법] $0 [옵션]
+
+디스크 사용량 정보를 출력합니다.
+
+옵션:
+  -e, --exclude <문자열>   제외할 파일시스템 이름 또는 경로 일부 (예: tmpfs, /dev/loop)
+  -h, --help                도움말 출력
+
+예시:
+  $0 -e tmpfs
+  $0 --exclude "/dev/loop"
+EOF
 }
 
-# 파라미터 처리
-if [[ $# -gt 0 ]]; then
-    help
-fi
+# 초기화 
+exclude=""
+
+# 파라미터 파싱
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -e|--exclude)
+      exclude="$2"
+      shift 2
+      ;;
+    -h|--help)
+      help
+      exit 0
+      ;;
+    *)
+      echo "[오류] 알 수 없는 옵션: $1"
+      help
+      exit 1
+      ;;
+  esac
+done
 
 echo "================================================================================"
 
@@ -84,10 +111,17 @@ echo "==========================================================================
 
 # 디스크 정보 수집
 echo "[디스크 정보]"
-max_fs_length=$(df -h | awk 'NR>1 { print length($1) }' | sort -n | tail -n 1)
+max_fs_length=$(df -h | awk 'NR>1 { if (length($1) > max) max = length($1) } END { print max }')
 printf " %-${max_fs_length}s %6s %6s %7s %6s %s\n" "[Filesystem]" "[Size]" "[Used]" "[Avail]" "[Use%]" "[Mounted on]"
 echo "--------------------------------------------------------------------------------"
-df -h | awk -v max_fs_length="$max_fs_length" 'NR>1 {
+#df -h | awk -v max_fs_length="$max_fs_length" 'NR>1 {
+#  printf " %-"max_fs_length"s %6s %6s %7s %6s %s\n", $1, $2, $3, $4, $5, $6;
+#}' | sort -k 6
+# 디스크 정보 출력 (exclude 포함시 제외)
+df -h | awk -v max_fs_length="$max_fs_length" -v exclude="$exclude" '
+NR==1 { next }
+exclude != "" && index($0, exclude) > 0 { next }
+{
   printf " %-"max_fs_length"s %6s %6s %7s %6s %s\n", $1, $2, $3, $4, $5, $6;
 }' | sort -k 6
 echo "................................................................................"
