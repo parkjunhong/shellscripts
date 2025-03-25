@@ -3,41 +3,83 @@
 # 도움말 함수
 help() {
   cat <<EOF
-[사용법] $0 [옵션]
+[사용법] $(basename "$0") [옵션]
 
 디스크 사용량 정보를 출력합니다.
 
 옵션:
-  -e, --exclude <문자열>   제외할 파일시스템 이름 또는 경로 일부 (예: tmpfs, /dev/loop)
-  -h, --help                도움말 출력
+  -f, --exclude-fs <문자열>     Filesystem 컬럼에서 제외할 문자열 (여러 번 사용 가능)
+  -m, --exclude-mnt <문자열>    Mounted on 컬럼에서 제외할 문자열 (여러 번 사용 가능)
+      --sort-key <fs|mnt>       정렬 기준. fs=Filesystem, mnt=Mounted on
+      --sort-dir <asc|desc>     정렬 방향. asc=오름차순, desc=내림차순
+  -h, --help                    도움말 출력
 
 예시:
-  $0 -e tmpfs
-  $0 --exclude "/dev/loop"
+  $(basename "$0") -f tmpfs --sort-key fs --sort-dir desc
 EOF
 }
 
-# 초기화 
-exclude=""
+# 변수 초기화
+declare -a exclude_fs_list=()
+declare -a exclude_mnt_list=()
+sort_key=""
+sort_dir="asc"
+max_fs_length=0
 
 # 파라미터 파싱
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -e|--exclude)
-      exclude="$2"
+    -f|--exclude-fs)
+      exclude_fs_list+=("$2")
+      shift 2
+      ;;
+    -m|--exclude-mnt)
+      exclude_mnt_list+=("$2")
+      shift 2
+      ;;
+    --sort-key)
+      sort_key="$2"
+      shift 2
+      ;;
+    --sort-dir)
+      sort_dir="$2"
       shift 2
       ;;
     -h|--help)
-      help
+      print_help
       exit 0
       ;;
     *)
       echo "[오류] 알 수 없는 옵션: $1"
-      help
+      print_help
       exit 1
       ;;
   esac
 done
+
+# 정렬 기준 필드 번호 설정
+sort_field=""
+case "$sort_key" in
+  "" ) sort_field="" ;;
+  fs ) sort_field="1" ;;
+  mnt ) sort_field="6" ;;
+  * )
+    echo "[오류] 잘못된 정렬 기준입니다: $sort_key"
+    echo "        허용 값: fs, mnt"
+    exit 1
+    ;;
+esac
+
+# 정렬 방향 설정
+case "$sort_dir" in
+  asc ) sort_option="" ;;
+  desc ) sort_option="-r" ;;
+  * )
+    echo "[오류] 잘못된 정렬 방향입니다: $sort_dir"
+    echo "        허용 값: asc, desc"
+    exit 1
+    ;;
+esac
 
 echo "================================================================================"
 
@@ -113,18 +155,39 @@ echo "==========================================================================
 echo "[디스크 정보]"
 max_fs_length=$(df -h | awk 'NR>1 { if (length($1) > max) max = length($1) } END { print max }')
 printf " %-${max_fs_length}s %6s %6s %7s %6s %s\n" "[Filesystem]" "[Size]" "[Used]" "[Avail]" "[Use%]" "[Mounted on]"
+
 echo "--------------------------------------------------------------------------------"
-#df -h | awk -v max_fs_length="$max_fs_length" 'NR>1 {
-#  printf " %-"max_fs_length"s %6s %6s %7s %6s %s\n", $1, $2, $3, $4, $5, $6;
-#}' | sort -k 6
-# 디스크 정보 출력 (exclude 포함시 제외)
-df -h | awk -v max_fs_length="$max_fs_length" -v exclude="$exclude" '
-NR==1 { next }
-exclude != "" && index($0, exclude) > 0 { next }
+# 개별 출력
+# 출력 + 정렬 필드 붙이기
+df -h | awk -v max_fs_length="$max_fs_length" \
+  -v fs_excludes="${exclude_fs_list[*]}" \
+  -v mnt_excludes="${exclude_mnt_list[*]}" \
+  -v sort_key="$sort_key" '
+BEGIN {
+  n_fs = split(fs_excludes, fslist, " ");
+  n_mnt = split(mnt_excludes, mntlist, " ");
+}
+NR == 1 { next }
 {
-  printf " %-"max_fs_length"s %6s %6s %7s %6s %s\n", $1, $2, $3, $4, $5, $6;
-}' | sort -k 6
+  for (i = 1; i <= n_fs; i++) {
+    if (fslist[i] != "" && index($1, fslist[i]) > 0) next
+  }
+  for (j = 1; j <= n_mnt; j++) {
+    if (mntlist[j] != "" && index($6, mntlist[j]) > 0) next
+  }
+
+  # 정렬용 키 앞에 붙이기
+  if (sort_key == "fs") {
+    printf "%s\t %-"max_fs_length"s %6s %6s %7s %6s %s\n", $1, $1, $2, $3, $4, $5, $6;
+  } else if (sort_key == "mnt") {
+    printf "%s\t %-"max_fs_length"s %6s %6s %7s %6s %s\n", $6, $1, $2, $3, $4, $5, $6;
+  } else {
+    printf "_\t %-"max_fs_length"s %6s %6s %7s %6s %s\n", $1, $2, $3, $4, $5, $6;
+  }
+}' | sort $sort_option -k1,1 | cut -f2-
+
 echo "................................................................................"
+# 전체 출력
 df -h --total | awk -v max_fs_length="$max_fs_length" '/total/ {
   printf " %-"max_fs_length"s %6s %6s %7s %6s %s\n", $1, $2, $3, $4, $5, $6;
 }'
