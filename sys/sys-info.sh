@@ -46,12 +46,12 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     -h|--help)
-      print_help
+      help
       exit 0
       ;;
     *)
       echo "[오류] 알 수 없는 옵션: $1"
-      print_help
+      help
       exit 1
       ;;
   esac
