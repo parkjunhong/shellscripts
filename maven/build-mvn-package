@@ -115,10 +115,11 @@ then
 fi
 
 echo
+pushd .
 echo " > cd ./deploy/$PROFILE"
 cd ./deploy/$PROFILE
 echo " > ./deploy.sh"
 ./deploy.sh
-cd ..
+popd
 
 exit 0
