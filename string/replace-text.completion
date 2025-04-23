@@ -1,0 +1,61 @@
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : search files.
+# @license  : Apache License 2.0
+# @since    : 2025-04-23
+# @desc     : support macOS 11.2.3, Ubuntu 18.04 or higher, CentOS 7 or higher
+# @installation : 
+#   1. insert 'source <path>/replace-text.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/replace-text.completion' into /etc/bashrc for all users.
+# =======================================
+
+# =======================================
+# Global Reserved Variables
+# COMP_WORDS, COMP_CWORD, COMP_LINE, COMPREPLY
+# =======================================
+
+_replace_text() {
+  local cur prev opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  opts="-d --dir -t --target -r --replace -f --filename -x --exclude -b --backup --dry-run --summary --log-output --log-format --confirm-before-change -h --help"
+
+  case "$prev" in
+    -d|--dir|-x|--exclude)
+      COMPREPLY=( $(compgen -d -- "$cur") )
+      return 0
+      ;;
+    -f|--filename)
+      COMPREPLY=( $(compgen -W "^config main$ util" -- "$cur") )
+      return 0
+      ;;
+    --log-format)
+      COMPREPLY=( $(compgen -W "plain json" -- "$cur") )
+      return 0
+      ;;
+    --log-output)
+      COMPREPLY=( $(compgen -f -- "$cur") )
+      return 0
+      ;;
+    -t|--target|-r|--replace)
+      return 0
+      ;;
+    *)
+      local used=()
+      for ((i=1; i<COMP_CWORD; i++)); do
+        case "${COMP_WORDS[i]}" in -*) used+=("${COMP_WORDS[i]}") ;; esac
+      done
+      local filtered_opts=()
+      for opt in $opts; do
+        [[ ! " ${used[*]} " =~ " $opt " ]] && filtered_opts+=("$opt")
+      done
+      COMPREPLY=( $(compgen -W "${filtered_opts[*]}" -- "$cur") )
+      ;;
+  esac
+}
+
+complete -F _replace_text replace-text.sh
+
+
