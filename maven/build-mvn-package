@@ -92,12 +92,21 @@ then
 fi
 
 
-JAVA_HOME=$(update-java-home.sh)
-export JAVA_HOME
+JAVA_HOME=$(update-java-home.sh 2>/dev/null)
 
 echo
 echo " ################################################"
-echo " JAVA_HOME  = $JAVA_HOME"
+if [ -n "$JAVA_HOME" ]; then
+  export JAVA_HOME
+  echo " JAVA_HOME  = $JAVA_HOME"
+else
+  echo
+  echo " !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+  echo " ⚠️  update-java-home.sh 실행 실패 또는 JAVA_HOME이 비어 있습니다."
+  echo "     기본 JDK 설정을 사용하거나, JAVA_HOME을 수동으로 설정해주세요."
+  echo " !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+fi
+
 echo " MAVEN_HOME = $M2_HOME"
 echo " ################################################"
 
