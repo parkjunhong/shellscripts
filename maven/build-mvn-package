@@ -91,9 +91,13 @@ then
 	exit 1
 fi
 
+
+JAVA_HOME=$(update-java-home.sh)
+export JAVA_HOME
+
 echo
 echo " ################################################"
-echo " JAVA_HOME  = $(update-java-home.sh)"
+echo " JAVA_HOME  = $JAVA_HOME"
 echo " MAVEN_HOME = $M2_HOME"
 echo " ################################################"
 
