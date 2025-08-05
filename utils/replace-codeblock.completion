@@ -1,0 +1,60 @@
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : search files.
+# @license  : Apache License 2.0
+# @since    : 2025-08-05
+# @desc     : support macOS 11.2.3, Ubuntu 18.04 or higher, CentOS 7 or higher
+# @installation : 
+#   1. insert 'source <path>/replace-codeblock.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/replace-codeblock.completion' into /etc/bashrc for all users.
+# =======================================
+
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+#
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+# =======================================
+
+_replace_codeblock() {
+  local cur prev opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  opts="--target-dir --target-name --before --after --dry-run --diff-only --rollback"
+
+  case "$prev" in
+    --target-dir)
+      COMPREPLY=( $(compgen -d -- "$cur") )
+      return 0
+      ;;
+    --target-name)
+      COMPREPLY=( $(compgen -f -- "$cur") )
+      return 0
+      ;;
+    --before|--after|--rollback)
+      COMPREPLY=( $(compgen -f -- "$cur") )
+      return 0
+      ;;
+    *)
+      ;;
+  esac
+
+  COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+  return 0
+}
+
+complete -F _replace_codeblock replace-codeblock.sh
+
