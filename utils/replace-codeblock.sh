@@ -29,7 +29,7 @@ help() {
     done
     printf "$formatl" "cause" "$1"
     echo "================================================================================"
-  fi
+  fi  
   echo
   echo "Usage:"
   echo "$FILENAME --target-dir <path> --target-name <filename> --before <file> --after <file> [--dry-run] [--diff-only] [--rollback <backup-dir>]"
@@ -45,136 +45,142 @@ help() {
   echo "  -h | --help     : show this help message"
 }
 
-ROLLBACK_DIR=""
-DRY_RUN=0
-DIFF_ONLY=0
-LOG_FILE="replace-codeblocks.log"
-: > "$LOG_FILE"
+draw_progress_bar() {
+  local current=$1
+  local total=$2
 
-declare -a FILES_NOT_FOUND
-declare -a FILES_DIFFERENT
-declare -a FILES_REPLACED
+  local cols=$(tput cols)
+  local label="[처리 중: $(printf '%06d' "$current") / $(printf '%06d' "$total")]"
+  local label_width=${#label}
+  local bar_width=$((cols - label_width - 10)) # extra buffer for padding
 
-normalize_block() {
-  sed 's/[[:space:]]\+$//' "$1" | tr '\t' ' ' | tr -s ' '
+  (( bar_width < 10 )) && bar_width=10
+
+  local percent=$((current * bar_width / total))
+  local done=$(printf "%0.s*" $(seq 1 $percent))
+  local left=$(printf "%0.s " $(seq 1 $((bar_width - percent))))
+
+  # 줄 덮어쓰기 (\r) + \033[0K: 줄 끝까지 삭제
+  echo -ne "\r\033[0K$label [$done$left]"
 }
 
+# Default values
+TARGET_DIR=""
+TARGET_NAME=""
+BEFORE_FILE=""
+AFTER_FILE=""
+DRY_RUN=false
+DIFF_ONLY=false
+ROLLBACK_DIR=""
+LOG_FILE="$(pwd)/replace-codeblocks.log"
+
+# Option parsing
 while [[ $# -gt 0 ]]; do
-  key="$1"
-  case "$key" in
-    -h|--help) help ""; exit 0;;
-    --target-dir) TARGET_DIR="$2"; shift 2;;
-    --target-name) TARGET_NAME="$2"; shift 2;;
-    --before) BEFORE_BLOCK_FILE="$2"; shift 2;;
-    --after) AFTER_BLOCK_FILE="$2"; shift 2;;
-    --dry-run) DRY_RUN=1; shift;;
-    --diff-only) DIFF_ONLY=1; shift;;
-    --rollback) ROLLBACK_DIR="$2"; shift 2;;
-    *) help "Unknown option: $1" "$LINENO"; exit 1;;
+  case "$1" in
+    --target-dir) TARGET_DIR="$2"; shift ;;
+    --target-name) TARGET_NAME="$2"; shift ;;
+    --before) BEFORE_FILE="$2"; shift ;;
+    --after) AFTER_FILE="$2"; shift ;;
+    --dry-run) DRY_RUN=true ;;
+    --diff-only) DIFF_ONLY=true ;;
+    --rollback) ROLLBACK_DIR="$2"; shift ;;
+    -h|--help) help; exit 0 ;;
+    *) help "[ERROR] Unknown option: $1" "$LINENO"; exit 1 ;;
   esac
+  shift
 done
 
-NOW=$(date +%Y%m%d_%H%M%S)
-
+# Validation
 if [[ -n "$ROLLBACK_DIR" ]]; then
-  echo "[ROLLBACK] 복원 시작: $ROLLBACK_DIR"
-  find . -type d -name "$ROLLBACK_DIR" | while read -r rollback_dir; do
-    find "$rollback_dir" -name "*.bak" | while read -r bak; do
-      original_dir="$(dirname "$rollback_dir")"
-      original_file="$original_dir/$(basename "$bak" .bak)"
-      cp "$bak" "$original_file"
-      echo "[RESTORED] $original_file"
-    done
-  done
-  echo "[ROLLBACK] 완료"
-  exit 0
+  [[ ! -d "$ROLLBACK_DIR" ]] && help "[ERROR] Rollback directory not found: $ROLLBACK_DIR" "$LINENO" && exit 1
+else
+  [[ -z "$TARGET_DIR" || -z "$TARGET_NAME" || -z "$BEFORE_FILE" || -z "$AFTER_FILE" ]] && help "[ERROR] Missing required arguments." "$LINENO" && exit 1
+  [[ ! -d "$TARGET_DIR" ]] && help "[ERROR] Target directory not found: $TARGET_DIR" "$LINENO" && exit 1
+  [[ ! -f "$BEFORE_FILE" ]] && help "[ERROR] Before file not found: $BEFORE_FILE" "$LINENO" && exit 1
+  [[ ! -f "$AFTER_FILE" ]] && help "[ERROR] After file not found: $AFTER_FILE" "$LINENO" && exit 1
 fi
 
-[[ ! -d "$TARGET_DIR" ]] && help "Not found: $TARGET_DIR" "$LINENO" && exit 1
-[[ ! -f "$BEFORE_BLOCK_FILE" ]] && help "Not found: $BEFORE_BLOCK_FILE" "$LINENO" && exit 1
-[[ ! -f "$AFTER_BLOCK_FILE" ]] && help "Not found: $AFTER_BLOCK_FILE" "$LINENO" && exit 1
+# Prepare blocks
+[[ -z "$ROLLBACK_DIR" ]] && BEFORE_BLOCK=$(<"$BEFORE_FILE") && AFTER_BLOCK=$(<"$AFTER_FILE")
 
-NORMALIZED_BEFORE=$(mktemp)
-normalize_block "$BEFORE_BLOCK_FILE" > "$NORMALIZED_BEFORE"
-BEFORE_HASH=$(md5sum "$NORMALIZED_BEFORE" | awk '{print $1}')
+# Discover files
+if [[ -n "$ROLLBACK_DIR" ]]; then
+  mapfile -t FILES < <(find "$TARGET_DIR" -type f -name "$TARGET_NAME" -exec test -f "$ROLLBACK_DIR/{}" \; -print)
+else
+  mapfile -t FILES < <(find "$TARGET_DIR" -type f -name "$TARGET_NAME")
+fi
 
-TARGET_FILES=()
-while IFS= read -r file; do TARGET_FILES+=("$file"); done < <(find "$TARGET_DIR" -type f -name "$TARGET_NAME")
-TOTAL_FILES=${#TARGET_FILES[@]}
+TOTAL=${#FILES[@]}
 CURRENT=0
-BAR_WIDTH=30
+NO_MATCH=0
+DIFF_MATCH=0
+MODIFIED=0
 
-for FILE in "${TARGET_FILES[@]}"; do
+LOG_PATHS=()
+
+for FILE in "${FILES[@]}"; do
   ((CURRENT++))
-  PERCENT=$((CURRENT * BAR_WIDTH / TOTAL_FILES))
-  BAR=$(printf '%*s' "$PERCENT" '' | tr ' ' '*')
-  SPACES=$(printf '%*s' $((BAR_WIDTH - PERCENT)) '')
-  echo -ne "\r[처리 중: $CURRENT / $TOTAL_FILES] [${BAR}${SPACES}]"
+  draw_progress_bar "$CURRENT" "$TOTAL"
 
-  MATCH_START=$(grep -n "^update_property(){$" "$FILE" | cut -d: -f1)
-  if [[ -z "$MATCH_START" ]]; then
-    FILES_NOT_FOUND+=("$(realpath "$FILE")")
+  if [[ -n "$ROLLBACK_DIR" ]]; then
+    ORIG="$FILE"
+    BACKUP="$ROLLBACK_DIR/$FILE"
+    [[ -f "$BACKUP" ]] && cp "$BACKUP" "$ORIG"
     continue
   fi
 
-  MATCH_END=$(tail -n +"$MATCH_START" "$FILE" | grep -n "^}$" | head -1 | cut -d: -f1)
-  if [[ -z "$MATCH_END" ]]; then
-    FILES_NOT_FOUND+=("$(realpath "$FILE")")
-    continue
-  fi
-  MATCH_END=$((MATCH_START + MATCH_END - 1))
-
-  TMP_BLOCK=$(mktemp)
-  sed -n "${MATCH_START},${MATCH_END}p" "$FILE" > "$TMP_BLOCK"
-
-  NORMALIZED_CURRENT=$(mktemp)
-  normalize_block "$TMP_BLOCK" > "$NORMALIZED_CURRENT"
-  CURRENT_HASH=$(md5sum "$NORMALIZED_CURRENT" | awk '{print $1}')
-  rm -f "$TMP_BLOCK" "$NORMALIZED_CURRENT"
-
-  if [[ "$CURRENT_HASH" != "$BEFORE_HASH" ]]; then
-    FILES_DIFFERENT+=("$(realpath "$FILE")")
+  if ! grep -Fq "$BEFORE_BLOCK" "$FILE"; then
+    ((NO_MATCH++))
+    LOG_PATHS+=("1:$FILE")
     continue
   fi
 
-  if [[ $DRY_RUN -eq 1 ]]; then
-    FILES_REPLACED+=("$(realpath "$FILE")")
+  if ! grep -Fx "$BEFORE_BLOCK" "$FILE" > /dev/null; then
+    ((DIFF_MATCH++))
+    LOG_PATHS+=("2:$FILE")
     continue
   fi
 
-  backup_dir="$(dirname "$FILE")/.rollback_backup_$NOW"
-  mkdir -p "$backup_dir"
-  cp "$FILE" "$backup_dir/$(basename "$FILE").bak"
-
-  TMP_OUT=$(mktemp)
-  head -n $((MATCH_START - 1)) "$FILE" > "$TMP_OUT"
-  cat "$AFTER_BLOCK_FILE" >> "$TMP_OUT"
-  tail -n +"$((MATCH_END + 1))" "$FILE" >> "$TMP_OUT"
-  mv "$TMP_OUT" "$FILE"
-
-  FILES_REPLACED+=("$(realpath "$FILE")")
+  if [[ "$DRY_RUN" == false && "$DIFF_ONLY" == false ]]; then
+    BACKUP_DIR="$(dirname "$FILE")/.rollback_backup_$(date +%Y%m%d_%H%M%S)"
+    mkdir -p "$BACKUP_DIR"
+    cp "$FILE" "$BACKUP_DIR/$(basename "$FILE").bak"
+    awk -v before="$BEFORE_BLOCK" -v after="$AFTER_BLOCK" '
+      BEGIN { RS = ORS = ""; subed=0 }
+      {
+        if (index($0, before)) {
+          sub(before, after)
+          subed=1
+        }
+        print
+      }
+    ' "$FILE" > "$FILE.tmp" && mv "$FILE.tmp" "$FILE"
+    ((MODIFIED++))
+    LOG_PATHS+=("3:$FILE")
+  fi
 done
 
 echo
 echo "[COMPLETE] 모든 파일 처리 완료"
-
-{
-  echo "1. '변경 전 블록'이 존재하지 않는 파일 개수: ${#FILES_NOT_FOUND[@]} 개"
-  for f in "${FILES_NOT_FOUND[@]}"; do echo " - $f"; done
-  echo
-  echo "2. '변경 전 블록'가 다른 파일 개수: ${#FILES_DIFFERENT[@]} 개"
-  for f in "${FILES_DIFFERENT[@]}"; do echo " - $f"; done
-  echo
-  echo "3. '변경 전 블록'이 '변경 후 블록'으로 변경된 파일 개수: ${#FILES_REPLACED[@]} 개"
-  for f in "${FILES_REPLACED[@]}"; do echo " - $f"; done
-  echo
-} >> "$LOG_FILE"
-
-printf "\n"
-printf "1. '변경 전 블록'이 존재하지 않는 파일 개수: %'d 개\n" "${#FILES_NOT_FOUND[@]}"
-printf "2. '변경 전 블록'가 다른 파일 개수: %'d 개\n" "${#FILES_DIFFERENT[@]}"
-printf "3. '변경 전 블록'이 '변경 후 블록'으로 변경된 파일 개수: %'d 개\n" "${#FILES_REPLACED[@]}"
 echo
-echo "[LOG] 작업 결과 로그 저장됨: $(realpath "$LOG_FILE")"
+echo "1. '변경 전 블록'이 존재하지 않는 파일 개수: $NO_MATCH 개"
+echo "2. '변경 전 블록'가 다른 파일 개수: $DIFF_MATCH 개"
+echo "3. '변경 전 블록'이 '변경 후 블록'으로 변경된 파일 개수: $MODIFIED 개"
+echo
+echo "[LOG] 작업 결과 로그 저장됨: $LOG_FILE"
 
+# Save to log
+{
+  echo "[TARGET] $TARGET_DIR"
+  echo "[PATTERN] $TARGET_NAME"
+  echo "[DATE] $(date '+%Y-%m-%d %H:%M:%S')"
+  echo "======================================"
+  for path in "${LOG_PATHS[@]}"; do
+    case "$path" in
+      1:*) echo "[NO_MATCH] ${path#1:}" ;;
+      2:*) echo "[DIFF]     ${path#2:}" ;;
+      3:*) echo "[MODIFIED] ${path#3:}" ;;
+    esac
+  done
+} > "$LOG_FILE"
 
