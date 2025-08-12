@@ -108,7 +108,9 @@ for FILE in "${FILES[@]}"; do
   mkdir -p "$BACKUP_DIR"
   cp "$FILE" "$BACKUP_DIR/$(basename "$FILE").bak"
 
-  perl -0777 -i -pe "s/\Q$BEFORE_BLOCK\E/$AFTER_BLOCK/" "$FILE"
+  BEFORE_BLOCK="$BEFORE_BLOCK" AFTER_BLOCK="$AFTER_BLOCK" \
+  perl -0777 -i -pe 's/\Q$ENV{BEFORE_BLOCK}\E/$ENV{AFTER_BLOCK}/s' "$FILE"
+
   ((REPLACED++))
   REPLACED_FILES+=("$FILE")
 done
@@ -117,14 +119,14 @@ echo
 {
   echo "1. '변경 전 블록'이 존재하지 않는 파일 개수: $NO_MATCH 개"
   for f in "${NO_MATCH_FILES[@]}"; do echo " - $f"; done
-  echo "2. '변경 전 블록'이 '변경 후 블록'으로 변경된 파일 개수: $REPLACED 개"
+  echo "3. '변경 전 블록'이 '변경 후 블록'으로 변경된 파일 개수: $REPLACED 개"
   for f in "${REPLACED_FILES[@]}"; do echo " - $f"; done
 } > "$LOG_FILE"
 
 echo "[COMPLETE] 모든 파일 처리 완료"
 echo
 echo "1. '변경 전 블록'이 존재하지 않는 파일 개수: $NO_MATCH 개"
-echo "2. '변경 전 블록'이 '변경 후 블록'으로 변경된 파일 개수: $REPLACED 개"
+echo "3. '변경 전 블록'이 '변경 후 블록'으로 변경된 파일 개수: $REPLACED 개"
 echo
 echo "[LOG] 작업 결과 로그 저장됨: $LOG_FILE"
 

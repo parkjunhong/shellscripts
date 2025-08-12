@@ -45,6 +45,7 @@ _replace_codeblock() {
       return 0
       ;;
     --before|--after|--rollback)
+      compopt -o filenames +o nospace
       COMPREPLY=( $(compgen -f -- "$cur") )
       return 0
       ;;
