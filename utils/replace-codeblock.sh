@@ -32,7 +32,7 @@ help() {
   fi  
   echo
   echo "Usage:"
-  echo "$FILENAME --target-dir <path> --target-name <filename> --before <file> --after <file> [--dry-run] [--diff-only] [--rollback <backup-dir>]"
+  echo "$FILENAME --target-dir <path> --target-name <filename> --before <file> --after <file> [--dry-run]"
   echo
   echo "Options:"
   echo "  --target-dir    : root directory to search for target files"
@@ -40,41 +40,15 @@ help() {
   echo "  --before        : file that contains the original code block"
   echo "  --after         : file that contains the replacement code block"
   echo "  --dry-run       : show what would be replaced without modifying files"
-  echo "  --diff-only     : show files that differ from the original block"
-  echo "  --rollback <dir>: rollback changes from the given backup directory"
   echo "  -h | --help     : show this help message"
 }
 
-draw_progress_bar() {
-  local current=$1
-  local total=$2
-
-  local cols=$(tput cols)
-  local label="[처리 중: $(printf '%06d' "$current") / $(printf '%06d' "$total")]"
-  local label_width=${#label}
-  local bar_width=$((cols - label_width - 10)) # extra buffer for padding
-
-  (( bar_width < 10 )) && bar_width=10
-
-  local percent=$((current * bar_width / total))
-  local done=$(printf "%0.s*" $(seq 1 $percent))
-  local left=$(printf "%0.s " $(seq 1 $((bar_width - percent))))
-
-  # 줄 덮어쓰기 (\r) + \033[0K: 줄 끝까지 삭제
-  echo -ne "\r\033[0K$label [$done$left]"
-}
-
-# Default values
 TARGET_DIR=""
 TARGET_NAME=""
 BEFORE_FILE=""
 AFTER_FILE=""
 DRY_RUN=false
-DIFF_ONLY=false
-ROLLBACK_DIR=""
-LOG_FILE="$(pwd)/replace-codeblocks.log"
 
-# Option parsing
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --target-dir) TARGET_DIR="$2"; shift ;;
@@ -82,105 +56,75 @@ while [[ $# -gt 0 ]]; do
     --before) BEFORE_FILE="$2"; shift ;;
     --after) AFTER_FILE="$2"; shift ;;
     --dry-run) DRY_RUN=true ;;
-    --diff-only) DIFF_ONLY=true ;;
-    --rollback) ROLLBACK_DIR="$2"; shift ;;
     -h|--help) help; exit 0 ;;
     *) help "[ERROR] Unknown option: $1" "$LINENO"; exit 1 ;;
   esac
   shift
 done
 
-# Validation
-if [[ -n "$ROLLBACK_DIR" ]]; then
-  [[ ! -d "$ROLLBACK_DIR" ]] && help "[ERROR] Rollback directory not found: $ROLLBACK_DIR" "$LINENO" && exit 1
-else
-  [[ -z "$TARGET_DIR" || -z "$TARGET_NAME" || -z "$BEFORE_FILE" || -z "$AFTER_FILE" ]] && help "[ERROR] Missing required arguments." "$LINENO" && exit 1
-  [[ ! -d "$TARGET_DIR" ]] && help "[ERROR] Target directory not found: $TARGET_DIR" "$LINENO" && exit 1
-  [[ ! -f "$BEFORE_FILE" ]] && help "[ERROR] Before file not found: $BEFORE_FILE" "$LINENO" && exit 1
-  [[ ! -f "$AFTER_FILE" ]] && help "[ERROR] After file not found: $AFTER_FILE" "$LINENO" && exit 1
-fi
+[[ -z "$TARGET_DIR" || -z "$TARGET_NAME" || -z "$BEFORE_FILE" || -z "$AFTER_FILE" ]] && help "[ERROR] Missing required arguments." "$LINENO" && exit 1
+[[ ! -d "$TARGET_DIR" ]] && help "[ERROR] Target directory not found: $TARGET_DIR" "$LINENO" && exit 1
+[[ ! -f "$BEFORE_FILE" ]] && help "[ERROR] Before file not found: $BEFORE_FILE" "$LINENO" && exit 1
+[[ ! -f "$AFTER_FILE" ]] && help "[ERROR] After file not found: $AFTER_FILE" "$LINENO" && exit 1
 
-# Prepare blocks
-[[ -z "$ROLLBACK_DIR" ]] && BEFORE_BLOCK=$(<"$BEFORE_FILE") && AFTER_BLOCK=$(<"$AFTER_FILE")
+BEFORE_BLOCK=$(<"$BEFORE_FILE")
+AFTER_BLOCK=$(<"$AFTER_FILE")
 
-# Discover files
-if [[ -n "$ROLLBACK_DIR" ]]; then
-  mapfile -t FILES < <(find "$TARGET_DIR" -type f -name "$TARGET_NAME" -exec test -f "$ROLLBACK_DIR/{}" \; -print)
-else
-  mapfile -t FILES < <(find "$TARGET_DIR" -type f -name "$TARGET_NAME")
-fi
-
+mapfile -t FILES < <(find "$TARGET_DIR" -type f -name "$TARGET_NAME")
 TOTAL=${#FILES[@]}
 CURRENT=0
-NO_MATCH=0
-DIFF_MATCH=0
-MODIFIED=0
 
-LOG_PATHS=()
+NO_MATCH=0
+NO_MATCH_FILES=()
+REPLACED=0
+REPLACED_FILES=()
+
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+LOG_FILE="$(pwd)/replace-codeblocks-${TARGET_NAME}.log"
 
 for FILE in "${FILES[@]}"; do
   ((CURRENT++))
-  draw_progress_bar "$CURRENT" "$TOTAL"
+  LABEL="[처리 중: $(printf "%06d" "$CURRENT") / $(printf "%06d" "$TOTAL")]"
+  COLS=$(tput cols)
+  PAD=$((COLS - ${#LABEL} - 8))
+  PROGRESS=$(printf "%0.s*" $(seq 1 $((PAD * CURRENT / TOTAL))))
+  printf "\r%s [%-*s]" "$LABEL" "$PAD" "$PROGRESS"
 
-  if [[ -n "$ROLLBACK_DIR" ]]; then
-    ORIG="$FILE"
-    BACKUP="$ROLLBACK_DIR/$FILE"
-    [[ -f "$BACKUP" ]] && cp "$BACKUP" "$ORIG"
-    continue
-  fi
+  FILE_CONTENT=$(<"$FILE")
 
-  if ! grep -Fq "$BEFORE_BLOCK" "$FILE"; then
+  if [[ "$FILE_CONTENT" != *"$BEFORE_BLOCK"* ]]; then
     ((NO_MATCH++))
-    LOG_PATHS+=("1:$FILE")
+    NO_MATCH_FILES+=("$FILE")
     continue
   fi
 
-  if ! grep -Fx "$BEFORE_BLOCK" "$FILE" > /dev/null; then
-    ((DIFF_MATCH++))
-    LOG_PATHS+=("2:$FILE")
+  if $DRY_RUN; then
+    ((REPLACED++))
+    REPLACED_FILES+=("$FILE")
     continue
   fi
 
-  if [[ "$DRY_RUN" == false && "$DIFF_ONLY" == false ]]; then
-    BACKUP_DIR="$(dirname "$FILE")/.rollback_backup_$(date +%Y%m%d_%H%M%S)"
-    mkdir -p "$BACKUP_DIR"
-    cp "$FILE" "$BACKUP_DIR/$(basename "$FILE").bak"
-    awk -v before="$BEFORE_BLOCK" -v after="$AFTER_BLOCK" '
-      BEGIN { RS = ORS = ""; subed=0 }
-      {
-        if (index($0, before)) {
-          sub(before, after)
-          subed=1
-        }
-        print
-      }
-    ' "$FILE" > "$FILE.tmp" && mv "$FILE.tmp" "$FILE"
-    ((MODIFIED++))
-    LOG_PATHS+=("3:$FILE")
-  fi
+  BACKUP_DIR="$(dirname "$FILE")/.rollback_backup_$TIMESTAMP"
+  mkdir -p "$BACKUP_DIR"
+  cp "$FILE" "$BACKUP_DIR/$(basename "$FILE").bak"
+
+  perl -0777 -i -pe "s/\Q$BEFORE_BLOCK\E/$AFTER_BLOCK/" "$FILE"
+  ((REPLACED++))
+  REPLACED_FILES+=("$FILE")
 done
 
 echo
+{
+  echo "1. '변경 전 블록'이 존재하지 않는 파일 개수: $NO_MATCH 개"
+  for f in "${NO_MATCH_FILES[@]}"; do echo " - $f"; done
+  echo "2. '변경 전 블록'이 '변경 후 블록'으로 변경된 파일 개수: $REPLACED 개"
+  for f in "${REPLACED_FILES[@]}"; do echo " - $f"; done
+} > "$LOG_FILE"
+
 echo "[COMPLETE] 모든 파일 처리 완료"
 echo
 echo "1. '변경 전 블록'이 존재하지 않는 파일 개수: $NO_MATCH 개"
-echo "2. '변경 전 블록'가 다른 파일 개수: $DIFF_MATCH 개"
-echo "3. '변경 전 블록'이 '변경 후 블록'으로 변경된 파일 개수: $MODIFIED 개"
+echo "2. '변경 전 블록'이 '변경 후 블록'으로 변경된 파일 개수: $REPLACED 개"
 echo
 echo "[LOG] 작업 결과 로그 저장됨: $LOG_FILE"
-
-# Save to log
-{
-  echo "[TARGET] $TARGET_DIR"
-  echo "[PATTERN] $TARGET_NAME"
-  echo "[DATE] $(date '+%Y-%m-%d %H:%M:%S')"
-  echo "======================================"
-  for path in "${LOG_PATHS[@]}"; do
-    case "$path" in
-      1:*) echo "[NO_MATCH] ${path#1:}" ;;
-      2:*) echo "[DIFF]     ${path#2:}" ;;
-      3:*) echo "[MODIFIED] ${path#3:}" ;;
-    esac
-  done
-} > "$LOG_FILE"
 
