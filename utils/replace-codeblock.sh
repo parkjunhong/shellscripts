@@ -80,7 +80,15 @@ REPLACED=0
 REPLACED_FILES=()
 
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-LOG_FILE="$(pwd)/replace-codeblocks-${TARGET_NAME}.log"
+# sanitize target name into safe log filename
+LOG_NAME="$TARGET_NAME"
+LOG_NAME="${LOG_NAME//\*/wildcard}"  # * → wildcard
+LOG_NAME="${LOG_NAME//\?/question}"  # ? → question
+LOG_NAME="${LOG_NAME//\[/lbracket}"  # [ → lbracket
+LOG_NAME="${LOG_NAME//\]/rbracket}"  # ] → rbracket
+LOG_NAME="${LOG_NAME// /_}"          # 공백 → _
+LOG_NAME="${LOG_NAME//\//_}"         # / → _
+LOG_FILE="$(pwd)/replace-codeblock-${LOG_NAME}.log"
 
 for FILE in "${FILES[@]}"; do
   ((CURRENT++))

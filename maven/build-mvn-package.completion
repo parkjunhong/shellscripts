@@ -78,10 +78,10 @@ _bldmvnpkg-add_default_options(){
 # $1: directory path
 _bldmvnpkg-read_profiles(){
 #	local _profiles=()
-#	if [ ! -d "$PWD/config/profile" ];then
+#	if [ ! -d "$PWD/config.profiles" ];then
 #		echo ""
 #	else
-#		for dir in $(ls -p "$PWD/config/profile" | grep -E "^[^/]+/$" 2>/dev/null);
+#		for dir in $(ls -p "$PWD/config.profiles" | grep -E "^[^/]+/$" 2>/dev/null);
 #		do
 #			_profiles+=(${dir::-1})
 #		done
@@ -90,14 +90,15 @@ _bldmvnpkg-read_profiles(){
 
   # begin - applied "ChatGTP's report" updated 2025/03/10.
   local _profiles=()
-  local _dirs=("$PWD/config" "$PWD/config/profile")
+  local _dirs=("$PWD/config" "$PWD/config.profiles")
 
   for _profile_dir in "${_dirs[@]}"; do
     if [[ -d "$_profile_dir" && -n "$(ls -A $_profile_dir 2>/dev/null)" ]]; then
       for dir in $(ls -p "$_profile_dir" | grep -E "^[^/]+/$" 2>/dev/null); do
         dir="${dir::-1}"  # Remove trailing slash
+        [[ "$dir" == "import" ]] && continue  # Exclude 'import' directory, that is a directory for additional configuration files. (e.g. yaml, ...)
+        [[ "$dir" == "init" ]] && continue  # Exclude 'init' directory, that is a directory for data-initialization
         [[ "$dir" == "profile" ]] && continue  # Exclude 'profile' directory
-        [[ "$dir" == "import" ]] && continue  # Exclude 'import' directory
         _profiles+=("$dir")
       done
    fi
@@ -152,8 +153,10 @@ _bldmvnpkg-handle_previous(){
 			;;
 		-p | --p*)
 			if [ -z "$1" ];then
+				#COMPREPLY+=( $(compgen -W "$(find $PWD/config.profiles -mindepth 1 -maxdepth 1 -type d -printf '%P ')") )
 				COMPREPLY+=( $(compgen -W "$(_bldmvnpkg-read_profiles)") )
 			else
+				#local _words=$(compgen -W "$(find $PWD/config.profiles -mindepth 1 -maxdepth 1 -type d -printf '%P ')" -- $1)
 				local _words=$(compgen -W "$(_bldmvnpkg-read_profiles)" -- $1)
 				_bldmvnpkg-log "_words=${_words[@]}"
 				if [ ${#_words[@]} -gt 0 ];then
