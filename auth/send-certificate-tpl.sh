@@ -51,7 +51,7 @@ validate-file(){
 }
 
 ## pem to '.crt' & '.key'
-conver-pem-to-sslca(){
+convert-pem-to-sslca(){
   echo
   echo " ✅  > > > begin: convert to nginx ssl & ca "
   
@@ -74,7 +74,7 @@ conver-pem-to-sslca(){
 }
 
 ## pem to '.p12'
-conver-pem-to-p12(){
+convert-pem-to-p12(){
   echo
   echo " ✅> > > > begin: convert to pkcs12"
 
@@ -148,6 +148,14 @@ delete-dir(){
   fi
 }
 
+# delete all converted files, ca, pcks12, jks.
+delete-converted-files(){
+  # clear directory
+  echo
+  delete-dir "$SSL_CA_DIR"
+  delete-dir "$PKCS12_DIR"
+  delete-dir "$JKS_DIR"
+}
 
 if [ ! -d "$CERT_DIR" ];then
   echo " ❌❌❌ Invalid certificated files directory. path=$CERT_DIR"
@@ -159,6 +167,8 @@ validate-file "$CERT_DIR/cert1.pem"
 validate-file "$CERT_DIR/chain1.pem"
 validate-file "$CERT_DIR/fullchain1.pem"
 validate-file "$CERT_DIR/privkey1.pem"
+
+delete-converted-files
 
 FILE_CERT="$CERT_DIR/cert1.pem"
 FILE_CHAIN="$CERT_DIR/chain1.pem"
@@ -172,11 +182,11 @@ wget -q https://letsencrypt.org/certs/isrgrootx1.pem -O "$FILE_ROOT"
 
 echo
 # convert pem files for nginx
-conver-pem-to-sslca
+convert-pem-to-sslca
 
 echo
 # convert pem files for springboot
-conver-pem-to-p12
+convert-pem-to-p12
 
 echo
 # convert pem files for jks (Java KeyStore)
@@ -223,12 +233,8 @@ do
 done
 echo " < < < end:"
 
-# clear directory
-echo
-delete-dir "$SSL_CA_DIR"
-delete-dir "$PKCS12_DIR"
-delete-dir "$JKS_DIR"
 # 'delete' isrg-root-x1
+echo "'delete' isrg-root-x1"
 rm -rf $FILE_ROOT
 
 echo
