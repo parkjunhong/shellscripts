@@ -1,0 +1,197 @@
+# =======================================
+# @auther : parkjunhong77@gmail.com
+# @title  : send-certificate.sh 및 send-certs-for-services.sh bash-completion
+# @license: Apache License 2.0
+# @since  : 2025/11/27
+# @desc   : support RHEL 7/8/9, Oracle Linux 7/8/9, Ubuntu 18.04/20.04/22.04 LTS,
+#           macOS 11+ (bash-completion with bash >= 3), CentOS 7
+# @completion: send-certificate.completion
+#            1. insert "source <path>/send-certificate.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#            2. copy the above file to /etc/bash_completion.d/ for all users.
+# =======================================
+
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+#
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+
+# ----------------------------------------------------------------------
+# 공통: target-ca 타입 목록
+# ----------------------------------------------------------------------
+__send_cert_types="pem sslca pkcs12 jks"
+
+# ----------------------------------------------------------------------
+# send-certificate.sh completion
+# ----------------------------------------------------------------------
+_send_certificate()
+{
+  local cur prev all_opts opts used word o u
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  # 이 스크립트가 지원하는 모든 옵션 (long + short)
+  all_opts="--no-send --no-delete --dry-run \
+            --service-files \
+            --ssh-key \
+            --p12-pwd \
+            --target-ca \
+            --wildcard-domain \
+            --help"
+
+
+  # 이미 입력된 옵션 수집
+  used=""
+  for word in "${COMP_WORDS[@]}"; do
+    case "$word" in
+      --no-send|--no-delete|--dry-run|\
+      --service-files|-sf|\
+      --ssh-key|-sk|\
+      --p12-pwd|-p12|\
+      --target-ca|-tc|\
+      --wildcard-domain|-wd|\
+      --help|-h)
+        used+=" $word"
+        ;;
+    esac
+  done
+
+  # 사용한 옵션을 all_opts 에서 제거하여 추천 목록 구성
+  opts=""
+  for o in $all_opts; do
+    local skip=0
+    for u in $used; do
+      if [[ "$o" == "$u" ]]; then
+        skip=1
+        break
+      fi
+    done
+    if [[ $skip -eq 0 ]]; then
+      opts+=" $o"
+    fi
+  done
+
+  # 이전 인자가 특정 옵션인 경우: 인자 타입별 completion 처리
+  case "$prev" in
+    --service-files|-sf|--ssh-key|-sk)
+      # 파일/경로 자동완성
+      COMPREPLY=( $(compgen -f -- "$cur") )
+      return 0
+      ;;
+    --target-ca|-tc)
+      # pem,sslca,pkcs12,jks 자동완성 (콤마 여러 개 지원)
+      local prefix last t
+      prefix=""
+      last="$cur"
+
+      if [[ "$cur" == *,* ]]; then
+        prefix="${cur%,*},"
+        last="${cur##*,}"
+      fi
+
+      COMPREPLY=()
+      for t in $__send_cert_types; do
+        if [[ "$t" == "$last"* ]]; then
+          COMPREPLY+=( "${prefix}${t}" )
+        fi
+      done
+      return 0
+      ;;
+  esac
+
+  # 현재 입력이 옵션이거나 아직 아무것도 입력 안 했을 때: 옵션 추천
+  if [[ -z "$cur" || "$cur" == -* ]]; then
+    COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+    return 0
+  fi
+
+  return 0
+}
+
+# ----------------------------------------------------------------------
+# send-certs-for-services.sh completion
+#  - 외부 옵션: --no-send, --no-delete, --dry-run, --target-ca|-tc, -h|--help
+# ----------------------------------------------------------------------
+_send_certs_for_services()
+{
+  local cur prev all_opts opts used word o u
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  all_opts="--no-send --no-delete --dry-run \
+            --target-ca \
+            --help"
+
+  used=""
+  for word in "${COMP_WORDS[@]}"; do
+    case "$word" in
+      --no-send|--no-delete|--dry-run|\
+      --target-ca|-tc|\
+      --help|-h)
+        used+=" $word"
+        ;;
+    esac
+  done
+
+  opts=""
+  for o in $all_opts; do
+    local skip=0
+    for u in $used; do
+      if [[ "$o" == "$u" ]]; then
+        skip=1
+        break
+      fi
+    done
+    if [[ $skip -eq 0 ]]; then
+      opts+=" $o"
+    fi
+  done
+
+  case "$prev" in
+    --target-ca|-tc)
+      local prefix last t
+      prefix=""
+      last="$cur"
+
+      if [[ "$cur" == *,* ]]; then
+        prefix="${cur%,*},"
+        last="${cur##*,}"
+      fi
+
+      COMPREPLY=()
+      for t in $__send_cert_types; do
+        if [[ "$t" == "$last"* ]]; then
+          COMPREPLY+=( "${prefix}${t}" )
+        fi
+      done
+      return 0
+      ;;
+  esac
+
+  if [[ -z "$cur" || "$cur" == -* ]]; then
+    COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+    return 0
+  fi
+
+  return 0
+}
+
+# ----------------------------------------------------------------------
+# complete 등록
+#   실제 명령 이름(파일 이름)에 맞게 조정 가능
+# ----------------------------------------------------------------------
+complete -F _send_certificate send-certificate.sh
+complete -F _send_certs_for_services send-certs-for-services.sh
+
