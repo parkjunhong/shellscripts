@@ -35,16 +35,6 @@ validate_env() {
   fi
 }
 
-# 환경변수로 설정해서 처리
-LET
-if [[ -z $(echo $LETSENC_INSTDIR) ||  ! -d $(echo $LETSENC_INSTDIR) ]]; 
-then
-  echo
-  echo "Let's Encrypt 도구가 설치된 경로가 존재하지 않습니다."
-  echo "echo \$LETSENC_INSTDIR=$(echo $LETSENC_INSTDIR)"
-  exit 1
-fi
-
 # 안 보내기 
 NO_SEND=0
 # 유형별 인증서 삭제하지 않기
