@@ -13,17 +13,31 @@
 #            2. copy the above file to /etc/bash_completion.d/ for all users.
 # =======================================
 
-# LETSENC_INSTDIR: Let's Encrypt가 설치된 디렉토리로
-# 환경변수로 설정해서 처리
-if [[ -z $(echo $LETSENC_INSTDIR) ]]; 
-then
-  echo
-  echo "Let's Encrypt 도구가 설치된 경로가 존재하지 않습니다."
-  echo "echo \$LETSENC_INSTDIR=$(echo $LETSENC_INSTDIR)"
-  exit 1
-fi
+##
+# LETSENC_INSTDIR: Let's Encrypt가 설치된 디렉토리 환경변수 검증 및 LETSENC_ROOT 설정
+# Validate LETSENC_INSTDIR environment variable and set LETSENC_ROOT
+#
+# @param (none)
+#
+# @return 정상인 경우 0, 잘못된 경우 help() 호출 후 종료 / 0 on success, exit on error
+##
+validate_env() {
+  LETSENC_ROOT="${LETSENC_INSTDIR:-}"
 
-if [[ ! -d $(echo $LETSENC_INSTDIR) ]]; 
+  if [[ -z "${LETSENC_ROOT}" || ! -d "${LETSENC_ROOT}" ]];
+  then
+    echo
+    echo "Let's Encrypt 도구가 설치된 경로가 존재하지 않습니다."
+    echo "Let's Encrypt tools directory does not exist."
+    echo "echo \"\$LETSENC_INSTDIR\"=${LETSENC_ROOT}"
+    help "invalid LETSENC_INSTDIR: directory not found" "$LINENO"
+    exit 1
+  fi
+}
+
+# 환경변수로 설정해서 처리
+LET
+if [[ -z $(echo $LETSENC_INSTDIR) ||  ! -d $(echo $LETSENC_INSTDIR) ]]; 
 then
   echo
   echo "Let's Encrypt 도구가 설치된 경로가 존재하지 않습니다."
@@ -360,10 +374,12 @@ while IFS= read -r line; do
   DEST_CONFS+=("$line")
 done < "$SERVICES_LIST"
 
+# 환경 변수 검증
+validate_env
 # 현재 경로 지정
 pushd .
 # Let's Encrypt 설치된 디렉토리로 이동
-cd $(echo $LETSENC_INSTDIR)
+cd ${LETSENC_ROOT}
 
 # ----------------------------------------------------------------------
 # 전송을 위한 디렉터리 설정

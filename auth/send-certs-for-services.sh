@@ -23,8 +23,8 @@ DRY_RUN=0
 # 인증서 유형 목록 (참고용, 실제 검증은 send-certificate.sh 에서 수행)
 TYPE=( "pem" "sslca" "pkcs12" "jks")
 
-# WILDCARD 도메인 (예: ymtech.co.kr) - 고정값
-WILDCARD_DOMAIN="ymtech.co.kr"
+# WILDCARD 도메인 (예: mycompany.co.kr) - 고정값
+WILDCARD_DOMAIN="mycompany.co.kr"
 
 # 전송할 인증서 유형 리스트 (미지정 시 TYPE 전체 사용)
 # 여기서는 단순히 옵션 문자열만 넘기고, 실제 검증은 send-certificate.sh 에 맡김
