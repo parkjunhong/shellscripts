@@ -11,6 +11,7 @@
 #            2. copy the above file to /etc/bash_completion.d/ for all users.
 # =======================================
 
+FILENAME="$0"
 
 help(){
 	if [ ! -z "$1" ];

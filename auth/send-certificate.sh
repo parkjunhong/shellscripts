@@ -41,7 +41,7 @@ TYPE=( "pem" "sslca" "pkcs12" "jks")
 WILDCARD_DOMAIN=""
 # 전송할 인증서 유형 리스트 (미지정 시 TYPE 전체 사용)
 TARGET_CA_LIST=()
-# 서비스 리스트 파일 경로
+# 서비스 목록 파일 경로
 SERVICES_LIST=""
 # SSH 개인키 경로 (옵션으로 입력)
 SSH_PRI_KEY=""
@@ -80,6 +80,50 @@ normalize_path(){
   echo "$PWD/$p"
 }
 
+FILENAME="$0"
+
+help(){
+  if [ ! -z "$1" ];
+  then
+    local indent=10
+    local formatl=" - %-"$indent"s: %s\n"
+    local formatr=" - %"$indent"s: %s\n"
+    echo
+    echo "================================================================================"
+    printf "$formatl" "filename" "$FILENAME"
+    printf "$formatl" "line" "$2"
+    printf "$formatl" "callstack"
+    local idx=1
+    for func in ${FUNCNAME[@]:1}
+    do  
+      printf "$formatr" "["$idx"]" $func
+      ((idx++))
+    done
+    printf "$formatl" "cause" "$1"
+    echo "================================================================================"
+  fi  
+  echo
+  echo
+  echo "Usage:"
+  echo "./script_name <options>" # 스크립트 이름을 적절하게 수정하세요.
+  echo
+  echo "Options:"
+  echo " --no-send: DO NOT send file to destination."
+  echo " --no-delete: DO NOT delete converted files, e.g. ssl, pkcs12, etc."
+  echo " -sf | --service-files <file>: Specify service list file."
+  echo "  데이터 포맷: <type>;<user>@<host>:/absolute/path[;<cli>]"
+  echo "   + type: pem|sslca|pkcs12|jks"
+  echo "   + user: 사용자 ID"
+  echo "   + host: 서버 접속 정보. IP or Domain"
+  echo "   + path: 인증서를 복사할 디렉토리 절대 경로"
+  echo "   + cli : 인증서를 복사한 후 실행할 명령어. (optional)"
+  echo " -sk | --ssh-key <file>: Specify ssh private key file."
+  echo " -tc | --target-ca <types>: Specify target certificate types. (comma separated: pem,sslca,pkcs12,jks)"
+  echo " -wd | --wildcard-domain <domain>: Specify wildcard base domain. (e.g. mycom.co.kr)"
+  echo " -p12 | --p12-pwd <password>: Specify password for pkcs12/jks."
+  echo
+}
+
 # ----------------------------------------------------------------------
 # 옵션 파싱
 # ----------------------------------------------------------------------
@@ -103,6 +147,7 @@ do
         echo " ❌❌❌ '--service-files|-sf' 옵션에 대한 파일 경로가 없습니다."
         echo "     사용 예) $0 --service-files service-list.txt"
         echo
+        help "비어 있는 서비스 파일 경로" $FILENO
         exit 1
       fi
       SERVICES_LIST="$(normalize_path "$1")"
@@ -114,6 +159,7 @@ do
         echo " ❌❌❌ '--ssh-key|-sk' 옵션에 SSH 개인키 파일 경로가 제공되지 않았습니다."
         echo "     사용 예) $0 --ssh-key ~/.ssh/id_rsa.pem"
         echo
+        help "비어 있는 SSH 개인키 파일 경로" $FILENO
         exit 1
       fi
       SSH_PRI_KEY="$(normalize_path "$1")"
@@ -125,6 +171,7 @@ do
         echo " ❌❌❌ '--p12-pwd|-p12' 옵션에 PKCS12(JKS) 비밀번호가 제공되지 않았습니다."
         echo "     사용 예) $0 --p12-pwd mySecretPwd123"
         echo
+        help "비어있는 PKCS12(JKS) 비밀번호" $FILENO
         exit 1
       fi
       P12_PWD="$1"
@@ -137,6 +184,7 @@ do
         echo " ❌❌❌ '--target-ca|-tc' 옵션에 대한 값이 없습니다."
         echo "     사용 예) $0 --target-ca pem,sslca,pkcs12,jks"
         echo
+        help "비어 있는 인증서 유형" $FILENO
         exit 1
       fi
       IFS=',' read -r -a TARGET_CA_LIST <<< "$1"
@@ -149,20 +197,13 @@ do
         echo " ❌❌❌ '--wildcard-domain|-wd' 옵션에 대한 값이 없습니다."
         echo "     사용 예) $0 --wildcard-domain mycom.co.kr"
         echo
+        help "비어있는 않은 wildcard 도메인" $FILENO
         exit 1
       fi
       WILDCARD_DOMAIN="$1"
       ;;
     -h|--help)
-      echo
-      echo "'--no-send' for DO NOT send file to destination."
-      echo "'--no-delete' for DO NOT delete converted files, e.g. ssl, pkcs12, ..)"
-      echo "'--service-files|-sf <file>' to specify service list file."
-      echo "'--ssh-key|-sk <file>' to specify ssh private key file."
-      echo "'--target-ca|-tc <types>' to specify target certificate types. (comma separated: pem,sslca,pkcs12,jks)"
-      echo "'--wildcard-domain|-wd <domain>' to specify wildcard base domain. (e.g. mycom.co.kr)"
-      echo "'--p12-pwd|-p12 <password>' to specify password for pkcs12/jks."
-      echo
+      help
       exit 0
       ;;
     *)
@@ -179,6 +220,7 @@ if [ -z "$WILDCARD_DOMAIN" ]; then
   echo " ❌❌❌ WILDCARD 도메인이 지정되지 않았습니다."
   echo "     '--wildcard-domain <domain>' 또는 '-wd <domain>' 옵션을 사용하세요."
   echo
+  help "비어 있는 wildcard 도메인" $FILENO
   exit 1
 fi
 
@@ -187,6 +229,7 @@ if ! echo "$WILDCARD_DOMAIN" | grep -Eq '^[A-Za-z0-9.-]+\.[A-Za-z0-9.-]+$'; then
   echo " ❌❌❌ 올바르지 않은 도메인 형식입니다. value=${WILDCARD_DOMAIN}"
   echo "     예) mycom.co.kr"
   echo
+  help "올바리지 않은 형식의 wildcard 도메인" $FILENO
   exit 1
 fi
 
@@ -210,6 +253,7 @@ for tgt in "${TARGET_CA_LIST[@]}"; do
     echo " ❌❌❌ 지원하지 않는 인증서 유형이 '--target-ca|-tc' 옵션에 지정되었습니다: $tgt"
     echo "     허용 값: ${TYPE[*]}"
     echo
+    help "올바르지 않은 CA 유형" $FILENO
     exit 1
   fi
 done
@@ -222,6 +266,7 @@ if [ -z "$P12_PWD" ]; then
   echo " ❌❌❌ PKCS12(JKS) 비밀번호가 지정되지 않았습니다."
   echo "     '--p12-pwd <password>' 또는 '-p12 <password>' 옵션을 사용하세요."
   echo
+  help "비어 있는 PKCS12(JKS) 비밀번호" $FILENO
   exit 1
 fi
 
@@ -231,6 +276,7 @@ if echo "$P12_PWD" | grep -q "[[:space:]]"; then
   echo " ❌❌❌ PKCS12(JKS) 비밀번호에는 공백 문자를 사용할 수 없습니다."
   echo "     공백 없이 다시 지정해 주세요."
   echo
+  help "올바르지 않은 PKCS12(JKS) 비밀번호" $FILENO
   exit 1
 fi
 
@@ -239,6 +285,7 @@ if [ ${#P12_PWD} -lt 4 ]; then
   echo
   echo " ❌❌❌ PKCS12(JKS) 비밀번호는 최소 4자 이상이어야 합니다."
   echo
+  help "올바르지 않은 PKCS12(JKS) 비밀번호" $FILENO
   exit 1
 fi
 
@@ -250,6 +297,7 @@ if [ -z "$SSH_PRI_KEY" ]; then
   echo " ❌❌❌ SSH 개인키 파일이 지정되지 않았습니다."
   echo "     '--ssh-key <file>' 또는 '-sk <file>' 옵션을 사용하세요."
   echo
+  help "비어있는 PKCS12(JKS) 비밀번호" $FILENO
   exit 1
 fi
 
@@ -258,25 +306,28 @@ if [ ! -f "$SSH_PRI_KEY" ] || [ ! -r "$SSH_PRI_KEY" ]; then
   echo " ❌❌❌ SSH 개인키 파일에 접근할 수 없습니다. path=${SSH_PRI_KEY}"
   echo "     파일이 존재하는지, 읽기 권한이 있는지 확인하세요."
   echo
+  help "올바르지 않은 SSH 개인키 파일" $FILENO
   exit 1
 fi
 
 # ----------------------------------------------------------------------
-# 서비스 리스트 파일 로딩
+# 서비스 목록 파일 로딩
 # ----------------------------------------------------------------------
 if [ -z "$SERVICES_LIST" ]; then
   echo
-  echo " ❌❌❌ 서비스 리스트 파일이 지정되지 않았습니다."
+  echo " ❌❌❌ 서비스 목록 파일이 지정되지 않았습니다."
   echo "     '--service-files <file>' 또는 '-sf <file>' 옵션을 사용하세요."
   echo
+  help "비어 있는 서비스 목록 파일" $FILENO
   exit 1
 fi
 
 if [ ! -f "$SERVICES_LIST" ] || [ ! -r "$SERVICES_LIST" ]; then
   echo
-  echo " ❌❌❌ 서비스 리스트 파일에 접근할 수 없습니다. path=${SERVICES_LIST}"
+  echo " ❌❌❌ 서비스 목록 파일에 접근할 수 없습니다. path=${SERVICES_LIST}"
   echo "     파일이 존재하는지, 읽기 권한이 있는지 확인하세요."
   echo
+  help "올바르지 않은 서비스 목록 파일" $FILENO
   exit 1
 fi
 
@@ -302,6 +353,7 @@ while IFS= read -r line; do
     echo "     기대 형식: <type>;<user>@<host>:/absolute/path[;<cli>]"
     echo "     예시     : pem;admin@gitlab.mycom.co.kr:/etc/gitlab/ssl/;sudo systemctl reload nginx"
     echo
+    help "올바르지 않은 서비스 설정: $line" $FILENO
     exit 1
   fi
 

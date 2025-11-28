@@ -1,0 +1,55 @@
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : pid-listen-port bash completion
+# @license  : Apache License 2.0
+# @since    : 2025-09-17
+# @desc     : support macOS 11.2.3, Ubuntu 18.04 or higher, CentOS 7 or higher
+# @installation :
+#   1. insert 'source <path>/pid-listen-port.completion' into ~/.bashrc or ~/.bash_profile
+#   2. or copy to /etc/bash_completion.d/ for all users.
+# =======================================
+
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: all arguments
+# 2. COMP_CWORD: index of cursor
+# 3. COMP_LINE:  full command line
+# 4. COMPREPLY:  suggested completions (sorted, unique)
+#
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current word
+# 3. $3: previous word
+#
+# Example: mycmd arg1 arg2 arg3 [tab]
+# - $1: mycmd
+# - $2: arg3
+# - $3: arg2
+# =======================================
+
+_pid_listen_port_completions() {
+  local cur prev opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  opts="--help -h --json --pretty --raw --match --net-state -ns"
+
+  if [[ "$prev" == "--match" ]]; then
+    COMPREPLY=( $(compgen -W "$(ps -aefww | awk '{for (i=8; i<=NF; i++) printf $i\" \"; print \"\"}')" -- "$cur") )
+    return 0
+  fi
+
+  if [[ "$prev" == "--net-state" || "$prev" == "-ns" ]]; then
+    COMPREPLY=( $(compgen -W "LISTEN ESTABLISHED TIME_WAIT CLOSE_WAIT SYN_SENT SYN_RECV" -- "$cur") )
+    return 0
+  fi
+
+  if [[ "$cur" == -* ]]; then
+    COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+    return 0
+  fi
+}
+
+complete -F _pid_listen_port_completions pid-listen-port
+
