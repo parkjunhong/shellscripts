@@ -5,8 +5,8 @@
 # @since    : 2025-11-28
 # @desc     : support RHEL 7+/8+, Oracle Linux 7+/8+, Ubuntu 18.04+, CentOS 7+, macOS 12+
 # @installation :
-#   1. insert 'source <path>/create-letsenc-cert.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/create-letsenc-cert.completion' into
+#   1. insert 'source <path>/request-letsenc-single-cert.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/request-letsenc-single-cert.completion' into
 #      /etc/bashrc for all users.
 # =======================================
 # Global Reserved Variables
@@ -26,11 +26,15 @@
 # - $3: arg3
 
 ##
-# create-letsenc-cert 명령어용 bash completion
-# Bash completion for create-letsenc-cert command
+# request-letsenc-single-cert 명령어용 bash completion
+# Bash completion for request-letsenc-single-cert command
 #
 # Long 옵션만 제안하고, 이미 사용한 옵션은 다시 제안하지 않음.
 # Suggest only long options, and do not suggest options already used.
+#
+# 추가 요구사항:
+# - 아무 것도 입력하지 않은 상태에서 TAB 을 눌러도 옵션을 추천.
+#   Suggest options even when current token is empty.
 #
 # @param (암묵적) COMP_WORDS, COMP_CWORD 사용 / uses COMP_WORDS, COMP_CWORD implicitly
 #
@@ -77,9 +81,9 @@ _create_letsenc_cert_completion() {
     esac
   done
 
-  # 현재 토큰이 '-' 로 시작할 때만 옵션 제안
-  # Suggest options only when current token starts with '-'
-  if [[ "${cur}" == -* ]];
+  # 현재 토큰이 비어 있거나 '-' 로 시작할 때 옵션 제안
+  # Suggest options when current token is empty OR starts with '-'
+  if [[ -z "${cur}" || "${cur}" == -* ]];
   then
     COMPREPLY=($(compgen -W "${candidates}" -- "${cur}"))
   else
@@ -91,5 +95,5 @@ _create_letsenc_cert_completion() {
 
 # 실제 사용하는 명령 이름에 completion 연결
 # Attach completion to the actual command name
-complete -F _create_letsenc_cert_completion create-letsenc-cert.sh
+complete -F _create_letsenc_cert_completion request-letsenc-single-cert.sh
 
