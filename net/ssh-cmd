@@ -1331,7 +1331,7 @@ cmd_add_connection() {
 
   if [[ "$auth_type" == "password" ]]; then
     while true; do
-      echo "❗❗❗ 경고: password 는 ${CONFIG_FILE} 에 평문 저장됩니다." >&2
+      echo "→→→❗❗❗ 경고: password 는 ${CONFIG_FILE} 에 평문 저장됩니다." >&2
       read -r -s -p "❓  🔑 password: " credential
       printf '\n'
       if validate_non_empty "password" "$credential"; then
@@ -1587,7 +1587,7 @@ cmd_modify_connection() {
   if [[ "$new_auth_type" == "password" ]]; then
     local old_pw="$credential"
     while true; do
-      echo "❗❗❗ 경고: password 는 ${CONFIG_FILE} 에 평문 저장됩니다." >&2
+      echo "→→→❗❗❗ 경고: password 는 ${CONFIG_FILE} 에 평문 저장됩니다." >&2
       read -r -s -p "❓  🔑 password [****]: " tmp
       printf '\n'
       if [[ -z "$tmp" ]]; then
