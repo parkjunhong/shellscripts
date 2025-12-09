@@ -1,0 +1,1704 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : ssh-cmd: SSH connection manager
+# @license  : Apache License 2.0
+# @since    : 2025-12-09
+# @desc     : support RHEL 7+/8+, Oracle Linux 7+/8+, Ubuntu 20.04+/22.04+/24.04+, CentOS 7+
+# @installation :
+#   1. insert 'source <path>/ssh-cmd' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy this file to /usr/local/bin/ or any directory in $PATH for all users.
+# =======================================
+
+FILENAME="$(basename "$0")"
+
+# 기본 설정 파일 경로 (Default configuration file path)
+DEFAULT_CONFIG_DIR="${HOME}/.ssh-cmd"
+DEFAULT_CONFIG_FILE="${DEFAULT_CONFIG_DIR}/configuration"
+
+CONFIG_DIR="$DEFAULT_CONFIG_DIR"
+CONFIG_FILE="$DEFAULT_CONFIG_FILE"
+CONFIG_VERSION="1.0"
+
+# 프롬프트 라벨 폭 (아이콘+필드명 고정 폭)
+PROMPT_LABEL_WIDTH=32
+
+# credential 표시 제어 (기본: 마스킹, --show-credential/-s 로 평문 표시)
+SHOW_CREDENTIAL="false"
+
+# =======================================
+# help / usage
+# =======================================
+
+##
+# ssh-cmd 전체 사용법과 에러 정보를 출력한다.
+# Print overall usage and diagnostic error information for ssh-cmd.
+#
+# @param $1 {string|empty} 에러/원인 메시지 (선택) / cause message (optional)
+# @param $2 {int|empty} 에러 발생 라인 번호 (선택) / line number where error occurred (optional)
+#
+# @return {int} 항상 0을 반환하지만, 보통 die()에서 호출된 뒤 프로세스는 exit 1로 종료됨.
+#         Always returns 0; typically invoked by die() and process exits with 1 afterwards.
+##
+help() {
+  # $1: cause message (optional)
+  # $2: line number (optional)
+  if [ -n "${1:-}" ]; then
+    local indent=10
+    local formatl=" - %-"$indent"s: %s\n"
+    local formatr=" - %"$indent"s: %s\n"
+    echo
+    echo "================================================================================"
+    printf "$formatl" "filename" "$FILENAME"
+    printf "$formatl" "line" "${2:-0}"
+    printf "$formatl" "callstack"
+    local idx=1
+    for func in "${FUNCNAME[@]:1}"
+    do
+      printf "$formatr" "[$idx]" "$func"
+      ((idx++))
+    done
+    printf "$formatl" "cause" "$1"
+    echo "================================================================================"
+  fi
+  echo
+  cat <<EOF
+사용법 (Usage):
+  ssh-cmd [global-options]               # 기본: 전체 목록에서 선택 후 접속
+  ssh-cmd [global-options] <expr>        # expr 로 필터링 후 선택/접속
+  ssh-cmd [global-options] -l|--list-all [expr]
+  ssh-cmd [global-options] -a|--add-connection
+  ssh-cmd [global-options] -m|--modify-connection [expr]
+  ssh-cmd [global-options] -d|--delete-connection [expr]
+  ssh-cmd [global-options] -mg|--move-group-connection [expr]
+
+Global options:
+  --config <file>
+    - 설정 파일 경로를 지정합니다. 파일이 존재하면 해당 파일을 설정으로 사용합니다.
+    - 파일이 없으면 경고 메시지를 출력하고 기본 경로(${DEFAULT_CONFIG_FILE})를 사용합니다.
+
+  -s, --show-credential
+    - 목록/미리보기에서 credential 값을 평문으로 출력합니다.
+    - 기본값은 항상 "****************" (16개 별표)로 마스킹합니다.
+
+Commands:
+  -l, --list-all [expr]
+    - SSH connection 목록을 조회합니다.
+    - 검색식 expr 이 있는 경우, expr 에 해당하는 connection 만 필터링합니다.
+
+  -a, --add-connection
+    - 새로운 SSH connection 정보를 추가합니다 (interactive).
+    - auth_type 이 'key' 인 경우, key path 는 항상 "절대경로"로 저장됩니다.
+    - auth_type 이 'password' 인 경우, connection 저장 후 sshpass 가 없으면 자동 설치를 시도합니다.
+
+  -m, --modify-connection [expr]
+    - 검색식 expr 으로 connection 을 고른 뒤, 선택된 connection 을 수정합니다.
+    - 수정 후 결과 connection 1건을 표 형태로 보여줍니다.
+
+  -d, --delete-connection [expr]
+    - 검색식 expr 으로 connection 을 고른 뒤, 삭제 대상 connection 1건을 표로 출력합니다.
+    - 사용자가 y/yes 로 확인하면 실제로 삭제합니다.
+
+  -mg, --move-group-connection [expr]
+    - 검색식 expr 으로 connection 을 고른 뒤, 그룹(group) 값을 변경합니다.
+
+기본 접속 동작:
+  1) ssh-cmd
+     - 전체 connection 목록에서 번호(#)를 선택해 접속합니다.
+
+  2) ssh-cmd <expr>
+     - <expr> 이 "-" 로 시작하는 옵션이 아니면 검색식으로 간주합니다.
+     - expr 으로 필터링 후, 번호(#)를 선택해 접속합니다.
+     - auth_type 이 password 인 경우, sshpass 가 설치되어 있어야 하며,
+       설치되어 있지 않으면 이번 접속은 취소하고 sshpass 설치를 시도합니다.
+
+검색식 (Search expression) 예:
+  {dev} or {%prod%} and {web}
+  - {키워드} : group/name/host 에 키워드가 포함된 항목
+  - %문자열% : 문자열을 포함하는 항목
+  - 문자열%  : 해당 문자열로 시작하는 항목
+  - %문자열  : 해당 문자열로 끝나는 항목
+  - and / or : 조건 결합 (중첩 중괄호 형태도 지원)
+
+정렬 규칙 (Sort rule):
+  1) group == "default" 인 항목이 항상 최상위
+  2) 그 외 group 은 오름차순 정렬
+  3) 같은 group 내에서는 name 오름차순 정렬
+
+컬럼 순서 (Column order):
+  #, Group, Name, Host, Port, User, Credential(표시 시 마스킹 또는 평문)
+EOF
+}
+
+# =======================================
+# Common utils
+# =======================================
+
+##
+# 로그를 stderr로 출력한다. 포맷은 [LEVEL] message 형태이다.
+# Print log messages to stderr in the form of [LEVEL] message.
+#
+# @param $1 {string} 로그 레벨 (예: INFO, WARN, ERROR) / log level (e.g. INFO, WARN, ERROR)
+# @param $2..$n {string} 출력할 메시지 조각들 / message tokens to be printed
+#
+# @return {int} 항상 0 (표준에러로만 출력) / always 0 (only writes to stderr)
+##
+log() {
+  local level="$1"
+  shift
+  printf '[%s] %s\n' "${level}" "$*" >&2
+}
+
+##
+# 에러 메시지를 help()를 통해 출력하고 스크립트를 종료한다.
+# Print an error message via help() and terminate the script.
+#
+# @param $1..$n {string} 에러 메시지 전체 (공백 포함) / full error message (can include spaces)
+#
+# @return {int} exit 1로 프로세스를 즉시 종료 / terminates the process with exit code 1
+##
+die() {
+  local msg="$*"
+  local line="${BASH_LINENO[0]:-0}"
+  help "$msg" "$line"
+  exit 1
+}
+
+##
+# 설정 디렉토리와 설정 파일을 보장하고, 없으면 기본 JSON 구조로 생성한다.
+# Ensure the configuration directory/file exist; create with default JSON if missing.
+#
+# @param $1 없음 / none
+#
+# @return {int} 성공 시 0, 디렉토리/파일 생성 실패 시 비-0 가능
+#         0 on success, non-zero on directory/file creation failure.
+##
+ensure_config_file() {
+  if [[ ! -d "${CONFIG_DIR}" ]]; then
+    mkdir -p "${CONFIG_DIR}"
+  fi
+
+  if [[ ! -f "${CONFIG_FILE}" ]]; then
+    cat > "${CONFIG_FILE}" <<EOF
+{
+  "version": "${CONFIG_VERSION}",
+  "connections": []
+}
+EOF
+    chmod 600 "${CONFIG_FILE}"
+  else
+    chmod 600 "${CONFIG_FILE}" || true
+  fi
+}
+
+##
+# jq, ssh 등의 필수 의존성을 점검하고, 누락된 경우 스크립트를 종료한다.
+# Check for required dependencies (jq, ssh); abort script if any is missing.
+#
+# @param $1 없음 / none
+#
+# @return {int} 모든 의존성이 존재하면 0, 누락 시 die()를 통해 exit 1
+#         0 if all dependencies exist; otherwise terminates via die() with exit 1.
+##
+ensure_dependencies() {
+  local missing=()
+
+  if ! command -v jq >/dev/null 2>&1; then
+    missing+=("jq")
+  fi
+  if ! command -v ssh >/dev/null 2>&1; then
+    missing+=("ssh")
+  fi
+
+  if [[ "${#missing[@]}" -gt 0 ]]; then
+    die "Required commands are missing: ${missing[*]}"
+  fi
+}
+
+##
+# STDIN으로 전달된 JSON을 임시 파일을 사용해 CONFIG_FILE에 안전하게 저장한다.
+# Safely save JSON from STDIN into CONFIG_FILE using a temporary file.
+#
+# @param $1 없음 (입력은 STDIN으로 전달) / none (input JSON is read from STDIN)
+#
+# @return {int} 성공 시 0, 파일 쓰기/이동 실패 시 비-0
+#         0 on success; non-zero on write/move failures.
+##
+save_connections_json() {
+  local tmp
+  tmp="$(mktemp "${CONFIG_FILE}.XXXXXX")"
+  cat > "${tmp}"
+  mv "${tmp}" "${CONFIG_FILE}"
+  chmod 600 "${CONFIG_FILE}"
+}
+
+##
+# ~, 상대경로 등을 포함한 경로를 절대경로로 정규화한다.
+# Normalize a given path (including ~ and relative paths) into an absolute path.
+#
+# @param $1 {string} 원본 경로 (상대/절대/tilde 포함 가능) / original path (relative/absolute/tilde)
+#
+# @return {string} STDOUT로 절대경로를 출력 / prints the absolute path to STDOUT
+# @return {int} 항상 0 (readlink 오류 시 원래 경로 기준) / always 0; falls back when readlink fails.
+##
+resolve_path_abs() {
+  local p="$1"
+
+  if [[ -z "$p" ]]; then
+    printf '%s\n' ""
+    return 0
+  fi
+
+  if [[ "$p" == ~* ]]; then
+    p="${p/#\~/$HOME}"
+  fi
+
+  if [[ "$p" != /* ]]; then
+    p="${PWD}/${p}"
+  fi
+
+  if command -v readlink >/dev/null 2>&1; then
+    local r
+    if r=$(readlink -f -- "$p" 2>/dev/null); then
+      p="$r"
+    fi
+  fi
+
+  printf '%s\n' "$p"
+}
+
+##
+# SHOW_CREDENTIAL 플래그에 따라 credential 출력값을 결정한다.
+# Decide how to display credential value depending on SHOW_CREDENTIAL flag.
+#
+# @param $1 {string} cred 실제 credential 값 / actual credential value
+#
+# @return {string} STDOUT로 표시용 credential 출력 / prints displayable credential to STDOUT.
+# @return {int} 항상 0 / always 0.
+##
+format_credential_for_display() {
+  local cred="$1"
+  if [[ "$SHOW_CREDENTIAL" == "true" ]]; then
+    printf '%s' "$cred"
+  else
+    printf '****************'
+  fi
+}
+
+##
+# sshpass 가 없을 경우 시스템 패키지 관리자(apt, yum/dnf, zypper, apk 등)를 사용해 설치를 시도한다.
+# Try to install sshpass using system package manager (apt, yum/dnf, zypper, apk, etc.) if not present.
+#
+# @param $1 없음 / none
+#
+# @return {int} 설치 후 sshpass 가 사용 가능하면 0, 그렇지 않으면 1
+#         0 if sshpass becomes available after installation; 1 otherwise.
+##
+install_sshpass_if_missing() {
+  if command -v sshpass >/dev/null 2>&1; then
+    return 0
+  fi
+
+  log INFO "sshpass not found. Trying to install..."
+
+  local pm=""
+  if command -v apt-get >/dev/null 2>&1; then
+    pm="apt"
+  elif command -v dnf >/dev/null 2>&1; then
+    pm="dnf"
+  elif command -v yum >/dev/null 2>&1; then
+    pm="yum"
+  elif command -v zypper >/dev/null 2>&1; then
+    pm="zypper"
+  elif command -v apk >/dev/null 2>&1; then
+    pm="apk"
+  fi
+
+  case "$pm" in
+    apt)
+      if sudo apt-get update && sudo apt-get install -y sshpass; then
+        log INFO "sshpass installed via apt."
+      fi
+      ;;
+    dnf)
+      if sudo dnf install -y sshpass; then
+        log INFO "sshpass installed via dnf."
+      fi
+      ;;
+    yum)
+      if sudo yum install -y sshpass; then
+        log INFO "sshpass installed via yum."
+      fi
+      ;;
+    zypper)
+      if sudo zypper install -y sshpass; then
+        log INFO "sshpass installed via zypper."
+      fi
+      ;;
+    apk)
+      if sudo apk add sshpass; then
+        log INFO "sshpass installed via apk."
+      fi
+      ;;
+    *)
+      log WARN "Unsupported package manager. Please install sshpass manually."
+      ;;
+  esac
+
+  if command -v sshpass >/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
+}
+
+# =======================================
+# Validation helpers
+# =======================================
+
+##
+# 값이 비어 있지 않은지 검사한다. 비어 있으면 에러 메시지를 출력한다.
+# Validate that a given value is not empty; prints an error message if it is empty.
+#
+# @param $1 {string} 필드 레이블 (예: group, name) / field label (e.g. group, name)
+# @param $2 {string} 실제 값 / actual value
+#
+# @return {int} 비어 있지 않으면 0, 비어 있으면 1
+#         0 if non-empty; 1 if empty.
+##
+validate_non_empty() {
+  local label="$1"
+  local value="$2"
+  if [[ -z "$value" ]]; then
+    printf '입력 오류: %s 은(는) 비어 있을 수 없습니다.\n' "$label" >&2
+    return 1
+  fi
+  return 0
+}
+
+##
+# host_type 값이 ipv4|ipv6|domain 중 하나인지 확인한다.
+# Validate that host_type is one of ipv4, ipv6, or domain.
+#
+# @param $1 {string} host_type 값 / host_type value
+#
+# @return {int} 유효하면 0, 잘못된 값이면 1
+#         0 if valid; 1 if invalid.
+##
+validate_host_type() {
+  local value="$1"
+  case "$value" in
+    ipv4|ipv6|domain)
+      return 0
+      ;;
+    *)
+      printf '입력 오류: host_type 은 ipv4|ipv6|domain 중 하나여야 합니다. (현재: %s)\n' "$value" >&2
+      return 1
+      ;;
+  esac
+}
+
+##
+# auth_type 값이 password|key 중 하나인지 확인한다.
+# Validate that auth_type is either password or key.
+#
+# @param $1 {string} auth_type 값 / auth_type value
+#
+# @return {int} 유효하면 0, 잘못된 값이면 1
+#         0 if valid; 1 if invalid.
+##
+validate_auth_type() {
+  local value="$1"
+  case "$value" in
+    password|key)
+      return 0
+      ;;
+    *)
+      printf '입력 오류: auth_type 은 password|key 중 하나여야 합니다. (현재: %s)\n' "$value" >&2
+      return 1
+      ;;
+  esac
+}
+
+##
+# port 값이 숫자이고 1~65535 범위인지 확인한다.
+# Validate that port is numeric and in the range 1–65535.
+#
+# @param $1 {string} 포트 문자열 / port string
+#
+# @return {int} 유효하면 0, 잘못된 값이면 1
+#         0 if valid; 1 if invalid.
+##
+validate_port() {
+  local value="$1"
+  if ! [[ "$value" =~ ^[0-9]+$ ]]; then
+    printf '입력 오류: port 는 숫자여야 합니다. (현재: %s)\n' "$value" >&2
+    return 1
+  fi
+  if (( value < 1 || value > 65535 )); then
+    printf '입력 오류: port 범위는 1 ~ 65535 입니다. (현재: %s)\n' "$value" >&2
+    return 1
+  fi
+  return 0
+}
+
+##
+# host_type 유형에 따라 host 형식을 검증한다.
+# Validate host format based on host_type (ipv4, ipv6, or domain).
+#
+# @param $1 {string} host_type (ipv4|ipv6|domain)
+# @param $2 {string} host 값 / host value
+#
+# @return {int} 유효하면 0, 잘못된 경우 1
+#         0 if valid; 1 if invalid.
+##
+validate_host_by_type() {
+  local host_type="$1"
+  local host="$2"
+
+  case "$host_type" in
+    ipv4)
+      if ! [[ "$host" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+        printf '입력 오류: ipv4 host 형식이 올바르지 않습니다. (예: 192.168.0.10)\n' >&2
+        return 1
+      fi
+      ;;
+    ipv6)
+      if [[ "$host" != *:* ]]; then
+        printf '입력 오류: ipv6 host 는 ":" 를 포함해야 합니다.\n' >&2
+        return 1
+      fi
+      ;;
+    domain)
+      if ! [[ "$host" =~ ^[A-Za-z0-9.-]+$ ]]; then
+        printf '입력 오류: domain host 형식이 올바르지 않습니다. (예: gitlab.ymtech.co.kr)\n' >&2
+        return 1
+      fi
+      ;;
+    *)
+      printf '입력 오류: 알 수 없는 host_type 입니다: %s\n' "$host_type" >&2
+      return 1
+      ;;
+  esac
+  return 0
+}
+
+# =======================================
+# Prompt label width 초기화
+# =======================================
+
+##
+# 프롬프트에서 사용할 필드명 길이를 기준으로 PROMPT_LABEL_WIDTH를 계산한다.
+# Compute PROMPT_LABEL_WIDTH based on the maximum length of field labels.
+#
+# @param $1 없음 / none
+#
+# @return {int} 항상 0, PROMPT_LABEL_WIDTH 전역 변수 설정
+#         Always 0; sets global PROMPT_LABEL_WIDTH.
+##
+init_prompt_label_width() {
+  local labels=(
+    "group"
+    "name"
+    "host_type (ipv4|ipv6|domain)"
+    "host"
+    "port"
+    "username"
+    "auth_type (password|key)"
+    "password"
+    "key path"
+    "새 group"
+  )
+  local max=0 len
+  for f in "${labels[@]}"; do
+    len=${#f}
+    if (( len > max )); then
+      max=$len
+    fi
+  done
+  # 아이콘(2칸 가정) + 공백 2칸 + 필드명 + 여유 2칸
+  PROMPT_LABEL_WIDTH=$((max + 6))
+}
+
+# =======================================
+# Search expression → jq filter
+# =======================================
+
+##
+# 단일 키워드(와일드카드 % 포함)를 이용해 group/name/host에 대한 jq 조건식을 생성한다.
+# Build a jq condition for a single keyword (with % wildcards) over group/name/host.
+#
+# @param $1 {string} 검색 키워드 (예: git, g%, %lab, %prod%) / search keyword with optional % wildcards
+#
+# @return {string} STDOUT로 jq boolean 표현식 출력 / prints jq boolean expression to STDOUT
+# @return {int} 0 (정상) / 0 on success.
+##
+build_single_condition() {
+  local kw="$1"
+  local mode="contains"
+  local core="$kw"
+
+  if [[ "$core" == %*% ]]; then
+    core="${core#%}"
+    core="${core%%%}"
+    mode="contains"
+  elif [[ "$core" == *% ]]; then
+    core="${core%%%}"
+    mode="starts"
+  elif [[ "$core" == %* ]]; then
+    core="${core#%}"
+    mode="ends"
+  else
+    mode="contains"
+  fi
+
+  local core_l="${core,,}"
+
+  local esc
+  esc="$(printf '%s' "$core_l" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
+
+  local field_expr_group='.group // "" | ascii_downcase'
+  local field_expr_name='.name // "" | ascii_downcase'
+  local field_expr_host='.host // "" | ascii_downcase'
+
+  local cmp_func=""
+  case "$mode" in
+    contains)
+      cmp_func="contains(\"$esc\")"
+      ;;
+    starts)
+      cmp_func="startswith(\"$esc\")"
+      ;;
+    ends)
+      cmp_func="endswith(\"$esc\")"
+      ;;
+    *)
+      cmp_func="contains(\"$esc\")"
+      ;;
+  esac
+
+  printf '((%s | %s) or (%s | %s) or (%s | %s))' \
+    "$field_expr_group" "$cmp_func" \
+    "$field_expr_name"  "$cmp_func" \
+    "$field_expr_host"  "$cmp_func"
+}
+
+##
+# 전체 검색식(expr)을 파싱하여 AND/OR 조합 jq filter 표현식으로 변환한다.
+# Parse a whole search expression and convert it into a jq filter with AND/OR conditions.
+#
+# @param $1 {string} 검색식 문자열 (예: {dev} or {%prod%} and {web}) / raw search expression string
+#
+# @return {string} STDOUT로 완성된 jq filter 문자열 출력 / prints final jq filter string to STDOUT
+# @return {int} 0 (정상), 검색식이 비어 있으면 "true" 출력
+#         0 on success; prints "true" for empty expressions.
+##
+build_search_filter() {
+  local expr="$1"
+
+  expr="${expr#"${expr%%[![:space:]]*}"}"
+  expr="${expr%"${expr##*[![:space:]]}"}"
+
+  if [[ -z "$expr" ]]; then
+    echo "true"
+    return 0
+  fi
+
+  local work="${expr,,}"
+
+  local terms=()
+  local ops=()
+
+  while [[ "$work" =~ \{([^}]*)\}(.*) ]]; do
+    local kw="${BASH_REMATCH[1]}"
+    local rest="${BASH_REMATCH[2]}"
+
+    terms+=("$kw")
+
+    rest="${rest#"${rest%%[![:space:]]*}"}"
+
+    if [[ "$rest" =~ ^(and|or)[[:space:]]+(.*)$ ]]; then
+      ops+=("${BASH_REMATCH[1]}")
+      work="${BASH_REMATCH[2]}"
+    else
+      work="$rest"
+      break
+    fi
+  done
+
+  if [[ "${#terms[@]}" -eq 0 ]]; then
+    terms+=("$expr")
+  fi
+
+  local conds=()
+  local i
+  for (( i=0; i<${#terms[@]}; i++ )); do
+    conds+=("$(build_single_condition "${terms[$i]}")")
+  done
+
+  local result="${conds[0]}"
+  for (( i=0; i<${#ops[@]}; i++ )); do
+    local op="${ops[$i]}"
+    local rhs="${conds[$((i+1))]}"
+    result="(${result} ${op} ${rhs})"
+  done
+
+  echo "$result"
+}
+
+# =======================================
+# List / selection helpers
+# =======================================
+
+##
+# 검색식을 이용해 connections를 필터링하고 탭 구분 원시 문자열로 반환한다.
+# Filter connections using a search expression and return tab-separated raw lines.
+#
+# @param $1 {string} query 검색식 (빈 문자열이면 전체) / search query; empty for all connections
+#
+# @return {string} STDOUT로 "group\tname\thost\tport\tusername\tcredential" 라인들을 출력
+#         prints lines of "group\tname\thost\tport\tusername\tcredential" to STDOUT.
+# @return {int} jq 실행 실패 시 비-0, 정상 시 0
+#         0 on success; non-zero if jq fails.
+##
+_get_filtered_raw_connections() {
+  local query="$1"
+
+  ensure_config_file
+  local filter
+  filter="$(build_search_filter "$query")"
+
+  jq -r '
+    .connections
+    | map(select('"$filter"'))
+    | sort_by([ (if .group == "default" then 0 else 1 end), .group, .name ])
+    | .[]
+    | "\(.group)\t\(.name)\t\(.host)\t\(.port // 22)\t\(.username)\t\(.credential)"
+  ' "$CONFIG_FILE"
+}
+
+##
+# 탭 구분 원시 문자열을 인덱스 컬럼(#)이 포함된 표 형태로 출력한다.
+# Render a tab-separated raw string as a table with index (#) column.
+#
+# @param $1 {string} raw "group\tname\thost\tport\tuser\tcredential" 형식의 여러 줄 문자열
+#                      multi-line string in "group\tname\thost\tport\tuser\tcredential" format
+#
+# @return {int} 데이터가 없으면 1, 표 출력 시 0
+#         1 when no data; 0 when table is printed successfully.
+##
+print_raw_as_table() {
+  local raw="$1"
+
+  if [[ -z "$raw" ]]; then
+    echo "No connections." >&2
+    return 1
+  fi
+
+  if command -v column >/dev/null 2>&1; then
+    local temp_buffer=""
+    local n=0 group name host port user cred display_cred
+
+    temp_buffer+="#\tGroup\tName\tHost\tPort\tUser\tCredential\n"
+
+    while IFS=$'\t' read -r group name host port user cred; do
+      if [[ -z "$group" && -z "$name" && -z "$host" && -z "$port" && -z "$user" && -z "$cred" ]]; then
+        continue
+      fi
+      n=$((n+1))
+      local idx
+      printf -v idx "%04d" "$n"
+      display_cred="$(format_credential_for_display "$cred")"
+      temp_buffer+="${idx}\t${group}\t${name}\t${host}\t${port}\t${user}\t${display_cred}\n"
+    done <<< "$raw"
+
+    local rendered header_line data_lines header_len separator
+    rendered="$(printf "%b" "$temp_buffer" | column -t -s $'\t')"
+    header_line="$(printf '%s\n' "$rendered" | head -n 1)"
+    data_lines="$(printf '%s\n' "$rendered" | tail -n +2)"
+    header_len=${#header_line}
+    printf -v separator '%*s' "$header_len" ''
+    separator="${separator// /-}"
+
+    printf '%s\n' "$header_line"
+    printf '%s\n' "$separator"
+    printf '%s\n' "$data_lines"
+  else
+    printf -- "%-4s\t%s\t%s\t%s\t%s\t%s\t%s\n" "#" "Group" "Name" "Host" "Port" "User" "Credential"
+    printf -- "%-4s\t%s\t%s\t%s\t%s\t%s\t%s\n" "----" "-----" "----" "----" "----" "----" "----------"
+
+    local n=0 group name host port user cred display_cred idx
+    while IFS=$'\t' read -r group name host port user cred; do
+      if [[ -z "$group" && -z "$name" && -z "$host" && -z "$port" && -z "$user" && -z "$cred" ]]; then
+        continue
+      fi
+      n=$((n+1))
+      printf -v idx "%04d" "$n"
+      display_cred="$(format_credential_for_display "$cred")"
+      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" "$idx" "$group" "$name" "$host" "$port" "$user" "$display_cred"
+    done <<< "$raw"
+  fi
+
+  return 0
+}
+
+##
+# 인덱스 없이 기본 컬럼만 포함하는 표를 출력한다.
+# Render a table without index column using only base fields.
+#
+# @param $1 {string} raw "group\tname\thost\tport\tuser\tcredential" 형식의 여러 줄 문자열
+#
+# @return {int} 데이터가 없으면 1, 표 출력 시 0
+#         1 when no data; 0 when table is printed successfully.
+##
+print_raw_as_table_no_index() {
+  local raw="$1"
+
+  if [[ -z "$raw" ]]; then
+    echo "No connections." >&2
+    return 1
+  fi
+
+  if command -v column >/dev/null 2>&1; then
+    local temp_buffer=""
+    local group name host port user cred display_cred
+
+    temp_buffer+="Group\tName\tHost\tPort\tUser\tCredential\n"
+
+    while IFS=$'\t' read -r group name host port user cred; do
+      if [[ -z "$group" && -z "$name" && -z "$host" && -z "$port" && -z "$user" && -z "$cred" ]]; then
+        continue
+      fi
+      display_cred="$(format_credential_for_display "$cred")"
+      temp_buffer+="${group}\t${name}\t${host}\t${port}\t${user}\t${display_cred}\n"
+    done <<< "$raw"
+
+    local rendered header_line data_lines header_len separator
+    rendered="$(printf "%b" "$temp_buffer" | column -t -s $'\t')"
+    header_line="$(printf '%s\n' "$rendered" | head -n 1)"
+    data_lines="$(printf '%s\n' "$rendered" | tail -n +2)"
+    header_len=${#header_line}
+    printf -v separator '%*s' "$header_len" ''
+    separator="${separator// /-}"
+
+    printf '%s\n' "$header_line"
+    printf '%s\n' "$separator"
+    printf '%s\n' "$data_lines"
+  else
+    printf "%s\t%s\t%s\t%s\t%s\t%s\n" "Group" "Name" "Host" "Port" "User" "Credential"
+    printf "%s\t%s\t%s\t%s\t%s\t%s\n" "-----" "----" "----" "----" "----" "----------"
+
+    local group name host port user cred display_cred
+    while IFS=$'\t' read -r group name host port user cred; do
+      if [[ -z "$group" && -z "$name" && -z "$host" && -z "$port" && -z "$user" && -z "$cred" ]]; then
+        continue
+      fi
+      display_cred="$(format_credential_for_display "$cred")"
+      printf "%s\t%s\t%s\t%s\t%s\t%s\n" "$group" "$name" "$host" "$port" "$user" "$display_cred"
+    done <<< "$raw"
+  fi
+
+  return 0
+}
+
+##
+# query를 이용해 connection 목록을 필터링하고 표 형태로 출력한다.
+# Filter connections by query and print them as a table.
+#
+# @param $1 {string|empty} query 검색식, 비어 있으면 전체 / search query; empty for all
+#
+# @return {int} 내부 print_raw_as_table 결과 코드 / result code from print_raw_as_table.
+##
+print_connections_table() {
+  local query="${1:-}"
+  local raw
+  raw="$(_get_filtered_raw_connections "$query")"
+  print_raw_as_table "$raw"
+}
+
+##
+# 단일 connection 필드들을 받아 인덱스 없는 1행 표로 출력한다.
+# Print a single connection as a one-row table without index column.
+#
+# @param $1 {string} group
+# @param $2 {string} name
+# @param $3 {string} host
+# @param $4 {string} port
+# @param $5 {string} username
+# @param $6 {string} credential (password 또는 key path)
+#
+# @return {int} 내부 print_raw_as_table_no_index 결과 코드 / result code from print_raw_as_table_no_index.
+##
+print_single_connection_from_fields() {
+  local group="$1"
+  local name="$2"
+  local host="$3"
+  local port="$4"
+  local username="$5"
+  local credential="$6"
+
+  local raw="${group}\t${name}\t${host}\t${port}\t${username}\t${credential}"
+  print_raw_as_table_no_index "$raw"
+}
+
+##
+# 단일 connection JSON 객체를 받아 요약 정보를 표로 출력한다.
+# Print a preview table for a single connection JSON object.
+#
+# @param $1 {string(json)} connection JSON 객체 문자열 / JSON string for a single connection
+#
+# @return {int} 내부 print_raw_as_table_no_index 결과 코드 / result code from print_raw_as_table_no_index.
+##
+print_connection_preview_from_json() {
+  local json="$1"
+
+  local raw
+  raw="$(jq -r '
+    { group, name, host, port, username, credential }
+    | "\(.group)\t\(.name)\t\(.host)\t\(.port // 22)\t\(.username)\t\(.credential)"
+  ' <<< "$json")"
+
+  print_raw_as_table_no_index "$raw"
+}
+
+##
+# 검색식으로 connection 후보를 필터링하고, 사용자가 선택한 항목의 JSON을 반환한다.
+# Filter connection candidates by query and return the selected one as JSON.
+#
+# @param $1 {string} query 검색식 (빈 문자열이면 전체) / search query; empty for all
+#
+# @return {string} STDOUT로 { __idx, group, name, host, port, username, auth_type, credential } JSON 출력
+#         prints selected connection JSON (including __idx) to STDOUT.
+# @return {int} 선택 취소 시 1, 성공 시 0
+#         1 on cancel; 0 on success.
+##
+select_connection_interactively() {
+  local query="$1"
+
+  ensure_config_file
+  local filter
+  filter="$(build_search_filter "$query")"
+
+  local raw
+  raw="$(jq -r '
+    .connections
+    | to_entries
+    | map(.key as $idx | .value + { "__idx": $idx })
+    | map(select('"$filter"'))
+    | sort_by([ (if .group == "default" then 0 else 1 end), .group, .name ])
+    | .[]
+    | "\(.group)\t\(.name)\t\(.host)\t\(.port // 22)\t\(.username)\t\(.credential)\t\(.__idx)"
+  ' "$CONFIG_FILE")"
+
+  if [[ -z "$raw" ]]; then
+    echo "검색 결과가 없습니다." >&2
+    return 1
+  fi
+
+  local idx_map=()
+  local n=0
+  local group name host port user cred idx display_cred
+
+  if command -v column >/dev/null 2>&1; then
+    local temp_buffer=""
+    temp_buffer+="#\tGroup\tName\tHost\tPort\tUser\tCredential\n"
+
+    while IFS=$'\t' read -r group name host port user cred idx; do
+      if [[ -z "$group" && -z "$name" && -z "$host" && -z "$port" && -z "$user" && -z "$cred" ]]; then
+        continue
+      fi
+      n=$((n+1))
+      idx_map[$n]="$idx"
+
+      local display_idx
+      printf -v display_idx "%04d" "$n"
+      display_cred="$(format_credential_for_display "$cred")"
+      temp_buffer+="${display_idx}\t${group}\t${name}\t${host}\t${port}\t${user}\t${display_cred}\n"
+    done <<< "$raw"
+
+    local rendered header_line data_lines header_len separator eq_line
+    rendered="$(printf "%b" "$temp_buffer" | column -t -s $'\t')"
+    header_line="$(printf '%s\n' "$rendered" | head -n 1)"
+    data_lines="$(printf '%s\n' "$rendered" | tail -n +2)"
+    header_len=${#header_line}
+    printf -v separator '%*s' "$header_len" ''
+    separator="${separator// /-}"
+    printf -v eq_line '%*s' "$header_len" ''
+    eq_line="${eq_line// /=}"
+
+    printf '%s\n' "$eq_line"    >&2
+    printf '%s\n' "$header_line" >&2
+    printf '%s\n' "$separator"  >&2
+    printf '%s\n' "$data_lines" >&2
+    printf '%s\n' "$eq_line"    >&2
+  else
+    printf -- "%-4s\t%s\t%s\t%s\t%s\t%s\t%s\n" "#" "Group" "Name" "Host" "Port" "User" "Credential" >&2
+    printf -- "%-4s\t%s\t%s\t%s\t%s\t%s\t%s\n" "----" "-----" "----" "----" "----" "----" "----------" >&2
+
+    while IFS=$'\t' read -r group name host port user cred idx; do
+      if [[ -z "$group" && -z "$name" && -z "$host" && -z "$port" && -z "$user" && -z "$cred" ]]; then
+        continue
+      fi
+      n=$((n+1))
+      idx_map[$n]="$idx"
+
+      local display_idx
+      printf -v display_idx "%04d" "$n"
+      display_cred="$(format_credential_for_display "$cred")"
+      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+        "$display_idx" "$group" "$name" "$host" "$port" "$user" "$display_cred" >&2
+    done <<< "$raw"
+  fi
+
+  local sel
+  local prompt_msg="❓  번호(#)를 선택하세요 (예: 1, 2, 3): "
+  while true; do
+    read -r -p "$prompt_msg" sel
+    if [[ -z "$sel" ]]; then
+      echo "❗  프로그램을 종료합니다." >&2
+      return 1
+    fi
+    if ! [[ "$sel" =~ ^[0-9]+$ ]] || (( sel < 1 || sel > n )); then
+      prompt_msg="❗  입력한 값이 올바르지 않습니다. 번호(#)를 선택하세요 (예: 1, 2, 3): "
+      continue
+    fi
+    break
+  done
+
+  local selected_idx="${idx_map[$sel]}"
+
+  jq -c --argjson i "$selected_idx" '
+    .connections
+    | to_entries
+    | .[$i]
+    | { __idx: .key } + .value
+  ' "$CONFIG_FILE"
+}
+
+##
+# 간단한 텍스트 프롬프트를 통해 입력을 받고, 비어 있으면 기본값을 사용하는 헬퍼이다.
+# Prompt user for a value, falling back to the current/default value if input is empty.
+#
+# @param $1 {string} label 표시할 라벨 / label text for the prompt
+# @param $2 {string|empty} current 기본값 / current/default value
+#
+# @return {string} STDOUT로 최종 입력값 출력 / prints final input value to STDOUT.
+# @return {int} 항상 0 / always 0.
+##
+prompt_with_default() {
+  local label="$1"
+  local current="${2:-}"
+  local var
+  if [[ -n "${current}" ]]; then
+    read -r -p "❓  ${label} [${current}]: " var
+    if [[ -z "${var}" ]]; then
+      var="${current}"
+    fi
+  else
+    read -r -p "❓  ${label}: " var
+  fi
+  printf '%s' "${var}"
+}
+
+##
+# 아이콘과 필드명을 PROMPT_LABEL_WIDTH 기준으로 정렬하여 입력을 받는다.
+# Prompt with an icon and field name aligned by PROMPT_LABEL_WIDTH.
+#
+# @param $1 {string} icon 프롬프트에 사용할 아이콘 / icon to display
+# @param $2 {string} field 필드 이름 / field name
+# @param $3 {string|empty} current 현재/기본 값 / current/default value
+#
+# @return {string} STDOUT로 최종 입력값 출력 / prints final input value to STDOUT.
+# @return {int} 항상 0 / always 0.
+##
+prompt_with_icon() {
+  local icon="$1"
+  local field="$2"
+  local current="${3:-}"
+  local raw label input
+
+  raw="${icon}  ${field}"
+  printf -v label "%-*s" "$PROMPT_LABEL_WIDTH" "$raw"
+
+  if [[ -n "$current" ]]; then
+    read -r -p "❓  ${label} [${current}]: " input
+    if [[ -z "$input" ]]; then
+      input="$current"
+    fi
+  else
+    read -r -p "❓  ${label}: " input
+  fi
+
+  printf '%s' "$input"
+}
+
+# =======================================
+# JSON update helpers
+# =======================================
+
+##
+# 선택된 connection의 인덱스를 기준으로 새로운 값들로 수정된 전체 config JSON을 생성한다.
+# Update a connection (by its index) with new values and output the full updated config JSON.
+#
+# @param $1 {string(json)} selected_json __idx를 포함한 선택된 connection JSON / selected connection JSON with __idx
+# @param $2 {string} new_group
+# @param $3 {string} new_name
+# @param $4 {string} new_host_type
+# @param $5 {string} new_host
+# @param $6 {string} new_port (문자열, jq에서 숫자로 변환) / port as string (converted to number in jq)
+# @param $7 {string} new_username
+# @param $8 {string} new_auth_type
+# @param $9 {string} new_credential
+#
+# @return {string} STDOUT로 수정된 전체 config JSON 출력 / prints updated full config JSON to STDOUT.
+# @return {int} jq 성공 시 0, 실패 시 비-0 / 0 if jq succeeds; non-zero otherwise.
+##
+update_connection_modify() {
+  local selected_json="$1"
+  local new_group="$2"
+  local new_name="$3"
+  local new_host_type="$4"
+  local new_host="$5"
+  local new_port="$6"
+  local new_username="$7"
+  local new_auth_type="$8"
+  local new_credential="$9"
+
+  local idx
+  idx="$(jq -r '.__idx' <<< "$selected_json")"
+
+  jq --argjson i "$idx" \
+     --arg group "$new_group" \
+     --arg name "$new_name" \
+     --arg host_type "$new_host_type" \
+     --arg host "$new_host" \
+     --arg port "$new_port" \
+     --arg username "$new_username" \
+     --arg auth_type "$new_auth_type" \
+     --arg credential "$new_credential" \
+     '
+      .connections[$i].group        = $group
+      | .connections[$i].name       = $name
+      | .connections[$i].host_type  = $host_type
+      | .connections[$i].host       = $host
+      | .connections[$i].port       = ($port | tonumber)
+      | .connections[$i].username   = $username
+      | .connections[$i].auth_type  = $auth_type
+      | .connections[$i].credential = $credential
+     ' "$CONFIG_FILE"
+}
+
+##
+# 선택된 connection을 삭제한 새로운 전체 config JSON을 생성한다.
+# Delete the selected connection from the list and output the updated config JSON.
+#
+# @param $1 {string(json)} selected_json __idx를 포함한 선택된 connection JSON / selected connection JSON with __idx
+#
+# @return {string} STDOUT로 수정된 전체 config JSON 출력 / prints updated full config JSON to STDOUT.
+# @return {int} jq 성공 시 0, 실패 시 비-0 / 0 if jq succeeds; non-zero otherwise.
+##
+update_connection_delete() {
+  local selected_json="$1"
+  local idx
+  idx="$(jq -r '.__idx' <<< "$selected_json")"
+
+  jq --argjson i "$idx" 'del(.connections[$i])' "$CONFIG_FILE"
+}
+
+##
+# 선택된 connection의 group만 새 값으로 변경한 전체 config JSON을 생성한다.
+# Change only the group of the selected connection and output the updated config JSON.
+#
+# @param $1 {string(json)} selected_json __idx를 포함한 선택된 connection JSON / selected connection JSON with __idx
+# @param $2 {string} new_group 새 group 값 / new group value
+#
+# @return {string} STDOUT로 수정된 전체 config JSON 출력 / prints updated full config JSON to STDOUT.
+# @return {int} jq 성공 시 0, 실패 시 비-0 / 0 if jq succeeds; non-zero otherwise.
+##
+update_connection_move_group() {
+  local selected_json="$1"
+  local new_group="$2"
+  local idx
+  idx="$(jq -r '.__idx' <<< "$selected_json")"
+
+  jq --argjson i "$idx" --arg group "$new_group" '
+    .connections[$i].group = $group
+  ' "$CONFIG_FILE"
+}
+
+# =======================================
+# Commands
+# =======================================
+
+##
+# ssh-cmd -l|--list-all [expr] 명령을 구현한다.
+# Implement ssh-cmd -l|--list-all [expr] command.
+#
+# @param $1 {string|empty} query 검색식, 비어 있으면 전체 / search expression; empty for all
+#
+# @return {int} print_connections_table 결과 코드 / result code from print_connections_table.
+##
+cmd_list() {
+  local query="${1:-}"
+  print_connections_table "$query"
+}
+
+##
+# 새 SSH connection 정보를 인터랙티브하게 입력 후 configuration에 추가한다.
+# Add a new SSH connection interactively and append it to configuration.
+#
+# @param $1 없음 (모든 입력은 프롬프트로 받음) / none (all inputs are prompted interactively)
+#
+# @return {int} 성공 시 0, 검증/저장 실패 시 비-0
+#         0 on success; non-zero on validation or save failures.
+##
+cmd_add_connection() {
+  ensure_config_file
+
+  log INFO "새 connection 정보를 입력합니다."
+
+  local group name host_type host port username auth_type credential host_input port_input
+
+  # group
+  while true; do
+    group="$(prompt_with_icon "📁" "group" "default")"
+    if validate_non_empty "group" "$group"; then
+      break
+    fi
+  done
+
+  # name
+  while true; do
+    name="$(prompt_with_icon "🏷" "name" "")"
+    if validate_non_empty "name" "$name"; then
+      break
+    fi
+  done
+
+  # host_type
+  while true; do
+    host_type="$(prompt_with_icon "🌐" "host_type (ipv4|ipv6|domain)" "ipv4")"
+    if validate_host_type "$host_type"; then
+      break
+    fi
+  done
+
+  # host (+ optional port)
+  while true; do
+    host_input="$(prompt_with_icon "🖥" "host" "")"
+    if [[ "$host_input" =~ ^(.+):([0-9]+)$ ]]; then
+      host="${BASH_REMATCH[1]}"
+      port_input="${BASH_REMATCH[2]}"
+    else
+      host="$host_input"
+      port_input="22"
+    fi
+    if ! validate_non_empty "host" "$host"; then
+      continue
+    fi
+    if ! validate_host_by_type "$host_type" "$host"; then
+      continue
+    fi
+    break
+  done
+
+  # port
+  while true; do
+    port="$(prompt_with_icon "🔌" "port" "$port_input")"
+    if validate_port "$port"; then
+      break
+    fi
+  done
+
+  # username
+  while true; do
+    username="$(prompt_with_icon "👤" "username" "")"
+    if validate_non_empty "username" "$username"; then
+      break
+    fi
+  done
+
+  # auth_type
+  while true; do
+    auth_type="$(prompt_with_icon "🔐" "auth_type (password|key)" "key")"
+    if validate_auth_type "$auth_type"; then
+      break
+    fi
+  done
+
+  if [[ "$auth_type" == "password" ]]; then
+    while true; do
+      echo "경고: password 는 ${CONFIG_FILE} 에 평문 저장됩니다." >&2
+      read -r -s -p "❓  🔑 password: " credential
+      printf '\n'
+      if validate_non_empty "password" "$credential"; then
+        break
+      fi
+    done
+  else
+    while true; do
+      read -r -e -p "❓  🔑 key path: " credential
+      credential="$(resolve_path_abs "$credential")"
+      if validate_non_empty "key path" "$credential"; then
+        break
+      fi
+    done
+  fi
+
+  local new_json
+  new_json="$(jq --arg group "$group" \
+                 --arg name "$name" \
+                 --arg host_type "$host_type" \
+                 --arg host "$host" \
+                 --arg port "$port" \
+                 --arg username "$username" \
+                 --arg auth_type "$auth_type" \
+                 --arg credential "$credential" \
+                 '
+    .connections += [{
+      "group": $group,
+      "name": $name,
+      "host_type": $host_type,
+      "host": $host,
+      "port": ($port | tonumber),
+      "username": $username,
+      "auth_type": $auth_type,
+      "credential": $credential
+    }]
+  ' "$CONFIG_FILE")"
+
+  save_connections_json <<< "$new_json"
+
+  local raw_line="${group}\t${name}\t${host}\t${port}\t${username}\t${credential}"
+  local temp_buffer="Group\tName\tHost\tPort\tUser\tCredential\n${raw_line}\n"
+
+  if command -v column >/dev/null 2>&1; then
+    local rendered header_line data_lines header_len eq_line dash_line
+    rendered="$(printf "%b" "$temp_buffer" | column -t -s $'\t')"
+    header_line="$(printf '%s\n' "$rendered" | head -n 1)"
+    data_lines="$(printf '%s\n' "$rendered" | tail -n +2)"
+    header_len=${#header_line}
+    printf -v eq_line '%*s' "$header_len" ''
+    eq_line="${eq_line// /=}"
+    printf -v dash_line '%*s' "$header_len" ''
+    dash_line="${dash_line// /-}"
+
+    echo "$eq_line"
+    echo "생성된 connection:"
+    echo "$header_line"
+    echo "$dash_line"
+    echo "$data_lines"
+  else
+    echo "=============================="
+    echo "생성된 connection:"
+    print_single_connection_from_fields "$group" "$name" "$host" "$port" "$username" "$credential"
+  fi
+
+  # auth_type 이 password 인 경우, configuration 저장 후 sshpass 자동 설치 시도
+  if [[ "$auth_type" == "password" ]]; then
+    if ! command -v sshpass >/dev/null 2>&1; then
+      echo "INFO: auth_type=password 이므로 sshpass 설치를 시도합니다." >&2
+      if ! install_sshpass_if_missing; then
+        echo "WARN: sshpass 설치에 실패했습니다. 이후 password 기반 접속 시 sshpass 가 필요합니다." >&2
+      fi
+    fi
+  fi
+}
+
+##
+# 기본/검색 expr 에 따라 실제 SSH 접속을 수행한다.
+# Perform actual SSH connection based on optional search expr (default/select & connect).
+#
+# @param $1 {string|empty} query 검색식, 비어 있으면 전체 / search expression; empty for all
+#
+# @return {int} password 모드에서는 ssh 반환 코드, key 모드에서는 exec ssh 후 복귀하지 않음.
+#         In password mode: ssh exit code; in key mode: exec ssh (no return).
+##
+cmd_connect() {
+  ensure_config_file
+
+  local query="${1:-}"
+  local selected_json
+  selected_json="$(select_connection_interactively "$query")" || return 1
+
+  local host username port auth_type credential
+  host="$(jq -r '.host' <<< "$selected_json")"
+  username="$(jq -r '.username' <<< "$selected_json")"
+  port="$(jq -r '.port // 22' <<< "$selected_json")"
+  auth_type="$(jq -r '.auth_type' <<< "$selected_json")"
+  credential="$(jq -r '.credential' <<< "$selected_json")"
+
+  validate_port "$port" || die "port 값이 잘못되었습니다: $port"
+
+  if [[ "$auth_type" == "password" ]]; then
+    if ! command -v sshpass >/dev/null 2>&1; then
+      echo "❗  sshpass 가 설치되어 있지 않아, 이번 접속은 취소하고 sshpass 설치를 진행합니다." >&2
+      if ! install_sshpass_if_missing; then
+        echo "❗  sshpass 설치에 실패했습니다. 수동으로 설치한 후 다시 실행해 주세요." >&2
+      fi
+      return 1
+    fi
+    echo "경고: password + sshpass 방식 접속입니다." >&2
+    sshpass -p "$credential" ssh -p "$port" "${username}@${host}"
+  else
+    if [[ ! -f "$credential" ]]; then
+      die "key file not found: $credential"
+    fi
+    exec ssh -p "$port" -i "$credential" "${username}@${host}"
+  fi
+}
+
+##
+# ssh-cmd -m|--modify-connection [expr] 명령을 구현하여 선택된 connection을 수정한다.
+# Implement ssh-cmd -m|--modify-connection [expr] and modify a selected connection.
+#
+# @param $1 {string|empty} query 검색식, 비어 있으면 전체 / search expression; empty for all
+#
+# @return {int} 성공 시 0, 선택/검증/저장 실패 시 비-0
+#         0 on success; non-zero on selection/validation/save failures.
+##
+cmd_modify_connection() {
+  ensure_config_file
+
+  local query="${1:-}"
+  local selected_json
+  selected_json="$(select_connection_interactively "$query")" || return 1
+
+  local group name host_type host port username auth_type credential
+  group="$(jq -r '.group' <<< "$selected_json")"
+  name="$(jq -r '.name' <<< "$selected_json")"
+  host_type="$(jq -r '.host_type' <<< "$selected_json")"
+  host="$(jq -r '.host' <<< "$selected_json")"
+  port="$(jq -r '.port // 22' <<< "$selected_json")"
+  username="$(jq -r '.username' <<< "$selected_json")"
+  auth_type="$(jq -r '.auth_type' <<< "$selected_json")"
+  credential="$(jq -r '.credential' <<< "$selected_json")"
+
+  if [[ "$host" =~ ^(.+):([0-9]+)$ ]]; then
+    host="${BASH_REMATCH[1]}"
+    port="${BASH_REMATCH[2]}"
+  fi
+
+  local new_group new_name new_host_type new_host new_port new_username new_auth_type new_credential
+  local host_input port_input tmp
+
+  # group
+  while true; do
+    new_group="$(prompt_with_icon "📁" "group" "$group")"
+    if [[ -z "$new_group" ]]; then
+      new_group="$group"
+    fi
+    if validate_non_empty "group" "$new_group"; then
+      break
+    fi
+  done
+
+  # name
+  while true; do
+    new_name="$(prompt_with_icon "🏷" "name" "$name")"
+    if [[ -z "$new_name" ]]; then
+      new_name="$name"
+    fi
+    if validate_non_empty "name" "$new_name"; then
+      break
+    fi
+  done
+
+  # host_type
+  while true; do
+    new_host_type="$(prompt_with_icon "🌐" "host_type (ipv4|ipv6|domain)" "$host_type")"
+    if [[ -z "$new_host_type" ]]; then
+      new_host_type="$host_type"
+    fi
+    if validate_host_type "$new_host_type"; then
+      break
+    fi
+  done
+
+  # host (+ optional port)
+  while true; do
+    host_input="$(prompt_with_icon "🖥" "host" "$host")"
+    if [[ -z "$host_input" ]]; then
+      host_input="$host"
+    fi
+    if [[ "$host_input" =~ ^(.+):([0-9]+)$ ]]; then
+      new_host="${BASH_REMATCH[1]}"
+      port_input="${BASH_REMATCH[2]}"
+    else
+      new_host="$host_input"
+      port_input="$port"
+    fi
+    if ! validate_non_empty "host" "$new_host"; then
+      continue
+    fi
+    if ! validate_host_by_type "$new_host_type" "$new_host"; then
+      continue
+    fi
+    break
+  done
+
+  # port
+  while true; do
+    new_port="$(prompt_with_icon "🔌" "port" "$port_input")"
+    if [[ -z "$new_port" ]]; then
+      new_port="$port"
+    fi
+    if validate_port "$new_port"; then
+      break
+    fi
+  done
+
+  # username
+  while true; do
+    new_username="$(prompt_with_icon "👤" "username" "$username")"
+    if [[ -z "$new_username" ]]; then
+      new_username="$username"
+    fi
+    if validate_non_empty "username" "$new_username"; then
+      break
+    fi
+  done
+
+  # auth_type
+  while true; do
+    new_auth_type="$(prompt_with_icon "🔐" "auth_type (password|key)" "$auth_type")"
+    if [[ -z "$new_auth_type" ]]; then
+      new_auth_type="$auth_type"
+    fi
+    if validate_auth_type "$new_auth_type"; then
+      break
+    fi
+  done
+
+  # credential
+  if [[ "$new_auth_type" == "password" ]]; then
+    local old_pw="$credential"
+    while true; do
+      echo "경고: password 는 ${CONFIG_FILE} 에 평문 저장됩니다." >&2
+      read -r -s -p "❓  🔑 password [****]: " tmp
+      printf '\n'
+      if [[ -z "$tmp" ]]; then
+        new_credential="$old_pw"
+        break
+      fi
+      new_credential="$tmp"
+      break
+    done
+  else
+    while true; do
+      read -r -e -p "❓  🔑 key path [${credential}]: " tmp
+      if [[ -z "$tmp" ]]; then
+        new_credential="$credential"
+      else
+        new_credential="$(resolve_path_abs "$tmp")"
+      fi
+      if validate_non_empty "key path" "$new_credential"; then
+        break
+      fi
+    done
+  fi
+
+  local new_json
+  new_json="$(update_connection_modify "$selected_json" \
+                 "$new_group" "$new_name" "$new_host_type" "$new_host" "$new_port" "$new_username" "$new_auth_type" "$new_credential")"
+
+  save_connections_json <<< "$new_json"
+
+  echo "수정 후 connection:"
+  print_single_connection_from_fields "$new_group" "$new_name" "$new_host" "$new_port" "$new_username" "$new_credential"
+}
+
+##
+# ssh-cmd -d|--delete-connection [expr] 명령을 구현하여 선택된 connection을 삭제한다.
+# Implement ssh-cmd -d|--delete-connection [expr] and delete a selected connection.
+#
+# @param $1 {string|empty} query 검색식, 비어 있으면 전체 / search expression; empty for all
+#
+# @return {int} 삭제 완료 시 0, 선택/확인/저장 실패 또는 취소 시 비-0
+#         0 on successful deletion; non-zero on failure or cancel.
+##
+cmd_delete_connection() {
+  ensure_config_file
+
+  local query="${1:-}"
+  local selected_json
+  selected_json="$(select_connection_interactively "$query")" || return 1
+
+  echo "삭제 대상:"
+  print_connection_preview_from_json "$selected_json"
+
+  local answer
+  read -r -p "❓  정말 삭제하시겠습니까? (y/N): " answer
+  case "$answer" in
+    y|Y|yes|YES)
+      local new_json
+      new_json="$(update_connection_delete "$selected_json")"
+      save_connections_json <<< "$new_json"
+      echo "삭제 완료."
+      ;;
+    *)
+      echo "삭제 취소."
+      ;;
+  esac
+}
+
+##
+# ssh-cmd -mg|--move-group-connection [expr] 명령을 구현하여 선택된 connection의 group을 변경한다.
+# Implement ssh-cmd -mg|--move-group-connection [expr] and change the group of a selected connection.
+#
+# @param $1 {string|empty} query 검색식, 비어 있으면 전체 / search expression; empty for all
+#
+# @return {int} 성공 시 0, 선택/검증/저장 실패 시 비-0
+#         0 on success; non-zero on selection/validation/save failures.
+##
+cmd_move_group_connection() {
+  ensure_config_file
+
+  local query="${1:-}"
+  local selected_json
+  selected_json="$(select_connection_interactively "$query")" || return 1
+
+  local current_group idx
+  current_group="$(jq -r '.group' <<< "$selected_json")"
+  idx="$(jq -r '.__idx'  <<< "$selected_json")"
+
+  echo "현재 group: ${current_group}"
+
+  local new_group
+  while true; do
+    new_group="$(prompt_with_icon "📁" "새 group" "$current_group")"
+    if [[ -z "$new_group" ]]; then
+      new_group="$current_group"
+    fi
+    if validate_non_empty "group" "$new_group"; then
+      break
+    fi
+  done
+
+  local new_json
+  new_json="$(update_connection_move_group "$selected_json" "$new_group")"
+  save_connections_json <<< "$new_json"
+
+  echo "group 변경 완료: ${current_group} → ${new_group}"
+  echo "변경된 connection:"
+
+  local updated_json
+  updated_json="$(jq -c --argjson i "$idx" '
+    .connections
+    | to_entries
+    | .[$i]
+    | { __idx: .key } + .value
+  ' "$CONFIG_FILE")"
+  print_connection_preview_from_json "$updated_json"
+}
+
+# =======================================
+# main
+# =======================================
+
+##
+# ssh-cmd 엔트리포인트 함수로, 전역 옵션과 서브커맨드를 파싱하고 각 명령을 디스패치한다.
+# Entry point for ssh-cmd; parses global options and subcommands, then dispatches to handlers.
+#
+# @param $1..$n {string} CLI 인자 (예: --config, -l, -a, -m 등) / CLI arguments (e.g. --config, -l, -a, -m)
+#
+# @return {int} 각 cmd_* 함수가 반환하는 코드 또는 die() 호출 시 exit 1
+#         Exit code from the corresponding cmd_* function or 1 via die().
+##
+main() {
+  ensure_dependencies
+  init_prompt_label_width
+
+  local arg_config=""
+
+  # 1) Global options 처리: --config, -s/--show-credential, -h/--help
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --config)
+        shift || true
+        if [[ $# -eq 0 ]]; then
+          die "--config requires a path"
+        fi
+        arg_config="$1"
+        shift
+        ;;
+      -s|--show-credential)
+        SHOW_CREDENTIAL="true"
+        shift
+        ;;
+      -h|--help)
+        help ""
+        return 0
+        ;;
+      --) # end of global options
+        shift
+        break
+        ;;
+      -*)
+        # 나머지 옵션은 명령/서브커맨드 처리 단계에서 다룬다.
+        break
+        ;;
+      *)
+        # 옵션이 아닌 첫 인자를 만난 경우, 명령/expr 처리 단계로 넘어감.
+        break
+        ;;
+    esac
+  done
+
+  # 2) config 경로 설정
+  if [[ -n "$arg_config" ]]; then
+    if [[ -f "$arg_config" ]]; then
+      CONFIG_FILE="$arg_config"
+      CONFIG_DIR="$(dirname "$CONFIG_FILE")"
+    else
+      log "WARN" "config file not found: $arg_config, fallback to default: $DEFAULT_CONFIG_FILE"
+      CONFIG_DIR="$DEFAULT_CONFIG_DIR"
+      CONFIG_FILE="$DEFAULT_CONFIG_FILE"
+    fi
+  fi
+
+  ensure_config_file
+
+  # 3) 서브커맨드 / 기본 동작 처리
+  if [[ $# -eq 0 ]]; then
+    # ssh-cmd (인자 없음) → 전체 목록에서 선택 후 접속
+    cmd_connect ""
+    return $?
+  fi
+
+  local first="$1"
+  case "$first" in
+    -l|--list-all)
+      shift
+      cmd_list "${1:-}"
+      ;;
+    -a|--add-connection)
+      shift
+      cmd_add_connection
+      ;;
+    -m|--modify-connection)
+      shift
+      cmd_modify_connection "${1:-}"
+      ;;
+    -d|--delete-connection)
+      shift
+      cmd_delete_connection "${1:-}"
+      ;;
+    -mg|--move-group-connection)
+      shift
+      cmd_move_group_connection "${1:-}"
+      ;;
+    -*)
+      die "Unknown option or command: ${first}"
+      ;;
+    *)
+      # 옵션이 아닌 경우 → expr 로 간주하여 connect 동작
+      local expr="$*"
+      cmd_connect "$expr"
+      ;;
+  esac
+}
+
+main "$@"
+exit 0
