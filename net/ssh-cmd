@@ -791,7 +791,7 @@ print_raw_as_table() {
   local raw="$1"
 
   if [[ -z "$raw" ]]; then
-    echo "No connections." >&2
+    echo "저장된 연결정보가 없습니다." >&2
     return 1
   fi
 
@@ -812,17 +812,25 @@ print_raw_as_table() {
       temp_buffer+="${idx}\t${group}\t${name}\t${host}\t${port}\t${user}\t${display_cred}\n"
     done <<< "$raw"
 
-    local rendered header_line data_lines header_len separator
+    # column 결과를 기준으로 헤더 길이를 구해서
+    # '-' 구분선과 '=' 구분선을 함께 만든다.
+    local rendered header_line data_lines header_len separator eq_line
     rendered="$(printf "%b" "$temp_buffer" | column -t -s $'\t')"
     header_line="$(printf '%s\n' "$rendered" | head -n 1)"
     data_lines="$(printf '%s\n' "$rendered" | tail -n +2)"
     header_len=${#header_line}
+
     printf -v separator '%*s' "$header_len" ''
     separator="${separator// /-}"
+    printf -v eq_line '%*s' "$header_len" ''
+    eq_line="${eq_line// /=}"
 
+    # 위/아래 '=' 라인 추가
+    printf '%s\n' "$eq_line"
     printf '%s\n' "$header_line"
     printf '%s\n' "$separator"
     printf '%s\n' "$data_lines"
+    printf '%s\n' "$eq_line"
   else
     printf -- "%-4s\t%s\t%s\t%s\t%s\t%s\t%s\n" "#" "Group" "Name" "Host" "Port" "User" "Credential"
     printf -- "%-4s\t%s\t%s\t%s\t%s\t%s\t%s\n" "----" "-----" "----" "----" "----" "----" "----------"
@@ -855,7 +863,7 @@ print_raw_as_table_no_index() {
   local raw="$1"
 
   if [[ -z "$raw" ]]; then
-    echo "No connections." >&2
+    echo "저장된 연결정보가 없습니다." >&2
     return 1
   fi
 
@@ -874,17 +882,25 @@ print_raw_as_table_no_index() {
       temp_buffer+="${group}\t${name}\t${host}\t${port}\t${user}\t${display_cred}\n"
     done <<< "$raw"
 
-    local rendered header_line data_lines header_len separator
+    # column 결과를 한 번 만들어서, 헤더 길이를 기준으로
+    # '-' 구분선과 '=' 구분선을 모두 생성
+    local rendered header_line data_lines header_len separator eq_line
     rendered="$(printf "%b" "$temp_buffer" | column -t -s $'\t')"
     header_line="$(printf '%s\n' "$rendered" | head -n 1)"
     data_lines="$(printf '%s\n' "$rendered" | tail -n +2)"
     header_len=${#header_line}
+
     printf -v separator '%*s' "$header_len" ''
     separator="${separator// /-}"
+    printf -v eq_line '%*s' "$header_len" ''
+    eq_line="${eq_line// /=}"
 
+    # 위/아래 '=' 라인 추가
+    printf '%s\n' "$eq_line"
     printf '%s\n' "$header_line"
     printf '%s\n' "$separator"
     printf '%s\n' "$data_lines"
+    printf '%s\n' "$eq_line"  
   else
     printf -- "%s\t%s\t%s\t%s\t%s\t%s\n" "Group" "Name" "Host" "Port" "User" "Credential"
     printf -- "%s\t%s\t%s\t%s\t%s\t%s\n" "-----" "----" "----" "----" "----" "----------"
@@ -1331,7 +1347,7 @@ cmd_add_connection() {
 
   if [[ "$auth_type" == "password" ]]; then
     while true; do
-      echo "→→→❗❗❗ 경고: password 는 ${CONFIG_FILE} 에 평문 저장됩니다." >&2
+      echo "→→  ❗❗❗ 경고: password 는 ${CONFIG_FILE} 에 평문 저장됩니다." >&2
       read -r -s -p "❓  🔑 password: " credential
       printf '\n'
       if validate_non_empty "password" "$credential"; then
@@ -1443,6 +1459,7 @@ cmd_connect() {
       fi
       return 1
     fi    
+    echo 
     echo "❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗"
     echo "❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗"
     echo "❗❗❗                                          ❗❗❗"
@@ -1450,6 +1467,7 @@ cmd_connect() {
     echo "❗❗❗                                          ❗❗❗"
     echo "❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗"
     echo "❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗"
+    echo 
     sshpass -p "$credential" ssh -p "$port" "${username}@${host}"
   else
     if [[ ! -f "$credential" ]]; then
@@ -1587,7 +1605,7 @@ cmd_modify_connection() {
   if [[ "$new_auth_type" == "password" ]]; then
     local old_pw="$credential"
     while true; do
-      echo "→→→❗❗❗ 경고: password 는 ${CONFIG_FILE} 에 평문 저장됩니다." >&2
+      echo "→→  ❗❗❗ 경고: password 는 ${CONFIG_FILE} 에 평문 저장됩니다." >&2
       read -r -s -p "❓  🔑 password [****]: " tmp
       printf '\n'
       if [[ -z "$tmp" ]]; then
@@ -1703,11 +1721,11 @@ select_indices_for_delete() {
   # 번호 입력 (쉼표 구분)
   local sel
   while true; do
-    read -r -p "삭제할 번호(#)를 입력하세요 (예: 1, 2, 3): " sel
+    read -r -p "❓  삭제할 번호(#)를 입력하세요 (예: 1, 2, 3): " sel
     sel="${sel//[[:space:]]/}"  # 공백 제거
 
     if [[ -z "$sel" ]]; then
-      echo "삭제를 취소합니다." >&2
+      echo "❗  프로그램을 종료합니다." >&2
       return 1
     fi
 
@@ -1770,7 +1788,7 @@ cmd_delete_connection() {
   done < <(select_indices_for_delete "$query") || return 1
 
   if (( ${#idxs[@]} == 0 )); then
-    echo "선택된 항목이 없습니다. 삭제를 취소합니다." >&2
+    #echo "선택된 항목이 없습니다. 삭제를 취소합니다." >&2
     return 1
   fi
 
@@ -1893,17 +1911,27 @@ cmd_move_group_connection() {
 ##
 main() {
   ensure_dependencies
-  init_prompt_label_width
+
+  # 기본값
+  SHOW_CREDENTIAL="false"
+  EXEC_CMD="connect"
 
   local arg_config=""
+  local show_help="false"
+  local -a positional_args=()
 
-  # 1) Global options 처리: --config, -s/--show-credential, -h/--help
+  # 0) 전역 옵션 파싱
+  #    - --config <path>
+  #    - -s / --show-credential
+  #    - -h / --help
+  #    → 인자 전체를 훑으면서 처리하고, 나머지는 positional_args 에만 모은다.
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --config)
         shift || true
         if [[ $# -eq 0 ]]; then
-          die "--config requires a path"
+          echo "[ERROR] --config 옵션에는 설정 파일 경로가 필요합니다." >&2
+          exit 1
         fi
         arg_config="$1"
         shift
@@ -1913,84 +1941,106 @@ main() {
         shift
         ;;
       -h|--help)
-        help ""
-        return 0
-        ;;
-      --) # end of global options
+        show_help="true"
         shift
-        break
         ;;
-      -*)
-        # 나머지 옵션은 명령/서브커맨드 처리 단계에서 다룬다.
+      --)
+        shift
+        # '--' 이후는 모두 순수 인자로 전달
+        while [[ $# -gt 0 ]]; do
+          positional_args+=("$1")
+          shift
+        done
         break
         ;;
       *)
-        # 옵션이 아닌 첫 인자를 만난 경우, 명령/expr 처리 단계로 넘어감.
-        break
+        # 전역 옵션이 아닌 모든 인자는 그대로 positional 영역에 쌓는다.
+        positional_args+=("$1")
+        shift
         ;;
     esac
   done
 
-  # 2) config 경로 설정
+  # 전역 옵션을 제거한 나머지 인자를 복원
+  if [[ ${#positional_args[@]} -gt 0 ]]; then
+    set -- "${positional_args[@]}"
+  else
+    set --
+  fi
+
+  # -h / --help 가 한 번이라도 등장했으면, 나머지 인자와 무관하게 도움말 출력
+  if [[ "$show_help" == "true" ]]; then
+    help ""
+    return 0
+  fi
+
+  # --config 가 있었다면 CONFIG_FILE 에 반영
   if [[ -n "$arg_config" ]]; then
-    if [[ -f "$arg_config" ]]; then
-      CONFIG_FILE="$arg_config"
-      CONFIG_DIR="$(dirname "$CONFIG_FILE")"
-    else
-      log "WARN" "config file not found: $arg_config, fallback to default: $DEFAULT_CONFIG_FILE"
-      CONFIG_DIR="$DEFAULT_CONFIG_DIR"
-      CONFIG_FILE="$DEFAULT_CONFIG_FILE"
-    fi
+    CONFIG_FILE="$arg_config"
   fi
 
   ensure_config_file
 
-  # 3) 서브커맨드 / 기본 동작 처리
+  # 남은 인자가 없으면: ssh-cmd [Enter] → connect (masking list)
   if [[ $# -eq 0 ]]; then
-    # ssh-cmd (인자 없음) → 전체 목록에서 선택 후 접속
+    EXEC_CMD="connect"
     cmd_connect ""
-    return $?
+    return 0
   fi
 
   local first="$1"
+
+  # 1) 어떤 서브커맨드를 실행할지 결정
   case "$first" in
-    -l|--list-all)
-      shift
+    --list|-l|--list-all)
+      # [연결정보 목록] 모드
       EXEC_CMD="list"
+      shift
+      # 남은 첫 번째 인자를 검색식(<expr>) 으로 사용 (없으면 전체)
       cmd_list "${1:-}"
       ;;
-    -a|--add-connection)
-      shift
+    --add-connection|-a)
+      # [연결정보 추가]
       EXEC_CMD="add"
+      shift
       cmd_add_connection
       ;;
-    -m|--modify-connection)
-      shift
+    --modify-connection|-m)
+      # [연결정보 수정] - plain list 사용, -s 옵션은 전역 옵션으로만 처리(표시 방식에는 영향 없음)
       EXEC_CMD="modify"
+      shift
       cmd_modify_connection "${1:-}"
       ;;
-    -d|--delete-connection)
-      shift
+    --delete-connection|-d)
+      # [연결정보 삭제] - masking list 고정, -s 옵션 무시
       EXEC_CMD="delete"
+      shift
       cmd_delete_connection "${1:-}"
       ;;
-    -mg|--move-group-connection)
-      shift
+    --move-group-connection|-mg)
+      # [연결정보 그룹 이동] - masking list 고정, -s 옵션 무시
       EXEC_CMD="move-group"
+      shift
       cmd_move_group_connection "${1:-}"
       ;;
+    --version)
+      echo "ssh-cmd version ${APP_VERSION:-unknown}"
+      return 0
+      ;;
     -*)
-      die "Unknown option or command: ${first}"
+      # 인식되지 않는 옵션
+      echo "Unknown option or command: $first" >&2
+      exit 1
       ;;
     *)
-      # 옵션이 아닌 경우 → expr 로 간주하여 connect 동작
-      local expr="$*"
+      # 나머지는 모두 [서버 접속]으로 처리
+      #   ssh-cmd <expr> → <expr> 검색결과가 적용된 masking list 기반 접속
       EXEC_CMD="connect"
-      cmd_connect "$expr"
+      cmd_connect "$first"
       ;;
   esac
 }
 
-EXEC_CMD=""
 main "$@"
+
 exit 0
