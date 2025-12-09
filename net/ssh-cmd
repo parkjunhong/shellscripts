@@ -279,12 +279,50 @@ resolve_path_abs() {
 # @return {int} 항상 0 / always 0.
 ##
 format_credential_for_display() {
-  local cred="$1"  
-  if [[ ! -z "$EXEC_CMD" ]] && [[ "$EXEC_CMD" == "list" ]] && [[ "$SHOW_CREDENTIAL" == "true" ]]; then
-    printf '%s' "$cred"
-  else
-    printf '****************'
-  fi
+  local cred="$1"
+
+  case "$EXEC_CMD" in
+    # [연결정보 목록] (-l | --list-all)
+    # - 기본: masking list (****************)
+    # - -s / --show-credential 이 있는 경우: plain list
+    list)
+      if [[ "$SHOW_CREDENTIAL" == "true" ]]; then
+        printf '%s' "$cred"
+      else
+        printf '****************'
+      fi
+      ;;
+
+    # [연결정보 추가] (-a | --add-connection)
+    # - 기본: masking list
+    # - -s / --show-credential 이 있는 경우: 미리보기에서만 plain
+    add)
+      if [[ "$SHOW_CREDENTIAL" == "true" ]]; then
+        printf '%s' "$cred"
+      else
+        printf '****************'
+      fi
+      ;;
+
+    # [연결정보 수정] (-m | --modify-connection)
+    # - 요구사항: "plain list" 를 대상으로 동작
+    # - --show-credential 옵션 지원하지 않음 (있어도 무시) → 항상 평문 표시
+    modify)
+      printf '%s' "$cred"
+      ;;
+
+    # [서버 접속], [연결정보 삭제], [연결정보 그룹이동]
+    # - 요구사항: 항상 "masking list"
+    # - --show-credential 옵션 지원하지 않음 → 항상 마스킹
+    connect|delete|move-group)
+      printf '****************'
+      ;;
+
+    # 그 외 (안전하게 기본은 마스킹)
+    *)
+      printf '****************'
+      ;;
+  esac
 }
 
 ##
@@ -823,7 +861,7 @@ print_raw_as_table_no_index() {
 
   if command -v column >/dev/null 2>&1; then
     local temp_buffer=""
-    local group name host port user cred
+    local group name host port user cred display_cred
 
     temp_buffer+="Group\tName\tHost\tPort\tUser\tCredential\n"
 
@@ -831,34 +869,27 @@ print_raw_as_table_no_index() {
       if [[ -z "$group" && -z "$name" && -z "$host" && -z "$port" && -z "$user" && -z "$cred" ]]; then
         continue
       fi
-      temp_buffer+="${group}\t${name}\t${host}\t${port}\t${user}\t${cred}\n"
+      # 여기서 credential 표시 정책을 적용
+      display_cred="$(format_credential_for_display "$cred")"
+      temp_buffer+="${group}\t${name}\t${host}\t${port}\t${user}\t${display_cred}\n"
     done <<< "$raw"
 
-    local rendered header_line data_lines header_len dash_line eq_line
+    local rendered header_line data_lines header_len separator
     rendered="$(printf "%b" "$temp_buffer" | column -t -s $'\t')"
     header_line="$(printf '%s\n' "$rendered" | head -n 1)"
     data_lines="$(printf '%s\n' "$rendered" | tail -n +2)"
     header_len=${#header_line}
+    printf -v separator '%*s' "$header_len" ''
+    separator="${separator// /-}"
 
-    printf -v dash_line '%*s' "$header_len" ''
-    dash_line="${dash_line// /-}"
-    printf -v eq_line '%*s' "$header_len" ''
-    eq_line="${eq_line// /=}"
-
-    printf '%s\n' "$eq_line"
     printf '%s\n' "$header_line"
-    printf '%s\n' "$dash_line"
+    printf '%s\n' "$separator"
     printf '%s\n' "$data_lines"
-    printf '%s\n' "$eq_line"
   else
-    # fallback (column 없음)
-    local eq_line="=============================================================="
+    printf -- "%s\t%s\t%s\t%s\t%s\t%s\n" "Group" "Name" "Host" "Port" "User" "Credential"
+    printf -- "%s\t%s\t%s\t%s\t%s\t%s\n" "-----" "----" "----" "----" "----" "----------"
 
-    echo "$eq_line"
-    printf "%s\t%s\t%s\t%s\t%s\t%s\n" "Group" "Name" "Host" "Port" "User" "Credential"
-    printf "%s\t%s\t%s\t%s\t%s\t%s\n" "-----" "----" "----" "----" "----" "----------"
-
-    local group name host port user cred
+    local group name host port user cred display_cred
     while IFS=$'\t' read -r group name host port user cred; do
       if [[ -z "$group" && -z "$name" && -z "$host" && -z "$port" && -z "$user" && -z "$cred" ]]; then
         continue
@@ -866,7 +897,6 @@ print_raw_as_table_no_index() {
       display_cred="$(format_credential_for_display "$cred")"
       printf "%s\t%s\t%s\t%s\t%s\t%s\n" "$group" "$name" "$host" "$port" "$user" "$display_cred"
     done <<< "$raw"
-    echo "$eq_line"
   fi
 
   return 0
