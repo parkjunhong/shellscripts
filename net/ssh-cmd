@@ -279,8 +279,8 @@ resolve_path_abs() {
 # @return {int} 항상 0 / always 0.
 ##
 format_credential_for_display() {
-  local cred="$1"
-  if [[ "$SHOW_CREDENTIAL" == "true" ]]; then
+  local cred="$1"  
+  if [[ ! -z "$EXEC_CMD" ]] && [[ "$EXEC_CMD" == "list" ]] && [[ "$SHOW_CREDENTIAL" == "true" ]]; then
     printf '%s' "$cred"
   else
     printf '****************'
@@ -1917,22 +1917,27 @@ main() {
   case "$first" in
     -l|--list-all)
       shift
+      EXEC_CMD="list"
       cmd_list "${1:-}"
       ;;
     -a|--add-connection)
       shift
+      EXEC_CMD="add"
       cmd_add_connection
       ;;
     -m|--modify-connection)
       shift
+      EXEC_CMD="modify"
       cmd_modify_connection "${1:-}"
       ;;
     -d|--delete-connection)
       shift
+      EXEC_CMD="delete"
       cmd_delete_connection "${1:-}"
       ;;
     -mg|--move-group-connection)
       shift
+      EXEC_CMD="move-group"
       cmd_move_group_connection "${1:-}"
       ;;
     -*)
@@ -1941,10 +1946,12 @@ main() {
     *)
       # 옵션이 아닌 경우 → expr 로 간주하여 connect 동작
       local expr="$*"
+      EXEC_CMD="connect"
       cmd_connect "$expr"
       ;;
   esac
 }
 
+EXEC_CMD=""
 main "$@"
 exit 0
