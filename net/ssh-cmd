@@ -863,7 +863,8 @@ print_raw_as_table_no_index() {
       if [[ -z "$group" && -z "$name" && -z "$host" && -z "$port" && -z "$user" && -z "$cred" ]]; then
         continue
       fi
-      printf "%s\t%s\t%s\t%s\t%s\t%s\n" "$group" "$name" "$host" "$port" "$user" "$cred"
+      display_cred="$(format_credential_for_display "$cred")"
+      printf "%s\t%s\t%s\t%s\t%s\t%s\n" "$group" "$name" "$host" "$port" "$user" "$display_cred"
     done <<< "$raw"
     echo "$eq_line"
   fi
@@ -1625,7 +1626,8 @@ select_indices_for_delete() {
 
       local display_idx
       printf -v display_idx "%04d" "$n"
-      temp_buffer+="${display_idx}\t${group}\t${name}\t${host}\t${port}\t${user}\t${cred}\n"
+      display_cred="$(format_credential_for_display "$cred")"
+      temp_buffer+="${display_idx}\t${group}\t${name}\t${host}\t${port}\t${user}\t${display_cred}\n"
     done <<< "$raw"
 
     local rendered header_line data_lines header_len dash_line eq_line
@@ -1654,10 +1656,11 @@ select_indices_for_delete() {
       n=$((n+1))
       idx_map[$n]="$idx"
 
+      display_cred="$(format_credential_for_display "$cred")"
       local display_idx
       printf -v display_idx "%04d" "$n"
       printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
-        "$display_idx" "$group" "$name" "$host" "$port" "$user" "$cred" >&2
+        "$display_idx" "$group" "$name" "$host" "$port" "$user" "$display_cred" >&2
     done <<< "$raw"
   fi
 
