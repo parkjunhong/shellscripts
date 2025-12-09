@@ -1227,6 +1227,8 @@ cmd_add_connection() {
 
   log INFO "새 connection 정보를 입력합니다."
 
+  echo "-----------------------------------------------------------"
+
   local group name host_type host port username auth_type credential host_input port_input
 
   # group
@@ -1314,6 +1316,8 @@ cmd_add_connection() {
       fi
     done
   fi
+
+  echo "-----------------------------------------------------------"
 
   local new_json
   new_json="$(jq --arg group "$group" \
@@ -1433,6 +1437,8 @@ cmd_modify_connection() {
   local query="${1:-}"
   local selected_json
   selected_json="$(select_connection_interactively "$query")" || return 1
+
+  echo "-----------------------------------------------------------"
 
   local group name host_type host port username auth_type credential
   group="$(jq -r '.group' <<< "$selected_json")"
@@ -1567,6 +1573,8 @@ cmd_modify_connection() {
       fi
     done
   fi
+
+  echo "-----------------------------------------------------------"
 
   local new_json
   new_json="$(update_connection_modify "$selected_json" \
@@ -1793,6 +1801,8 @@ cmd_move_group_connection() {
   local selected_json
   selected_json="$(select_connection_interactively "$query")" || return 1
 
+  echo "-----------------------------------------------------------"
+
   local current_group idx
   current_group="$(jq -r '.group' <<< "$selected_json")"
   idx="$(jq -r '.__idx'  <<< "$selected_json")"
@@ -1809,6 +1819,8 @@ cmd_move_group_connection() {
       break
     fi
   done
+
+  echo "-----------------------------------------------------------"
 
   local new_json
   new_json="$(update_connection_move_group "$selected_json" "$new_group")"
