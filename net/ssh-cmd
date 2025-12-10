@@ -350,7 +350,7 @@ ensure_masterkey_md5() {
 
     # 경로 존재 여부 검증
     # Verify that the given path exists.
-    local abs_new_path = $(resolve_path_abs "${new_path}")
+    local abs_new_path=$(resolve_path_abs "${new_path}")
     if [[ ! -f "${abs_new_path}" ]]; then
       echo "❗ 지정한 masterkey 파일을 찾을 수 없습니다: ${abs_new_path}" >&2
       echo 
@@ -375,6 +375,75 @@ ensure_masterkey_md5() {
     current_path="${abs_new_path}"
     current_md5="${new_md5}"
   done
+}
+
+##
+# 입력된 평문(민감정보: username, credential)을 AES-256-CBC 방식으로 암호화한다.
+# Encrypt plaintext (username, credential) using AES-256-CBC with key derived from MASTERKEY_FILE.
+#
+# @param $1 {string} plaintext 평문 데이터
+#
+# @return {string} ENC::<base64_cipher>
+##
+encrypt_value() {
+  local plaintext="$1"
+
+  # 빈 문자열은 암호화할 필요 없음
+  if [[ -z "$plaintext" ]]; then
+    echo ""
+    return 0
+  fi
+
+  # 파생키 생성: SHA-256(masterkey 파일 내용)
+  local derived_key
+  derived_key="$(sha256sum "${MASTERKEY_FILE}" | awk '{print $1}')"
+
+  # AES-256-CBC 암호화 (base64 출력)
+  local cipher
+  cipher="$(echo -n "$plaintext" \
+      | openssl enc -aes-256-cbc -a -salt -pass pass:"$derived_key" 2>/dev/null)"
+
+  if [[ $? -ne 0 || -z "$cipher" ]]; then
+    die "민감정보 암호화(encrypt_value) 중 오류가 발생했습니다."
+  fi
+
+  echo "ENC::${cipher}"
+}
+
+##
+# 입력된 값이 ENC:: 로 시작하면 복호화하여 평문을 반환한다.
+# If value starts with ENC::, decrypt it using AES-256-CBC with derived key.
+#
+# @param $1 {string} value 암호문 또는 평문
+#
+# @return {string} 평문 데이터
+##
+decrypt_value_if_needed() {
+  local value="$1"
+
+  # 암호문이 아니라면 그대로 반환
+  if [[ "$value" != ENC::* ]]; then
+    echo "$value"
+    return 0
+  fi
+
+  # cipher 부분만 추출
+  local cipher="${value#ENC::}"
+
+  # 파생키 생성
+  local derived_key
+  derived_key="$(sha256sum "${MASTERKEY_FILE}" | awk '{print $1}')"
+
+  # 복호화
+  local plaintext
+  plaintext="$(echo "$cipher" \
+      | openssl enc -aes-256-cbc -a -d -salt -pass pass:"$derived_key" 2>/dev/null)"
+
+  if [[ $? -ne 0 ]]; then
+    die "민감정보 복호화(decrypt_value_if_needed) 중 오류가 발생했습니다."
+  fi
+
+  echo "$plaintext"
 }
 
 ##
@@ -1060,9 +1129,17 @@ print_raw_as_table_no_index() {
       if [[ -z "$group" && -z "$name" && -z "$host" && -z "$port" && -z "$user" && -z "$cred" ]]; then
         continue
       fi
-      # 여기서 credential 표시 정책을 적용
-      display_cred="$(format_credential_for_display "$cred")"
-      temp_buffer+="${group}\t${name}\t${host}\t${port}\t${user}\t${display_cred}\n"
+
+      # -------------------------------
+      # ★ 민감정보 복호화 적용
+      # -------------------------------
+      user_dec="$(decrypt_value_if_needed "$user")"
+      cred_dec="$(decrypt_value_if_needed "$cred")"
+
+      # credential 출력 정책은 복호화된 값 기준
+      display_cred="$(format_credential_for_display "$cred_dec")"
+
+      temp_buffer+="${group}\t${name}\t${host}\t${port}\t${user_dec}\t${display_cred}\n"
     done <<< "$raw"
 
     # column 결과를 한 번 만들어서, 헤더 길이를 기준으로
@@ -1549,15 +1626,19 @@ cmd_add_connection() {
 
   echo "-----------------------------------------------------------"
 
+  # '민감정보' 암호화 적용
+  username_enc="$(encrypt_value "$username")"
+  credential_enc="$(encrypt_value "$credential")"
+
   local new_json
   new_json="$(jq --arg group "$group" \
                  --arg name "$name" \
                  --arg host_type "$host_type" \
                  --arg host "$host" \
                  --arg port "$port" \
-                 --arg username "$username" \
+                 --arg username "$username_enc" \
                  --arg auth_type "$auth_type" \
-                 --arg credential "$credential" \
+                 --arg credential "$credential_enc" \
                  '
     .connections += [{
       "group": $group,
@@ -1684,9 +1765,17 @@ cmd_modify_connection() {
   host_type="$(jq -r '.host_type' <<< "$selected_json")"
   host="$(jq -r '.host' <<< "$selected_json")"
   port="$(jq -r '.port // 22' <<< "$selected_json")"
-  username="$(jq -r '.username' <<< "$selected_json")"
+
+  # -------------------------------
+  # ★ username / credential 복호화 적용
+  # -------------------------------
+  username_enc="$(jq -r '.username' <<< "$selected_json")"
+  credential_enc="$(jq -r '.credential' <<< "$selected_json")"
+
+  username="$(decrypt_value_if_needed "$username_enc")"
+  credential="$(decrypt_value_if_needed "$credential_enc")"
+
   auth_type="$(jq -r '.auth_type' <<< "$selected_json")"
-  credential="$(jq -r '.credential' <<< "$selected_json")"
 
   if [[ "$host" =~ ^(.+):([0-9]+)$ ]]; then
     host="${BASH_REMATCH[1]}"
@@ -1815,8 +1904,15 @@ cmd_modify_connection() {
   echo "-----------------------------------------------------------"
 
   local new_json
+  # -------------------------------
+  # ★ 저장 직전 암호화 적용
+  # -------------------------------
+  new_username_enc="$(encrypt_value "$new_username")"
+  new_credential_enc="$(encrypt_value "$new_credential")"
+
   new_json="$(update_connection_modify "$selected_json" \
-                 "$new_group" "$new_name" "$new_host_type" "$new_host" "$new_port" "$new_username" "$new_auth_type" "$new_credential")"
+                  "$new_group" "$new_name" "$new_host_type" "$new_host" "$new_port" \
+                  "$new_username_enc" "$new_auth_type" "$new_credential_enc")"
 
   save_connections_json <<< "$new_json"
 
