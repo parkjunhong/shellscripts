@@ -265,11 +265,10 @@ ensure_masterkey_md5() {
     fi
 
     echo
-    echo "[INFO] masterkey(OpenSSH private key) 파일이 존재하지 않습니다."
-    echo "       새로운 masterkey 파일을 생성합니다."
-    echo "       ssh-keygen 실행 중에 표시되는 프롬프트에 따라 비밀번호(passphrase)를 입력해 주세요."
-    echo
-    echo "       target: ${MASTERKEY_FILE}"
+    echo "❗ masterkey(OpenSSH private key) 파일이 존재하지 않습니다."
+    echo "❗ 새로운 masterkey 파일을 생성합니다."
+    echo "❓ ssh-keygen 실행 중에 표시되는 프롬프트에 따라 비밀번호(passphrase)를 입력해 주세요."
+    echo "🔑 target: ${MASTERKEY_FILE}"
     echo
 
     # 사용자가 직접 passphrase 를 입력하도록 ssh-keygen 을 그대로 실행
