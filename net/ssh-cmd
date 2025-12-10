@@ -325,14 +325,15 @@ ensure_masterkey_md5() {
     line="============================================================================"
 
     echo "${line}"
-    printf '⚙️ masterkey_file              : %s\n' "${current_path}"
-    printf '⚙️ masterkey_file.md5          : %s\n' "${current_md5}"
-    printf '⚙️ configuration.masterkey_md5 : %s\n' "${config_md5}"
+    printf '⚙️  masterkey_file              : %s\n' "${current_path}"
+    printf '⚙️  masterkey_file.md5          : %s\n' "${current_md5}"
+    printf '⚙️  configuration.masterkey_md5 : %s\n' "${config_md5}"
     echo "${line}"
     echo
-    echo "[ERROR] MASTERKEY_FILE 과 configuration.masterkey_md5 값이 일치하지 않습니다."
-    echo "        configuration 에 저장된 masterkey_md5 와 동일한 masterkey 파일 경로를 입력해 주세요."
-    echo "        (입력을 비우고 Enter 를 누르면 작업을 취소합니다.)"
+    echo "❗ MASTERKEY_FILE 과 configuration.masterkey_md5 값이 일치하지 않습니다."
+    echo "❗ configuration 에 저장된 masterkey_md5 와 동일한 masterkey 파일 경로를 입력해 주세요."
+    echo 
+    echo "   (입력을 비우고 Enter 를 누르면 작업을 취소합니다.)"
     echo
 
     printf "새 masterkey 파일 경로를 입력하세요: "
@@ -349,27 +350,29 @@ ensure_masterkey_md5() {
 
     # 경로 존재 여부 검증
     # Verify that the given path exists.
-    if [[ ! -f "${new_path}" ]]; then
-      echo "[WARN] 지정한 masterkey 파일을 찾을 수 없습니다: ${new_path}" >&2
-      echo "       다시 시도해 주세요."
+    local abs_new_path = $(resolve_path_abs "${new_path}")
+    if [[ ! -f "${abs_new_path}" ]]; then
+      echo "❗ 지정한 masterkey 파일을 찾을 수 없습니다: ${abs_new_path}" >&2
+      echo 
+      echo "   다시 시도해 주세요."
       echo
       continue
     fi
 
     # 새 파일의 md5 계산
     local new_md5
-    new_md5="$(md5sum "${new_path}" | awk '{print $1}')"
+    new_md5="$(md5sum "${abs_new_path}" | awk '{print $1}')"
 
     if [[ "${new_md5}" == "${config_md5}" ]]; then
       # 일치하면 MASTERKEY_FILE 을 새 경로로 갱신하고 정상 종료
       # On match, update MASTERKEY_FILE and return success.
-      MASTERKEY_FILE="${new_path}"
+      MASTERKEY_FILE="${abs_new_path}"
       return 0
     fi
 
     # 일치하지 않으면 현재 값 갱신 후 루프 반복
     # If mismatched, update current values and loop.
-    current_path="${new_path}"
+    current_path="${abs_new_path}"
     current_md5="${new_md5}"
   done
 }
