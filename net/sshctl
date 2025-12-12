@@ -3,28 +3,28 @@ set -euo pipefail
 
 # =======================================
 # @author   : parkjunhong77@gmail.com
-# @title    : ssh-cmd: SSH connection manager
+# @title    : sshctl: SSH connection manager
 # @license  : Apache License 2.0
 # @since    : 2025-12-09
 # @desc     : support RHEL 7+/8+, Oracle Linux 7+/8+, Ubuntu 20.04+/22.04+/24.04+, CentOS 7+
 # @installation :
-#   1. insert 'source <path>/ssh-cmd' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   1. insert 'source <path>/sshctl' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
 #   2. copy this file to /usr/local/bin/ or any directory in $PATH for all users.
 # =======================================
 
 FILENAME="$(basename "$0")"
 
 # 기본 설정 파일 경로 (Default configuration file path)
-DEFAULT_CONFIG_DIR="${HOME}/.ssh-cmd"
+DEFAULT_CONFIG_DIR="${HOME}/.sshctl"
 DEFAULT_CONFIG_FILE="${DEFAULT_CONFIG_DIR}/configuration"
 
 # 설정 디렉토리 / 파일
-CONFIG_DIR="${HOME}/.ssh-cmd"
+CONFIG_DIR="${HOME}/.sshctl"
 CONFIG_FILE="${CONFIG_DIR}/configuration"
 CONFIG_VERSION="1.0"
 
 # masterkey (OpenSSH private key) 기본 경로 및 실제 사용 경로
-MASTERKEY_DEFAULT="${HOME}/.ssh-cmd/masterkey"
+MASTERKEY_DEFAULT="${HOME}/.sshctl/masterkey"
 MASTERKEY_FILE="${MASTERKEY_DEFAULT}"
 
 # 프롬프트 라벨 폭 (아이콘+필드명 고정 폭)
@@ -38,8 +38,8 @@ SHOW_CREDENTIAL="false"
 # =======================================
 
 ##
-# ssh-cmd 전체 사용법과 에러 정보를 출력한다.
-# Print overall usage and diagnostic error information for ssh-cmd.
+# sshctl 전체 사용법과 에러 정보를 출력한다.
+# Print overall usage and diagnostic error information for sshctl.
 #
 # @param $1 {string|empty} 에러/원인 메시지 (선택) / cause message (optional)
 # @param $2 {int|empty} 에러 발생 라인 번호 (선택) / line number where error occurred (optional)
@@ -71,13 +71,13 @@ help() {
   echo
   cat <<EOF
 사용법 (Usage):
-  ssh-cmd [global-options]               # 기본: 전체 목록에서 선택 후 접속
-  ssh-cmd [global-options] <expr>        # expr 로 필터링 후 선택/접속
-  ssh-cmd [global-options] -l|--list-all [expr]
-  ssh-cmd [global-options] -a|--add-connection
-  ssh-cmd [global-options] -m|--modify-connection [expr]
-  ssh-cmd [global-options] -d|--delete-connection [expr]
-  ssh-cmd [global-options] -mg|--move-group-connection [expr]
+  sshctl [global-options]               # 기본: 전체 목록에서 선택 후 접속
+  sshctl [global-options] <expr>        # expr 로 필터링 후 선택/접속
+  sshctl [global-options] -l|--list-all [expr]
+  sshctl [global-options] -a|--add-connection
+  sshctl [global-options] -m|--modify-connection [expr]
+  sshctl [global-options] -d|--delete-connection [expr]
+  sshctl [global-options] -mg|--move-group-connection [expr]
 
 Global options:
   --config <file>
@@ -114,10 +114,10 @@ Commands:
     - 검색식 expr 으로 connection 을 고른 뒤, 그룹(group) 값을 변경합니다.
 
 기본 접속 동작:
-  1) ssh-cmd
+  1) sshctl
      - 전체 connection 목록에서 번호(#)를 선택해 접속합니다.
 
-  2) ssh-cmd <expr>
+  2) sshctl <expr>
      - <expr> 이 "-" 로 시작하는 옵션이 아니면 검색식으로 간주합니다.
      - expr 으로 필터링 후, 번호(#)를 선택해 접속합니다.
      - auth_type 이 password 인 경우, sshpass 가 설치되어 있어야 하며,
@@ -1524,8 +1524,8 @@ update_connection_move_group() {
 # =======================================
 
 ##
-# ssh-cmd -l|--list-all [expr] 명령을 구현한다.
-# Implement ssh-cmd -l|--list-all [expr] command.
+# sshctl -l|--list-all [expr] 명령을 구현한다.
+# Implement sshctl -l|--list-all [expr] command.
 #
 # @param $1 {string|empty} query 검색식, 비어 있으면 전체 / search expression; empty for all
 #
@@ -1768,8 +1768,8 @@ cmd_connect() {
 }
 
 ##
-# ssh-cmd -m|--modify-connection [expr] 명령을 구현하여 선택된 connection을 수정한다.
-# Implement ssh-cmd -m|--modify-connection [expr] and modify a selected connection.
+# sshctl -m|--modify-connection [expr] 명령을 구현하여 선택된 connection을 수정한다.
+# Implement sshctl -m|--modify-connection [expr] and modify a selected connection.
 #
 # @param $1 {string|empty} query 검색식, 비어 있으면 전체 / search expression; empty for all
 #
@@ -2088,8 +2088,8 @@ select_indices_for_delete() {
 
 
 ##
-# ssh-cmd -d|--delete-connection [expr] 명령을 구현하여 선택된 connection을 삭제한다.
-# Implement ssh-cmd -d|--delete-connection [expr] and delete a selected connection.
+# sshctl -d|--delete-connection [expr] 명령을 구현하여 선택된 connection을 삭제한다.
+# Implement sshctl -d|--delete-connection [expr] and delete a selected connection.
 #
 # @param $1 {string|empty} query 검색식, 비어 있으면 전체 / search expression; empty for all
 #
@@ -2165,8 +2165,8 @@ cmd_delete_connection() {
 }
 
 ##
-# ssh-cmd -mg|--move-group-connection [expr] 명령을 구현하여 선택된 connection의 group을 변경한다.
-# Implement ssh-cmd -mg|--move-group-connection [expr] and change the group of a selected connection.
+# sshctl -mg|--move-group-connection [expr] 명령을 구현하여 선택된 connection의 group을 변경한다.
+# Implement sshctl -mg|--move-group-connection [expr] and change the group of a selected connection.
 #
 # @param $1 {string|empty} query 검색식, 비어 있으면 전체 / search expression; empty for all
 #
@@ -2223,8 +2223,8 @@ cmd_move_group_connection() {
 # =======================================
 
 ##
-# ssh-cmd 엔트리포인트 함수로, 전역 옵션과 서브커맨드를 파싱하고 각 명령을 디스패치한다.
-# Entry point for ssh-cmd; parses global options and subcommands, then dispatches to handlers.
+# sshctl 엔트리포인트 함수로, 전역 옵션과 서브커맨드를 파싱하고 각 명령을 디스패치한다.
+# Entry point for sshctl; parses global options and subcommands, then dispatches to handlers.
 #
 # @param $1..$n {string} CLI 인자 (예: --config, -l, -a, -m 등) / CLI arguments (e.g. --config, -l, -a, -m)
 #
@@ -2334,7 +2334,7 @@ main() {
   # open ssh key md5 검증
   ensure_masterkey_md5
 
-  # 남은 인자가 없으면: ssh-cmd [Enter] → connect (masking list)
+  # 남은 인자가 없으면: sshctl [Enter] → connect (masking list)
   if [[ $# -eq 0 ]]; then
     EXEC_CMD="connect"
     cmd_connect ""
@@ -2377,7 +2377,7 @@ main() {
       cmd_move_group_connection "${1:-}"
       ;;
     --version)
-      echo "ssh-cmd version ${APP_VERSION:-unknown}"
+      echo "sshctl version ${APP_VERSION:-unknown}"
       return 0
       ;;
     -*)
@@ -2387,7 +2387,7 @@ main() {
       ;;
     *)
       # 나머지는 모두 [서버 접속]으로 처리
-      #   ssh-cmd <expr> → <expr> 검색결과가 적용된 masking list 기반 접속
+      #   sshctl <expr> → <expr> 검색결과가 적용된 masking list 기반 접속
       EXEC_CMD="connect"
       cmd_connect "$first"
       ;;
