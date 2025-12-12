@@ -20,11 +20,11 @@ DEFAULT_CONFIG_FILE="${DEFAULT_CONFIG_DIR}/configuration"
 
 # 설정 디렉토리 / 파일
 CONFIG_DIR="${HOME}/.sshctl"
-CONFIG_FILE="${CONFIG_DIR}/configuration"
+CONFIG_FILE="${CONFIG_DIR}/configuration.conf"
 CONFIG_VERSION="1.0"
 
 # masterkey (OpenSSH private key) 기본 경로 및 실제 사용 경로
-MASTERKEY_DEFAULT="${HOME}/.sshctl/masterkey"
+MASTERKEY_DEFAULT="${HOME}/.sshctl/masterkey.pem"
 MASTERKEY_FILE="${MASTERKEY_DEFAULT}"
 
 # 프롬프트 라벨 폭 (아이콘+필드명 고정 폭)
