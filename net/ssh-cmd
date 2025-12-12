@@ -1623,7 +1623,6 @@ cmd_add_connection() {
 
   if [[ "$auth_type" == "password" ]]; then
     while true; do
-      echo "→→  ❗❗❗ 경고: password 는 ${CONFIG_FILE} 에 평문 저장됩니다." >&2
       read -r -s -p "❓  🔑 password: " credential
       printf '\n'
       if validate_non_empty "password" "$credential"; then
@@ -1724,10 +1723,12 @@ cmd_connect() {
 
   local host username port auth_type credential
   host="$(jq -r '.host' <<< "$selected_json")"
-  username="$(jq -r '.username' <<< "$selected_json")"
+  username_enc="$(jq -r '.username' <<< "$selected_json")"
+  username="$(decrypt_value_if_needed "$username_enc")"
   port="$(jq -r '.port // 22' <<< "$selected_json")"
   auth_type="$(jq -r '.auth_type' <<< "$selected_json")"
-  credential="$(jq -r '.credential' <<< "$selected_json")"
+  credential_enc="$(jq -r '.credential' <<< "$selected_json")"
+  credential="$(decrypt_value_if_needed "$credential_enc")"
 
   validate_port "$port" || die "port 값이 잘못되었습니다: $port"
 
@@ -1740,19 +1741,28 @@ cmd_connect() {
       return 1
     fi    
     echo 
-    echo "❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗"
-    echo "❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗"
-    echo "❗❗❗                                          ❗❗❗"
-    echo "❗❗❗ 경고: password + sshpass 방식 접속입니다 ❗❗❗" >&2
-    echo "❗❗❗                                          ❗❗❗"
-    echo "❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗"
-    echo "❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗"
+    echo "❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗" >&2
+    echo "❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗" >&2
+    echo "❗❗❗                                          ❗❗❗" >&2
+    echo "❗❗❗ 경고: sshpass + password 방식 접속입니다 ❗❗❗" >&2
+    echo "❗❗❗                                          ❗❗❗" >&2
+    echo "❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗" >&2
+    echo "❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗" >&2
     echo 
     sshpass -p "$credential" ssh -p "$port" "${username}@${host}"
   else
     if [[ ! -f "$credential" ]]; then
       die "key file not found: $credential"
     fi
+    echo 
+    echo "🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐" >&2
+    echo "🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐" >&2
+    echo "🔐🔐🔐                                          🔐🔐🔐" >&2
+    echo "🔐🔐🔐 안심: 'OpenSSH Key 인증방식' 접속입니다. 🔐🔐🔐" >&2
+    echo "🔐🔐🔐                                          🔐🔐🔐" >&2
+    echo "🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐" >&2
+    echo "🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐" >&2
+    echo 
     exec ssh -p "$port" -i "$credential" "${username}@${host}"
   fi
 }
@@ -1786,9 +1796,8 @@ cmd_modify_connection() {
   # ★ username / credential 복호화 적용
   # -------------------------------
   username_enc="$(jq -r '.username' <<< "$selected_json")"
-  credential_enc="$(jq -r '.credential' <<< "$selected_json")"
-
   username="$(decrypt_value_if_needed "$username_enc")"
+  credential_enc="$(jq -r '.credential' <<< "$selected_json")"
   credential="$(decrypt_value_if_needed "$credential_enc")"
 
   auth_type="$(jq -r '.auth_type' <<< "$selected_json")"
@@ -1893,7 +1902,6 @@ cmd_modify_connection() {
   if [[ "$new_auth_type" == "password" ]]; then
     local old_pw="$credential"
     while true; do
-      echo "→→  ❗❗❗ 경고: password 는 ${CONFIG_FILE} 에 평문 저장됩니다." >&2
       read -r -s -p "❓  🔑 password [****]: " tmp
       printf '\n'
       if [[ -z "$tmp" ]]; then
