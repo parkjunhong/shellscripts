@@ -280,6 +280,9 @@ ensure_masterkey_md5() {
     if [[ ! -f "${MASTERKEY_FILE}" ]]; then
       die "masterkey(OpenSSH private key) 파일이 생성되지 않았습니다: ${MASTERKEY_FILE}"
     fi
+
+    # *.pub 파일 삭제
+    shred -u "${MASTERKEY_FILE}.pub"
   fi
 
   # 2) configuration 파일이 없으면 생성
