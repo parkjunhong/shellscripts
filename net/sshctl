@@ -338,7 +338,7 @@ ensure_masterkey_md5() {
 
     printf "새 masterkey 파일 경로를 입력하세요: "
     local new_path
-    IFS= read -r new_path || {
+    IFS= read -er new_path || {
       die "masterkey 검증 중 입력을 읽지 못했습니다."
     }
 
@@ -1019,8 +1019,8 @@ print_config_summary_banner() {
   local line
   line="*****************************************************************"
   printf '%s\n' "$line"
-  printf '⚙️\t configuration: %s\n' "${CONFIG_FILE}"
-  printf '⚙️\t masterkey    : %s\n' "${MASTERKEY_FILE:-<not set>}"
+  printf '⚙️  configuration: %s\n' "${CONFIG_FILE}"
+  printf '⚙️  masterkey    : %s\n' "${MASTERKEY_FILE:-<not set>}"
   printf '%s\n' "$line"
 }
 
