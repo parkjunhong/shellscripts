@@ -1,41 +1,31 @@
 #!/usr/bin/env bash
 # =======================================
 # @author   : parkjunhong77@gmail.com
-# @title    : sshctl bash completion.
+# @title    : sshctl bash completion
 # @license  : Apache License 2.0
 # @since    : 2025-12-11
 # @desc     : support RHEL 6/7/8/9, Oracle Linux 6/7/8/9, Ubuntu 14.04–24.04, CentOS 6/7/8 Stream
-# @installation : 
-#   1. insert 'source <path>/sshctl.completion' into ~/bin/.bashrc or ~/bin/.bash_profile
-#   2. for system-wide usage, copy into /etc/bash_completion.d/
+# @installation :
+#   1. insert 'source <path>/sshctl.completion' into ~/.bashrc or ~/.bash_profile
+#   2. or copy to /etc/bash_completion.d/ for system-wide usage
 # =======================================
 
 # =======================================
-# bash completion parameters (ENGLISH)
+# Bash completion parameters (English)
 # =======================================
-# COMP_WORDS: all arguments
-# COMP_CWORD: cursor index
-# COMP_LINE : full command line
-# COMPREPLY : returned suggestions
+# COMP_WORDS  : array of all arguments
+# COMP_CWORD  : index of cursor
+# COMP_LINE   : full command string
+# COMPREPLY   : array of returned suggestions
 # =======================================
 
 
 _sshctl_complete() {
-  local cur prev
-  
-  if declare -F _init_completion >/dev/null 2>&1; then
-    _init_completion || true
-  else
-    cur="${COMP_WORDS[COMP_CWORD]}"
-    prev="${COMP_WORDS[COMP_CWORD-1]}"
-  fi
-  
-  cur="${COMP_WORDS[COMP_CWORD]}"
-  prev="${COMP_WORDS[COMP_CWORD-1]}"
+  local cur prev words cword
+  # 표준 방식: bash-completion 프레임워크에서 단어 분리 처리
+  _get_comp_words_by_ref -n : cur prev words cword
 
-  # ---------------------------------------------------------
-  # Subcommands (기능 옵션)
-  # ---------------------------------------------------------
+  # 기능 옵션(서브커맨드)
   local cmds=(
     --list-all
     --add-connection
@@ -44,9 +34,7 @@ _sshctl_complete() {
     --move-group-connection
   )
 
-  # ---------------------------------------------------------
-  # Global options
-  # ---------------------------------------------------------
+  # 글로벌 옵션
   local globals=(
     --help
     --config
@@ -54,17 +42,16 @@ _sshctl_complete() {
     --show-credential
   )
 
-  # ---------------------------------------------------------
-  # Detect used options
-  # ---------------------------------------------------------
+  # 사용된 옵션 감지
   local used_cmd=""
   local used_help=false
   local used_show_cred=false
 
-  for token in "${COMP_WORDS[@]}"; do
-    case "$token" in
+  # NOTE: words 배열은 sshctl 포함
+  for tok in "${words[@]}"; do
+    case "$tok" in
       --list-all|--add-connection|--modify-connection|--delete-connection|--move-group-connection)
-        used_cmd="$token"
+        used_cmd="$tok"
         ;;
       --help)
         used_help=true
@@ -75,9 +62,21 @@ _sshctl_complete() {
     esac
   done
 
-  # ---------------------------------------------------------
-  # Global options availability
-  # ---------------------------------------------------------
+
+  # ------------------------------------------------------
+  # --config / --masterkey 뒤에서는 무조건 파일 추천
+  # ------------------------------------------------------
+  case "$prev" in
+    --config|--masterkey)
+      _filedir
+      return 0
+      ;;
+  esac
+
+
+  # ------------------------------------------------------
+  # 추천 가능한 글로벌 옵션 계산
+  # ------------------------------------------------------
   local avail_globals=()
 
   # --help (중복 불가)
@@ -91,42 +90,37 @@ _sshctl_complete() {
   # --masterkey (중복 허용)
   avail_globals+=( "--masterkey" )
 
-  # --show-credential : list-all 선택 시에만
+  # --show-credential (조건: --list-all 이 선택된 경우에만)
   if [[ "$used_cmd" == "--list-all" ]]; then
     if ! $used_show_cred; then
       avail_globals+=( "--show-credential" )
     fi
   fi
 
-  # ---------------------------------------------------------
-  # File path completion
-  # ---------------------------------------------------------
-  case "$prev" in
-    --config|--masterkey)
-      _filedir
-      return 0
-      ;;
-  esac
 
-  # ---------------------------------------------------------
-  # Subcommand (기능 옵션) availability
-  # ---------------------------------------------------------
+  # ------------------------------------------------------
+  # 기능 옵션 추천 정책:
+  #   - 기능 옵션들은 서로 동시에 사용 불가 (mutual exclusive)
+  #   - 즉, 아직 기능 옵션이 선택되지 않았다면 추천함
+  #   - 이미 기능 옵션이 선택되었으면 그 옵션만 추천함
+  # ------------------------------------------------------
   local avail_cmds=()
-
   if [[ -z "$used_cmd" ]]; then
     avail_cmds+=( "${cmds[@]}" )
   else
     avail_cmds+=( "$used_cmd" )
   fi
 
-  # ---------------------------------------------------------
-  # Final suggestions
-  # ---------------------------------------------------------
-  local suggestions=()
-  suggestions+=( "${avail_cmds[@]}" )
-  suggestions+=( "${avail_globals[@]}" )
 
-  COMPREPLY=( $(compgen -W "${suggestions[*]}" -- "$cur") )
+  # ------------------------------------------------------
+  # 최종 추천 리스트 구성
+  # ------------------------------------------------------
+  local candidates=()
+  candidates+=( "${avail_cmds[@]}" )
+  candidates+=( "${avail_globals[@]}" )
+
+  COMPREPLY=( $(compgen -W "${candidates[*]}" -- "$cur") )
 }
 
+# Register
 complete -F _sshctl_complete sshctl
