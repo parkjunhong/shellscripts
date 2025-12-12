@@ -22,8 +22,14 @@
 
 _sshctl_complete() {
   local cur prev
-  _init_completion || return 0
-
+  
+  if declare -F _init_completion >/dev/null 2>&1; then
+    _init_completion || true
+  else
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+  fi
+  
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
