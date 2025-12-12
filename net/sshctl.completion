@@ -6,35 +6,25 @@
 # @since    : 2025-12-11
 # @desc     : support RHEL / Oracle Linux / Ubuntu / CentOS
 # @installation : 
-#   1. insert 'source <path>/sshctl.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for personal usage.
-#   2. copy this file into /etc/bash_completion.d/ or insert
-#      'source <path>/sshctl.completion' into /etc/bashrc for all users.
+#   1. insert 'source <path>/sshctl.completion' into ~/bin/.bashrc or ~/bin/.bash_profile
+#   2. for system-wide usage, copy into /etc/bash_completion.d/
 # =======================================
 
 # =======================================
-# bash completion parameters description
+# bash completion parameters (ENGLISH)
 # =======================================
-# Global Reserved Variables
-# 1. COMP_WORDS: an array, contains all arguments
-# 2. COMP_CWORD: a index of a cursor
-# 3. COMP_LINE: all command string
-# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+# COMP_WORDS: an array, contains all arguments
+# COMP_CWORD: index of cursor
+# COMP_LINE: full command-line
+# COMPREPLY: an array to return suggested words
 #
-# Arguments of a function
-# 1. $1: command
-# 2. $2: current
-# 3. $3: previous
-#
-# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
-# - $1: mycmd
-# - $2: arg4
-# - $3: arg3
+# function args:
+#  $1 = command
+#  $2 = current
+#  $3 = previous
 # =======================================
 
 
-# =====================================================================
-# sshctl bash-completion
-# =====================================================================
 _sshctl_complete() {
   local cur prev words cword
   _init_completion || return 0
@@ -43,16 +33,9 @@ _sshctl_complete() {
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
   # ---------------------------------------------------------
-  # 1. Long 옵션만 추천 (short 옵션 제외)
+  # Long-only 옵션 목록 (short 옵션 자동완성 제외)
   # ---------------------------------------------------------
-  local long_globals=(
-    --help
-    --show-credential
-    --config
-    --masterkey
-  )
-
-  local long_cmds=(
+  local cmds=(
     --list-all
     --add-connection
     --modify-connection
@@ -60,29 +43,84 @@ _sshctl_complete() {
     --move-group-connection
   )
 
+  local globals=(
+    --help
+    --show-credential
+    --config
+    --masterkey
+  )
+
+
   # ---------------------------------------------------------
-  # 2. 이미 입력한 long 옵션은 제외
+  # 어떤 명령어가 이미 입력되었는지 확인
+  # (mutually exclusive logic)
   # ---------------------------------------------------------
-  local used=()
+  local used_cmd=""
+  for w in "${COMP_WORDS[@]}"; do
+    case "$w" in
+      --add-connection|--modify-connection|--delete-connection|--move-group-connection)
+        used_cmd="$w"
+        ;;
+    esac
+  done
+
+
+  # ---------------------------------------------------------
+  # --config, --masterkey 는 항상 추천 가능
+  # 그 외, 이미 사용된 글로벌 옵션은 추천 금지
+  # ---------------------------------------------------------
+  local used_globals=()
   for w in "${COMP_WORDS[@]}"; do
     case "$w" in
       --help|--show-credential|--config|--masterkey)
-        used+=("$w")
+        used_globals+=("$w")
         ;;
     esac
   done
 
   local avail_globals=()
-  for o in "${long_globals[@]}"; do
+  for o in "${globals[@]}"; do
     local skip=false
-    for u in "${used[@]}"; do
+    for u in "${used_globals[@]}"; do
       [[ "$o" == "$u" ]] && skip=true
     done
+
+    # rule ③: --show-credential 은 --list-all 이 있을 때만 추천
+    if [[ "$o" == "--show-credential" ]]; then
+      local has_list_all=false
+      for w in "${COMP_WORDS[@]}"; do
+        [[ "$w" == "--list-all" ]] && has_list_all=true
+      done
+      $has_list_all || skip=true
+    fi
+
     $skip || avail_globals+=("$o")
   done
 
+
   # ---------------------------------------------------------
-  # 3. 파일 경로 자동완성 (--config, --masterkey)
+  # 1) 첫 번째 인자 위치 처리
+  # ---------------------------------------------------------
+  if [[ $COMP_CWORD -eq 1 ]]; then
+    local suggestions=()
+
+    # rule ①: subcommands are mutually exclusive
+    if [[ -z "$used_cmd" ]]; then
+      suggestions+=( "${cmds[@]}" )
+    else
+      # 이미 한 명령이 선택되었으면 다른 명령 추천 금지
+      suggestions+=( "$used_cmd" )
+    fi
+
+    suggestions+=( "${avail_globals[@]}" )
+
+    COMPREPLY=( $(compgen -W "${suggestions[*]}" -- "$cur") )
+    return 0
+  fi
+
+
+  # ---------------------------------------------------------
+  # 2) 파일 경로 자동완성 (--config, --masterkey)
   # ---------------------------------------------------------
   case "$prev" in
     --config|--masterkey)
@@ -91,16 +129,10 @@ _sshctl_complete() {
       ;;
   esac
 
-  # ---------------------------------------------------------
-  # 4. 첫 번째 인자인 경우 (명령어 또는 long 옵션 추천)
-  # ---------------------------------------------------------
-  if [[ $COMP_CWORD -eq 1 ]]; then
-    COMPREPLY=( $(compgen -W "${long_cmds[*]} ${avail_globals[*]}" -- "$cur") )
-    return 0
-  fi
 
   # ---------------------------------------------------------
-  # 5. 명령별 세부 인자 자동완성 금지 (expr 자유 입력)
+  # 3) subcommand 이후 인자는 사용자가 직접 입력해야 하는 값
+  #    => expr (검색어) 자동완성 제공하지 않음
   # ---------------------------------------------------------
   case "${COMP_WORDS[1]}" in
     --list-all|--modify-connection|--delete-connection|--move-group-connection|--add-connection)
@@ -108,8 +140,9 @@ _sshctl_complete() {
       ;;
   esac
 
+
   # ---------------------------------------------------------
-  # 6. 글로벌 long 옵션 추천 (이미 입력된 옵션은 제외)
+  # 4) 그 외는 글로벌 long 옵션만 추천
   # ---------------------------------------------------------
   COMPREPLY=( $(compgen -W "${avail_globals[*]}" -- "$cur") )
 }
