@@ -11,7 +11,7 @@
 # =======================================
 
 # =======================================
-# Bash completion parameters (English)
+# Bash completion parameters (ENGLISH)
 # =======================================
 # COMP_WORDS  : array of all arguments
 # COMP_CWORD  : index of cursor
@@ -22,10 +22,9 @@
 
 _sshctl_complete() {
   local cur prev words cword
-  # 표준 방식: bash-completion 프레임워크에서 단어 분리 처리
   _get_comp_words_by_ref -n : cur prev words cword
 
-  # 기능 옵션(서브커맨드)
+  # 기능 옵션
   local cmds=(
     --list-all
     --add-connection
@@ -42,29 +41,27 @@ _sshctl_complete() {
     --show-credential
   )
 
-  # 사용된 옵션 감지
-  local used_cmd=""
+  # 이미 사용된 옵션 확인
+  local used_list_all=false
   local used_help=false
   local used_show_cred=false
 
-  # NOTE: words 배열은 sshctl 포함
+  # "이미 입력된 옵션 목록" 구성
+  local used_opts=()
   for tok in "${words[@]}"; do
     case "$tok" in
-      --list-all|--add-connection|--modify-connection|--delete-connection|--move-group-connection)
-        used_cmd="$tok"
-        ;;
-      --help)
-        used_help=true
-        ;;
-      --show-credential)
-        used_show_cred=true
+      --list-all) used_list_all=true ;;
+      --help) used_help=true ;;
+      --show-credential) used_show_cred=true ;;
+      --config|--masterkey|--add-connection|--modify-connection|--delete-connection|--move-group-connection)
+        used_opts+=( "$tok" )
         ;;
     esac
   done
 
 
   # ------------------------------------------------------
-  # --config / --masterkey 뒤에서는 무조건 파일 추천
+  # 파일 추천 필요한 옵션 처리
   # ------------------------------------------------------
   case "$prev" in
     --config|--masterkey)
@@ -75,52 +72,42 @@ _sshctl_complete() {
 
 
   # ------------------------------------------------------
-  # 추천 가능한 글로벌 옵션 계산
+  # 아직 사용되지 않은 옵션을 추천 목록에 넣기
   # ------------------------------------------------------
-  local avail_globals=()
+  local suggestions=()
 
-  # --help (중복 불가)
-  if ! $used_help; then
-    avail_globals+=( "--help" )
-  fi
-
-  # --config (중복 허용)
-  avail_globals+=( "--config" )
-
-  # --masterkey (중복 허용)
-  avail_globals+=( "--masterkey" )
-
-  # --show-credential (조건: --list-all 이 선택된 경우에만)
-  if [[ "$used_cmd" == "--list-all" ]]; then
-    if ! $used_show_cred; then
-      avail_globals+=( "--show-credential" )
+  # 기능 옵션: 중복 사용 가능하지만 "추천은 중복 금지"
+  for opt in "${cmds[@]}"; do
+    if [[ ! " ${used_opts[*]} " =~ " ${opt} " ]]; then
+      suggestions+=( "$opt" )
     fi
+  done
+
+  # --help : 중복 추천 금지
+  if ! $used_help; then
+    suggestions+=( "--help" )
+  fi
+
+  # --config : 중복 추천 금지
+  if [[ ! " ${used_opts[*]} " =~ " --config " ]]; then
+    suggestions+=( "--config" )
+  fi
+
+  # --masterkey : 중복 추천 금지
+  if [[ ! " ${used_opts[*]} " =~ " --masterkey " ]]; then
+    suggestions+=( "--masterkey" )
+  fi
+
+  # --show-credential : list-all 있을 때만 추천 + 중복 추천 금지
+  if $used_list_all && ! $used_show_cred; then
+    suggestions+=( "--show-credential" )
   fi
 
 
   # ------------------------------------------------------
-  # 기능 옵션 추천 정책:
-  #   - 기능 옵션들은 서로 동시에 사용 불가 (mutual exclusive)
-  #   - 즉, 아직 기능 옵션이 선택되지 않았다면 추천함
-  #   - 이미 기능 옵션이 선택되었으면 그 옵션만 추천함
+  # 최종 추천 출력
   # ------------------------------------------------------
-  local avail_cmds=()
-  if [[ -z "$used_cmd" ]]; then
-    avail_cmds+=( "${cmds[@]}" )
-  else
-    avail_cmds+=( "$used_cmd" )
-  fi
-
-
-  # ------------------------------------------------------
-  # 최종 추천 리스트 구성
-  # ------------------------------------------------------
-  local candidates=()
-  candidates+=( "${avail_cmds[@]}" )
-  candidates+=( "${avail_globals[@]}" )
-
-  COMPREPLY=( $(compgen -W "${candidates[*]}" -- "$cur") )
+  COMPREPLY=( $(compgen -W "${suggestions[*]}" -- "$cur") )
 }
 
-# Register
 complete -F _sshctl_complete sshctl
