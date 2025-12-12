@@ -1017,10 +1017,10 @@ _get_filtered_raw_connections() {
 ##
 print_config_summary_banner() {
   local line
-  line="**************************************************************"
+  line="*****************************************************************"
   printf '%s\n' "$line"
-  printf '⚙️ configuration: %s\n' "${CONFIG_FILE}"
-  printf '⚙️ masterkey    : %s\n' "${MASTERKEY_FILE:-<not set>}"
+  printf '⚙️\t configuration: %s\n' "${CONFIG_FILE}"
+  printf '⚙️\t masterkey    : %s\n' "${MASTERKEY_FILE:-<not set>}"
   printf '%s\n' "$line"
 }
 
