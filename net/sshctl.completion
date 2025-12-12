@@ -21,14 +21,14 @@
 
 
 _sshctl_complete() {
-  local cur prev words cword
+  local cur prev
   _init_completion || return 0
 
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
   # ---------------------------------------------------------
-  # long-only 옵션 목록
+  # Subcommands (기능 옵션)
   # ---------------------------------------------------------
   local cmds=(
     --list-all
@@ -38,6 +38,9 @@ _sshctl_complete() {
     --move-group-connection
   )
 
+  # ---------------------------------------------------------
+  # Global options
+  # ---------------------------------------------------------
   local globals=(
     --help
     --config
@@ -46,52 +49,48 @@ _sshctl_complete() {
   )
 
   # ---------------------------------------------------------
-  # 어떤 명령(subcommand)이 이미 입력되었는지 분석
-  # (이 4개는 mutual exclusive)
+  # Detect used options
   # ---------------------------------------------------------
   local used_cmd=""
-  for w in "${COMP_WORDS[@]}"; do
-    case "$w" in
+  local used_help=false
+  local used_show_cred=false
+
+  for token in "${COMP_WORDS[@]}"; do
+    case "$token" in
       --list-all|--add-connection|--modify-connection|--delete-connection|--move-group-connection)
-        used_cmd="$w"
+        used_cmd="$token"
+        ;;
+      --help)
+        used_help=true
+        ;;
+      --show-credential)
+        used_show_cred=true
         ;;
     esac
   done
 
   # ---------------------------------------------------------
-  # 이미 사용된 global 옵션 제거
-  # 단, --config / --masterkey 는 중복 허용 → 제거하지 않음
+  # Global options availability (중복 제거 규칙)
   # ---------------------------------------------------------
-  local used_globals=()
-  for w in "${COMP_WORDS[@]}"; do
-    case "$w" in
-      --help|--show-credential)
-        used_globals+=("$w")
-        ;;
-    esac
-  done
-
   local avail_globals=()
-  for o in "${globals[@]}"; do
-    local skip=false
 
-    # 이미 사용된 글로벌 옵션 제거
-    for u in "${used_globals[@]}"; do
-      [[ "$o" == "$u" ]] && skip=true
-    done
+  # --help : 중복 불가
+  if ! $used_help; then
+    avail_globals+=( "--help" )
+  end
 
-    # rule ③: --show-credential 은 --list-all 있을 때만 추천
-    if [[ "$o" == "--show-credential" ]]; then
-      local has_list=false
-      for w in "${COMP_WORDS[@]}"; do
-        [[ "$w" == "--list-all" ]] && has_list=true
-      done
-      $has_list || skip=true
-    fi
+  # --config : 중복 허용
+  avail_globals+=( "--config" )
 
-    $skip || avail_globals+=("$o")
-  done
+  # --masterkey : 중복 허용
+  avail_globals+=( "--masterkey" )
 
+  # --show-credential : 오직 list-all 있을 때만
+  if [[ "$used_cmd" == "--list-all" ]]; then
+    if ! $used_show_cred; then
+      avail_globals+=( "--show-credential" )
+    end
+  fi
 
   # ---------------------------------------------------------
   # 파일/디렉토리 자동완성 (--config, --masterkey)
@@ -103,49 +102,27 @@ _sshctl_complete() {
       ;;
   esac
 
-
   # ---------------------------------------------------------
-  # 첫 번째 토큰 처리
+  # Subcommand suggestion (규칙 Q1, Q2 반영)
   # ---------------------------------------------------------
-  if [[ $COMP_CWORD -eq 1 ]]; then
-    local suggestions=()
+  local avail_cmds=()
 
-    # mutual exclusive sub commands
-    if [[ -z "$used_cmd" ]]; then
-      suggestions+=( "${cmds[@]}" )
-    else
-      suggestions+=( "$used_cmd" )
-    fi
-
-    suggestions+=( "${avail_globals[@]}" )
-
-    COMPREPLY=( $(compgen -W "${suggestions[*]}" -- "$cur") )
-    return 0
+  if [[ -z "$used_cmd" ]]; then
+    # 아직 기능 옵션 없음 → 모두 추천
+    avail_cmds+=( "${cmds[@]}" )
+  else
+    # 이미 기능 옵션 1개 사용됨 → 다른 기능 옵션 추천 금지
+    avail_cmds+=( "$used_cmd" )
   fi
 
+  # ---------------------------------------------------------
+  # 합쳐서 추천
+  # ---------------------------------------------------------
+  local suggestions=()
+  suggestions+=( "${avail_cmds[@]}" )
+  suggestions+=( "${avail_globals[@]}" )
 
-  # ---------------------------------------------------------
-  # subcommand 선택 후: expr 자동완성 비활성
-  # 대신 글로벌 옵션은 계속 추천
-  # ---------------------------------------------------------
-  case "$used_cmd" in
-    --list-all)
-      # list-all 이후에는 expr(검색식) 이므로 자동완성 없음
-      # 단, 글로벌 옵션은 허용됨
-      COMPREPLY=( $(compgen -W "${avail_globals[*]}" -- "$cur") )
-      return 0
-      ;;
-    --add-connection|--modify-connection|--delete-connection|--move-group-connection)
-      # expr 자동완성 무효 / 글로벌 옵션만 허용
-      COMPREPLY=( $(compgen -W "${avail_globals[*]}" -- "$cur") )
-      return 0
-      ;;
-  esac
-
-  # ---------------------------------------------------------
-  # 그 외 나머지 경우 (예외 방지)
-  # ---------------------------------------------------------
-  COMPREPLY=( $(compgen -W "${avail_globals[*]}" -- "$cur") )
+  COMPREPLY=( $(compgen -W "${suggestions[*]}" -- "$cur") )
 }
 
 complete -F _sshctl_complete sshctl
