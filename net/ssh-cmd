@@ -1970,13 +1970,22 @@ select_indices_for_delete() {
       if [[ -z "$group" && -z "$name" && -z "$host" && -z "$port" && -z "$user" && -z "$cred" ]]; then
         continue
       fi
+      # -------------------------------
+      # ★ 민감정보 복호화 적용
+      # -------------------------------
+      user_dec="$(decrypt_value_if_needed "$user")"
+      cred_dec="$(decrypt_value_if_needed "$cred")"
+
+      # credential 출력 정책은 복호화된 값 기준
+      display_cred="$(format_credential_for_display "$cred_dec")"
+
       n=$((n+1))
       idx_map[$n]="$idx"
 
       local display_idx
       printf -v display_idx "%04d" "$n"
       display_cred="$(format_credential_for_display "$cred")"
-      temp_buffer+="${display_idx}\t${group}\t${name}\t${host}\t${port}\t${user}\t${display_cred}\n"
+      temp_buffer+="${display_idx}\t${group}\t${name}\t${host}\t${port}\t${user_dec}\t${display_cred}\n"
     done <<< "$raw"
 
     local rendered header_line data_lines header_len dash_line eq_line
@@ -2002,6 +2011,16 @@ select_indices_for_delete() {
       if [[ -z "$group" && -z "$name" && -z "$host" && -z "$port" && -z "$user" && -z "$cred" ]]; then
         continue
       fi
+
+      # -------------------------------
+      # ★ 민감정보 복호화 적용
+      # -------------------------------
+      user_dec="$(decrypt_value_if_needed "$user")"
+      cred_dec="$(decrypt_value_if_needed "$cred")"
+
+      # credential 출력 정책은 복호화된 값 기준
+      display_cred="$(format_credential_for_display "$cred_dec")"
+
       n=$((n+1))
       idx_map[$n]="$idx"
 
@@ -2009,7 +2028,7 @@ select_indices_for_delete() {
       local display_idx
       printf -v display_idx "%04d" "$n"
       printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
-        "$display_idx" "$group" "$name" "$host" "$port" "$user" "$display_cred" >&2
+        "$display_idx" "$group" "$name" "$host" "$port" "$user_dec" "$display_cred" >&2
     done <<< "$raw"
   fi
 
