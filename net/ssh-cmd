@@ -400,8 +400,9 @@ encrypt_value() {
 
   # AES-256-CBC 암호화 (base64 출력)
   local cipher
+  # Base64 단일 라인 강제
   cipher="$(echo -n "$plaintext" \
-      | openssl enc -aes-256-cbc -a -salt -pass pass:"$derived_key" 2>/dev/null)"
+      | openssl enc -aes-256-cbc -a -A -salt -pass pass:"$derived_key" 2>/dev/null)"
 
   if [[ $? -ne 0 || -z "$cipher" ]]; then
     die "민감정보 암호화(encrypt_value) 중 오류가 발생했습니다."
