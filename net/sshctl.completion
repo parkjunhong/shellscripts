@@ -4,7 +4,7 @@
 # @title    : sshctl bash completion.
 # @license  : Apache License 2.0
 # @since    : 2025-12-11
-# @desc     : support RHEL / Oracle Linux / Ubuntu / CentOS
+# @desc     : support RHEL 6/7/8/9, Oracle Linux 6/7/8/9, Ubuntu 14.04–24.04, CentOS 6/7/8 Stream
 # @installation : 
 #   1. insert 'source <path>/sshctl.completion' into ~/bin/.bashrc or ~/bin/.bash_profile
 #   2. for system-wide usage, copy into /etc/bash_completion.d/
@@ -70,30 +70,30 @@ _sshctl_complete() {
   done
 
   # ---------------------------------------------------------
-  # Global options availability (중복 제거 규칙)
+  # Global options availability
   # ---------------------------------------------------------
   local avail_globals=()
 
-  # --help : 중복 불가
+  # --help (중복 불가)
   if ! $used_help; then
     avail_globals+=( "--help" )
-  end
+  fi
 
-  # --config : 중복 허용
+  # --config (중복 허용)
   avail_globals+=( "--config" )
 
-  # --masterkey : 중복 허용
+  # --masterkey (중복 허용)
   avail_globals+=( "--masterkey" )
 
-  # --show-credential : 오직 list-all 있을 때만
+  # --show-credential : list-all 선택 시에만
   if [[ "$used_cmd" == "--list-all" ]]; then
     if ! $used_show_cred; then
       avail_globals+=( "--show-credential" )
-    end
+    fi
   fi
 
   # ---------------------------------------------------------
-  # 파일/디렉토리 자동완성 (--config, --masterkey)
+  # File path completion
   # ---------------------------------------------------------
   case "$prev" in
     --config|--masterkey)
@@ -103,20 +103,18 @@ _sshctl_complete() {
   esac
 
   # ---------------------------------------------------------
-  # Subcommand suggestion (규칙 Q1, Q2 반영)
+  # Subcommand (기능 옵션) availability
   # ---------------------------------------------------------
   local avail_cmds=()
 
   if [[ -z "$used_cmd" ]]; then
-    # 아직 기능 옵션 없음 → 모두 추천
     avail_cmds+=( "${cmds[@]}" )
   else
-    # 이미 기능 옵션 1개 사용됨 → 다른 기능 옵션 추천 금지
     avail_cmds+=( "$used_cmd" )
   fi
 
   # ---------------------------------------------------------
-  # 합쳐서 추천
+  # Final suggestions
   # ---------------------------------------------------------
   local suggestions=()
   suggestions+=( "${avail_cmds[@]}" )
