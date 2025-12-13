@@ -214,30 +214,191 @@ EOF
 }
 
 ##
-# jq, ssh 등의 필수 의존성을 점검하고, 누락된 경우 스크립트를 종료한다.
-# Check for required dependencies (jq, ssh); abort script if any is missing.
+# jq, ssh 등의 필수 의존성을 점검하고, 누락된 경우 자동 설치 후 안내하고 종료한다.
+# Check required dependencies (jq, ssh, md5sum); install missing ones in one shot, notify, and exit.
 #
 # @param $1 없음 / none
 #
-# @return {int} 모든 의존성이 존재하면 0, 누락 시 die()를 통해 exit 1
-#         0 if all dependencies exist; otherwise terminates via die() with exit 1.
+# @return {int} 모든 의존성이 존재하면 0
+#         If dependencies were installed successfully, prints a message and exits 0 (user should rerun).
+#         설치 실패/권한 부족/지원되지 않는 환경이면 die() 로 종료 (비-0)
+#         Terminates via die() (non-zero) on failure/privilege issue/unsupported environment.
 ##
 ensure_dependencies() {
-  local missing=()
+  local missing_cmds=()
+  local pkgs=()
 
+  # ---------------------------------------
+  # helpers (local)
+  # ---------------------------------------
+  _add_unique() {
+    local arr_name="$1"
+    local val="$2"
+    local x
+    eval "for x in \"\${${arr_name}[@]-}\"; do
+      if [[ \"\${x}\" == \"\${val}\" ]]; then
+        return 0
+      fi
+    done"
+    eval "${arr_name}+=(\"\${val}\")"
+  }
+
+  _progress_line() {
+    # 한 줄 진행 표시 / One-line progress display.
+    # - \r: line rewind, \033[K: clear to end of line
+    printf '\r%s\033[K' "$1"
+  }
+
+  _progress_done() {
+    printf '\r%s\033[K\n' "$1"
+  }
+
+  _run_quiet_or_die() {
+    # 출력 억제 + 실패 시 로그 출력 / Suppress output; show logs on failure.
+    # @param $1 {string} label
+    # @param $2... command
+    local label="$1"
+    shift
+
+    local tmp_out
+    tmp_out="$(mktemp -t sshctl-dep.XXXXXX)"
+    _progress_line "⏳ ${label} ..."
+    if ! "$@" >"${tmp_out}" 2>&1; then
+      _progress_done "❌ ${label} 실패"
+      echo "---- command output (begin) ----" >&2
+      cat "${tmp_out}" >&2
+      echo "---- command output (end) ----" >&2
+      rm -f "${tmp_out}"
+      die "${label} failed."
+    fi
+    rm -f "${tmp_out}"
+    _progress_done "✅ ${label} 완료"
+  }
+
+  # ---------------------------------------
+  # 1) detect package manager
+  # ---------------------------------------
+  local is_deb=false
+  local is_rpm=false
+
+  if command -v apt-get >/dev/null 2>&1; then
+    is_deb=true
+  fi
+  if command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then
+    is_rpm=true
+  fi
+
+  # ---------------------------------------
+  # 2) check all required commands first
+  # ---------------------------------------
   if ! command -v jq >/dev/null 2>&1; then
-    missing+=("jq")
+    missing_cmds+=( "jq" )
+    _add_unique pkgs "jq"
+  fi
+
+  if ! command -v ssh >/dev/null 2>&1; then
+    missing_cmds+=( "ssh" )
+    if ${is_deb}; then
+      _add_unique pkgs "openssh-client"
+    else
+      _add_unique pkgs "openssh-clients"
+    fi
+  fi
+
+  if ! command -v md5sum >/dev/null 2>&1; then
+    missing_cmds+=( "md5sum" )
+    # md5sum is usually in coreutils (RHEL/Ubuntu). / 대부분 coreutils
+    _add_unique pkgs "coreutils"
+  fi
+
+  # nothing missing
+  if [[ "${#missing_cmds[@]}" -eq 0 ]]; then
+    return 0
+  fi
+
+  # ---------------------------------------
+  # 3) prepare privilege runner (sudo/root)
+  # ---------------------------------------
+  local runner_cmd=()
+  if [[ "$(id -u)" -ne 0 ]]; then
+    if command -v sudo >/dev/null 2>&1; then
+      runner_cmd=(sudo)
+      echo "============================================================================"
+      echo "❗ sshctl 실행에 필요한 의존성 도구가 없습니다. 자동 설치를 진행합니다."
+      echo "❗ Missing required tools for sshctl. Installing required packages."
+      echo
+      echo "⚠️  관리자 권한이 필요합니다. 곧 sudo 비밀번호 입력을 요청할 수 있습니다."
+      echo "⚠️  Root privilege is required. sudo may prompt for your password."
+      echo "============================================================================"
+      echo
+    else
+      die "Missing dependencies (${missing_cmds[*]}). Need root or sudo to install: ${pkgs[*]}"
+    fi
+  else
+    echo "============================================================================"
+    echo "❗ sshctl 실행에 필요한 의존성 도구가 없습니다. 자동 설치를 진행합니다."
+    echo "❗ Missing required tools for sshctl. Installing required packages."
+    echo "============================================================================"
+    echo
+  fi
+
+  printf '⚙️  missing commands: %s\n' "${missing_cmds[*]}"
+  printf '⚙️  install packages: %s\n' "${pkgs[*]}"
+  echo
+
+  # ---------------------------------------
+  # 4) install missing packages in one shot
+  #    - apt-get update output suppression/standardization applied
+  # ---------------------------------------
+  if ${is_deb}; then
+    # apt-get update: suppress output, standardize options
+    # -qq: less output, Use-Pty=0: avoid interactive progress noise
+    _run_quiet_or_die "apt-get update" \
+      "${runner_cmd[@]}" apt-get -o Dpkg::Use-Pty=0 update -qq
+
+    # apt-get install: suppress output, noninteractive, one shot
+    _run_quiet_or_die "apt-get install (${pkgs[*]})" \
+      env DEBIAN_FRONTEND=noninteractive \
+      "${runner_cmd[@]}" apt-get -o Dpkg::Use-Pty=0 install -y -qq --no-install-recommends "${pkgs[@]}"
+
+  elif command -v dnf >/dev/null 2>&1; then
+    _run_quiet_or_die "dnf install (${pkgs[*]})" \
+      "${runner_cmd[@]}" dnf -y -q install "${pkgs[@]}"
+
+  elif command -v yum >/dev/null 2>&1; then
+    _run_quiet_or_die "yum install (${pkgs[*]})" \
+      "${runner_cmd[@]}" yum -y -q install "${pkgs[@]}"
+
+  else
+    die "Cannot install dependencies automatically: unsupported package manager. Missing: ${missing_cmds[*]}"
+  fi
+
+  # ---------------------------------------
+  # 5) re-check after install
+  # ---------------------------------------
+  local still_missing=()
+  if ! command -v jq >/dev/null 2>&1; then
+    still_missing+=( "jq" )
   fi
   if ! command -v ssh >/dev/null 2>&1; then
-    missing+=("ssh")
+    still_missing+=( "ssh" )
   fi
   if ! command -v md5sum >/dev/null 2>&1; then
-    missing+=("md5sum")
+    still_missing+=( "md5sum" )
   fi
 
-  if [[ "${#missing[@]}" -gt 0 ]]; then
-    die "Required commands are missing: ${missing[*]}"
+  if [[ "${#still_missing[@]}" -gt 0 ]]; then
+    die "Dependency installation completed but some commands are still missing: ${still_missing[*]}"
   fi
+
+  # ---------------------------------------
+  # 6) notify and exit (user should rerun)
+  # ---------------------------------------
+  echo
+  echo "✅ 'sshctl' 프로그램에 필요한 도구를 모두 설치하였습니다. 프로그램을 다시 실행시켜 주세요."
+  echo "✅ Installed all required tools for 'sshctl'. Please rerun the program."
+  echo
+  exit 0
 }
 
 ##
