@@ -1896,6 +1896,8 @@ cmd_connect() {
 
   validate_port "$port" || die "port 값이 잘못되었습니다: $port"
 
+  local ssh_opts=(-o StrictHostKeyChecking=accept-new)
+  
   if [[ "$auth_type" == "password" ]]; then
     if ! command -v sshpass >/dev/null 2>&1; then
       echo "❗  sshpass 가 설치되어 있지 않아, 이번 접속은 취소하고 sshpass 설치를 진행합니다." >&2
@@ -1913,7 +1915,7 @@ cmd_connect() {
     echo "❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗" >&2
     echo "❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗❗" >&2
     echo 
-    sshpass -p "$credential" ssh -p "$port" "${username}@${host}"
+    sshpass -p "$credential" ssh "${ssh_opts[@]}" -p "$port" "${username}@${host}"
   else
     if [[ ! -f "$credential" ]]; then
       die "key file not found: $credential"
@@ -1927,7 +1929,7 @@ cmd_connect() {
     echo "🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐" >&2
     echo "🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐" >&2
     echo 
-    exec ssh -p "$port" -i "$credential" "${username}@${host}"
+    exec ssh "${ssh_opts[@]}" -p "$port" -i "$credential" "${username}@${host}"
   fi
 }
 
