@@ -9,8 +9,8 @@ SSHCTL_FILENAME="sshctl"
 SSHCTL_COMPLETION_FILENAME="${SSHCTL_FILENAME}.completion"
 
 # --- 환경 변수 정의 ---
-SSHCTL_URL="https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main/net/${SSHCTL_FILENAME}"
-COMPLETION_URL="https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main/net/${SSHCTL_COMPLETION_FILENAME}"
+SSHCTL_SCRIPT_URL="https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main/net/sshctl/${SSHCTL_FILENAME}"
+SSHCTL_COMPLETION_URL="https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main/net/sshctl/${SSHCTL_COMPLETION_FILENAME}"
 
 # 임시 파일 및 경로
 TEMP_DIR=$(mktemp -d)
@@ -49,16 +49,16 @@ download_files() {
     echo "🚀 [다운로드 시작]"
     
     # sshctl 다운로드
-    echo "  ⚙️ sshctl 다운로드 중: ${SSHCTL_URL}"
-    $DOWNLOADER "${SSHCTL_URL}" > "${SSHCTL_TEMP_FILE}"
+    echo "  ⚙️ sshctl 다운로드 중: ${SSHCTL_SCRIPT_URL}"
+    $DOWNLOADER "${SSHCTL_SCRIPT_URL}" > "${SSHCTL_TEMP_FILE}"
     if [ $? -ne 0 ]; then
         echo "  ❌ sshctl 다운로드 실패. URL을 확인하세요." >&2
         return 1
     fi
     
     # sshctl.completion 다운로드
-    echo "  ⚙️ sshctl.completion 다운로드 중: ${COMPLETION_URL}"
-    $DOWNLOADER "${COMPLETION_URL}" > "${COMPLETION_TEMP_FILE}"
+    echo "  ⚙️ sshctl.completion 다운로드 중: ${SSHCTL_COMPLETION_URL}"
+    $DOWNLOADER "${SSHCTL_COMPLETION_URL}" > "${COMPLETION_TEMP_FILE}"
     if [ $? -ne 0 ]; then
         echo "  ❌ sshctl.completion 다운로드 실패. URL을 확인하세요." >&2
         return 1
