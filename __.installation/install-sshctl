@@ -15,7 +15,7 @@ COMPLETION_URL="https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/
 # 임시 파일 및 경로
 TEMP_DIR=$(mktemp -d)
 SSHCTL_TEMP_FILE="${TEMP_DIR}/${SSHCTL_FILENAME}"
-COMPLETION_TEMP_FILE="${TEMP_DIR}/${SSHCTL_COMPLETION_FILENAME"
+COMPLETION_TEMP_FILE="${TEMP_DIR}/${SSHCTL_COMPLETION_FILENAME}"
 
 # 설치 대상 경로
 SSHCTL_TARGET_DIR="${HOME}/bin"
