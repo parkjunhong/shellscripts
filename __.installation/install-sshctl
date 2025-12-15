@@ -106,7 +106,7 @@ ensure_dir() {
   if mkdir -p "${target_dir}" 2>/dev/null; then
     return 0
   else
-    echo "  ℹ️ 디렉토리(${target_dir}) 생성에 sudo 권한이 필요합니다."
+    echo "  ℹ️  디렉토리(${target_dir}) 생성에 sudo 권한이 필요합니다."
     if command -v sudo >/dev/null 2>&1; then
       sudo mkdir -p "${target_dir}" || {
         echo "  ❌ 디렉토리(${target_dir}) 생성 실패." >&2
@@ -182,7 +182,7 @@ download_file() {
   local target="$2"
   local label="$3"
 
-  echo "  ⚙️ ${label} 다운로드 중: ${url}"
+  echo "  ⚙️  ${label} 다운로드 중: ${url}"
   ${DOWNLOADER} "${url}" > "${target}"
   if [[ $? -ne 0 || ! -s "${target}" ]]; then
     echo "  ❌ ${label} 다운로드 실패." >&2
@@ -202,7 +202,7 @@ install_sshctl() {
   download_file "${SSHCTL_SCRIPT_URL}" "${SSHCTL_TEMP_FILE}" "sshctl" || return 1
   copy_and_set_permissions "${SSHCTL_TEMP_FILE}" "${SSHCTL_TARGET_DIR}" "${SSHCTL_FILENAME}" "true" || return 1
 
-  echo "  ℹ️ PATH 에 ${SSHCTL_TARGET_DIR} 가 포함되어 있는지 확인하세요."
+  echo "  ℹ️  PATH 에 ${SSHCTL_TARGET_DIR} 가 포함되어 있는지 확인하세요."
   echo "     예) export PATH=\"${SSHCTL_TARGET_DIR}:\$PATH\""
 
   return 0
@@ -257,7 +257,7 @@ maybe_install_completion() {
     return 0
   }
 
-  echo "  ℹ️ bash 에서 자동완성을 활성화하려면 터미널을 새로 열거나,"
+  echo "  ℹ️  bash 에서 자동완성을 활성화하려면 터미널을 새로 열거나,"
   echo "     다음 명령 중 하나를 실행하세요:"
   echo "       - source ~/.bashrc"
   echo "       - source ${COMPLETION_TARGET_DIR}/${SSHCTL_COMPLETION_FILENAME}"
@@ -322,7 +322,7 @@ update_man_db_if_needed() {
     fi
   else
     echo "--------------------------------------------------"
-    echo "  ℹ️ mandb 명령이 없어 man DB 갱신은 건너뜁니다."
+    echo "  ℹ️  mandb 명령이 없어 man DB 갱신은 건너뜁니다."
     echo "     대부분의 경우 설치 후 바로 'man sshctl' 이 동작합니다."
   fi
 }
@@ -332,10 +332,10 @@ update_man_db_if_needed() {
 # ----------------------------------------------------------------------
 main() {
   echo "=================================================="
-  echo " SSHCTL 설치 스크립트"
+  echo " 'sshctl' 설치 스크립트"
   echo " - sshctl 실행파일 (항상 설치)"
-  echo " - sshctl bash completion (옵션)"
   echo " - sshctl man pages (1/5/7, 옵션)"
+  echo " - sshctl bash completion (옵션)"
   echo "=================================================="
   echo " 옵션:"
   echo "   -y : completion 및 man 페이지를 묻지 않고 모두 설치"
@@ -349,16 +349,16 @@ main() {
     exit 1
   fi
 
-  # 2) bash completion (조건부)
-  maybe_install_completion
-
-  # 3) man pages (조건부)
+  # 2) man pages (조건부)
   maybe_install_man "1" "${SSHCTL_MAN1_URL}" "${MAN1_TEMP_FILE}" "${MAN1_TARGET_DIR}" "sshctl.1" "sshctl.1 (기본 명령 man 페이지)"
   maybe_install_man "5" "${SSHCTL_MAN5_URL}" "${MAN5_TEMP_FILE}" "${MAN5_TARGET_DIR}" "sshctl-conf.5" "sshctl-conf.5 (설정 파일 설명 man 페이지)"
   maybe_install_man "7" "${SSHCTL_MAN7_URL}" "${MAN7_TEMP_FILE}" "${MAN7_TARGET_DIR}" "sshctl-security.7" "sshctl-security.7 (보안 설계 man 페이지)"
 
-  # 4) man DB 갱신 (설치된 man 파일이 있는 경우에만)
+  # 3) man DB 갱신 (설치된 man 파일이 있는 경우에만)
   update_man_db_if_needed
+
+  # 4) bash completion (조건부)
+  maybe_install_completion
 
   echo "--------------------------------------------------"
   echo "✨ 설치 완료!"
