@@ -1,0 +1,191 @@
+#!/usr/bin/env bash
+#
+# SSHCTL 및 SSHCTL.COMPLETION 파일을 다운로드하고 설치하는 스크립트
+# - 시스템 권한(/etc)이 필요하면 자동으로 sudo 요청
+# - sshctl 파일에는 실행 권한(chmod +x) 부여
+
+# --- 환경 변수 정의 ---
+SSHCTL_URL="https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main/net/sshctl"
+COMPLETION_URL="https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main/net/sshctl.completion"
+
+# 임시 파일 및 경로
+TEMP_DIR=$(mktemp -d)
+SSHCTL_TEMP_FILE="${TEMP_DIR}/sshctl"
+COMPLETION_TEMP_FILE="${TEMP_DIR}/sshctl.completion"
+
+# 설치 대상 경로
+SSHCTL_TARGET_DIR="${HOME}/bin"
+COMPLETION_TARGET_DIR="/etc/bash_completion.d"
+
+# 버전: 스크립트 실행 시 첫 번째 인자를 버전으로 사용 (선택 사항)
+FILE_VERSION="$1"
+
+# --- 함수 정의 ---
+
+# -----------------------------------------------------------------------------
+# 함수: check_dependencies
+# 설명: 필요한 도구(curl 또는 wget)가 설치되어 있는지 확인
+# -----------------------------------------------------------------------------
+check_dependencies() {
+    if command -v curl >/dev/null 2>&1; then
+        DOWNLOADER="curl -fsSL"
+    elif command -v wget >/dev/null 2>&1; then
+        DOWNLOADER="wget -qO-"
+    else
+        echo "❌ 필수 도구 (curl 또는 wget)가 설치되어 있지 않습니다. 설치 후 다시 시도해주세요." >&2
+        exit 1
+    fi
+}
+
+# -----------------------------------------------------------------------------
+# 함수: download_files
+# 설명: 파일을 다운로드 디렉토리에 저장
+# -----------------------------------------------------------------------------
+download_files() {
+    echo "🚀 [다운로드 시작]"
+    
+    # sshctl 다운로드
+    echo "  ⚙️ sshctl 다운로드 중: ${SSHCTL_URL}"
+    $DOWNLOADER "${SSHCTL_URL}" > "${SSHCTL_TEMP_FILE}"
+    if [ $? -ne 0 ]; then
+        echo "  ❌ sshctl 다운로드 실패. URL을 확인하세요." >&2
+        return 1
+    fi
+    
+    # sshctl.completion 다운로드
+    echo "  ⚙️ sshctl.completion 다운로드 중: ${COMPLETION_URL}"
+    $DOWNLOADER "${COMPLETION_URL}" > "${COMPLETION_TEMP_FILE}"
+    if [ $? -ne 0 ]; then
+        echo "  ❌ sshctl.completion 다운로드 실패. URL을 확인하세요." >&2
+        return 1
+    fi
+    
+    echo "  ✅ 다운로드 완료 (${TEMP_DIR})"
+    return 0
+}
+
+
+# -----------------------------------------------------------------------------
+# 함수: copy_and_set_permissions
+# 설명: 파일을 복사하고 권한 설정
+# -----------------------------------------------------------------------------
+copy_and_set_permissions() {
+    local source_file="$1"
+    local target_dir="$2"
+    local filename="$3"
+    local needs_exec_permission="$4" # 'true' 또는 'false'
+
+    # 1. 대상 디렉터리 존재 여부 확인 및 생성
+    if [ ! -d "${target_dir}" ]; then
+        echo "  ℹ️ 대상 디렉터리 생성: ${target_dir}"
+        # 디렉터리 생성도 권한이 필요할 수 있으므로 sudo를 붙입니다.
+        if ! mkdir -p "${target_dir}" 2>/dev/null; then
+             sudo mkdir -p "${target_dir}"
+        fi
+    fi
+
+    # 2. 권한 확인 및 명령어 설정 (cp)
+    local cp_cmd="cp -v"
+    
+    # 대상 디렉터리에 쓰기 권한(-w)이 없는 경우 sudo 사용
+    if [ ! -w "${target_dir}" ]; then
+        cp_cmd="sudo cp -v"
+        echo "  🔑 관리자 권한 필요 (쓰기 제한됨): ${target_dir}"
+    fi
+
+    # 3. 복사 명령 실행 (cp)
+    local final_dest_path="${target_dir}/${filename}"
+    
+    echo "  ⚙️ 복사 중: ${source_file} &rarr; ${final_dest_path}"
+    
+    $cp_cmd "${source_file}" "${final_dest_path}"
+    
+    if [ $? -ne 0 ]; then
+        echo "  ❌ 파일 복사 실패. 대상 디렉터리 권한을 확인하거나, sudo 권한을 부여하세요." >&2
+        return 1
+    fi
+    
+    echo "  ✅ 복사 완료"
+
+    # 4. 실행 권한 설정 (chmod +x)
+    if [[ "${needs_exec_permission}" == "true" ]]; then
+        local chmod_cmd="chmod +x"
+        
+        # chmod도 sudo가 필요할 수 있으므로 권한 확인
+        if [ ! -w "${final_dest_path}" ]; then
+            chmod_cmd="sudo chmod +x"
+        fi
+        
+        echo "  ⚙️ 실행 권한 부여 중..."
+        $chmod_cmd "${final_dest_path}"
+        
+        if [ $? -ne 0 ]; then
+            echo "  ❌ 실행 권한 부여 실패." >&2
+            return 1
+        fi
+        echo "  ✅ 실행 권한 부여 완료"
+    fi
+    
+    return 0
+}
+
+
+# -----------------------------------------------------------------------------
+# 함수: handle_completion_dir
+# 설명: OS 별 bash_completion 경로 처리
+# -----------------------------------------------------------------------------
+handle_completion_dir() {
+    # 1. /etc/bash_completion.d/가 존재하고 쓰기 가능하면 바로 사용
+    if [ -d "${COMPLETION_TARGET_DIR}" ] && [ -w "${COMPLETION_TARGET_DIR}" ]; then
+        echo "  ℹ️ 기본 경로 (${COMPLETION_TARGET_DIR})를 사용합니다."
+    # 2. /etc/bash_completion.d/가 존재하지만 쓰기 불가능하면 sudo로 처리
+    elif [ -d "${COMPLETION_TARGET_DIR}" ]; then
+        echo "  ℹ️ 기본 경로 (${COMPLETION_TARGET_DIR})는 쓰기 금지입니다. sudo가 필요할 수 있습니다."
+    # 3. /etc/bash_completion.d/가 없으면 /usr/local/etc/bash_completion.d 등 다른 경로를 고려할 수 있으나,
+    #    간결성을 위해 스크립트에서 명시된 경로를 시도하고 사용자에게 알림.
+    else
+        echo "  ⚠️ 기본 경로 (${COMPLETION_TARGET_DIR})가 존재하지 않습니다. 스크립트에서 자동으로 생성 시도합니다."
+    fi
+}
+
+
+# --- 메인 실행 로직 ---
+main() {
+    check_dependencies
+    
+    if ! download_files; then
+        exit 1
+    fi
+
+    echo "=================================================="
+    echo "⚙️ SSHCTL 설치 시작 (버전: ${FILE_VERSION:-"Default"})"
+    echo "=================================================="
+
+    # 1. sshctl (실행 파일) 복사 및 권한 설정
+    echo "--- 1. sshctl 설치 (실행 권한 부여) ---"
+    if ! copy_and_set_permissions "${SSHCTL_TEMP_FILE}" "${SSHCTL_TARGET_DIR}" "sshctl" "true"; then
+        exit 1
+    fi
+
+    echo
+    
+    # 2. sshctl.completion (자동 완성 파일) 복사
+    echo "--- 2. sshctl.completion 설치 ---"
+    handle_completion_dir # OS별 bash_completion 경로 처리 알림
+    
+    if ! copy_and_set_permissions "${COMPLETION_TEMP_FILE}" "${COMPLETION_TARGET_DIR}" "sshctl.completion" "false"; then
+        exit 1
+    fi
+    
+    # 3. 정리
+    echo "--------------------------------------------------"
+    echo "🧹 임시 파일 정리: ${TEMP_DIR}"
+    rm -rf "${TEMP_DIR}"
+    
+    echo "✨ 설치 완료! 사용하려면 새로운 터미널을 열거나 'source ~/.bashrc' 등을 실행하세요."
+}
+
+# 스크립트 실행
+main
+
+exit 0
