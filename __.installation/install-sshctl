@@ -4,14 +4,18 @@
 # - 시스템 권한(/etc)이 필요하면 자동으로 sudo 요청
 # - sshctl 파일에는 실행 권한(chmod +x) 부여
 
+# 프로그램 파일
+SSHCTL_FILENAME="sshctl"
+SSHCTL_COMPLETION_FILENAME="${SSHCTL_FILENAME}.completion"
+
 # --- 환경 변수 정의 ---
-SSHCTL_URL="https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main/net/sshctl"
-COMPLETION_URL="https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main/net/sshctl.completion"
+SSHCTL_URL="https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main/net/${SSHCTL_FILENAME}"
+COMPLETION_URL="https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main/net/${SSHCTL_COMPLETION_FILENAME}"
 
 # 임시 파일 및 경로
 TEMP_DIR=$(mktemp -d)
-SSHCTL_TEMP_FILE="${TEMP_DIR}/sshctl"
-COMPLETION_TEMP_FILE="${TEMP_DIR}/sshctl.completion"
+SSHCTL_TEMP_FILE="${TEMP_DIR}/${SSHCTL_FILENAME}"
+COMPLETION_TEMP_FILE="${TEMP_DIR}/${SSHCTL_COMPLETION_FILENAME"
 
 # 설치 대상 경로
 SSHCTL_TARGET_DIR="${HOME}/bin"
@@ -182,7 +186,9 @@ main() {
     echo "🧹 임시 파일 정리: ${TEMP_DIR}"
     rm -rf "${TEMP_DIR}"
     
-    echo "✨ 설치 완료! 사용하려면 새로운 터미널을 열거나 'source ~/.bashrc' 등을 실행하세요."
+    echo "✨ 설치 완료! 사용하려면 새로운 터미널을 열거나 현재 터미널에서 아래 코드 중에 1개를 를 실행하세요."
+    echo "  - source ~/.bashrc"
+    echo "  - source ${COMPLETION_TARGET_DIR}/${SSHCTL_COMPLETION_FILENAME}"
 }
 
 # 스크립트 실행
