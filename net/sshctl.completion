@@ -1,113 +1,142 @@
-#!/usr/bin/env bash
 # =======================================
 # @author   : parkjunhong77@gmail.com
-# @title    : sshctl bash completion
+# @title    : sshctl bash completion.
 # @license  : Apache License 2.0
-# @since    : 2025-12-11
-# @desc     : support RHEL 6/7/8/9, Oracle Linux 6/7/8/9, Ubuntu 14.04–24.04, CentOS 6/7/8 Stream
+# @since    : 2025-12-15
+# @desc     : support RHEL 7+/Oracle Linux 7+/Ubuntu 20.04+/CentOS 7+
 # @installation :
-#   1. insert 'source <path>/sshctl.completion' into ~/.bashrc or ~/.bash_profile
-#   2. or copy to /etc/bash_completion.d/ for system-wide usage
+#   1. insert 'source <path>/sshctl.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/sshctl.completion' into
+#      /etc/bashrc for all users.
 # =======================================
 
 # =======================================
-# Bash completion parameters (ENGLISH)
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+#
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
 # =======================================
-# COMP_WORDS  : array of all arguments
-# COMP_CWORD  : index of cursor
-# COMP_LINE   : full command string
-# COMPREPLY   : array of returned suggestions
-# =======================================
 
+# sshctl completion
+# - 한국어: sshctl 명령에 대한 bash 자동 완성 지원
+# - English: bash completion support for sshctl command
+#
+# 지원 내용 / Features:
+# - long 옵션 자동 완성 (예: --add-connection, --modify-connection ...)
+# - 모드 옵션은 한 번 사용하면 다시 제안하지 않음
+# - 전역 옵션(--config, --masterkey, --show-credential, --help)은 반복 사용 가능하므로 항상 제안
+# - --config, --masterkey 옵션 뒤에서는 파일/경로 자동 완성
 
-_sshctl_complete() {
-  local cur prev words cword
-  _get_comp_words_by_ref -n : cur prev words cword
+_sshctl_completion() {
+  local cmd cur prev
+  cmd="$1"
+  cur="$2"
+  prev="$3"
 
-  # 기능 옵션
-  local cmds=(
-    --list-all
+  # 모드 옵션 (한 번만 사용 가능)
+  # Mode options (single-use)
+  local mode_opts=(
     --add-connection
     --modify-connection
     --delete-connection
     --move-group-connection
+    --list-all
   )
 
-  # 글로벌 옵션
-  local globals=(
-    --help
+  # 전역 옵션 (반복 사용 가능)
+  # Global options (can be repeated)
+  local global_opts=(
     --config
     --masterkey
     --show-credential
+    --help
   )
 
-  # 이미 사용된 옵션 확인
-  local used_list_all=false
-  local used_help=false
-  local used_show_cred=false
-
-  # "이미 입력된 옵션 목록" 구성
-  local used_opts=()
-  for tok in "${words[@]}"; do
-    case "$tok" in
-      --list-all) used_list_all=true ;;
-      --help) used_help=true ;;
-      --show-credential) used_show_cred=true ;;
-      --config|--masterkey|--add-connection|--modify-connection|--delete-connection|--move-group-connection)
-        used_opts+=( "$tok" )
-        ;;
-    esac
-  done
-
-
-  # ------------------------------------------------------
-  # 파일 추천 필요한 옵션 처리
-  # ------------------------------------------------------
+  # prev 가 옵션 값(파일 경로 등)을 요구하는 경우
+  # If previous word expects a file/dir path
   case "$prev" in
     --config|--masterkey)
-      _filedir
+      # 파일/경로 자동 완성
+      # file/path completion
+      COMPREPLY=( $(compgen -f -- "$cur") )
       return 0
       ;;
   esac
 
+  # 현재 토큰이 옵션인 경우만 옵션 목록을 제안
+  # Suggest options only when current word starts with '-'
+  if [[ "$cur" == -* ]]; then
+    local used_mode_opts=()
+    local w
 
-  # ------------------------------------------------------
-  # 아직 사용되지 않은 옵션을 추천 목록에 넣기
-  # ------------------------------------------------------
-  local suggestions=()
+    # 이미 사용된 모드 옵션 수집 (COMP_WORDS 기준)
+    # collect already-used mode options
+    for w in "${COMP_WORDS[@]:1}"; do
+      case "$w" in
+        --add-connection|--modify-connection|--delete-connection|--move-group-connection|--list-all)
+          used_mode_opts+=( "$w" )
+          ;;
+      esac
+    done
 
-  # 기능 옵션: 중복 사용 가능하지만 "추천은 중복 금지"
-  for opt in "${cmds[@]}"; do
-    if [[ ! " ${used_opts[*]} " =~ " ${opt} " ]]; then
-      suggestions+=( "$opt" )
+    # 제안 후보: 모드 옵션 + 전역 옵션
+    # candidates: all mode + all global
+    local candidates=( "${mode_opts[@]}" "${global_opts[@]}" )
+
+    # 이미 사용된 모드 옵션은 후보에서 제거
+    # remove already-used mode options from candidates
+    if ((${#used_mode_opts[@]} > 0)); then
+      local filtered=()
+      local c u skip
+      for c in "${candidates[@]}"; do
+        skip=0
+        for u in "${used_mode_opts[@]}"; do
+          if [[ "$c" == "$u" ]]; then
+            skip=1
+            break
+          fi
+        done
+        if [[ $skip -eq 0 ]]; then
+          filtered+=( "$c" )
+        fi
+      done
+      candidates=( "${filtered[@]}" )
     fi
-  done
 
-  # --help : 중복 추천 금지
-  if ! $used_help; then
-    suggestions+=( "--help" )
+    # compgen 을 이용한 옵션 완성
+    # generate completion for options
+    COMPREPLY=( $(compgen -W "${candidates[*]}" -- "$cur") )
+    return 0
   fi
 
-  # --config : 중복 추천 금지
-  if [[ ! " ${used_opts[*]} " =~ " --config " ]]; then
-    suggestions+=( "--config" )
-  fi
-
-  # --masterkey : 중복 추천 금지
-  if [[ ! " ${used_opts[*]} " =~ " --masterkey " ]]; then
-    suggestions+=( "--masterkey" )
-  fi
-
-  # --show-credential : list-all 있을 때만 추천 + 중복 추천 금지
-  if $used_list_all && ! $used_show_cred; then
-    suggestions+=( "--show-credential" )
-  fi
-
-
-  # ------------------------------------------------------
-  # 최종 추천 출력
-  # ------------------------------------------------------
-  COMPREPLY=( $(compgen -W "${suggestions[*]}" -- "$cur") )
+  # 옵션이 아닌 경우 (검색어 등)는 별도 완성 제공하지 않음
+  # When not completing an option (e.g. search expression), no suggestions.
+  COMPREPLY=()
+  return 0
 }
 
-complete -F _sshctl_complete sshctl
+# bash-completion v1 스타일 래퍼
+# Wrapper for bash-completion v1 style
+_sshctl() {
+  local cur prev
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  _sshctl_completion "sshctl" "$cur" "$prev"
+}
+
+# 실제 sshctl 명령과 연결
+# Bind completion function to sshctl command
+complete -F _sshctl sshctl
