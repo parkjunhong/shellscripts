@@ -1,7 +1,7 @@
 .TH SSHCTL 1 "2025-12-15" "sshctl 2.x" "User Commands"
 
 .SH NAME
-sshctl \- manage and connect to SSH connections via JSON configuration
+sshctl \- manage SSH connections via encrypted JSON configuration
 
 .SH SYNOPSIS
 .B sshctl
@@ -10,118 +10,200 @@ sshctl \- manage and connect to SSH connections via JSON configuration
 .SH DESCRIPTION
 .B sshctl
 은(는) JSON 기반 configuration 파일에 SSH 연결정보(connection)를 저장하고,
-추가/수정/삭제/그룹이동/목록조회/접속 등을 CLI로 제공하는 유틸리티이다.
+추가/수정/삭제/그룹이동/목록조회/접속 등을 CLI 로 제공하는 유틸리티이다.
+
 민감정보(username, credential)는 항상 암호화된 상태로 설정 파일에 저장되며,
-실행 시 점진적으로 복호화하여 사용한다.
+실행 시 masterkey 를 통해 복호화하여 사용한다.
+
+한국어와 English 를 병행하여 사용법을 제공한다.
 
 .SH GLOBAL OPTIONS
+다음 옵션들은 모드와 함께 또는 단독으로 사용될 수 있으며, 여러 번 등장할 수 있지만
+동일 역할의 옵션은 1회만 사용하는 것이 권장된다.
+
 .TP
 .BR --config " " \fIFILE\fR
-설정 파일 경로를 지정한다. 파일이 없으면 경고 후 기본 설정 파일
-(\fI$HOME/.sshctl/configuration.conf\fR)로 fallback 한다.
+사용할 configuration 파일( JSON )을 지정한다.
+지정하지 않으면 기본값으로
+.I $HOME/.sshctl/configuration.conf
+를 사용한다.
 
 .TP
 .BR --masterkey " " \fIFILE\fR
-암복호화에 사용할 OpenSSH private key 파일 경로를 지정한다.
-지정하지 않으면 기본 masterkey(\fI$HOME/.sshctl/masterkey\fR)가 사용된다.
+암복호화에 사용할 masterkey(OpenSSH private key) 파일을 지정한다.
+지정하지 않으면 기본값으로
+.I $HOME/.sshctl/masterkey
+를 사용한다.
 
 .TP
 .BR -s ", " --show-credential
-목록/미리보기 출력 시 credential 칼럼의 평문 표시를 요청하는 플래그이다.
-실제로 평문이 허용되는지 여부는 모드별 정책에 따른다.
-대표적으로
-.B --list-all
-모드에서 masking list ↔ plain list 전환에 사용된다.
+일부 모드에서 credential 칼럼을 평문으로 출력하도록 요청한다.
+실제로 평문 출력이 허용되는지 여부는 모드별 정책에 따라 결정된다.
+특히
+.BR --list-all ", " -l
+모드에서 masking list 대신 plain list 를 보고자 할 때 사용된다.
 
 .TP
 .BR -h ", " --help
-에러 원인(cause), callstack(존재 시) 및 전체 Usage를 출력한다.
+에러 원인(cause), callstack(존재 시) 및 전체 Usage 를 출력한다.
 
 .SH MODES
-아래 모드는 서로 상호 배타적이며, 동시에 하나만 사용할 수 있다.
+다음 모드 옵션들은 서로 상호 배타적(mutual exclusive)이며, 동시에 하나만 지정할 수 있다.
 
 .TP
 .BR --add-connection ", " -a
-새로운 SSH 연결정보를 추가한다. 인터랙티브하게 group, name, host_type, host,
-port, username, credential 등을 입력받아 암호화 후 configuration 에 저장한다.
+새로운 SSH 연결정보를 추가(add)한다.
+인터랙티브하게 group, name, host_type(ipv4|ipv6|domain), host, port, username,
+credential 등을 입력받아, masterkey 기반으로 암호화한 후 configuration 에 저장한다.
+
+추가 모드의 preview 에서는 username/credential 을 평문으로 1회 확인할 수 있다.
 
 .TP
 .BR --modify-connection ", " -m
-기존 연결정보를 수정한다. 먼저 후보 목록을 plain list로 보여준 뒤,
-선택한 항목에 대해 수정 필드를 인터랙티브하게 입력받는다.
+기존 SSH 연결정보를 수정(modify)한다.
+먼저 후보 목록을 표 형태로 보여준 다음, 선택한 항목에 대해 필드별로 변경값을
+인터랙티브하게 입력받는다.
+
+수정 결과 preview 에서는 username/credential 이 평문으로 출력되어,
+사용자가 실제 저장 전에 내용을 정확히 검증할 수 있다.
 
 .TP
 .BR --delete-connection ", " -d
-연결정보를 삭제한다. 삭제 대상 후보 목록은 항상 masking list로 표시되며,
-credential 평문은 노출되지 않는다.
+하나 이상의 SSH 연결정보를 삭제(delete)한다.
+삭제 대상 목록은 항상 credential 이 masking 된 상태로 표시되며,
+preview 에서도 평문 credential 은 노출되지 않는다.
 
 .TP
 .BR --move-group-connection ", " -mg
-선택한 연결정보의 group 필드만 변경한다. credential 은 항상 masking 상태를 유지하며,
-미리보기에서도 평문이 표시되지 않는다.
+선택한 SSH 연결정보의 group 필드만 변경(move)한다.
+host, username, credential 등 나머지 정보는 변경하지 않는다.
+preview 출력에서도 credential 은 항상 masking 상태로 유지된다.
 
 .TP
 .BR --list-all ", " -l
-모든 연결정보를 테이블 형태로 출력한다. 기본적으로 masking list를 사용하며,
+저장된 모든 SSH 연결정보를 테이블 형태로 출력한다.
+
+기본적으로 credential 은 masking 된 상태로 표시된다(masking list).
 .BR --show-credential " / " -s
-가 함께 지정된 경우 허용된 범위 내에서 plain list로 표시된다.
+를 함께 사용한 경우, 보안 설계 정책이 허용하는 범위 내에서 평문 리스트(plain list) 로
+표시할 수 있다.
 
 .SH POSITIONAL ARGUMENTS
 .TP
 \fIEXPR\fR
-모드 옵션 없이 사용되거나, 일부 모드에서 함께 사용되는 검색 표현식이다.
-name, group, host 등을 기준으로 부분 문자열 매칭을 수행하며,
-검색 결과가 1개인 경우 자동 접속, 여러 개인 경우 선택 목록을 보여준다.
+모드 옵션 없이 사용되거나, 일부 모드와 함께 사용되는 검색 표현식이다.
+
+name, group, host 등을 기준으로 부분 문자열 매칭을 수행한다.
+검색 결과가 1개인 경우 자동으로 해당 연결로 접속을 시도하고,
+여러 개인 경우 후보 목록을 보여주고 번호 선택을 통해 접속한다.
+
+예시:
+
+.nf
+  sshctl dev
+  sshctl api
+  sshctl 10.10.
+.fi
 
 .SH CONFIGURATION
-설정 파일은 JSON 형식이며 기본 위치는 다음과 같다.
+기본 configuration 파일 경로는 다음과 같다.
 
 .nf
   Directory: $HOME/.sshctl
   File     : $HOME/.sshctl/configuration.conf
 .fi
 
-configuration 파일에는 version, masterkey_md5, connections 배열 등이 포함되며,
-각 connection 객체는 group, name, host_type, host, port, username, auth_type,
-credential 필드를 가진다.
+파일 형식은 JSON 이며, 상위 구조는 대략 다음과 같다:
+
+.nf
+  {
+    "version": "2.0.0",
+    "masterkey_md5": "....",
+    "connections": [
+      {
+        "group": "dev",
+        "name": "api",
+        "host_type": "ipv4|ipv6|domain",
+        "host": "api.mycompany.co.kr",
+        "port": 22,
+        "username": "devuser",
+        "auth_type": "password|key",
+        "credential": "ENC::<base64>"
+      }
+    ]
+  }
+.fi
+
+자세한 형식은
+.BR sshctl.conf (5)
+를 참고한다.
 
 .SH COMPLETION
 .B sshctl
-은 bash completion 스크립트(\fIsshctl.completion\fR)를 통해 다음을 지원한다.
+은 bash completion 스크립트(\fIsshctl.completion\fR)를 통해 다음 기능을 제공한다.
 
-.IP \[bu]
-모든 long/short 옵션 자동 완성
-.IP \[bu]
-모드 옵션 상호 배타 처리 (한 번 선택되면 다른 모드 미제안)
-.IP \[bu]
-전역 옵션 중복 방지 (이미 사용된 옵션은 다시 제안하지 않음)
-.IP \[bu]
-.B --list-all / -l
-사용 시에만
-.B --show-credential / -s
-제안
-.IP \[bu]
-비옵션 위치에서는 configuration 의 connection.name 기반 검색어 자동 완성
+.IP \(bu
+long/short 옵션 자동완성 (예: --add-connection/-a, --modify-connection/-m ...)
+.IP \(bu
+모드 옵션 상호 배타 처리: 한 모드가 선택되면 다른 모드는 제안되지 않는다.
+.IP \(bu
+전역 옵션(--config, --masterkey, --help/-h)은 이미 사용된 경우 제안에서 제외한다.
+.IP \(bu
+.BR --list-all " / " -l
+가 사용된 경우에만
+.BR --show-credential " / " -s
+를 제안한다.
+.IP \(bu
+옵션이 아닌 위치에서는 configuration 의 connection.name 을 기반으로 검색어 자동 완성.
 
-completion 스크립트는 일반적으로 다음 위치에 설치한다.
+completion 스크립트는 보통 다음과 같이 설치한다.
 
 .nf
   /etc/bash_completion.d/sshctl
+  또는
+  source <path>/sshctl.completion
 .fi
 
 .SH FILES
 .TP
 .B $HOME/.sshctl/configuration.conf
-SSH 연결정보가 암호화된 상태로 저장되는 기본 설정 파일.
+SSH 연결정보가 암호화되어 저장되는 기본 configuration 파일.
 
 .TP
 .B $HOME/.sshctl/masterkey
-암/복호화를 위한 OpenSSH private key 파일.
+암복호화에 사용하는 OpenSSH private key 파일.
+
+.SH EXAMPLES
+.TP
+1) 연결정보 추가
+.nf
+  sshctl --add-connection
+.fi
+
+.TP
+2) 모든 연결정보 보기 (masking)
+.nf
+  sshctl --list-all
+.fi
+
+.TP
+3) 모든 연결정보를 credential 평문으로 보기 (허용된 범위)
+.nf
+  sshctl --list-all --show-credential
+.fi
+
+.TP
+4) "dev" 를 포함하는 서버에 접속
+.nf
+  sshctl dev
+.fi
 
 .SH SEE ALSO
 .BR ssh (1),
 .BR ssh-keygen (1),
-.BR jq (1)
+.BR jq (1),
+.BR sshctl.conf (5),
+.BR sshctl-security (7)
 
 .SH AUTHOR
-parkjunhong77@gmail.com
+Written by parkjunhong77 <parkjunhong77@gmail.com>.

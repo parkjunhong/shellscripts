@@ -1,0 +1,168 @@
+.TH SSHCTL.CONF 5 "2025-12-15" "sshctl 2.x" "File Formats"
+
+.SH NAME
+sshctl.conf \- JSON configuration file for sshctl connections
+
+.SH SYNOPSIS
+.B $HOME/.sshctl/configuration.conf
+
+.SH DESCRIPTION
+.B sshctl.conf
+는
+.BR sshctl (1)
+에서 사용하는 SSH 연결정보를 저장하는 JSON 기반 설정 파일이다.
+
+이 파일에는 version, masterkey_md5, connections 배열 등이 포함되며,
+각 connection 객체는 SSH 접속에 필요한 host, port, username, credential 정보를 가진다.
+
+민감정보(username, credential)는 평문이 아니라 암호문 형태(ENC::<base64>)로 저장된다.
+
+.SH LOCATION
+기본 설정 파일 위치는 다음과 같다.
+
+.nf
+  Directory: $HOME/.sshctl
+  File     : $HOME/.sshctl/configuration.conf
+.fi
+
+.BR --config " " \fIFILE\fR
+옵션을 사용하면 다른 경로의 설정 파일을 사용할 수 있다.
+
+.SH FORMAT
+최상위 JSON 구조는 다음과 같은 필드를 가진다.
+
+.IP \[bu]
+version (string)
+.br
+설정 파일 구조의 버전 문자열이다. 예: "2.0.0"
+
+.IP \[bu]
+masterkey_md5 (string)
+.br
+masterkey 파일의 MD5 값을 저장한다. sshctl 실행 시 masterkey 파일과의 정합성을 검증하여
+잘못된 키가 사용되지 않도록 한다.
+
+.IP \[bu]
+connections (array)
+.br
+각 SSH 연결정보 객체(connection)를 담는 배열이다.
+
+.SH CONNECTION OBJECT
+connections 배열의 각 원소는 하나의 SSH 연결정보를 나타내며, 다음과 같은 필드를 가진다.
+
+.TP
+.B group (string)
+논리적인 그룹 이름. 예: "dev", "ops", "default" 등.
+
+.TP
+.B name (string)
+사용자가 식별하기 쉬운 연결명. 예: "api", "db01", "jump-host" 등.
+
+.TP
+.B host_type (string)
+host 형식을 나타낸다. 허용값:
+
+.nf
+  "ipv4"   - IPv4 주소 (기본값)
+  "ipv6"   - IPv6 주소
+  "domain" - 도메인 이름
+.fi
+
+.TP
+.B host (string)
+접속 대상 호스트 (IP 주소 또는 도메인).
+
+예:
+
+.nf
+  "api.mycompany.co.kr"
+  "192.168.0.10"
+.fi
+
+.TP
+.B port (number)
+SSH 접속 포트. 지정하지 않으면 기본값 22 가 사용될 수 있다.
+
+.TP
+.B username (string)
+SSH 접속 계정명.
+
+.TP
+.B auth_type (string)
+인증 방식. 허용값:
+
+.nf
+  "password" - 비밀번호 기반 인증
+  "key"      - private key 기반 인증
+.fi
+
+.TP
+.B credential (string)
+민감정보(비밀번호 또는 private key 경로)를 나타내는 암호문 문자열이다.
+
+형식은 다음과 같다:
+
+.nf
+  "ENC::<base64-encoded-ciphertext>"
+.fi
+
+여기서
+.I ciphertext
+는 masterkey 에서 파생된 대칭키(AES-256-CBC)를 이용해 암호화한 값을 base64 로 인코딩한 것이다.
+
+.SH EXAMPLE
+다음은 간단한 예시이다.
+
+.nf
+  {
+    "version": "2.0.0",
+    "masterkey_md5": "4a7d1ed414474e4033ac29ccb8653d9b",
+    "connections": [
+      {
+        "group": "dev",
+        "name": "api",
+        "host_type": "domain",
+        "host": "api.mycompany.co.kr",
+        "port": 22,
+        "username": "devuser",
+        "auth_type": "password",
+        "credential": "ENC::dGVzdC1jaXBoZXJ0ZXh0LWNvbnRlbnQ="
+      },
+      {
+        "group": "ops",
+        "name": "bastion",
+        "host_type": "ipv4",
+        "host": "203.0.113.10",
+        "port": 22,
+        "username": "ops",
+        "auth_type": "key",
+        "credential": "ENC::bW9yZS1jaXBoZXJ0ZXh0LWRhdGE="
+      }
+    ]
+  }
+.fi
+
+이 예시에서 credential 값은 모두 암호문이며, 평문 비밀번호나 key 경로를 직접 저장하지 않는다.
+
+.SH SECURITY
+설정 파일은 다음 보안 원칙에 따라 설계된다.
+
+.IP \[bu]
+민감정보(username, credential)는 항상 ENC::<...> 형식의 암호문으로 저장된다.
+.IP \[bu]
+masterkey_md5 필드는 masterkey 파일의 무결성을 검증하는 용도로 사용되며,
+masterkey 파일이 바뀌거나 손상되었을 경우 sshctl 이 이를 감지할 수 있다.
+.IP \[bu]
+설정 파일은 일반적으로 퍼미션 600 또는 640 정도로 제한하는 것이 권장된다.
+
+자세한 보안 설계는
+.BR sshctl-security (7)
+를 참고한다.
+
+.SH SEE ALSO
+.BR sshctl (1),
+.BR jq (1),
+.BR sshctl-security (7)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.

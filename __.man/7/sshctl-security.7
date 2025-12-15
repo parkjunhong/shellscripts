@@ -1,0 +1,156 @@
+.TH SSHCTL-SECURITY 7 "2025-12-15" "sshctl 2.x" "Security Architecture"
+
+.SH NAME
+sshctl-security \- security design and policies for sshctl
+
+.SH DESCRIPTION
+.B sshctl-security
+는
+.BR sshctl (1)
+및
+.BR sshctl.conf (5)
+에서 사용하는 보안 설계와 정책을 문서화한 man page 이다.
+
+민감정보 보호, masterkey 관리, 암호화 방식, CLI 출력 정책 등과 관련된 내용을 다룬다.
+
+.SH THREAT MODEL
+sshctl 의 보안 설계는 주로 다음과 같은 위협을 고려한다.
+
+.IP \[bu]
+SSH 접속정보(username, password, key path)가 평문으로 저장되는 위험
+.IP \[bu]
+설정 파일(configuration.conf)이 유출되었을 때 credential 이 바로 노출되는 위험
+.IP \[bu]
+잘못된 masterkey 를 사용함으로써 복호화 내용이 왜곡되거나 다른 키로 암호화된 credential 이 섞이는 문제
+.IP \[bu]
+터미널 출력에서 credential 등이 평문으로 노출되는 문제
+
+이러한 위협을 줄이기 위해 sshctl 은 암호화, masterkey 검증, 출력 정책(masking/plain 분리) 등을 적용한다.
+
+.SH MASTERKEY HANDLING
+sshctl 에서 masterkey 는 OpenSSH private key 파일을 사용한다.
+
+.IP \[bu]
+masterkey 파일 경로는 기본적으로
+.I $HOME/.sshctl/masterkey
+이며,
+.BR --masterkey " " \fIFILE\fR
+옵션으로 변경 가능하다.
+.IP \[bu]
+masterkey 는 직접 SSH 접속에 사용되지 않고, 대칭키(AES-256-CBC)를 파생시키기 위한 재료로 사용된다.
+일반적으로 SHA-256 해시 등을 이용해 key/iv 를 생성한다.
+.IP \[bu]
+configuration 파일에는 masterkey 의 MD5 값이
+.B masterkey_md5
+필드에 저장된다.
+
+실행 시 sshctl 은 다음과 같은 절차로 masterkey 를 검증한다.
+
+.nf
+  1. masterkey 파일의 MD5 값을 계산한다.
+  2. configuration.masterkey_md5 와 비교한다.
+  3. 값이 다르면 잘못된 masterkey 로 판단하고 사용자에게 재입력을 요구하거나
+     종료/복구 절차를 진행한다.
+.fi
+
+이 과정을 통해 잘못된 masterkey 를 사용하여 credential 을 잘못 복호화하는 상황을 방지한다.
+
+.SH DATA AT REST (저장 시 데이터 보호)
+설정 파일(configuration.conf)에 기록되는 민감정보는 항상 암호문 형태로 저장된다.
+
+.IP \[bu]
+username, credential 필드는 ENC::<base64-encoded-ciphertext> 형식을 사용한다.
+.IP \[bu]
+ciphertext 는 masterkey 에서 파생된 대칭키(AES-256-CBC 등)를 사용하여 암호화된다.
+.IP \[bu]
+따라서 configuration 파일이 유출되더라도 masterkey 를 모르면 credential 을 복호화하기 어렵다.
+
+민감정보를 평문으로 저장하지 않는 것이 sshctl 보안 설계의 핵심 원칙이다.
+
+.SH DATA IN USE (실행 시 데이터 보호)
+sshctl 은 실행 중에도 credential 의 노출을 최소화하기 위해 다음과 같은 정책을 적용한다.
+
+.IP \[bu]
+설정 파일에서 credential 을 복호화하는 것은 실제 SSH 접속 시점 또는 preview 필요 시로 최소화한다.
+.IP \[bu]
+복호화된 credential 은 터미널에 출력하지 않으며, 예외적으로 add/modify preview 와 같이
+사용자가 입력값을 검증해야 하는 상황에서만 평문이 노출된다.
+.IP \[bu]
+접속 시에는 sshpass 등의 도구를 사용하더라도, command line 자체에 평문 password 를 남기지 않도록
+환경변수/pipe 등 적절한 방식을 사용할 수 있다(구현에 따라 상이).
+
+.SH CLI OUTPUT POLICY
+CLI 출력 시 credential 등의 민감정보는 모드별로 다른 정책을 따른다.
+
+.IP \[bu]
+.B --add-connection / -a
+.br
+신규 추가 시 preview 단계에서 username/credential 을 평문으로 1회 표시하여 사용자가 최종 입력값을 확인할 수 있게 한다.
+
+.IP \[bu]
+.B --modify-connection / -m
+.br
+수정 결과 preview 에서 변경된 username/credential 을 평문으로 표시한다.
+이는 사용자가 변경 결과를 확실히 검증할 수 있도록 하기 위한 예외적 허용이다.
+
+.IP \[bu]
+.B --delete-connection / -d
+.br
+삭제 대상 목록 및 preview 에서 credential 은 항상 masking 된다.
+.BR --show-credential " / " -s
+옵션을 사용하더라도 delete 컨텍스트에서는 평문 credential 이 허용되지 않는다.
+
+.IP \[bu]
+.B --move-group-connection / -mg
+.br
+그룹 이동은 group 필드만 변경하므로, 출력되는 credential 은 항상 masking 상태로 유지된다.
+
+.IP \[bu]
+.B --list-all / -l
+.br
+기본적으로 masking list 형태로 credential 을 숨긴다.
+.BR --show-credential " / " -s
+옵션을 함께 사용하는 경우, 보안 요구사항을 충족하는 환경에서만 plain list 를 허용할 수 있다.
+(예: 로컬 개인 개발 환경 등)
+
+.IP \[bu]
+.B 기본 접속 (EXPR 기반 connect)
+.br
+검색 후 접속하는 과정에서는 credential 을 복호화하여 SSH 클라이언트에 전달하지만,
+터미널 출력에는 credential 을 표시하지 않는다.
+
+.SH FILE PERMISSIONS
+다음 파일/디렉토리는 권한 제한이 권장된다.
+
+.TP
+.B $HOME/.sshctl/
+sshctl 관련 설정과 masterkey 가 저장되는 디렉토리로, 소유자만 접근 가능한 퍼미션(700 등)이 권장된다.
+
+.TP
+.B $HOME/.sshctl/configuration.conf
+SSH 연결정보가 저장된 JSON 파일이다. 600 또는 640 수준으로 제한하는 것이 바람직하다.
+
+.TP
+.B $HOME/.sshctl/masterkey
+암호화/복호화에 사용되는 masterkey 파일이다.
+개인용 SSH private key 와 동일한 수준(600)으로 보호되어야 한다.
+
+.SH BEST PRACTICES
+.IP \[bu]
+masterkey 는 별도의 백업 저장소(보안 저장소)에 보관한다.
+.IP \[bu]
+configuration 파일 변경 시에는 version 과 masterkey_md5 를 적절히 관리한다.
+.IP \[bu]
+공유 계정/서버에는 masterkey 와 configuration 를 동시에 배포하지 않는다.
+.IP \[bu]
+가능하다면 ssh-agent, hardware token 등과 결합하여 운영 환경 보안을 강화한다.
+
+.SH SEE ALSO
+.BR sshctl (1),
+.BR sshctl.conf (5),
+.BR ssh (1),
+.BR ssh-keygen (1),
+.BR jq (1)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.
