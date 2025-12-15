@@ -1779,7 +1779,7 @@ cmd_add_connection() {
 
   # auth_type
   while true; do
-    auth_type="$(prompt_with_icon "🔐" "auth_type (password|key)" "key")"
+    auth_type="$(prompt_with_icon "🔐" "auth_type (password|key)" "password")"
     if validate_auth_type "$auth_type"; then
       break
     fi
