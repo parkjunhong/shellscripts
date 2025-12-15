@@ -44,7 +44,6 @@ _sshctl_completion() {
   cur="$2"
   prev="$3"
 
-  # 모드 옵션 (한 번만 사용 가능)
   # Mode options (single-use)
   local mode_opts=(
     --add-connection
@@ -54,8 +53,7 @@ _sshctl_completion() {
     --list-all
   )
 
-  # 전역 옵션 (반복 사용 가능)
-  # Global options (can be repeated)
+  # Global options (multi-use)
   local global_opts=(
     --config
     --masterkey
@@ -63,25 +61,24 @@ _sshctl_completion() {
     --help
   )
 
-  # prev 가 옵션 값(파일 경로 등)을 요구하는 경우
-  # If previous word expects a file/dir path
+  # If previous token expects a file path
   case "$prev" in
     --config|--masterkey)
-      # 파일/경로 자동 완성
-      # file/path completion
       COMPREPLY=( $(compgen -f -- "$cur") )
       return 0
       ;;
   esac
 
-  # 현재 토큰이 옵션인 경우만 옵션 목록을 제안
-  # Suggest options only when current word starts with '-'
-  if [[ "$cur" == -* ]]; then
+  #
+  # 🎯 핵심 수정:
+  #   (기존) cur == -* 일 때만 옵션 제안
+  #   (변경) cur == "" (sshctl [TAB]) 이거나 '-' 로 시작하면 옵션 제안
+  #
+  if [[ -z "$cur" || "$cur" == -* ]]; then
     local used_mode_opts=()
     local w
 
-    # 이미 사용된 모드 옵션 수집 (COMP_WORDS 기준)
-    # collect already-used mode options
+    # collect used mode options
     for w in "${COMP_WORDS[@]:1}"; do
       case "$w" in
         --add-connection|--modify-connection|--delete-connection|--move-group-connection|--list-all)
@@ -90,38 +87,28 @@ _sshctl_completion() {
       esac
     done
 
-    # 제안 후보: 모드 옵션 + 전역 옵션
-    # candidates: all mode + all global
+    # merge candidates
     local candidates=( "${mode_opts[@]}" "${global_opts[@]}" )
 
-    # 이미 사용된 모드 옵션은 후보에서 제거
-    # remove already-used mode options from candidates
+    # remove already-used mode options
     if ((${#used_mode_opts[@]} > 0)); then
       local filtered=()
       local c u skip
       for c in "${candidates[@]}"; do
         skip=0
         for u in "${used_mode_opts[@]}"; do
-          if [[ "$c" == "$u" ]]; then
-            skip=1
-            break
-          fi
+          [[ "$c" == "$u" ]] && { skip=1; break; }
         done
-        if [[ $skip -eq 0 ]]; then
-          filtered+=( "$c" )
-        fi
+        [[ $skip -eq 0 ]] && filtered+=( "$c" )
       done
       candidates=( "${filtered[@]}" )
     fi
 
-    # compgen 을 이용한 옵션 완성
-    # generate completion for options
     COMPREPLY=( $(compgen -W "${candidates[*]}" -- "$cur") )
     return 0
   fi
 
-  # 옵션이 아닌 경우 (검색어 등)는 별도 완성 제공하지 않음
-  # When not completing an option (e.g. search expression), no suggestions.
+  # No suggestions for non-option arguments
   COMPREPLY=()
   return 0
 }
