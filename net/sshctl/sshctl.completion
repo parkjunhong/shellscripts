@@ -33,16 +33,31 @@
 # - English: bash completion support for sshctl command
 #
 # 지원 내용 / Features:
-# - long 옵션 자동 완성 (예: --add-connection, --modify-connection ...)
+# - long/short 옵션 자동 완성:
+#   * --add-connection | -a
+#   * --modify-connection | -m
+#   * --delete-connection | -d
+#   * --move-group-connection | -mg
+#   * --list-all | -l
+#   * --config
+#   * --masterkey
+#   * --show-credential | -s
+#   * --help | -h
 # - 기능 옵션(모드 옵션)은 상호 배타적이며 한 번만 사용 가능
 #   * mutual exclusive mode options:
-#     --add-connection, --modify-connection, --delete-connection, --move-group-connection, --list-all
-# - 전역 옵션(--config, --masterkey, --help)은 항상 사용 가능하지만,
-#   * 동일 옵션이 이미 사용된 경우에는 다시 제안하지 않음
-# - --show-credential 옵션은 '--list-all' 이 사용된 경우에만 제안
-#   * sub option on '--list-all' only
+#     --add-connection|-a, --modify-connection|-m,
+#     --delete-connection|-d, --move-group-connection|-mg,
+#     --list-all|-l
+# - 전역 옵션(--config, --masterkey, --help/-h)은 항상 사용 가능하지만,
+#   * 동일 옵션(동일 역할의 long/short 쌍 포함)이 이미 사용된 경우 다시 제안하지 않음
+# - --show-credential / -s 옵션은 '--list-all' / '-l' 이 사용된 경우에만 제안
 # - --config, --masterkey 옵션 뒤에서는 파일/경로 자동 완성
 # - sshctl [TAB] 으로도 즉시 옵션을 추천
+# - 비옵션(검색어/expr 자리)에서는 설정 파일(configuration)의 connection.name 기반 자동 완성
+#   * 기본 설정 파일: ${HOME}/.sshctl/configuration.conf
+#   * --config <file> 가 있으면 해당 파일 우선
+#   * jq 가 없거나 파일이 없으면 조용히 무시 (완성 없음)
+#   * username/credential 등 민감정보는 절대 읽지 않고, name 필드만 사용
 
 _sshctl_completion() {
   local cmd cur prev
@@ -50,25 +65,35 @@ _sshctl_completion() {
   cur="$2"
   prev="$3"
 
-  # --- Mode Options (mutual exclusive) ---
-  local mode_opts=(
+  # --- Mode Options (mutual exclusive; long+short) ---
+  # 상호 배타적 모드 옵션: 한 번만 사용 가능
+  local mode_opts_all=(
     --add-connection
     --modify-connection
     --delete-connection
     --move-group-connection
     --list-all
+    -a
+    -m
+    -d
+    -mg
+    -l
   )
 
-  # --- Global options (repeatable in concept, but unique in line) ---
-  local global_opts=(
+  # --- Global options (unique; long+short) ---
+  # 전역 옵션: 항상 사용 가능하나, 동일 역할 옵션은 1회만
+  local global_opts_all=(
     --config
     --masterkey
     --help
+    -h
   )
 
-  # --- Sub option: only valid when --list-all is used ---
-  local list_sub_opts=(
+  # --- Sub option: only valid when list-all/-l is used ---
+  # --list-all/-l 사용 시에만 의미 있는 옵션
+  local list_sub_opts_all=(
     --show-credential
+    -s
   )
 
   # --------------------------------------
@@ -84,26 +109,42 @@ _sshctl_completion() {
 
   # --------------------------------------
   # STEP 2: 이미 사용된 옵션들 수집
-  #         detect used mode/global options
+  #         detect used mode/global/sub options
   # --------------------------------------
-  local used_modes=()
-  local used_globals=()
-  local used_listall=0
-  local w
+  local mode_used=0
+  local listall_used=0
 
+  local used_config=0
+  local used_masterkey=0
+  local used_help=0
+
+  local used_show_credential=0
+
+  local w
   for w in "${COMP_WORDS[@]:1}"; do
     case "$w" in
-      --add-connection|--modify-connection|--delete-connection|--move-group-connection|--list-all)
-        used_modes+=( "$w" )
-        if [[ "$w" == "--list-all" ]]; then
-          used_listall=1
-        fi
+      # 모드 옵션 (long/short)
+      --add-connection|-a|\
+      --modify-connection|-m|\
+      --delete-connection|-d|\
+      --move-group-connection|-mg|\
+      --list-all|-l)
+        mode_used=1
+        [[ "$w" == "--list-all" || "$w" == "-l" ]] && listall_used=1
         ;;
-      --config|--masterkey|--help)
-        used_globals+=( "$w" )
+      # 전역 옵션 (long/short)
+      --config)
+        used_config=1
         ;;
-      --show-credential)
-        # sub option: 처리 여부는 아래에서 결정
+      --masterkey)
+        used_masterkey=1
+        ;;
+      --help|-h)
+        used_help=1
+        ;;
+      # sub option (long/short)
+      --show-credential|-s)
+        used_show_credential=1
         ;;
     esac
   done
@@ -115,55 +156,81 @@ _sshctl_completion() {
   local candidates=()
 
   # (A) Mode options: 아무 모드도 아직 선택되지 않은 경우에만 제안
-  #     suggest mode options only when none is used yet
-  if ((${#used_modes[@]} == 0)); then
-    candidates+=( "${mode_opts[@]}" )
+  #     suggest all mode options (long+short) only when none is used yet
+  if (( mode_used == 0 )); then
+    candidates+=( "${mode_opts_all[@]}" )
   fi
 
   # (B) Global options: 항상 가능하되, 이미 사용된 것은 제외
-  #     global options: always allowed but unique
-  local g u exists
-  for g in "${global_opts[@]}"; do
-    exists=0
-    for u in "${used_globals[@]}"; do
-      if [[ "$g" == "$u" ]]; then
-        exists=1
-        break
-      fi
-    done
-    if (( exists == 0 )); then
-      candidates+=( "$g" )
-    fi
-  done
+  #     global options: always allowed but unique (per role)
+  if (( used_config == 0  )); then
+    candidates+=( --config )
+  fi
+  if (( used_masterkey == 0 )); then
+    candidates+=( --masterkey )
+  fi
+  if (( used_help == 0 )); then
+    candidates+=( --help -h )
+  fi
 
-  # (C) Sub option (--show-credential): --list-all 사용 시에만 제안, 중복 사용 불가
-  #     sub option only when --list-all is present
-  if (( used_listall == 1 )); then
-    local has_show=0
-    for w in "${COMP_WORDS[@]:1}"; do
-      if [[ "$w" == "--show-credential" ]]; then
-        has_show=1
-        break
-      fi
-    done
-    if (( has_show == 0 )); then
-      candidates+=( "${list_sub_opts[@]}" )
-    fi
+  # (C) Sub option (--show-credential / -s):
+  #     --list-all / -l 이 이미 사용되었고, 아직 show-credential/-s 가 없을 때만 제안
+  if (( listall_used == 1 && used_show_credential == 0 )); then
+    candidates+=( "${list_sub_opts_all[@]}" )
   fi
 
   # --------------------------------------
-  # STEP 4: 자동완성 트리거 규칙
-  #         when to propose candidates
+  # STEP 4: 옵션 자동완성 트리거 규칙
+  #         when to propose option candidates
   # --------------------------------------
   # 1) cur 이 비어있을 때 (sshctl [TAB])
-  # 2) cur 이 '-' 로 시작할 때
+  # 2) cur 이 '-' 로 시작할 때 (sshctl -[TAB], sshctl --[TAB])
   if [[ -z "$cur" || "$cur" == -* ]]; then
     COMPREPLY=( $(compgen -W "${candidates[*]}" -- "$cur") )
     return 0
   fi
 
-  # 옵션이 아닌 경우(검색어 등)는 완성 제안 없음
-  # no suggestions for non-option arguments (e.g. search expression)
+  # --------------------------------------
+  # STEP 5: 비옵션(검색어/expr) 자리에서는 connection name 자동 완성
+  #         when current token is not an option, complete using connection.name
+  # --------------------------------------
+  # 기본 설정 파일: ~/.sshctl/configuration.conf
+  local config_file
+  config_file="${HOME}/.sshctl/configuration.conf"
+
+  # --config <file> 가 있으면 해당 파일 우선
+  # find last --config and use its argument as config_file
+  local i
+  for (( i=1; i < ${#COMP_WORDS[@]}-1; i++ )); do
+    if [[ "${COMP_WORDS[i]}" == "--config" ]]; then
+      local cfg="${COMP_WORDS[i+1]}"
+      # '-' 로 시작하면 옵션으로 보고 무시
+      if [[ -n "$cfg" && "$cfg" != -* ]]; then
+        config_file="$cfg"
+      fi
+    fi
+  done
+
+  # ~ 확장 (아주 단순하게 앞자리만 처리)
+  if [[ "$config_file" == "~/"* ]]; then
+    config_file="${HOME}${config_file:1}"
+  fi
+
+  # jq 가 있고, 설정 파일이 읽기 가능하면 connections[].name 목록을완성 후보로 사용
+  if command -v jq >/dev/null 2>&1 && [[ -r "$config_file" ]]; then
+    local names=()
+    # 민감정보는 절대 읽지 않고, name 필드만 사용
+    while IFS= read -r line; do
+      [[ -n "$line" ]] && names+=( "$line" )
+    done < <(jq -r '.connections[]?.name // empty' "$config_file" 2>/dev/null)
+
+    if (( ${#names[@]} > 0 )); then
+      COMPREPLY=( $(compgen -W "${names[*]}" -- "$cur") )
+      return 0
+    fi
+  fi
+
+  # connection name 후보도 없으면 완성 없음
   COMPREPLY=()
   return 0
 }
