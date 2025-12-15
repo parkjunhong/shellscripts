@@ -1,14 +1,34 @@
 #!/usr/bin/env bash
 #
 # SSHCTL 및 SSHCTL.COMPLETION, man 페이지를 다운로드하고 설치하는 스크립트
-# - 시스템 권한(/etc, /usr/local/share/man)이 필요하면 자동으로 sudo 요청
-# - sshctl 파일에는 실행 권한(chmod +x) 부여
+# - sshctl 실행 파일은 항상 설치
+# - -y 옵션이 있으면: completion + man pages(1/5/7)를 질문 없이 설치
+# - -y 옵션이 없으면: completion + man pages(1/5/7)를 설치할지 개별 확인
+#
 
 # ----------------------------------------------------------------------
 # 프로그램 파일 이름
 # ----------------------------------------------------------------------
 SSHCTL_FILENAME="sshctl"
 SSHCTL_COMPLETION_FILENAME="${SSHCTL_FILENAME}.completion"
+
+# ----------------------------------------------------------------------
+# 명령행 옵션 처리 (-y)
+# ----------------------------------------------------------------------
+ASSUME_YES=0
+
+while getopts ":y" opt; do
+  case "${opt}" in
+    y)
+      ASSUME_YES=1
+      ;;
+    \?)
+      echo "사용법: $0 [-y]" >&2
+      exit 1
+      ;;
+  esac
+done
+shift $((OPTIND - 1))
 
 # ----------------------------------------------------------------------
 # 원격 URL 정의 (sshctl / completion / man pages)
@@ -45,28 +65,21 @@ MAN1_TEMP_FILE="${TEMP_DIR}/sshctl.1"
 MAN5_TEMP_FILE="${TEMP_DIR}/sshctl-conf.5"
 MAN7_TEMP_FILE="${TEMP_DIR}/sshctl-security.7"
 
+# man DB 갱신 여부
+INSTALLED_MAN=0
+
 # ----------------------------------------------------------------------
 # 공통 유틸 함수들
 # ----------------------------------------------------------------------
 
-# -----------------------------------------------------------------------------
-# 함수: cleanup
-# 설명: 임시 디렉토리 정리
-# -----------------------------------------------------------------------------
 cleanup() {
   if [[ -d "${TEMP_DIR}" ]]; then
     echo "🧹 임시 파일 정리: ${TEMP_DIR}"
     rm -rf "${TEMP_DIR}"
   fi
 }
-
-# 스크립트 종료 시 항상 cleanup 수행
 trap cleanup EXIT
 
-# -----------------------------------------------------------------------------
-# 함수: check_dependencies
-# 설명: 필요한 도구(curl 또는 wget)가 설치되어 있는지 확인
-# -----------------------------------------------------------------------------
 check_dependencies() {
   if command -v curl >/dev/null 2>&1; then
     DOWNLOADER="curl -fsSL"
@@ -78,11 +91,11 @@ check_dependencies() {
   fi
 }
 
-# -----------------------------------------------------------------------------
-# 함수: ensure_dir
-# 설명: 디렉토리가 없으면 생성 (필요시 sudo)
+##
+# 디렉토리가 없으면 생성 (필요 시 sudo)
+#
 # @param $1 {string} target_dir 생성/보장할 디렉토리 경로
-# -----------------------------------------------------------------------------
+##
 ensure_dir() {
   local target_dir="$1"
 
@@ -90,7 +103,6 @@ ensure_dir() {
     return 0
   fi
 
-  # 쓰기 가능 여부에 따라 mkdir 또는 sudo mkdir
   if mkdir -p "${target_dir}" 2>/dev/null; then
     return 0
   else
@@ -107,26 +119,24 @@ ensure_dir() {
   fi
 }
 
-# -----------------------------------------------------------------------------
-# 함수: copy_and_set_permissions
-# 설명: 파일을 target_dir 로 복사하고, 필요하면 실행 권한 부여
+##
+# 파일 복사 및 (필요 시) 실행 권한 부여
+#
 # @param $1 {string} source_file          복사할 원본 파일
 # @param $2 {string} target_dir           대상 디렉토리
 # @param $3 {string} filename             대상 파일 이름
 # @param $4 {string} needs_exec_permission "true" 이면 chmod +x 수행
-# -----------------------------------------------------------------------------
+##
 copy_and_set_permissions() {
   local source_file="$1"
   local target_dir="$2"
   local filename="$3"
   local needs_exec_permission="$4"
 
-  # 대상 디렉토리 보장
   ensure_dir "${target_dir}" || return 1
 
   local final_dest_path="${target_dir}/${filename}"
 
-  # 기본 cp 또는 sudo cp
   local cp_cmd="cp"
   if [[ -e "${final_dest_path}" && ! -w "${final_dest_path}" ]]; then
     cp_cmd="sudo cp"
@@ -142,10 +152,8 @@ copy_and_set_permissions() {
   fi
   echo "  ✅ 파일 복사 완료"
 
-  # 실행 권한이 필요한 경우
   if [[ "${needs_exec_permission}" == "true" ]]; then
     local chmod_cmd="chmod +x"
-
     if [[ ! -w "${final_dest_path}" ]]; then
       chmod_cmd="sudo chmod +x"
     fi
@@ -162,65 +170,36 @@ copy_and_set_permissions() {
   return 0
 }
 
-# -----------------------------------------------------------------------------
-# 함수: download_files
-# 설명: sshctl / completion / man 페이지 파일 다운로드
-# -----------------------------------------------------------------------------
-download_files() {
-  echo "🚀 [다운로드 시작]"
+##
+# URL 로부터 파일 다운로드
+#
+# @param $1 {string} url    다운로드 URL
+# @param $2 {string} target 저장할 로컬 경로
+# @param $3 {string} label  로그용 이름
+##
+download_file() {
+  local url="$1"
+  local target="$2"
+  local label="$3"
 
-  # sshctl
-  echo "  ⚙️ sshctl 다운로드 중: ${SSHCTL_SCRIPT_URL}"
-  ${DOWNLOADER} "${SSHCTL_SCRIPT_URL}" > "${SSHCTL_TEMP_FILE}"
-  if [[ $? -ne 0 || ! -s "${SSHCTL_TEMP_FILE}" ]]; then
-    echo "  ❌ sshctl 다운로드 실패." >&2
+  echo "  ⚙️ ${label} 다운로드 중: ${url}"
+  ${DOWNLOADER} "${url}" > "${target}"
+  if [[ $? -ne 0 || ! -s "${target}" ]]; then
+    echo "  ❌ ${label} 다운로드 실패." >&2
     return 1
   fi
-
-  # completion
-  echo "  ⚙️ sshctl.completion 다운로드 중: ${SSHCTL_COMPLETION_URL}"
-  ${DOWNLOADER} "${SSHCTL_COMPLETION_URL}" > "${COMPLETION_TEMP_FILE}"
-  if [[ $? -ne 0 || ! -s "${COMPLETION_TEMP_FILE}" ]]; then
-    echo "  ❌ sshctl.completion 다운로드 실패." >&2
-    return 1
-  fi
-
-  # man1
-  echo "  📖 sshctl.1(man1) 다운로드 중: ${SSHCTL_MAN1_URL}"
-  ${DOWNLOADER} "${SSHCTL_MAN1_URL}" > "${MAN1_TEMP_FILE}"
-  if [[ $? -ne 0 || ! -s "${MAN1_TEMP_FILE}" ]]; then
-    echo "  ❌ sshctl.1 다운로드 실패." >&2
-    return 1
-  fi
-
-  # man5
-  echo "  📖 sshctl-conf.5(man5) 다운로드 중: ${SSHCTL_MAN5_URL}"
-  ${DOWNLOADER} "${SSHCTL_MAN5_URL}" > "${MAN5_TEMP_FILE}"
-  if [[ $? -ne 0 || ! -s "${MAN5_TEMP_FILE}" ]]; then
-    echo "  ❌ sshctl-conf.5 다운로드 실패." >&2
-    return 1
-  fi
-
-  # man7
-  echo "  📖 sshctl-security.7(man7) 다운로드 중: ${SSHCTL_MAN7_URL}"
-  ${DOWNLOADER} "${SSHCTL_MAN7_URL}" > "${MAN7_TEMP_FILE}"
-  if [[ $? -ne 0 || ! -s "${MAN7_TEMP_FILE}" ]]; then
-    echo "  ❌ sshctl-security.7 다운로드 실패." >&2
-    return 1
-  fi
-
-  echo "  ✅ 모든 파일 다운로드 완료 (${TEMP_DIR})"
+  echo "  ✅ ${label} 다운로드 완료"
   return 0
 }
 
-# -----------------------------------------------------------------------------
-# 함수: install_sshctl
-# 설명: sshctl 실행 파일 설치
-# -----------------------------------------------------------------------------
+##
+# sshctl 설치 (항상 수행)
+##
 install_sshctl() {
   echo "--------------------------------------------------"
   echo "📦 sshctl 설치 경로: ${SSHCTL_TARGET_DIR}"
 
+  download_file "${SSHCTL_SCRIPT_URL}" "${SSHCTL_TEMP_FILE}" "sshctl" || return 1
   copy_and_set_permissions "${SSHCTL_TEMP_FILE}" "${SSHCTL_TARGET_DIR}" "${SSHCTL_FILENAME}" "true" || return 1
 
   echo "  ℹ️ PATH 에 ${SSHCTL_TARGET_DIR} 가 포함되어 있는지 확인하세요."
@@ -229,15 +208,54 @@ install_sshctl() {
   return 0
 }
 
-# -----------------------------------------------------------------------------
-# 함수: install_completion
-# 설명: bash completion 스크립트 설치
-# -----------------------------------------------------------------------------
-install_completion() {
-  echo "--------------------------------------------------"
-  echo "📦 sshctl bash completion 설치 경로: ${COMPLETION_TARGET_DIR}"
+##
+# 사용자에게 설치 여부 질문 (ASSUME_YES==1 이면 자동 yes)
+#
+# @param $1 {string} prompt_text 질문 문구
+# @return 0(install) / 1(skip)
+##
+ask_install() {
+  local prompt_text="$1"
 
-  copy_and_set_permissions "${COMPLETION_TEMP_FILE}" "${COMPLETION_TARGET_DIR}" "${SSHCTL_COMPLETION_FILENAME}" "false" || return 1
+  if (( ASSUME_YES == 1 )); then
+    echo "  🔁 -y 옵션 사용: ${prompt_text} → 자동으로 '예'로 처리합니다."
+    return 0
+  fi
+
+  echo -n "  ❓ ${prompt_text} [y/N]: "
+  read -r answer
+
+  case "${answer}" in
+    [yY]|[yY][eE][sS])
+      return 0
+      ;;
+    *)
+      echo "  ⏭ 설치를 건너뜁니다."
+      return 1
+      ;;
+  esac
+}
+
+##
+# bash completion 설치 (조건부)
+##
+maybe_install_completion() {
+  echo "--------------------------------------------------"
+  echo "📦 sshctl bash completion 설치"
+
+  if ! ask_install "sshctl bash completion 파일을 설치하시겠습니까?"; then
+    return 0
+  fi
+
+  download_file "${SSHCTL_COMPLETION_URL}" "${COMPLETION_TEMP_FILE}" "sshctl.completion" || {
+    echo "  ⚠️ completion 다운로드 실패 (설치 건너뜀)" >&2
+    return 0
+  }
+
+  copy_and_set_permissions "${COMPLETION_TEMP_FILE}" "${COMPLETION_TARGET_DIR}" "${SSHCTL_COMPLETION_FILENAME}" "false" || {
+    echo "  ⚠️ completion 설치 실패 (무시하고 계속 진행)" >&2
+    return 0
+  }
 
   echo "  ℹ️ bash 에서 자동완성을 활성화하려면 터미널을 새로 열거나,"
   echo "     다음 명령 중 하나를 실행하세요:"
@@ -247,31 +265,55 @@ install_completion() {
   return 0
 }
 
-# -----------------------------------------------------------------------------
-# 함수: install_manpages
-# 설명: man 페이지(1/5/7) 설치 및 man DB 갱신
-# -----------------------------------------------------------------------------
-install_manpages() {
+##
+# 단일 man 페이지 설치 (조건부)
+#
+# @param $1 {string} section     섹션 번호(1/5/7)
+# @param $2 {string} url         다운로드 URL
+# @param $3 {string} temp_file   임시 파일 경로
+# @param $4 {string} target_dir  설치 디렉토리
+# @param $5 {string} filename    설치 파일명 (예: sshctl.1)
+# @param $6 {string} desc        설명(예: "sshctl.1 (기본 명령 man 페이지)")
+##
+maybe_install_man() {
+  local section="$1"
+  local url="$2"
+  local temp_file="$3"
+  local target_dir="$4"
+  local filename="$5"
+  local desc="$6"
+
   echo "--------------------------------------------------"
-  echo "📚 man 페이지 설치를 시작합니다."
+  echo "📚 man 페이지 설치: ${desc}"
 
-  # 섹션별 디렉토리 보장
-  ensure_dir "${MAN1_TARGET_DIR}" || return 1
-  ensure_dir "${MAN5_TARGET_DIR}" || return 1
-  ensure_dir "${MAN7_TARGET_DIR}" || return 1
+  if ! ask_install "${desc} 를 설치하시겠습니까?"; then
+    return 0
+  fi
 
-  # 각 섹션에 복사
-  echo "  📖 sshctl.1 → ${MAN1_TARGET_DIR}"
-  copy_and_set_permissions "${MAN1_TEMP_FILE}" "${MAN1_TARGET_DIR}" "sshctl.1" "false" || return 1
+  download_file "${url}" "${temp_file}" "${filename}" || {
+    echo "  ⚠️ ${filename} 다운로드 실패 (설치 건너뜀)" >&2
+    return 0
+  }
 
-  echo "  📖 sshctl-conf.5 → ${MAN5_TARGET_DIR}"
-  copy_and_set_permissions "${MAN5_TEMP_FILE}" "${MAN5_TARGET_DIR}" "sshctl-conf.5" "false" || return 1
+  copy_and_set_permissions "${temp_file}" "${target_dir}" "${filename}" "false" || {
+    echo "  ⚠️ ${filename} 설치 실패 (무시하고 계속 진행)" >&2
+    return 0
+  }
 
-  echo "  📖 sshctl-security.7 → ${MAN7_TARGET_DIR}"
-  copy_and_set_permissions "${MAN7_TEMP_FILE}" "${MAN7_TARGET_DIR}" "sshctl-security.7" "false" || return 1
+  INSTALLED_MAN=1
+  return 0
+}
 
-  # man 데이터베이스 갱신 (있을 때만)
+##
+# man DB 갱신 (필요 시)
+##
+update_man_db_if_needed() {
+  if (( INSTALLED_MAN == 0 )); then
+    return 0
+  fi
+
   if command -v mandb >/dev/null 2>&1; then
+    echo "--------------------------------------------------"
     echo "  🔄 man DB 갱신 중 (mandb)..."
     if mandb >/dev/null 2>&1; then
       echo "  ✅ man DB 갱신 완료"
@@ -279,62 +321,54 @@ install_manpages() {
       echo "  ⚠️ mandb 실행에 실패했지만, man 페이지는 파일 수준에서는 설치되었습니다." >&2
     fi
   else
+    echo "--------------------------------------------------"
     echo "  ℹ️ mandb 명령이 없어 man DB 갱신은 건너뜁니다."
     echo "     대부분의 경우 설치 후 바로 'man sshctl' 이 동작합니다."
   fi
-
-  echo "  ✅ man 페이지 설치 완료"
-  return 0
 }
 
 # ----------------------------------------------------------------------
-# main 함수
+# main
 # ----------------------------------------------------------------------
 main() {
   echo "=================================================="
   echo " SSHCTL 설치 스크립트"
-  echo " - sshctl 실행파일"
-  echo " - sshctl bash completion"
-  echo " - sshctl man pages (1/5/7)"
+  echo " - sshctl 실행파일 (항상 설치)"
+  echo " - sshctl bash completion (옵션)"
+  echo " - sshctl man pages (1/5/7, 옵션)"
   echo "=================================================="
+  echo " 옵션:"
+  echo "   -y : completion 및 man 페이지를 묻지 않고 모두 설치"
+  echo
 
-  # 1. 의존성 확인
   check_dependencies
 
-  # 2. 파일 다운로드
-  if ! download_files; then
-    echo "❌ 다운로드 단계에서 오류가 발생했습니다. 설치를 중단합니다." >&2
-    exit 1
-  fi
-
-  # 3. sshctl 설치
+  # 1) sshctl 본체는 항상 설치
   if ! install_sshctl; then
-    echo "❌ sshctl 설치 실패." >&2
+    echo "❌ sshctl 설치 실패. 스크립트를 종료합니다." >&2
     exit 1
   fi
 
-  # 4. completion 설치
-  if ! install_completion; then
-    echo "❌ sshctl completion 설치 실패." >&2
-    exit 1
-  fi
+  # 2) bash completion (조건부)
+  maybe_install_completion
 
-  # 5. man 페이지 설치
-  if ! install_manpages; then
-    echo "❌ man 페이지 설치 실패." >&2
-    exit 1
-  fi
+  # 3) man pages (조건부)
+  maybe_install_man "1" "${SSHCTL_MAN1_URL}" "${MAN1_TEMP_FILE}" "${MAN1_TARGET_DIR}" "sshctl.1" "sshctl.1 (기본 명령 man 페이지)"
+  maybe_install_man "5" "${SSHCTL_MAN5_URL}" "${MAN5_TEMP_FILE}" "${MAN5_TARGET_DIR}" "sshctl-conf.5" "sshctl-conf.5 (설정 파일 설명 man 페이지)"
+  maybe_install_man "7" "${SSHCTL_MAN7_URL}" "${MAN7_TEMP_FILE}" "${MAN7_TARGET_DIR}" "sshctl-security.7" "sshctl-security.7 (보안 설계 man 페이지)"
+
+  # 4) man DB 갱신 (설치된 man 파일이 있는 경우에만)
+  update_man_db_if_needed
 
   echo "--------------------------------------------------"
   echo "✨ 설치 완료!"
   echo "  - sshctl 명령 사용: sshctl --help"
-  echo "  - man 페이지 사용:"
+  echo "  - man 페이지 사용 (설치한 경우):"
   echo "      man sshctl"
   echo "      man sshctl-conf"
   echo "      man sshctl-security"
 }
 
-# 스크립트 실행
 main
 
 exit 0
