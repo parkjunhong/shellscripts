@@ -677,9 +677,11 @@ format_credential_for_display() {
 
   case "$EXEC_CMD" in
     # [연결정보 목록] (-l | --list-all)
+    # [연결정보 수정] (-m | --modify-connection)
+    # - 요구사항: "plain list" 를 대상으로 동작
     # - 기본: masking list (****************)
     # - -s / --show-credential 이 있는 경우: plain list
-    list)
+    list | modify)
       if [[ "$SHOW_CREDENTIAL" == "true" ]]; then
         printf '%s' "$cred"
       else
@@ -696,13 +698,6 @@ format_credential_for_display() {
       else
         printf '****************'
       fi
-      ;;
-
-    # [연결정보 수정] (-m | --modify-connection)
-    # - 요구사항: "plain list" 를 대상으로 동작
-    # - --show-credential 옵션 지원하지 않음 (있어도 무시) → 항상 평문 표시
-    modify)
-      printf '%s' "$cred"
       ;;
 
     # [서버 접속], [연결정보 삭제], [연결정보 그룹이동]
@@ -1150,8 +1145,8 @@ _build_search_filter_inner() {
 #
 # @param $1 {string} query 검색식 (빈 문자열이면 전체) / search query; empty for all connections
 #
-# @return {string} STDOUT로 "group\tname\thost\tport\tusername\tcredential" 라인들을 출력
-#         prints lines of "group\tname\thost\tport\tusername\tcredential" to STDOUT.
+# @return {string} STDOUT로 "group[TAB]name[TAB]host[TAB]port[TAB]username[TAB]credential" 라인들을 출력
+#         prints lines of "group[TAB]name[TAB]host[TAB]port[TAB]username[TAB]credential" to STDOUT.
 # @return {int} jq 실행 실패 시 비-0, 정상 시 0
 #         0 on success; non-zero if jq fails.
 ##
@@ -1192,8 +1187,8 @@ print_config_summary_banner() {
 # 탭 구분 원시 문자열을 인덱스 컬럼(#)이 포함된 표 형태로 출력한다.
 # Render a tab-separated raw string as a table with index (#) column.
 #
-# @param $1 {string} raw "group\tname\thost\tport\tuser\tcredential" 형식의 여러 줄 문자열
-#                      multi-line string in "group\tname\thost\tport\tuser\tcredential" format
+# @param $1 {string} raw "group[TAB]name[TAB]host[TAB]port[TAB]username[TAB]credential" 형식의 여러 줄 문자열
+#                      multi-line string in "group[TAB]name[TAB]host[TAB]port[TAB]username[TAB]credential" format
 #
 # @return {int} 데이터가 없으면 1, 표 출력 시 0
 #         1 when no data; 0 when table is printed successfully.
@@ -1268,14 +1263,13 @@ print_raw_as_table() {
 # 인덱스 없이 기본 컬럼만 포함하는 표를 출력한다.
 # Render a table without index column using only base fields.
 #
-# @param $1 {string} raw "group\tname\thost\tport\tuser\tcredential" 형식의 여러 줄 문자열
+# @param $1 {string} raw "group[TAB]name[TAB]tost[TAB]port[TAB]user[TAB]credential" 형식의 여러 줄 문자열
 #
 # @return {int} 데이터가 없으면 1, 표 출력 시 0
 #         1 when no data; 0 when table is printed successfully.
 ##
 print_raw_as_table_no_index() {
   local raw="$1"
-
   if [[ -z "$raw" ]]; then
     echo "저장된 연결정보가 없습니다." >&2
     return 1
@@ -1283,13 +1277,14 @@ print_raw_as_table_no_index() {
 
   # 설정정보 배너 출력
   print_config_summary_banner
-
+  
   if command -v column >/dev/null 2>&1; then
     local temp_buffer=""
     local group name host port user cred display_cred
 
+    # '\t' 문자를 [TAB] 캐릭터로 변환
+    #raw="$(printf '%s' "$raw" | sed $'s/\\\\t/\t/g')"
     temp_buffer+="Group\tName\tHost\tPort\tUser\tCredential\n"
-
     while IFS=$'\t' read -r group name host port user cred; do
       if [[ -z "$group" && -z "$name" && -z "$host" && -z "$port" && -z "$user" && -z "$cred" ]]; then
         continue
@@ -1300,7 +1295,7 @@ print_raw_as_table_no_index() {
       # -------------------------------
       user_dec="$(decrypt_value_if_needed "$user")"
       cred_dec="$(decrypt_value_if_needed "$cred")"
-
+     
       # credential 출력 정책은 복호화된 값 기준
       display_cred="$(format_credential_for_display "$cred_dec")"
 
@@ -1379,7 +1374,8 @@ print_single_connection_from_fields() {
   local username="$5"
   local credential="$6"
 
-  local raw="${group}\t${name}\t${host}\t${port}\t${username}\t${credential}"
+  #local raw="${group}\t${name}\t${host}\t${port}\t${username}\t${credential}"
+  local raw="${group}"$'\t'"${name}"$'\t'"${host}"$'\t'"${port}"$'\t'"${username}"$'\t'"${credential}"
   print_raw_as_table_no_index "$raw"
 }
 
@@ -1508,7 +1504,7 @@ select_connection_interactively() {
   fi
 
   local sel
-  local prompt_msg="❓  번호(#)를 선택하세요 (예: 1, 2, 3): "
+  local prompt_msg="✨  번호(#)를 선택하세요 [1 ~ $n]: "
   while true; do
     read -r -p "$prompt_msg" sel
     if [[ -z "$sel" ]]; then
@@ -1516,7 +1512,7 @@ select_connection_interactively() {
       return 1
     fi
     if ! [[ "$sel" =~ ^[0-9]+$ ]] || (( sel < 1 || sel > n )); then
-      prompt_msg="❗  입력한 값이 올바르지 않습니다. 번호(#)를 선택하세요 (예: 1, 2, 3): "
+      prompt_msg="❗  입력한 값이 올바르지 않습니다. 번호(#)를 선택하세요 [1 ~ $n]: "
       continue
     fi
     break
@@ -1532,34 +1528,258 @@ select_connection_interactively() {
   ' "$CONFIG_FILE"
 }
 
-##
-# 간단한 텍스트 프롬프트를 통해 입력을 받고, 비어 있으면 기본값을 사용하는 헬퍼이다.
-# Prompt user for a value, falling back to the current/default value if input is empty.
-#
-# @param $1 {string} label 표시할 라벨 / label text for the prompt
-# @param $2 {string|empty} current 기본값 / current/default value
-#
-# @return {string} STDOUT로 최종 입력값 출력 / prints final input value to STDOUT.
-# @return {int} 항상 0 / always 0.
-##
-prompt_with_default() {
-  local label="$1"
-  local current="${2:-}"
-  local var
-  if [[ -n "${current}" ]]; then
-    read -r -p "❓  ${label} [${current}]: " var
-    if [[ -z "${var}" ]]; then
-      var="${current}"
-    fi
-  else
-    read -r -p "❓  ${label}: " var
+# -----------------------------------------------------------------------------
+# UTF-8 문자를 1개 읽는다. (한국어 포함)
+# - 한국어/English: read one UTF-8 character from stdin
+# @return {string} 읽은 문자 1개를 echo 로 반환. Enter 시 빈 문자열 반환.
+# -----------------------------------------------------------------------------
+_read_utf8_char() {
+  local c
+  IFS= read -r -s -n 1 c || return 1
+
+  # Enter
+  if [[ "$c" == $'\n' || "$c" == $'\r' ]]; then
+    echo ""
+    return 0
   fi
-  printf '%s' "${var}"
+
+  # 일반 ASCII
+  local ord
+  ord=$(printf '%d' "'$c" 2>/dev/null)
+  if [[ -z "$ord" ]]; then
+    # 일부 환경에서 printf '%d' "'$c" 가 비정상인 경우가 있어 fallback
+    echo "$c"
+    return 0
+  fi
+
+  # UTF-8 멀티바이트 처리
+  local need=0
+  if (( ord >= 0 && ord <= 127 )); then
+    need=0
+  elif (( ord >= 192 && ord <= 223 )); then
+    need=1
+  elif (( ord >= 224 && ord <= 239 )); then
+    need=2
+  elif (( ord >= 240 && ord <= 247 )); then
+    need=3
+  else
+    need=0
+  fi
+
+  if (( need > 0 )); then
+    local rest=""
+    IFS= read -r -s -n "$need" rest || true
+    echo "${c}${rest}"
+  else
+    echo "$c"
+  fi
+
+  return 0
+}
+
+# -----------------------------------------------------------------------------
+# UTF-8 안전한 한 줄 입력기 (Backspace/CTRL+U 지원)
+# - 한국어/English: line editor that redraws line, safe for UTF-8
+#
+# @param $1 {string} prompt 입력 프롬프트(ASCII 권장). 예: "> "
+# @param $2 {string} default 기본값(Enter 시 적용)
+# @return {string} 입력 문자열을 echo 로 반환
+# -----------------------------------------------------------------------------
+read_line_utf8() {
+  local prompt="$1"
+  local default_value="${2:-}"
+  local buf=""
+  local ch
+
+  local EL=$'\033[K'
+  if command -v tput >/dev/null 2>&1; then
+    EL="$(tput el)"
+  fi
+
+  local old_stty
+  old_stty="$(stty -g 2>/dev/null)"
+  stty -echo 2>/dev/null
+
+  # 최초 1회는 prompt만 출력 (여기서 라인을 지우지 않음)
+  printf '%s' "$prompt" >&2
+
+  while true; do
+    IFS= read -r -s -n 1 ch || break
+
+    # Enter만 눌렀을 때: bash read는 newline을 delimiter로 소비해서 ch가 빈 문자열이 됨
+    # => 빈 문자열도 Enter로 간주하고 종료
+    if [[ -z "$ch" || "$ch" == $'\n' || "$ch" == $'\r' ]]; then
+      break
+    fi
+
+    if [[ "$ch" == $'\x7f' || "$ch" == $'\x08' ]]; then
+      if [[ -n "$buf" ]]; then
+        buf="${buf%?}"  # UTF-8 안전: 마지막 문자 1개 제거
+      fi
+      # prompt는 항상 유지하고, 잔상만 제거
+      printf '\r%s%s%s' "$prompt" "$buf" "$EL" >&2
+      continue
+    fi
+
+    if [[ "$ch" == $'\x15' ]]; then
+      buf=""
+      printf '\r%s%s%s' "$prompt" "$buf" "$EL" >&2
+      continue
+    fi
+
+    buf+="$ch"
+    printf '\r%s%s%s' "$prompt" "$buf" "$EL" >&2
+  done
+
+  stty "$old_stty" 2>/dev/null
+  printf '\n' >&2
+
+  if [[ -z "$buf" && -n "$default_value" ]]; then
+    buf="$default_value"
+  fi
+
+  printf '%s' "$buf"
+  return 0
+}
+
+# -----------------------------------------------------------------------------
+# UTF-8 안전한 비밀번호 입력기 (마스킹 출력)
+# - 한국어/English: masked password input (****), safe for UTF-8 editing
+#
+# @param $1 {string} prompt 입력 프롬프트 (예: "       > [****]: ")
+# @param $2 {string} default_value 기본값(Enter 시 유지할 값). 빈 문자열이면 Enter는 빈 값.
+# @return {string} 입력 문자열(평문)을 echo로 반환
+# -----------------------------------------------------------------------------
+_read_password_utf8_masked() {
+  local prompt="$1"
+  local default_value="${2:-}"
+  local buf=""
+  local ch
+
+  local EL=$'\033[K'
+  if command -v tput >/dev/null 2>&1; then
+    EL="$(tput el)"
+  fi
+
+  local old_stty
+  old_stty="$(stty -g 2>/dev/null)"
+
+  # 혹시 예외/중단 시에도 stty 복구되도록 (함수 범위에서만)
+  trap 'stty "$old_stty" 2>/dev/null' INT TERM
+
+  stty -echo 2>/dev/null
+
+  # 최초 프롬프트 출력
+  printf '%s' "$prompt" >&2
+
+  while true; do
+    IFS= read -r -s -n 1 ch || break
+
+    # Enter 처리 (빈 문자열도 Enter)
+    if [[ -z "$ch" || "$ch" == $'\n' || "$ch" == $'\r' ]]; then
+      break
+    fi
+
+    # Backspace (DEL/BS)
+    if [[ "$ch" == $'\x7f' || "$ch" == $'\x08' ]]; then
+      if [[ -n "$buf" ]]; then
+        buf="${buf%?}"  # UTF-8 문자 단위 삭제
+      fi
+
+      # 마스킹 문자열 재생성
+      local stars=""
+      if [[ -n "$buf" ]]; then
+        stars="$(printf '%*s' "${#buf}" '' | tr ' ' '*')"
+      fi
+
+      printf '\r%s%s%s' "$prompt" "$stars" "$EL" >&2
+      continue
+    fi
+
+    # Ctrl+U: 라인 전체 삭제
+    if [[ "$ch" == $'\x15' ]]; then
+      buf=""
+      printf '\r%s%s%s' "$prompt" "" "$EL" >&2
+      continue
+    fi
+
+    # 일반 문자 추가
+    buf+="$ch"
+
+    local stars=""
+    stars="$(printf '%*s' "${#buf}" '' | tr ' ' '*')"
+    printf '\r%s%s%s' "$prompt" "$stars" "$EL" >&2
+  done
+
+  stty "$old_stty" 2>/dev/null
+  trap - INT TERM
+  printf '\n' >&2
+
+  # Enter만 눌렀고 default_value가 있으면 default 적용(=기존 값 유지)
+  if [[ -z "$buf" && -n "$default_value" ]]; then
+    buf="$default_value"
+  fi
+
+  printf '%s' "$buf"
+  return 0
+}
+
+# -----------------------------------------------------------------------------
+# credential 입력 프롬프트 (password/key 공통)
+# - 한국어/English: unified credential prompt for password/key
+#
+# @param $1 {string} icon  아이콘(예: 🔑)
+# @param $2 {string} field 필드명(예: password, key path)
+# @param $3 {string} auth_type "password" | "key"
+# @param $4 {string} current 기존 값 (password의 경우 실제 값은 숨기되 Enter=keep)
+#
+# @return {string} 입력 결과를 echo로 반환
+#   - password: 평문 반환(표시는 ****), Enter면 기존 값 유지
+#   - key: 경로 문자열 반환, Enter면 기존 값 유지
+# -----------------------------------------------------------------------------
+prompt_credential_with_icon() {
+  local icon="$1"
+  local field="$2"
+  local auth_type="$3"
+  local current="${4:-}"
+  local input input_prompt
+
+  # 안내 라인 (이모지 포함, 편집 없음)
+  printf '\r\033[K' >&2
+  printf " * %s  '%s' 정보를 입력하세요.\n" "${icon}" "${field}" >&2
+
+  if [[ "$auth_type" == "password" ]]; then
+    # 기존 UX 유지: > [****]:
+    input_prompt="       > "
+    #input_prompt+="[****]: "
+    input_prompt+="[${current}]: "
+
+    # 마스킹 입력기 사용 (Enter 시 기존 값 유지)
+    input="$(_read_password_utf8_masked "$input_prompt" "$current")"
+    printf '%s' "$input"
+    return 0
+  fi
+
+  # key path: 기존 UX 유지: > [<path>]:
+  input_prompt="       > "
+  if [[ -n "$current" ]]; then
+    input_prompt+="[${current}]: "
+  else
+    input_prompt+=": "
+  fi
+
+  # key path는 일반 입력 (UTF-8 안전)
+  input="$(read_line_utf8 "$input_prompt" "$current")"
+  printf '%s' "$input"
+  return 0
 }
 
 ##
 # 아이콘과 필드명을 PROMPT_LABEL_WIDTH 기준으로 정렬하여 입력을 받는다.
 # Prompt with an icon and field name aligned by PROMPT_LABEL_WIDTH.
+#
+# history
+# - 20251216: 글자 밀림 수정
 #
 # @param $1 {string} icon 프롬프트에 사용할 아이콘 / icon to display
 # @param $2 {string} field 필드 이름 / field name
@@ -1572,19 +1792,32 @@ prompt_with_icon() {
   local icon="$1"
   local field="$2"
   local current="${3:-}"
-  local raw label input
+  local raw label input input_prompt
 
   raw="${icon}  ${field}"
   printf -v label "%-*s" "$PROMPT_LABEL_WIDTH" "$raw"
 
+  # 라인 잔상 방지
+  printf '\r\033[K' >&2
+
+  # 1) 안내 라인(이모지 포함)은 별도 출력 (여기서는 커서 편집이 없음)
   if [[ -n "$current" ]]; then
-    read -r -p "❓  ${label} [${current}]: " input
-    if [[ -z "$input" ]]; then
-      input="$current"
-    fi
+    printf " * %s  '%s' 정보를 입력하세요.\n" "${icon}" "${field}" >&2
   else
-    read -r -p "❓  ${label}: " input
+    printf " * %s  '%s' 정보를 입력하세요.\n" "${icon}" "${field}" >&2
   fi
+
+  # 2) 실제 입력 라인(타이핑하는 줄) - 기존 UX 유지: > [default]:
+  input_prompt="       > "
+  if [[ -n "$current" ]]; then
+    input_prompt+="[${current}]: "
+  else
+    input_prompt+=": "
+  fi
+
+  # UTF-8 안전 입력기 적용 (한글 입력/삭제 시 잔상 및 커서 문제 완화)
+  # Enter 입력 시 default(current) 값 적용
+  input="$(read_line_utf8 "$input_prompt" "$current")"
 
   printf '%s' "$input"
 }
@@ -1728,7 +1961,7 @@ cmd_add_connection() {
 
   # name
   while true; do
-    name="$(prompt_with_icon "🏷" "name" "")"
+    name="$(prompt_with_icon "📛" "name" "")"
     if validate_non_empty "name" "$name"; then
       break
     fi
@@ -1744,7 +1977,7 @@ cmd_add_connection() {
 
   # host (+ optional port)
   while true; do
-    host_input="$(prompt_with_icon "🖥" "host" "")"
+    host_input="$(prompt_with_icon "🌍" "host" "")"
     if [[ "$host_input" =~ ^(.+):([0-9]+)$ ]]; then
       host="${BASH_REMATCH[1]}"
       port_input="${BASH_REMATCH[2]}"
@@ -1785,17 +2018,17 @@ cmd_add_connection() {
     fi
   done
 
+  # credential
   if [[ "$auth_type" == "password" ]]; then
     while true; do
-      read -r -s -p "❓  🔑 password: " credential
-      printf '\n'
+      credential="$(prompt_credential_with_icon "🔑" "password" "password" "")"
       if validate_non_empty "password" "$credential"; then
         break
       fi
     done
   else
     while true; do
-      read -r -e -p "❓  🔑 key path: " credential
+      credential="$(prompt_credential_with_icon "🔑" "key path" "key" "")"
       credential="$(resolve_path_abs "$credential")"
       if validate_non_empty "key path" "$credential"; then
         break
@@ -1989,7 +2222,7 @@ cmd_modify_connection() {
 
   # name
   while true; do
-    new_name="$(prompt_with_icon "🏷" "name" "$name")"
+    new_name="$(prompt_with_icon "📛" "name" "$name")"
     if [[ -z "$new_name" ]]; then
       new_name="$name"
     fi
@@ -2011,7 +2244,7 @@ cmd_modify_connection() {
 
   # host (+ optional port)
   while true; do
-    host_input="$(prompt_with_icon "🖥" "host" "$host")"
+    host_input="$(prompt_with_icon "🌍" "host" "$host")"
     if [[ -z "$host_input" ]]; then
       host_input="$host"
     fi
@@ -2068,8 +2301,7 @@ cmd_modify_connection() {
   if [[ "$new_auth_type" == "password" ]]; then
     local old_pw="$credential"
     while true; do
-      read -r -s -p "❓  🔑 password [****]: " tmp
-      printf '\n'
+      tmp="$(prompt_credential_with_icon "🔑" "password" "password" "$old_pw")"
       if [[ -z "$tmp" ]]; then
         new_credential="$old_pw"
         break
@@ -2079,7 +2311,7 @@ cmd_modify_connection() {
     done
   else
     while true; do
-      read -r -e -p "❓  🔑 key path [${credential}]: " tmp
+      tmp="$(prompt_credential_with_icon "🔑" "key path" "key" "$credential")"
       if [[ -z "$tmp" ]]; then
         new_credential="$credential"
       else
@@ -2089,6 +2321,7 @@ cmd_modify_connection() {
         break
       fi
     done
+    printf '\n'
   fi
 
   echo "-----------------------------------------------------------"
@@ -2209,7 +2442,7 @@ select_indices_for_delete() {
   # 번호 입력 (쉼표 구분)
   local sel
   while true; do
-    read -r -p "❓  삭제할 번호(#)를 입력하세요 (예: 1, 2, 3): " sel
+    read -r -p "❓  삭제할 번호(#)를 입력하세요. (콤마(,)로 구분해서 입력) [1 ~ $n] : " sel
     sel="${sel//[[:space:]]/}"  # 공백 제거
 
     if [[ -z "$sel" ]]; then
