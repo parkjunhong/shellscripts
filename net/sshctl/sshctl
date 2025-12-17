@@ -1237,11 +1237,21 @@ print_raw_as_table() {
       if [[ -z "$group" && -z "$name" && -z "$host" && -z "$port" && -z "$user" && -z "$cred" ]]; then
         continue
       fi
+
       n=$((n+1))
       local idx
       printf -v idx "%04d" "$n"
-      display_cred="$(format_credential_for_display "$cred")"
-      temp_buffer+="${idx}\t${group}\t${name}\t${host}\t${port}\t${user}\t${display_cred}\n"
+
+      # -------------------------------
+      # ★ 민감정보 복호화 적용
+      # -------------------------------
+      user_dec="$(decrypt_value_if_needed "$user")"
+      cred_dec="$(decrypt_value_if_needed "$cred")"
+     
+      # credential 출력 정책은 복호화된 값 기준
+      display_cred="$(format_credential_for_display "$cred_dec")"
+
+      temp_buffer+="${idx}\t${group}\t${name}\t${host}\t${port}\t${user_dec}\t${display_cred}\n"
     done <<< "$raw"
 
     # column 결과를 기준으로 헤더 길이를 구해서
