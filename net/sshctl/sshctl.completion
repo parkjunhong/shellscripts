@@ -2,7 +2,7 @@
 # @author   : parkjunhong77@gmail.com
 # @title    : sshctl bash completion.
 # @license  : Apache License 2.0
-# @since    : 2025-12-15
+# @since    : 2025-12-17
 # @desc     : support RHEL 7+/Oracle Linux 7+/Ubuntu 20.04+/CentOS 7+
 # @installation :
 #   1. insert 'source <path>/sshctl.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
@@ -53,6 +53,9 @@
 #   * 동일 옵션(동일 역할의 long/short 쌍 포함)이 이미 사용된 경우 다시 제안하지 않음
 # - --show-credential / -s 옵션은 '--list-all' / '-l' 또는 '--modify-connection' / '-m' 이 사용된 경우에만 제안
 #   * 단, '--modify-credential' / '-mc' 와는 함께 사용할 수 없음 (completion에서도 제안하지 않음)
+# - --number / -n 옵션은 접속(connect) 전용이며 모드 옵션과 함께 사용할 수 없음
+#   * completion에서도 모드 옵션(--add/--modify/--delete/--move/--list/--modify-credential)과 함께 제안하지 않음
+#   * --number|-n 뒤에서는 숫자(1..N)만 제안 (N=전체 connections 개수 기준)
 # - --config, --masterkey 옵션 뒤에서는 파일/경로 자동 완성
 # - sshctl [TAB] 으로도 즉시 옵션을 추천
 # - 비옵션(검색어/expr 자리)에서는 설정 파일(configuration)의 connection.name 기반 자동 완성
@@ -100,11 +103,53 @@ _sshctl_completion() {
     -s
   )
 
+  # --- Connect sub option: direct connect by number (connect only) ---
+  # 접속(connect) 전용 옵션: 검색 결과의 N번째(#)로 바로 접속
+  local connect_sub_opts_all=(
+    --number
+    -n
+  )
+
   # --------------------------------------
   # STEP 1: prev 가 파일/경로 값을 기대하는 옵션인지 확인
   #         If previous token expects a file/dir path
   # --------------------------------------
   case "$prev" in
+    --number|-n)
+      # 숫자 자동완성: 전체 connections 개수(설정 파일 기준)만큼 1..N
+      local config_file_num
+      config_file_num="${HOME}/.sshctl/configuration.conf"
+      local i_num
+      for (( i_num=1; i_num < ${#COMP_WORDS[@]}-1; i_num++ )); do
+        if [[ "${COMP_WORDS[i_num]}" == "--config" ]]; then
+          local cfg_num="${COMP_WORDS[i_num+1]}"
+          if [[ -n "$cfg_num" && "$cfg_num" != -* ]]; then
+            config_file_num="$cfg_num"
+          fi
+        fi
+      done
+      if [[ "$config_file_num" == "~/"* ]]; then
+        config_file_num="${HOME}${config_file_num:1}"
+      fi
+      local max_num=0
+      if command -v jq >/dev/null 2>&1 && [[ -r "$config_file_num" ]]; then
+        max_num="$(jq -r '(.connections // []) | length' "$config_file_num" 2>/dev/null)"
+        if ! [[ "$max_num" =~ ^[0-9]+$ ]]; then
+          max_num=0
+        fi
+      fi
+      # max_num 이 0이면 최소 1~50 정도만 제안
+      if (( max_num <= 0 )); then
+        max_num=50
+      fi
+      local nums=()
+      local n
+      for (( n=1; n<=max_num; n++ )); do
+        nums+=( "$n" )
+      done
+      COMPREPLY=( $(compgen -W "${nums[*]}" -- "$cur") )
+      return 0
+      ;;
     --config|--masterkey)
       COMPREPLY=( $(compgen -f -- "$cur") )
       return 0
@@ -125,6 +170,8 @@ _sshctl_completion() {
   local used_help=0
 
   local used_show_credential=0
+
+  local used_number=0
 
   local w
   for w in "${COMP_WORDS[@]:1}"; do
@@ -155,6 +202,10 @@ _sshctl_completion() {
       --show-credential|-s)
         used_show_credential=1
         ;;
+      # connect sub option (long/short)
+      --number|-n)
+        used_number=1
+        ;;
     esac
   done
 
@@ -166,7 +217,7 @@ _sshctl_completion() {
 
   # (A) Mode options: 아무 모드도 아직 선택되지 않은 경우에만 제안
   #     suggest all mode options (long+short) only when none is used yet
-  if (( mode_used == 0 )); then
+  if (( mode_used == 0 && used_number == 0 )); then
     if (( used_show_credential == 1 )); then
       local opt
       for opt in "${mode_opts_all[@]}"; do
@@ -192,7 +243,14 @@ _sshctl_completion() {
     candidates+=( --help -h )
   fi
 
-  # (C) Sub option (--show-credential / -s):
+  
+  # (B-1) Connect sub option (--number / -n):
+  #       connect 전용이며, 모드 옵션이 없고 아직 사용하지 않은 경우에만 제안
+  if (( mode_used == 0 && used_number == 0 )); then
+    candidates+=( "${connect_sub_opts_all[@]}" )
+  fi
+
+# (C) Sub option (--show-credential / -s):
   #     --list-all/-l 또는 --modify-connection/-m 이 이미 사용되었고, 아직 show-credential/-s 가 없을 때만 제안
   if (( (listall_used == 1 || modify_used == 1) && used_show_credential == 0 && modify_cred_used == 0 )); then
     candidates+=( "${list_sub_opts_all[@]}" )
