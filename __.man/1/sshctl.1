@@ -3,6 +3,9 @@
 sshctl \- manage SSH connections via encrypted JSON configuration
 
 .SH SYNOPSIS
+.TP
+\fBsshctl\fR [\fIGLOBAL OPTIONS\fR] [\fI<expr>\fR] \fB--number\fR \fIN\fR
+Direct connect to the N-th item in filtered list (connect mode).
 .B sshctl
 [\fIGLOBAL_OPTIONS\fR] [\fIMODE\fR] [\fIEXPR\fR]
 
@@ -192,6 +195,12 @@ SSH 연결정보가 암호화되어 저장되는 기본 configuration 파일.
 암복호화에 사용하는 OpenSSH private key 파일.
 
 .SH EXAMPLES
+.TP
+\fBsshctl mycom -n 2\fR
+'mycom'에 해당하는 검색 결과에서 2번째 항목으로 바로 접속합니다.
+.TP
+\fBsshctl -n 2 mycom\fR
+옵션 위치는 앞/뒤 모두 허용되며 동작은 동일합니다.
 .TP
 1) 연결정보 추가
 .nf

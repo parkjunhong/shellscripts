@@ -3,6 +3,11 @@
 sshctl-security \- security design and policies for sshctl
 
 .SH DESCRIPTION
+.TP
+\fB바로 접속(--number|-n)\fR
+선택 화면에서 전체 목록을 출력하지 않고 1건만 출력하므로, 화면 노출 범위를 줄입니다.
+단, 접속(connect) 흐름과 동일하게 동작하므로 password 방식(sshpass) 사용 시 주의가 필요합니다.
+credential 표시 정책은 connect와 동일하게 기본 마스킹이며, 보안상 평문 출력은 허용하지 않습니다.
 .B sshctl-security
 는
 .BR sshctl (1)
