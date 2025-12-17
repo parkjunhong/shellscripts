@@ -1,5 +1,4 @@
-.TH SSHCTL-SECURITY 7 "2025-12-15" "sshctl 2.x" "Security Architecture"
-
+.TH SSHCTL-SECURITY 7 "2025-12-17" "sshctl 2.1.0" "Security Architecture"
 .SH NAME
 sshctl-security \- security design and policies for sshctl
 
@@ -92,6 +91,17 @@ CLI 출력 시 credential 등의 민감정보는 모드별로 다른 정책을 �
 .br
 수정 결과 preview 에서 변경된 username/credential 을 평문으로 표시한다.
 이는 사용자가 변경 결과를 확실히 검증할 수 있도록 하기 위한 예외적 허용이다.
+
+.IP \[bu]
+.B --modify-credential / -mc
+.br
+여러 password 기반 connection의 credential 을 동일한 값으로 일괄 변경한다.
+대상 선택 목록과 변경 결과 목록에서 credential 을 평문(plain text)으로 표시한다.
+이는 사용자가 어떤 항목을 선택/변경하는지 명확히 검증할 수 있게 하기 위한 예외 정책이며,
+해당 모드에서는
+.BR --show-credential " / " -s
+옵션을 지원하지 않는다(또한 bash completion 에서도 제안하지 않는다).
+
 
 .IP \[bu]
 .B --delete-connection / -d

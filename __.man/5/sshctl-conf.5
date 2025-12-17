@@ -1,5 +1,4 @@
-.TH SSHCTL.CONF 5 "2025-12-15" "sshctl 2.x" "File Formats"
-
+.TH SSHCTL.CONF 5 "2025-12-17" "sshctl 2.1.0" "File Formats"
 .SH NAME
 sshctl.conf \- JSON configuration file for sshctl connections
 
@@ -16,6 +15,10 @@ sshctl.conf \- JSON configuration file for sshctl connections
 각 connection 객체는 SSH 접속에 필요한 host, port, username, credential 정보를 가진다.
 
 민감정보(username, credential)는 평문이 아니라 암호문 형태(ENC::<base64>)로 저장된다.
+
+sshctl 2.1.0 부터는
+.BR --modify-credential " / " -mc
+모드를 통해 여러 password 기반 connection의 credential 값을 일괄 변경할 수 있다.
 
 .SH LOCATION
 기본 설정 파일 위치는 다음과 같다.
