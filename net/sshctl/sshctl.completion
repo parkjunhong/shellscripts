@@ -36,6 +36,7 @@
 # - long/short 옵션 자동 완성:
 #   * --add-connection | -a
 #   * --modify-connection | -m
+#   * --modify-credential | -mc
 #   * --delete-connection | -d
 #   * --move-group | -mg
 #   * --list-all | -l
@@ -45,12 +46,13 @@
 #   * --help | -h
 # - 기능 옵션(모드 옵션)은 상호 배타적이며 한 번만 사용 가능
 #   * mutual exclusive mode options:
-#     --add-connection|-a, --modify-connection|-m,
+#     --add-connection|-a, --modify-connection|-m, --modify-credential|-mc,
 #     --delete-connection|-d, --move-group|-mg,
 #     --list-all|-l
 # - 전역 옵션(--config, --masterkey, --help/-h)은 항상 사용 가능하지만,
 #   * 동일 옵션(동일 역할의 long/short 쌍 포함)이 이미 사용된 경우 다시 제안하지 않음
 # - --show-credential / -s 옵션은 '--list-all' / '-l' 또는 '--modify-connection' / '-m' 이 사용된 경우에만 제안
+#   * 단, '--modify-credential' / '-mc' 와는 함께 사용할 수 없음 (completion에서도 제안하지 않음)
 # - --config, --masterkey 옵션 뒤에서는 파일/경로 자동 완성
 # - sshctl [TAB] 으로도 즉시 옵션을 추천
 # - 비옵션(검색어/expr 자리)에서는 설정 파일(configuration)의 connection.name 기반 자동 완성
@@ -70,11 +72,13 @@ _sshctl_completion() {
   local mode_opts_all=(
     --add-connection
     --modify-connection
+    --modify-credential
     --delete-connection
     --move-group
     --list-all
     -a
     -m
+    -mc
     -d
     -mg
     -l
@@ -115,6 +119,7 @@ _sshctl_completion() {
   local listall_used=0
   local modify_used=0
 
+  local modify_cred_used=0
   local used_config=0
   local used_masterkey=0
   local used_help=0
@@ -127,12 +132,14 @@ _sshctl_completion() {
       # 모드 옵션 (long/short)
       --add-connection|-a|\
       --modify-connection|-m|\
+      --modify-credential|-mc|\
       --delete-connection|-d|\
       --move-group|-mg|\
       --list-all|-l)
         mode_used=1
         [[ "$w" == "--list-all" || "$w" == "-l" ]] && listall_used=1
         [[ "$w" == "--modify-connection" || "$w" == "-m" ]] && modify_used=1
+        [[ "$w" == "--modify-credential" || "$w" == "-mc" ]] && modify_cred_used=1
         ;;
       # 전역 옵션 (long/short)
       --config)
@@ -160,7 +167,17 @@ _sshctl_completion() {
   # (A) Mode options: 아무 모드도 아직 선택되지 않은 경우에만 제안
   #     suggest all mode options (long+short) only when none is used yet
   if (( mode_used == 0 )); then
-    candidates+=( "${mode_opts_all[@]}" )
+    if (( used_show_credential == 1 )); then
+      local opt
+      for opt in "${mode_opts_all[@]}"; do
+        case "$opt" in
+          --modify-credential|-mc) continue ;;
+        esac
+        candidates+=( "$opt" )
+      done
+    else
+      candidates+=( "${mode_opts_all[@]}" )
+    fi
   fi
 
   # (B) Global options: 항상 가능하되, 이미 사용된 것은 제외
@@ -177,7 +194,7 @@ _sshctl_completion() {
 
   # (C) Sub option (--show-credential / -s):
   #     --list-all/-l 또는 --modify-connection/-m 이 이미 사용되었고, 아직 show-credential/-s 가 없을 때만 제안
-  if (( (listall_used == 1 || modify_used == 1) && used_show_credential == 0 )); then
+  if (( (listall_used == 1 || modify_used == 1) && used_show_credential == 0 && modify_cred_used == 0 )); then
     candidates+=( "${list_sub_opts_all[@]}" )
   fi
 
