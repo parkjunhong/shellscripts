@@ -37,7 +37,7 @@
 #   * --add-connection | -a
 #   * --modify-connection | -m
 #   * --delete-connection | -d
-#   * --move-group-connection | -mg
+#   * --move-group | -mg
 #   * --list-all | -l
 #   * --config
 #   * --masterkey
@@ -46,7 +46,7 @@
 # - 기능 옵션(모드 옵션)은 상호 배타적이며 한 번만 사용 가능
 #   * mutual exclusive mode options:
 #     --add-connection|-a, --modify-connection|-m,
-#     --delete-connection|-d, --move-group-connection|-mg,
+#     --delete-connection|-d, --move-group|-mg,
 #     --list-all|-l
 # - 전역 옵션(--config, --masterkey, --help/-h)은 항상 사용 가능하지만,
 #   * 동일 옵션(동일 역할의 long/short 쌍 포함)이 이미 사용된 경우 다시 제안하지 않음
@@ -71,7 +71,7 @@ _sshctl_completion() {
     --add-connection
     --modify-connection
     --delete-connection
-    --move-group-connection
+    --move-group
     --list-all
     -a
     -m
@@ -128,7 +128,7 @@ _sshctl_completion() {
       --add-connection|-a|\
       --modify-connection|-m|\
       --delete-connection|-d|\
-      --move-group-connection|-mg|\
+      --move-group|-mg|\
       --list-all|-l)
         mode_used=1
         [[ "$w" == "--list-all" || "$w" == "-l" ]] && listall_used=1

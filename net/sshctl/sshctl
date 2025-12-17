@@ -77,7 +77,7 @@ help() {
   sshctl [global-options] -a|--add-connection
   sshctl [global-options] -m|--modify-connection [expr]
   sshctl [global-options] -d|--delete-connection [expr]
-  sshctl [global-options] -mg|--move-group-connection [expr]
+  sshctl [global-options] -mg|--move-group [expr]
 
 Global options:
   --config <file>
@@ -110,7 +110,7 @@ Commands:
     - 검색식 expr 으로 connection 을 고른 뒤, 삭제 대상 connection 1건을 표로 출력합니다.
     - 사용자가 y/yes 로 확인하면 실제로 삭제합니다.
 
-  -mg, --move-group-connection [expr]
+  -mg, --move-group [expr]
     - 검색식 expr 으로 connection 을 고른 뒤, 그룹(group) 값을 변경합니다.
 
 기본 접속 동작:
@@ -2564,8 +2564,8 @@ cmd_delete_connection() {
 }
 
 ##
-# sshctl -mg|--move-group-connection [expr] 명령을 구현하여 선택된 connection의 group을 변경한다.
-# Implement sshctl -mg|--move-group-connection [expr] and change the group of a selected connection.
+# sshctl -mg|--move-group [expr] 명령을 구현하여 선택된 connection의 group을 변경한다.
+# Implement sshctl -mg|--move-group [expr] and change the group of a selected connection.
 #
 # @param $1 {string|empty} query 검색식, 비어 있으면 전체 / search expression; empty for all
 #
@@ -2769,7 +2769,7 @@ main() {
       shift
       cmd_delete_connection "${1:-}"
       ;;
-    --move-group-connection|-mg)
+    --move-group|-mg)
       # [연결정보 그룹 이동] - masking list 고정, -s 옵션 무시
       EXEC_CMD="move-group"
       shift
