@@ -78,6 +78,7 @@ help() {
   sshctl [global-options] -m|--modify-connection [expr]
   sshctl [global-options] -d|--delete-connection [expr]
   sshctl [global-options] -mg|--move-group [expr]
+  sshctl [global-options] -mc|--modify-credential [expr]
 
 Global options:
   --config <file>
@@ -112,6 +113,12 @@ Commands:
 
   -mg, --move-group [expr]
     - 검색식 expr 으로 connection 을 고른 뒤, 그룹(group) 값을 변경합니다.
+
+  -mc, --modify-credential [expr]
+    - 검색식 expr 으로 password 방식 connection 목록을 고른 뒤, 번호(#)를 콤마(,)로 여러 개 선택합니다.
+      - 'credential' 정보는 평문(plain text)로 보여줍니다.
+    - 입력한 새 password(credential)를 선택된 여러 connection에 일괄 적용합니다.
+    - 변경된 connection 목록을 표 형태로 보여줍니다.
 
 기본 접속 동작:
   1) sshctl
@@ -678,7 +685,6 @@ format_credential_for_display() {
   case "$EXEC_CMD" in
     # [연결정보 목록] (-l | --list-all)
     # [연결정보 수정] (-m | --modify-connection)
-    # - 요구사항: "plain list" 를 대상으로 동작
     # - 기본: masking list (****************)
     # - -s / --show-credential 이 있는 경우: plain list
     list | modify)
@@ -698,6 +704,12 @@ format_credential_for_display() {
       else
         printf '****************'
       fi
+      ;;
+
+    # [비밀번호 일괄변경] (-mc | --modify-credential)
+    # - 기본: "plain list"
+    modify-credential)
+      printf '%s' "$cred"
       ;;
 
     # [서버 접속], [연결정보 삭제], [연결정보 그룹이동]
@@ -2343,6 +2355,80 @@ cmd_modify_connection() {
   print_single_connection_from_fields "$new_group" "$new_name" "$new_host" "$new_port" "$new_username" "$new_credential"
 }
 
+##
+# sshctl -mc|--modify-credential [expr] 명령을 구현하여 여러 connection의 password(credential)를 일괄 변경한다.
+# Implement sshctl -mc|--modify-credential [expr] to bulk-update password credentials for multiple connections.
+#
+# @param $1 {string|empty} query 검색식, 비어 있으면 전체 / search expression; empty for all
+#
+# @return {int} 성공 시 0, 선택/검증/저장 실패 또는 취소 시 비-0
+#         0 on success; non-zero on selection/validation/save failures or cancel.
+##
+cmd_modify_credential() {
+  ensure_config_file
+
+  local query="${1:-}"
+
+  # 1) 대상 index(__idx) 목록 얻기 (password 방식만)
+  local -a idxs=()
+  local line
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    idxs+=( "$line" )
+  done < <(select_indices_for_modify_credential "$query") || return 1
+
+  if (( ${#idxs[@]} == 0 )); then
+    return 1
+  fi
+
+  # 2) 새 password 입력 (기본값/이전값 없음)
+  echo "-----------------------------------------------------------"
+  local new_password=""
+  while true; do
+    new_password="$(prompt_credential_with_icon "🔑" "password" "password" "")"
+    if validate_non_empty "password" "$new_password"; then
+      break
+    fi
+  done
+  echo "-----------------------------------------------------------"
+
+  # 3) '민감정보' 암호화 적용
+  local new_credential_enc
+  new_credential_enc="$(encrypt_value "$new_password")"
+
+  # 4) 선택된 여러 connection에 credential 적용 (단일 jq로 일괄 업데이트)
+  local idxs_json
+  idxs_json="$(printf '%s\n' "${idxs[@]}" | jq -R 'tonumber' | jq -s '.')"
+
+  local new_json
+  new_json="$(jq --argjson idxs "$idxs_json" --arg credential "$new_credential_enc" '
+    reduce $idxs[] as $i (.;
+      .connections[$i].credential = $credential
+    )
+  ' "$CONFIG_FILE")"
+
+  save_connections_json <<< "$new_json"
+
+  # 5) 변경된 connection 목록 출력
+  echo "수정 후 connection:"
+  local preview_raw=""
+  local idx
+  for idx in "${idxs[@]}"; do
+    local row
+    row="$(jq -r --argjson i "$idx" '
+      .connections
+      | to_entries
+      | .[$i]
+      | "\(.value.group)\t\(.value.name)\t\(.value.host)\t\(.value.port // 22)\t\(.value.username)\t\(.value.credential)"
+    ' "$CONFIG_FILE")"
+    if [[ -n "$row" ]]; then
+      preview_raw+="${row}"$'\n'
+    fi
+  done
+
+  print_raw_as_table_no_index "$preview_raw"
+}
+
 select_indices_for_delete() {
   local query="$1"
 
@@ -2485,6 +2571,142 @@ select_indices_for_delete() {
   printf '%s\n' "${real_idx[@]}"
 }
 
+##
+# password 방식 connection 목록에서, 비밀번호(credential)를 일괄 변경할 대상 인덱스들을 선택한다.
+# Select indices for bulk credential(password) update from password-based connections.
+#
+# @param $1 {string|empty} query 검색식, 비어 있으면 전체 / search expression; empty for all
+#
+# @return {int} 선택 완료 시 0, 취소/실패 시 비-0 / 0 on success; non-zero on cancel/failure.
+# @return {string} STDOUT로 JSON index(__idx) 목록을 한 줄씩 출력 / prints JSON indices (__idx) one per line.
+##
+select_indices_for_modify_credential() {
+  local query="$1"
+
+  ensure_config_file
+  local filter
+  filter="$(build_search_filter "$query")"
+
+  local raw
+  raw="$(jq -r '
+    .connections
+    | to_entries
+    | map(.key as $idx | .value + { "__idx": $idx })
+    | map(select(('"$filter"') and (.auth_type == "password")))
+    | sort_by([ (if .group == "default" then 0 else 1 end), .group, .name ])
+    | .[]
+    | "\(.group)\t\(.name)\t\(.host)\t\(.port // 22)\t\(.username)\t\(.credential)\t\(.__idx)"
+  ' "$CONFIG_FILE")"
+
+  if [[ -z "$raw" ]]; then
+    echo "검색 결과가 없습니다. (password 방식 connection이 없습니다.)" >&2
+    return 1
+  fi
+
+  local idx_map=()
+  local n=0 group name host port user cred idx
+  local user_dec cred_dec display_cred
+
+  if command -v column >/dev/null 2>&1; then
+    local temp_buffer=""
+    temp_buffer+="#\tGroup\tName\tHost\tPort\tUser\tCredential\n"
+
+    while IFS=$'\t' read -r group name host port user cred idx; do
+      if [[ -z "$group" && -z "$name" && -z "$host" && -z "$port" && -z "$user" && -z "$cred" ]]; then
+        continue
+      fi
+
+      user_dec="$(decrypt_value_if_needed "$user")"
+      cred_dec="$(decrypt_value_if_needed "$cred")"      
+
+      n=$((n+1))
+      idx_map[$n]="$idx"
+
+      local display_idx
+      printf -v display_idx "%04d" "$n"
+      temp_buffer+="${display_idx}\t${group}\t${name}\t${host}\t${port}\t${user_dec}\t${cred_dec}\n"
+    done <<< "$raw"
+
+    local rendered header_line data_lines header_len dash_line eq_line
+    rendered="$(printf "%b" "$temp_buffer" | column -t -s $'\t')"
+    header_line="$(printf '%s\n' "$rendered" | head -n 1)"
+    data_lines="$(printf '%s\n' "$rendered" | tail -n +2)"
+    header_len=${#header_line}
+    printf -v dash_line '%*s' "$header_len" ''
+    dash_line="${dash_line// /-}"
+    printf -v eq_line '%*s' "$header_len" ''
+    eq_line="${eq_line// /=}"
+
+    printf '%s\n' "$eq_line"     >&2
+    printf '%s\n' "$header_line" >&2
+    printf '%s\n' "$dash_line"   >&2
+    printf '%s\n' "$data_lines"  >&2
+    printf '%s\n' "$eq_line"     >&2
+  else
+    printf -- "%-4s\t%s\t%s\t%s\t%s\t%s\t%s\n" "#" "Group" "Name" "Host" "Port" "User" "Credential" >&2
+    printf -- "%-4s\t%s\t%s\t%s\t%s\t%s\t%s\n" "----" "-----" "----" "----" "----" "----" "----------" >&2
+
+    while IFS=$'\t' read -r group name host port user cred idx; do
+      if [[ -z "$group" && -z "$name" && -z "$host" && -z "$port" && -z "$user" && -z "$cred" ]]; then
+        continue
+      fi
+
+      user_dec="$(decrypt_value_if_needed "$user")"
+      cred_dec="$(decrypt_value_if_needed "$cred")"
+      display_cred="$(format_credential_for_display "$cred_dec")"
+
+      n=$((n+1))
+      idx_map[$n]="$idx"
+
+      local display_idx
+      printf -v display_idx "%04d" "$n"
+      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+        "$display_idx" "$group" "$name" "$host" "$port" "$user_dec" "$display_cred" >&2
+    done <<< "$raw"
+  fi
+
+  local sel
+  while true; do
+    read -r -p "❓  비밀번호를 변경할 번호(#)를 입력하세요. (콤마(,)로 구분해서 입력) [1 ~ $n] : " sel
+    sel="${sel//[[:space:]]/}"
+
+    if [[ -z "$sel" ]]; then
+      echo "❗  프로그램을 종료합니다." >&2
+      return 1
+    fi
+
+    if ! [[ "$sel" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
+      echo "쉼표로 구분된 숫자만 입력하세요." >&2
+      continue
+    fi
+
+    local -a nums=()
+    IFS=',' read -r -a nums <<< "$sel"
+
+    local ok=true
+    local v
+    for v in "${nums[@]}"; do
+      if (( v < 1 || v > n )); then
+        echo "범위를 벗어났습니다: $v (1~$n)" >&2
+        ok=false
+      fi
+    done
+    $ok && break
+  done
+
+  local -A seen=()
+  local -a real_idx=()
+  local v
+  for v in "${nums[@]}"; do
+    if [[ -n "${seen[$v]:-}" ]]; then
+      continue
+    fi
+    seen[$v]=1
+    real_idx+=( "${idx_map[$v]}" )
+  done
+
+  printf '%s\n' "${real_idx[@]}"
+}
 
 ##
 # sshctl -d|--delete-connection [expr] 명령을 구현하여 선택된 connection을 삭제한다.
@@ -2774,6 +2996,12 @@ main() {
       EXEC_CMD="move-group"
       shift
       cmd_move_group_connection "${1:-}"
+      ;;
+    --modify-credential|-mc)
+      # [비밀번호 일괄변경] - password 방식 connection만 대상으로 credential 일괄 변경, -s 옵션은 전역 옵션으로 적용
+      EXEC_CMD="modify-credential"
+      shift
+      cmd_modify_credential "${1:-}"
       ;;
     --version)
       echo "sshctl version ${APP_VERSION:-unknown}"
