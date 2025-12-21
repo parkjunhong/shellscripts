@@ -1,4 +1,11 @@
 @echo off
+REM =======================================
+REM @auther : parkjunhong77@gmail.com
+REM @title  : git merge from A to B
+REM @license: Apache License 2.0
+REM @since  : 2020-08-18
+REM =======================================
+
 setlocal enabledelayedexpansion
 REM 한글 출력을 위해 UTF-8 코드페이지로 변경
 chcp 65001 > nul
