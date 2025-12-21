@@ -79,16 +79,19 @@ if %SRC_NUM% GTR %TOTAL_BRANCHES% (
 )
 
 set "SRC_BRANCH=!BRANCH[%SRC_NUM%]!"
-echo  [선택] Source: %SRC_BRANCH%
-echo.
 
 REM ====================================================
 REM [2단계] Target 브랜치 선택
 REM ====================================================
 :STEP_2_START
-echo ------------------------------------------
+REM 화면 리프레시 추가 (사용자 요청 반영)
+cls 
+echo ==========================================
+echo  GIT MERGE HELPER (Windows)
+echo ==========================================
+echo  * Source : %SRC_BRANCH%
+echo.
 echo  [2단계] '적용할(Target)' 브랜치를 선택하세요.
-echo  * Source: %SRC_BRANCH%
 echo ------------------------------------------
 call :SHOW_LIST
 echo ------------------------------------------
@@ -122,11 +125,9 @@ set "TARGET_BRANCH=!BRANCH[%TGT_NUM%]!"
 if "%SRC_BRANCH%"=="%TARGET_BRANCH%" (
     echo.
     echo [오류] Source와 Target 브랜치가 같습니다. Target을 다시 선택하세요.
-    goto RETRY_TARGET
+    pause
+    goto STEP_2_START
 )
-
-echo  [선택] Target: %TARGET_BRANCH%
-echo.
 
 REM ====================================================
 REM 3. 병합 프로세스 실행
