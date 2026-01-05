@@ -1,0 +1,82 @@
+#!/bin/bash
+# ==============================================================================
+# @title: init-wrangler-d1.completion
+# @author: parkjunhong77@gmail.com
+# @license: Apache License 2.0
+# @since: 2026-01-05
+# @desc: support macOS 11.2.3, Ubuntu 18.04 or higher, CentOS 7 or higher
+# @installation: source ./init-wrangler-d1.completion
+# ==============================================================================
+
+##
+# bash completion function for init-wrangler-d1.sh
+#
+# @param COMP_WORDS : Array containing the individual words in the current command line
+# @param COMP_CWORD : Index of the word containing the cursor
+# @param COMP_LINE  : The current command line
+# @param COMPREPLY  : Array variable from which bash reads the possible completions
+# @param $1 : The command name being completed
+# @param $2 : The word being completed
+# @param $3 : The word preceding the word being completed
+##
+_init_wrangler_d1_completion() {
+    local cur prev opts i
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+    
+    # 전체 지원 옵션 목록 정의
+    local all_opts="--run-dir -d --d1-location -l --d1-schema --d1-file --help -h"
+    
+    # --------------------------------------------------------------------------
+    # [요구사항 2] 이미 입력한 옵션은 추천 목록에서 제외
+    # --------------------------------------------------------------------------
+    opts="$all_opts"
+    for i in "${COMP_WORDS[@]}"; do
+        # 현재 입력 중인 단어($cur)는 제외 대상에서 빼야 함 (완성 중이므로)
+        if [[ "$i" == "$cur" ]]; then
+            continue
+        fi
+        
+        # 이미 입력된 단어가 옵션 목록에 있다면 제거 (문자열 치환 활용)
+        # 예: " -d " 가 있다면 제거하여 중복 추천 방지
+        opts=${opts//$i/}
+    done
+
+    # --------------------------------------------------------------------------
+    # 값 입력 컨텍스트 처리 (이전 단어에 따라 결정)
+    # --------------------------------------------------------------------------
+    case "${prev}" in
+        --run-dir|-d)
+            # 디렉토리만 추천
+            COMPREPLY=( $(compgen -d -- "${cur}") )
+            return 0
+            ;;
+        --d1-location|-l)
+            # local, remote 만 추천
+            COMPREPLY=( $(compgen -W "local remote" -- "${cur}") )
+            return 0
+            ;;
+        --d1-file)
+            # 파일만 추천
+            COMPREPLY=( $(compgen -f -- "${cur}") )
+            return 0
+            ;;
+        --d1-schema)
+            # DB 이름은 사용자 입력이 필요하므로 자동완성 없음
+            return 0
+            ;;
+    esac
+
+    # --------------------------------------------------------------------------
+    # [요구사항 1] 명령어만 입력하고 TAB을 눌러도 바로 옵션 추천
+    # --------------------------------------------------------------------------
+    # 기존의 if [[ ${cur} == -* ]] 조건을 제거하여,
+    # 입력이 없거나(-)로 시작하지 않아도 남은 옵션을 보여줍니다.
+    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+}
+
+# 스크립트 파일명에 연결
+complete -F _init_wrangler_d1_completion ./init-wrangler-d1.sh
+complete -F _init_wrangler_d1_completion init-wrangler-d1.sh
+
