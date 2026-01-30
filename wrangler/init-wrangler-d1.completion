@@ -53,8 +53,8 @@ _init_wrangler_d1_completion() {
             return 0
             ;;
         --d1-location|-l)
-            # local, remote 만 추천
-            COMPREPLY=( $(compgen -W "local remote" -- "${cur}") )
+            # [수정] local, remote, all, migration 추천
+            COMPREPLY=( $(compgen -W "local remote all migration" -- "${cur}") )
             return 0
             ;;
         --d1-file)
@@ -79,4 +79,3 @@ _init_wrangler_d1_completion() {
 # 스크립트 파일명에 연결
 complete -F _init_wrangler_d1_completion ./init-wrangler-d1.sh
 complete -F _init_wrangler_d1_completion init-wrangler-d1.sh
-
