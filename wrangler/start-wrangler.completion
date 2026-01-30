@@ -1,0 +1,96 @@
+# =======================================
+# @author    : parkjunhong77@gmail.com
+# @title     : search files.
+# @license   : Apache License 2.0
+# @since     : 2026-01-30
+# @desc      : support RHEL, Oracle Linux, Ubuntu, Centos
+# @installation : 
+#    1. insert 'source <path>/start-wrangler.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#    2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/start-wrangler.completion' into 
+#    etc/bashrc for all users.
+# =======================================
+
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+# =======================================
+
+##
+# start-wrangler.sh 스크립트를 위한 자동 완성 로직을 수행합니다.
+# 이미 사용된 옵션은 추천 목록에서 제외하며, 경로 관련 옵션은 디렉토리/파일 추천을 지원합니다.
+#
+# @param $1 {string} 실행된 명령어 이름
+# @param $2 {string} 현재 입력 중인 단어
+# @param $3 {string} 직전에 입력된 단어
+##
+_start_wrangler_completions() {
+  local cur prev opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+  
+  # 전체 가능한 옵션 목록
+  opts="-dr --run-dir -p --public-dir --ssl-key --ssl-cert -h --help"
+
+  # 1. 이전 인자에 따라 특정 경로 추천
+  case "${prev}" in
+    -dr|--run-dir|-p|--public-dir)
+      # 디렉토리만 추천
+      compopt -o nospace
+      COMPREPLY=( $(compgen -d -- "${cur}") )
+      return 0
+      ;;
+    --ssl-key|--ssl-cert)
+      # 파일만 추천
+      COMPREPLY=( $(compgen -f -- "${cur}") )
+      return 0
+      ;;
+  esac
+
+  # 2. 이미 사용된 옵션 필터링 (반복 사용 불필요 옵션들)
+  local unused_opts=()
+  for opt in $opts; do
+    local already_used=false
+    # 현재까지 입력된 모든 단어를 순회하며 기입력 여부 확인
+    for word in "${COMP_WORDS[@]}"; do
+      if [[ "$word" == "$opt" ]]; then
+        already_used=true
+        break
+      fi
+    done
+    
+    # -h나 --help는 상호 중복 체크
+    if [[ "$opt" == "-h" || "$opt" == "--help" ]]; then
+       for word in "${COMP_WORDS[@]}"; do
+         if [[ "$word" == "-h" || "$word" == "--help" ]]; then already_used=true; break; fi
+       done
+    fi
+
+    if [[ "$already_used" == false ]]; then
+      unused_opts+=("$opt")
+    fi
+  done
+
+  # 3. 대시(-) 입력 시 옵션 목록 제안
+  if [[ ${cur} == -* ]] ; then
+    COMPREPLY=( $(compgen -W "${unused_opts[*]}" -- "${cur}") )
+    return 0
+  fi
+}
+
+# 자동 완성 함수 등록
+complete -F _start_wrangler_completions start-wrangler.sh
+
