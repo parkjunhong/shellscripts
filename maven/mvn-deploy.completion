@@ -1,0 +1,134 @@
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : maven deploy completion.
+# @license  : Apache License 2.0
+# @since    : 2026-01-22
+# @desc     : support RHEL 7/8/9, Oracle Linux 7/8/9, Ubuntu 20.04/22.04/24.04, Centos 7/Stream 8/9.
+# @installation :
+#   1. insert 'source <path>/<파일명>" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/<파일명>' into
+#   /etc/bashrc for all users.
+# =======================================
+
+# =======================================
+# bash completion 파라미터 설명 (KOR/ENG)
+#
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+#
+# =======================================
+
+# mvn-deploy.sh 자동완성
+_mvn_deploy_sh() {
+  local cmd="$1"
+  local cur="$2"
+  local prev="$3"
+
+  local -a opts repeatable_opts value_opts
+  local -A used
+  local w
+  local i
+  local seen_dd="false"
+
+  opts=(
+    "-U" "--update-snapshots"
+    "-s" "--skip-tests"
+    "--maven"
+    "--settings"
+    "--profile"
+    "--dry-run"
+    "-h" "--help"
+    "--"
+  )
+
+  # 반복 사용 가능한 옵션
+  repeatable_opts=(
+    "--profile"
+  )
+
+  # 이미 입력된 옵션 기록 (반복 가능 옵션은 제외하고 재제안 방지)
+  for w in "${COMP_WORDS[@]}"; do
+    case "$w" in
+      -U|--update-snapshots|-s|--skip-tests|--maven|--settings|--profile|--dry-run|-h|--help|--)
+        used["$w"]=1
+        ;;
+      *)
+        ;;
+    esac
+  done
+
+  # 값 자동완성: 파일/경로 추천
+  case "$prev" in
+    --maven)
+      _filedir
+      return 0
+      ;;
+    --settings)
+      _filedir
+      return 0
+      ;;
+    --profile)
+      COMPREPLY=()
+      return 0
+      ;;
+  esac
+
+  # "--" 이후는 Maven 인자 영역으로 간주하여, 옵션 강제 제안은 하지 않음
+  for ((i=0; i<${#COMP_WORDS[@]}; i++)); do
+    if [ "${COMP_WORDS[$i]}" = "--" ]; then
+      seen_dd="true"
+      break
+    fi
+  done
+
+  if [ "$seen_dd" = "true" ]; then
+    # 경로 형태면 파일/경로 자동완성만 지원
+    case "$cur" in
+      /*|./*|../*)
+        _filedir
+        return 0
+        ;;
+      *)
+        COMPREPLY=()
+        return 0
+        ;;
+    esac
+  fi
+
+  # 옵션 입력 중이면 옵션 목록 제공 (이미 사용한 옵션은 재제안하지 않음: --profile 제외)
+  if [[ "$cur" == -* ]]; then
+    local -a filtered
+    local o
+    local can_repeat
+    local r
+
+    filtered=()
+    for o in "${opts[@]}"; do
+      can_repeat="false"
+      for r in "${repeatable_opts[@]}"; do
+        if [ "$o" = "$r" ]; then
+          can_repeat="true"
+          break
+        fi
+      done
+
+      if [ "${used[$o]:-0}" -eq 1 ] && [ "$can_repeat" != "true" ]; then
+        continue
+      fi
+
+      filtered+=("$o")
+    done
+
+    COMPREPLY=( $(compgen -W "${filtered[*]}" -- "$cur") )
+    return 0
+  fi
+
+  COMPREPLY=()
+  return 0
+}
+
+complete -F _mvn_deploy_sh mvn-deploy.sh
+
