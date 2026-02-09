@@ -150,9 +150,25 @@ parse_args() {
 check_and_delete(){
   local dir="$LETSENC_ROOT/$1"
 
+  if [ -f $dir ];then
+    echo
+    echo "해당 경로는 파일입니다. file=$dir"
+    exit 1
+  fi  
+
   if [ ! -d $dir ];then
     echo
-    echo "올바르지 않은 경로입니다. dir=$dir"
+    echo "존재하지 않는 경로입니다. dir=$dir"
+    return 0
+  fi  
+
+  # dir 이 LETSENC_ROOT 와 같아지는(= $1 이 비어있거나 / 인 등) 위험 케이스 방지
+  # trailing slash 차이까지 흡수해서 비교
+  local root_norm="${LETSENC_ROOT%/}"
+  local dir_norm="${dir%/}"
+  if [[ "$dir_norm" == "$root_norm" ]]; then
+    echo
+    echo "[ERROR] 삭제하려는 디렉토리가 올바르지 않습니다. dir='$dir' root='$LETSENC_ROOT'" >&2
     exit 1
   fi  
 
