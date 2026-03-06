@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : clean broken jenv links
+# @license : Apache License 2.0
+# @since : 2026-03-06
+# @desc : support macOS Tahoe 26.3, RHEL, Oracle Linux, Ubuntu, RockyOS
+# @installation :
+# 1. insert 'source <path>/clean-java-config' into ~/.bashrc or ~/.bash_profile for a personal usage.
+# =======================================
+
+FILENAME=$(basename $0)
+
+##
+# 도움말 함수 (help)
+#
+# @param $1 {string} error cause
+# @param $2 {number} line number
+##
+help(){
+    if [ ! -z "$1" ]; then
+        local indent=10
+        local formatl=" - %-"$indent"s: %s\n"
+        local formatr=" - %"$indent"s: %s\n"
+        echo
+        echo "================================================================================"
+        printf "$formatl" "filename" "$FILENAME"
+        printf "$formatl" "line" "$2"
+        printf "$formatl" "callstack"
+        local idx=1
+        for func in ${FUNCNAME[@]:1}
+        do
+            printf "$formatr" "["$idx"]" $func
+            ((idx++))
+        done
+        printf "$formatl" "cause" "$1"
+        echo "================================================================================"
+    fi
+    echo
+    echo "Usage: $FILENAME [-h|--help]"
+    echo "설명: ~/.jenv/versions 내의 깨진 심볼릭 링크를 찾아 삭제 여부를 확인합니다."
+}
+
+##
+# 깨진 심볼릭 링크 탐색 및 정리 실행
+#
+# @return (출력 포맷: 삭제 결과 메시지)
+##
+clean_broken_links() {
+    local target_dir="$HOME/.jenv/versions"
+    local broken_links=()
+    
+    if [ ! -d "$target_dir" ]; then
+        help "디렉토리가 존재하지 않습니다: $target_dir" $LINENO
+        return 1
+    fi
+
+    # 1. 깨진 심볼릭 링크 찾기
+    while IFS= read -r link; do
+        if [ -L "$link" ] && [ ! -e "$link" ]; then
+            broken_links+=("$link")
+        fi
+    done < <(find "$target_dir" -type l)
+
+    # 3. 없으면 종료
+    if [ ${#broken_links[@]} -eq 0 ]; then
+        echo "✅ 깨진 심볼릭 링크가 없습니다."
+        return 0
+    fi
+
+    # 1. 목록 제공
+    echo "🔍 깨진 심볼릭 링크를 발견했습니다:"
+    for link in "${broken_links[@]}"; do
+        local target=$(readlink "$link")
+        echo "  - $(basename "$link") &arr; $target"
+    done
+    echo
+
+    # 2. 삭제 여부 확인
+    read -p "위의 깨진 링크들을 모두 삭제하시겠습니까? (y/n): " confirm
+    if [[ "$confirm" =~ ^[Yy]$ ]]; then
+        for link in "${broken_links[@]}"; do
+            rm "$link"
+            echo "🗑️  삭제 완료: $(basename "$link")"
+        done
+        echo "✨ 정리가 완료되었습니다."
+    else
+        echo "🚫 작업을 취소했습니다."
+    fi
+}
+
+# 파라미터 체크 및 실행
+if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+    help
+    exit 0
+fi
+
+clean_broken_links
+
+exit 0
