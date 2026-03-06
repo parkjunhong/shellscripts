@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+
+CURRENT=$(jenv version | awk '{print $1}')
+
+mapfile -t ALL_VERSIONS < <(
+  jenv versions 2>/dev/null |
+  sed -E 's/^\* //; s/^  //; s/ .*//; /^$/d' |
+  grep -v 'not installed' |
+  grep -v 'system$'
+)
+
+VERSION_PATTERN='^[0-9]+(\.[0-9]+){0,3}$'
+
+declare -A REAL_PATH_MAP
+declare -A DISPLAY_PATH_MAP
+
+for ver in "${ALL_VERSIONS[@]}"; do
+  if [[ "$ver" =~ $VERSION_PATTERN ]]; then
+    JENV_PATH=$(jenv prefix "$ver" 2>/dev/null)
+    JAVA_BIN="$JENV_PATH/bin/java"
+    if [[ -x "$JAVA_BIN" ]]; then
+      REAL_JAVA_BIN=$(realpath "$JAVA_BIN")
+      REAL_JAVA_HOME=$(dirname "$(dirname "$REAL_JAVA_BIN")")
+      DISPLAY_PATH_MAP["$ver"]="$REAL_JAVA_HOME"
+      prev="${REAL_PATH_MAP["$REAL_JAVA_HOME"]}"
+      if [[ -z "$prev" || ${#ver} -gt ${#prev} ]]; then
+        REAL_PATH_MAP["$REAL_JAVA_HOME"]="$ver"
+      fi
+    fi
+  fi
+done
+
+VERSIONS=()
+for val in "${REAL_PATH_MAP[@]}"; do
+  VERSIONS+=("$val")
+done
+
+if [ ${#VERSIONS[@]} -eq 0 ]; then
+  echo "⚠️ 유효한 숫자 기반 Java 버전이 없습니다. jenv add로 JDK를 먼저 등록하세요."
+  exit 1
+fi
+
+
+echo "🔧 선택 가능한 Java 버전:"
+for i in "${!VERSIONS[@]}"; do
+  index=$((i + 1))
+  ver="${VERSIONS[$i]}"
+  path="${DISPLAY_PATH_MAP[$ver]}"
+  if [[ "$ver" == "$CURRENT" ]]; then
+    echo "* $index) $ver -> $path"
+  else
+    echo "  $index) $ver -> $path"
+  fi
+done
+
+read -p "번호를 선택하세요 (1~${#VERSIONS[@]}): " CHOICE
+
+if ! [[ "$CHOICE" =~ ^[0-9]+$ ]] || (( CHOICE < 1 || CHOICE > ${#VERSIONS[@]} )); then
+  echo "❌ 올바른 번호를 입력해주세요."
+  exit 1
+fi
+
+SELECTED="${VERSIONS[$((CHOICE - 1))]}"
+echo "✅ 선택한 Java 버전: $SELECTED"
+
+jenv global "$SELECTED"
+
+# java -version 출력에서 정확한 버전 문자열 추출
+JAVA_VERSION_OUTPUT=$(java -version 2>&1 | head -n 1)
+JAVA_HOME_VERSION=$(echo "$JAVA_VERSION_OUTPUT" | grep -Eo '"[0-9]+(\.[0-9]+)*(_[0-9]+)?"' | tr -d '"')
+
+JAVA_HOME_PATH=$(/usr/libexec/java_home -v "$JAVA_HOME_VERSION" 2>/dev/null)
+
+
+if [[ -n "$JAVA_HOME_PATH" ]]; then
+  export JAVA_HOME="$JAVA_HOME_PATH"
+  echo "📌 JAVA_HOME 명시적으로 설정됨 (java -version 기준):"
+  echo "export JAVA_HOME=\"$JAVA_HOME\""
+else
+  echo "⚠️ java_home 명령으로 버전 '$JAVA_HOME_VERSION'에 대한 경로를 찾지 못했습니다."
+fi
+
+echo "🔄 적용 완료!"
+echo "'jenv' announce -> " $(jenv version)
+java -version
+echo "JAVA_HOME: $JAVA_HOME"
