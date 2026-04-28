@@ -41,5 +41,5 @@ _backup_mariadb_completion() {
   esac
 }
 
-complete -F _backup_mariadb_completion backup_mariadb
+complete -F _backup_mariadb_completion mariadb-backup.sh
 

@@ -1,0 +1,46 @@
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : h2-db-migrate completion
+# @license  : Apache License 2.0
+# @since    : 2026-04-28
+# @desc     : support RHEL 8/9, Oracle Linux 8/9, Ubuntu 22.04/24.04, RockyOS 8/9
+# @installation : 
+#   1. insert 'source <path>/h2-db-migrate.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/h2-db-migrate.completion' into /etc/bashrc for all users.
+# =======================================
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+# =======================================
+
+##
+# h2-db-migrate.sh 파라미터 자동완성을 처리합니다.
+# (본 스크립트는 파라미터 없이 실행되는 대화형 스크립트이므로 도움말 옵션만 제안합니다.)
+##
+_h2_db_migrate_completion() {
+  local cur prev opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  
+  # 스크립트 특성상 도움말을 제외한 인자는 받지 않음
+  opts="-h --help"
+
+  # 입력 중인 단어가 '-'로 시작할 경우에만 추천
+  if [[ ${cur} == -* ]] ; then
+    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+    return 0
+  fi
+  
+  return 0
+}
+
+complete -F _h2_db_migrate_completion h2-db-migrate.sh
+

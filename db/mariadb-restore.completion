@@ -41,5 +41,6 @@ _restore_mariadb_completion() {
   esac
 }
 
-complete -F _restore_mariadb_completion restore_mariadb
+complete -F _restore_mariadb_completion mariadb-restore.sh
+
 
