@@ -1,12 +1,12 @@
 # =======================================
 # @author   : parkjunhong77@gmail.com
-# @title    : gitlab-clone.sh completions.
+# @title    : clone-gitlab-projects.sh completions.
 # @license  : Apache License 2.0
 # @since    : 2026-05-07
 # @desc     : support RHEL, Oracle Linux, Ubuntu, RockyOS
 # @installation : 
-#   1. insert 'source <path>/gitlab-clone.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/gitlab-clone.completion' into 
+#   1. insert 'source <path>/clone-gitlab-projects.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/clone-gitlab-projects.completion' into 
 #      etc/bashrc for all users.
 # =======================================
 # Global Reserved Variables
@@ -25,13 +25,13 @@
 # - $2: arg4
 # - $3: arg3
 
-_gitlab_clone_completions() {
+_clone_gitlab_projects_completions() {
   local cur prev opts
   COMPREPLY=()
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  opts="-u --url -g --group -t --token -d --dir -h --help"
+  opts="-g --group -d --dir -h --help"
 
   # 이미 입력된 옵션 확인
   local entered_opts=""
@@ -51,16 +51,8 @@ _gitlab_clone_completions() {
 
   # 이전 파라미터(prev)에 따른 컨텍스트 대응
   case "${prev}" in
-    -u|--url)
-      # URL 입력 대기 (추천 없음)
-      return 0
-      ;;
     -g|--group)
       # 그룹 경로 입력 대기 (추천 없음)
-      return 0
-      ;;
-    -t|--token)
-      # Token 입력 대기 (추천 없음)
       return 0
       ;;
     -d|--dir)
@@ -78,5 +70,5 @@ _gitlab_clone_completions() {
   return 0
 }
 
-complete -F _gitlab_clone_completions gitlab-clone.sh
+complete -F _clone_gitlab_projects_completions clone-gitlab-projects.sh
 
