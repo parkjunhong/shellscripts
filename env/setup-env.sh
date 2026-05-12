@@ -218,6 +218,8 @@ setup_home_bin() {
   else
     echo " - ~/.bashrc 파일에 이미 PATH 설정이 존재합니다."
   fi
+
+  source "$HOME/.bashrc"
 }
 
 ##
