@@ -48,8 +48,9 @@ fi
 curl -sLo "$CONFIG_FILE" "$CONFIG_URL" || { echo "[오류] 외부 설정 파일을 다운로드할 수 없습니다."; exit 1; }
 
 # ---------------------------------------------------------
-# [개선됨] Properties 파일을 가장 안전하게 파싱하여 변수로 등록
+# Properties 파일을 가장 안전하게 파싱하여 변수로 등록
 # - 쌍따옴표("), 따옴표('), 공백, 특수문자($) 등이 있어도 오류가 나지 않음
+# - [보안] Whitelist 방식을 적용하여 시스템 변수 오염(Environment Injection) 완벽 방지
 # ---------------------------------------------------------
 while IFS='=' read -r key value || [ -n "$key" ]; do
   # 주석(#)이거나 빈 줄이면 건너뛰기
@@ -58,12 +59,18 @@ while IFS='=' read -r key value || [ -n "$key" ]; do
   fi
 
   # Key와 Value의 양옆 공백 제거 (Value 내부의 띄어쓰기는 그대로 유지됨)
-  key=$(echo "$key" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-  value=$(echo "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+  key=$(echo "$key" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')  
+  value=$(printf '%s' "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
 
-  # 일반 변수만 export 처리 (배열 식별용 점(.)이 포함된 키는 제외)
-  if [[ ! "$key" =~ \. ]]; then
-    export "$key"="$value"
+  # 일반 변수만 처리 (배열 식별용 점(.)이 포함된 키는 제외)
+  if [[ ! "$key" =~ \. ]]; then    
+    # [보안 처리] 허용된 변수명 패턴만 등록 (URL_로 시작하거나 특정 키워드인 경우)
+    if [[ "$key" =~ ^(URL_[A-Z0-9_]+|NO_PASSWORD_COMMANDS|DEFAULT_TOOLS)$ ]]; then      
+      # export 대신 declare -g 를 사용하여 현재 스크립트 실행 범위 내에서만 변수 등록
+      declare -g "$key"="$value"      
+    else
+      echo " - [보안 경고] 허용되지 않은 키명($key)은 시스템 보호를 위해 무시됩니다."
+    fi
   fi
 done < "$CONFIG_FILE"
 
@@ -74,12 +81,38 @@ while IFS='=' read -r key value || [ -n "$key" ]; do
 done < "$CONFIG_FILE"
 
 # 2. 다중 사용자 정의 도구 URL 파싱 및 배열에 담기
-CUSTOM_TOOLS_LIST=()
+CUSTOM_TOOL_LIST=()
 while IFS='=' read -r key value || [ -n "$key" ]; do
-  [[ "$key" =~ ^[[:space:]]*URL_CUSTOM_TOOL\. ]] && CUSTOM_TOOLS_LIST+=("$(echo "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')")
+  [[ "$key" =~ ^[[:space:]]*URL_CUSTOM_TOOL\. ]] && CUSTOM_TOOL_LIST+=("$(echo "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')")
 done < "$CONFIG_FILE"
 
 rm -f "$CONFIG_FILE"
+
+
+# ==========================================
+# 터미널 출력 색상 정의
+# ==========================================
+if [ -t 1 ]; then
+  COLOR_ERROR='\033[1;31m'  # 오류, '31m': 빨강
+  COLOR_WARN='\033[1;33m'   # 경고, '33m': 노랑
+  COLOR_INFO='\033[1;32m'   # 정보, '32m': 녹색
+  COLOR_NC='\033[0m'        # 색상 초기화
+else
+  COLOR_ERROR=''            # 오류
+  COLOR_WARN=''             # 경고
+  COLOR_INFO=''             # 정보
+  COLOR_NC=''               # 색상 초기화
+fi
+
+echo_e() {
+  printf "${COLOR_ERROR}%s${COLOR_NC}\n" "$*"
+}
+echo_w() {
+  printf "${COLOR_WARN}%s${COLOR_NC}\n" "$*"
+}
+echo_i() {
+  printf "${COLOR_INFO}%s${COLOR_NC}\n" "$*"
+}
 
 ##
 # 도움말을 출력합니다.
@@ -90,7 +123,7 @@ rm -f "$CONFIG_FILE"
 # @return 도움말 포맷 출력 (표준 출력)
 ##
 help(){
-  if [ ! -z "$1" ]; then
+  if [ -n "$1" ]; then
     local indent=10
     local formatl=" - %-"$indent"s: %s\n"
     local formatr=" - %"$indent"s: %s\n"
@@ -112,13 +145,20 @@ help(){
   echo "  ./$FILENAME [옵션]"
   echo ""
   echo "옵션:"
-  echo "  -h, --help      : 도움말을 출력합니다."
-  echo "  --all           : '--jdk, --maven'를 설치합니다."
-  echo "  --jdk           : JDK를 설치합니다. 내부적으로 '--java-config'를 진행합니다."
-  echo "  --java-config   : update-java-config 스크립트를 설치하고 설정합니다."
-  echo "  --maven         : Apache Maven을 설치합니다. 내부적으로 '--mvn-config'를 진행합니다."
-  echo "  --mvn-config    : update-mvn-config 스크립트를 설치하고 설정합니다."
-  echo "  --ssh-key       : RSA 공개키를 authorized_keys에 등록합니다."
+  echo "  -h, --help        : 도움말을 출력합니다."
+  echo "  --all             : '--jdk, --maven'를 설치합니다."
+  echo "  --jdk             : JDK를 설치합니다. 내부적으로 '--java-config'를 진행합니다."
+  echo "  --java-config     : update-java-config 스크립트를 설치하고 설정합니다."
+  echo "  --maven           : Apache Maven을 설치합니다. 내부적으로 '--mvn-config'를 진행합니다."
+  echo "  --mvn-config      : update-mvn-config 스크립트를 설치하고 설정합니다."
+  echo "  --ssh-key         : RSA 공개키를 authorized_keys에 등록합니다."
+  echo "  --no-default-opts : 기본 옵션을 설치하지 않습니다."
+  echo "                      - _setup_home_bin: $HOME\bin 경로를 \$PATH에 추가하기."
+  echo "                      - _setup_sudoers: 특정 사용자를 'sudoers'에 추가하기."
+  echo "                      - _setup_default_tools: 기본 도구 설치하기."
+  echo "                      - _setup_custom_tools: 사용자 정의 도구 설치하기."
+  echo "                      - _setup_git_prompt: 사용자 정의 프롬프트 적용하기. (git branch 추가)"
+  echo "                      - _install_vim_options: 사용자 활성화 옵션 적용하기."  
 }
 
 ##
@@ -134,8 +174,9 @@ error_exit() {
   exit 1
 }
 
-# 패키지 업데이트 여부
-PKG_UPDATED=0
+
+# 옵션 설치 여부(값 => 1: 설치완료, 그 외: 미설치)
+declare -A INSTALLATION_FLAGS=()
 
 ##
 # 스크립트 실행 중 1번만 OS에 맞는 패키지 매니저 업데이트를 실행하도록 보장합니다.
@@ -145,11 +186,21 @@ PKG_UPDATED=0
 # @return 진행 상황 메시지 (표준 출력)
 ##
 _try_pkg_update() {
-  echo "............... ${FUNCNAME[0]} ..............."
-  if [ "$PKG_UPDATED" -eq 0 ]; then
-    echo "[진행] 패키지 인덱스 업데이트 중 ($PKG_MANAGER)..."
-    $PKG_UPDATE_CMD || true
-    PKG_UPDATED=1
+  local func_name=${FUNCNAME[0]}
+  local flag="${INSTALLATION_FLAGS[$func_name]:-0}"
+  
+  if (( flag == 1 )); then
+    return 0
+  fi
+  
+  echo "############### $func_name ###############"
+  echo "[진행] 패키지 인덱스 업데이트 중 ($PKG_MANAGER)..."
+  
+  if $PKG_UPDATE_CMD; then
+    INSTALLATION_FLAGS["$func_name"]=1
+  else
+    echo "[경고] 패키지 인덱스 업데이트에 실패했습니다."
+    return 1
   fi
 }
 
@@ -161,10 +212,21 @@ _try_pkg_update() {
 # @return 진행 상황 메시지 (표준 출력)
 ##
 _install_package() {
-  if ! command -v "$1" &> /dev/null; then
-    echo "[진행] $1 설치 중..."
-    _try_pkg_update
-    $PKG_INSTALL_CMD "$1" || error_exit "$1 설치 실패" "$LINENO"
+  local func_name="${FUNCNAME[0]}"
+  local package_name="$1"
+  local flag="${INSTALLATION_FLAGS[$func_name.$package_name]:-0}"
+  
+  if (( flag == 1 )); then
+    return 0
+  fi
+
+  if ! command -v "$package_name" &> /dev/null; then  
+    echo "[진행] $package_name 설치 중..."
+    $PKG_INSTALL_CMD "$package_name" || error_exit "$package_name 설치 실패" "$LINENO"
+
+    INSTALLATION_FLAGS["$func_name.$package_name"]=1
+  else
+    INSTALLATION_FLAGS["$func_name.$package_name"]=1
   fi
 }
 
@@ -172,13 +234,22 @@ _install_package() {
 # 외부 설정파일의 DEFAULT_TOOLS를 읽어 공통 설치 함수를 통해 설치합니다.
 ##
 _setup_default_tools() {
+  local func_name=${FUNCNAME[0]}
+  local flag="${INSTALLATION_FLAGS[$func_name]:-0}"
+  
+  if (( flag == 1 )); then
+    return 0
+  fi
+
   echo
-  echo "############### ${FUNCNAME[0]} ###############"
+  echo "############### $func_name ###############"
   IFS=',' read -ra TOOLS <<< "$DEFAULT_TOOLS"
   for tool in "${TOOLS[@]}"; do
     tool=$(echo "$tool" | xargs) # 양옆 공백 제거
     _install_package "$tool"
   done
+  
+  INSTALLATION_FLAGS["$func_name"]=1
 }
 
 ##
@@ -209,9 +280,12 @@ _install_completion() {
     comp_dir=$(pkg-config --variable=completionsdir bash-completion 2>/dev/null)
   fi
 
+  # [수정] elif를 독립된 if문으로 분리하여 논리적 꼬임 방지
   if [ -z "$comp_dir" ] && [ -d "/usr/share/bash-completion/completions" ]; then
     comp_dir="/usr/share/bash-completion/completions"
-  elif [ -z "$comp_dir" ] && [ -d "/etc/bash_completion.d" ]; then
+  fi
+  
+  if [ -z "$comp_dir" ] && [ -d "/etc/bash_completion.d" ]; then
     comp_dir="/etc/bash_completion.d"
   fi
 
@@ -231,12 +305,19 @@ _install_completion() {
       target_comp_file="$comp_dir/${target_cmd}.completion"
   fi
 
+  # [수정] 설치 성공 여부를 추적하는 플래그
+  local installed=0
+
   if [ -f "$target_comp_file" ]; then
     if ! cmp -s "$temp_comp" "$target_comp_file"; then
-      read -p "> ${target_cmd} completion 내용이 다릅니다. 업데이트하시겠습니까? (y/n): " ch
+      # [수정] 백슬래시 이스케이프 방지를 위한 -r 옵션 추가
+      local ch
+      read -r -p "> ${target_cmd} completion 내용이 다릅니다. 업데이트하시겠습니까? (y/n): " ch
       if [[ "$ch" == "y" || "$ch" == "Y" ]]; then
-        sudo mv "$temp_comp" "$target_comp_file"
+        # [수정] mv 실패 시 임시 파일 삭제 및 에러 처리
+        sudo mv "$temp_comp" "$target_comp_file" || { rm -f "$temp_comp"; error_exit "${target_cmd} completion 파일 업데이트 실패" "$LINENO"; }
         echo " - ${target_cmd} completion 파일이 업데이트되었습니다."
+        installed=1
       else
         echo " - ${target_cmd} completion 파일 설치를 유지합니다."
         rm -f "$temp_comp"
@@ -246,14 +327,25 @@ _install_completion() {
       rm -f "$temp_comp"
     fi
   else
-    sudo mv "$temp_comp" "$target_comp_file"
+    # [수정] mv 실패 시 임시 파일 삭제 및 에러 처리
+    sudo mv "$temp_comp" "$target_comp_file" || { rm -f "$temp_comp"; error_exit "${target_cmd} completion 파일 설치 실패" "$LINENO"; }
     echo " - ${target_cmd} completion 파일을 설치했습니다."
+    installed=1
   fi
   
-  # Bash Completion 현재 쉘 즉시 적용
-  if [ -f "$target_comp_file" ]; then
-    source "$target_comp_file" 2>/dev/null || true
-    echo " - [System] ${target_cmd} 자동완성이 현재 터미널에 즉시 적용되었습니다."
+  # ========================================================
+  # Bash Completion 현재 쉘 적용 여부 결정 (실행 방식 감지)
+  # ========================================================
+  if (( installed == 1 )) && [ -f "$target_comp_file" ]; then
+    if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+      # source(. ./setup-env.sh) 명령으로 스크립트가 실행된 경우 → 부모 쉘이므로 즉시 적용 가능
+      source "$target_comp_file" 2>/dev/null || true
+      echo_i " - [System] ${target_cmd} 자동완성이 현재 터미널에 즉시 적용되었습니다."
+    else
+      # 서브 쉘(./setup-env.sh)로 실행된 경우 → 안내 메시지 출력
+      echo_w " - [안내] ${target_cmd} 자동완성을 현재 터미널에 즉시 적용하려면 아래 명령을 실행하세요:"
+      echo_w "   source \"$target_comp_file\""
+    fi
   fi
 }
 
@@ -279,7 +371,7 @@ _install_custom_tools() {
   
   if [ -f "$bin_dir/$target_cmd" ]; then
     if ! cmp -s "$temp_bin" "$bin_dir/$target_cmd"; then
-      read -p "> '$target_cmd' 실행 파일 내용이 다릅니다. 업데이트하시겠습니까? (y/n): " ch
+      read -r -p "> '$target_cmd' 실행 파일 내용이 다릅니다. 업데이트하시겠습니까? (y/n): " ch
       if [[ "$ch" == "y" || "$ch" == "Y" ]]; then
         mv "$temp_bin" "$bin_dir/$target_cmd" && chmod +x "$bin_dir/$target_cmd"
         echo " - '$target_cmd' 실행 파일이 업데이트되었습니다."
@@ -302,17 +394,22 @@ _install_custom_tools() {
 }
 
 ##
-# 외부 설정파일의 URL_CUSTOM_TOOLS.<식별자> 패턴을 읽어 다수의 사용자 정의 도구를 순차적으로 설치합니다.
+# 외부 설정파일의 URL_CUSTOM_TOOL.<식별자> 패턴을 읽어 다수의 사용자 정의 도구를 순차적으로 설치합니다.
 #
 # @param 없음
 #
 # @return 진행 상황 메시지 (표준 출력)
 ##
 _setup_custom_tools() {
-  echo
-  echo "############### ${FUNCNAME[0]} ###############"
-  if [ ${#CUSTOM_TOOLS_LIST[@]} -gt 0 ]; then
-    for tool_url in "${CUSTOM_TOOLS_LIST[@]}"; do
+  local func_name=${FUNCNAME[0]}
+  local flag="${INSTALLATION_FLAGS[$func_name]:-0}"
+  
+  if (( flag == 1 )); then
+    return 0
+  fi
+  
+  if [ ${#CUSTOM_TOOL_LIST[@]} -gt 0 ]; then
+    for tool_url in "${CUSTOM_TOOL_LIST[@]}"; do
       if [ -n "$tool_url" ]; then
         _install_custom_tools "$tool_url"
       fi
@@ -320,6 +417,8 @@ _setup_custom_tools() {
   else
     echo " - 설정된 커스텀 도구가 없습니다."
   fi
+  
+  INSTALLATION_FLAGS["$func_name"]=1
 }
 
 ##
@@ -330,8 +429,15 @@ _setup_custom_tools() {
 # @return 진행 상황 메시지 (표준 출력)
 ##
 _setup_home_bin() {
+  local func_name=${FUNCNAME[0]}
+  local flag="${INSTALLATION_FLAGS[$func_name]:-0}"
+  
+  if (( flag == 1 )); then
+    return 0
+  fi
+  
   echo
-  echo "############### ${FUNCNAME[0]} ###############"
+  echo "############### $func_name ###############"
   echo "[진행] ~/bin 디렉토리 설정 중..."
   local bin_dir="$HOME/bin"
   if [ ! -d "$bin_dir" ]; then
@@ -339,13 +445,24 @@ _setup_home_bin() {
     echo " - ~/bin 디렉토리를 생성했습니다."
   fi
   if ! grep -q "PATH=\$PATH:$bin_dir" "$HOME/.bashrc"; then
-    echo "PATH=\$PATH:$bin_dir" >> "$HOME/.bashrc" || error_exit "~/.bashrc 파일 수정 실패" "$LINENO"
-    echo " - ~/.bashrc 파일에 PATH 설정을 추가했습니다."
+    echo "PATH=\$PATH:$bin_dir" >> "$HOME/.bashrc" || error_exit "$HOME/.bashrc 파일 수정 실패" "$LINENO"
+    
+    if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+      # source(. ./setup-env.sh) 명령으로 스크립트가 실행된 경우 → 부모 쉘이므로 즉시 적용 가능
+      source ~/.bashrc 2>/dev/null || true
+      echo_i " - $HOME/bin -> \$PATH 경로 추가가 현재 터미널에 즉시 적용되었습니다."
+    else
+      # 서브 쉘(./setup-env.sh)로 실행된 경우 → 안내 메시지 출력
+      echo_i " - $HOME/.bashrc 파일에 PATH 설정을 추가했습니다."
+      echo_w " - 현재 터미널에 즉시 반영하려면 다음 명령을 실행하세요:"
+      echo_w "   source ~/.bashrc"
+      echo_w " - 또는 새 터미널을 열면 적용됩니다."
+    fi
   else
     echo " - ~/.bashrc 파일에 이미 PATH 설정이 존재합니다."
   fi
 
-  source "$HOME/.bashrc"
+  INSTALLATION_FLAGS["$func_name"]=1
 }
 
 ##
@@ -356,8 +473,15 @@ _setup_home_bin() {
 # @return 진행 상황 메시지 (표준 출력)
 ##
 _setup_git_prompt() {
+  local func_name=${FUNCNAME[0]}
+  local flag="${INSTALLATION_FLAGS[$func_name]:-0}"
+  
+  if (( flag == 1 )); then
+    return 0
+  fi
+  
   echo
-  echo "############### ${FUNCNAME[0]} ###############"
+  echo "############### $func_name ###############"
   echo "[진행] git branch 프롬프트 설정 중..."
   if ! grep -q "parse_git_branch()" "$HOME/.bashrc"; then
     cat << 'EOF' >> "$HOME/.bashrc" || error_exit "~/.bashrc 파일 수정 실패" "$LINENO"
@@ -372,19 +496,29 @@ EOF
   else
     echo " - ~/.bashrc 파일에 이미 git 프롬프트 설정이 존재합니다."
   fi
+  
+  INSTALLATION_FLAGS["$func_name"]=1
 }
 
 ##
 # 사용자를 sudoers 그룹에 등록하고 특정 관리 명령어들의 비밀번호 입력을 면제합니다.
 # 외부설정된 NO_PASSWORD_COMMANDS 값을 활용하며, 사용자 입력을 통해 대상을 지정합니다.
+# 문법 오류로 인한 sudo 불능 상태를 방지하기 위해 visudo를 통한 사전 검증을 수행합니다.
 #
 # @param 없음
 #
 # @return 진행 상황 메시지 (표준 출력)
 ##
 _setup_sudoers() {
+  local func_name=${FUNCNAME[0]}
+  local flag="${INSTALLATION_FLAGS[$func_name]:-0}"
+  
+  if (( flag == 1 )); then
+    return 0
+  fi
+  
   echo
-  echo "############### ${FUNCNAME[0]} ###############"
+  echo "############### $func_name ###############"
   echo "[진행] 사용자 sudoers 설정 중..."
   
   # 1. 기본값으로 사용할 현재 접속 계정 확인
@@ -411,16 +545,14 @@ _setup_sudoers() {
   if [ -z "$target_user" ]; then
     target_user="$current_user"
   fi
-
+  
   local sudoers_file="/etc/sudoers.d/$target_user"
 
   if ! id "$target_user" &>/dev/null; then
     error_exit "'$target_user' 사용자가 시스템에 존재하지 않습니다." "$LINENO"
   fi
 
-  echo "$target_user ALL=(ALL) ALL" | sudo tee "$sudoers_file" > /dev/null
-  
-  # OS에 따라 패키지 매니저 경로를 추가
+  # 5. OS에 따라 패키지 매니저 경로를 추가
   local os_pkg_cmd=""
   if [ "$PKG_MANAGER" == "apt" ]; then
     os_pkg_cmd="/usr/bin/apt, /usr/bin/apt-get, "
@@ -430,10 +562,29 @@ _setup_sudoers() {
   
   local full_no_pw_cmds="${os_pkg_cmd}${NO_PASSWORD_COMMANDS}"
 
-  echo "$target_user ALL=(ALL) NOPASSWD: $full_no_pw_cmds" | sudo tee -a "$sudoers_file" > /dev/null
+  # 6. 임시 파일을 생성하여 설정 작성
+  local tmp_sudoers
+  tmp_sudoers=$(mktemp /tmp/sudoers.XXXXXX)
+
+  echo "$target_user ALL=(ALL) ALL" > "$tmp_sudoers"
+  echo "$target_user ALL=(ALL) NOPASSWD: $full_no_pw_cmds" >> "$tmp_sudoers"
   
-  sudo chmod 440 "$sudoers_file"
-  echo " - $target_user sudoers 설정이 완료되었습니다."
+  # 7. visudo를 이용해 임시 파일 문법 사전 검증 (-c: 검사, -f: 지정 파일)
+  if sudo visudo -c -f "$tmp_sudoers" &>/dev/null; then
+    # 검증 성공 시에만 실제 경로로 복사 및 권한 부여
+    sudo cp "$tmp_sudoers" "$sudoers_file"
+    sudo chmod 440 "$sudoers_file"
+    echo " - $target_user sudoers 설정이 안전하게 완료되었습니다."
+    
+    INSTALLATION_FLAGS["$func_name"]=1
+  else
+    # 검증 실패 시 임시 파일 삭제 후 스크립트 오류 처리
+    rm -f "$tmp_sudoers"
+    error_exit "sudoers 문법 검증에 실패하여 설정을 취소합니다. (명령어 목록 오타나 콤마 누락 확인 필요)" "$LINENO"
+  fi
+
+  # 작업 완료 후 임시 파일 안전하게 정리
+  rm -f "$tmp_sudoers"
 }
 
 ##
@@ -444,8 +595,15 @@ _setup_sudoers() {
 # @return 진행 상황 메시지 (표준 출력)
 ##
 _install_vim_options() {
+  local func_name=${FUNCNAME[0]}
+  local flag="${INSTALLATION_FLAGS[$func_name]:-0}"
+  
+  if (( flag == 1 )); then
+    return 0
+  fi
+  
   echo
-  echo "############### ${FUNCNAME[0]} ###############"
+  echo "############### $func_name ###############"
   echo "[진행] vim 환경 설정 중..."
   
   local vimrc_file="/etc/vim/vimrc"
@@ -476,6 +634,8 @@ EOF
   else
     echo " - [경고] vimrc 파일을 찾지 못해 커스텀 설정을 추가하지 못했습니다."
   fi
+  
+  INSTALLATION_FLAGS["$func_name"]=1
 }
 
 ##
@@ -485,7 +645,18 @@ EOF
 #
 # @return 진행 상황 메시지 (표준 출력)
 ##
-install_jdk() {
+install_jdk() {  
+  local func_name=${FUNCNAME[0]}
+  local flag="${INSTALLATION_FLAGS[$func_name]:-0}"
+  
+  if (( flag == 1 )); then
+    return 0
+  fi
+  
+  setup_java_config
+  
+  echo
+  echo "############### $func_name ###############"
   echo "[진행] JDK 설치 중..."
   local temp_script="/tmp/install-jdk.sh"
   
@@ -495,7 +666,7 @@ install_jdk() {
   rm -f "$temp_script"
   echo " - JDK 설치가 완료되었습니다."
   
-  setup_java_config
+  INSTALLATION_FLAGS["$func_name"]=1
 }
 
 ##
@@ -506,6 +677,15 @@ install_jdk() {
 # @return 진행 상황 메시지 (표준 출력)
 ##
 setup_java_config() {
+  local func_name=${FUNCNAME[0]}
+  local flag="${INSTALLATION_FLAGS[$func_name]:-0}"
+  
+  if (( flag == 1 )); then
+    return 0
+  fi
+  
+  echo
+  echo "############### $func_name ###############"
   echo "[진행] update-java-config 설정 중..."
   local bin_dir="$HOME/bin"
   local dest_path="$bin_dir/update-java-config"
@@ -540,6 +720,8 @@ EOF
   else
     echo " - ~/.bashrc에 이미 update-java-config 설정이 존재합니다."
   fi
+  
+  INSTALLATION_FLAGS["$func_name"]=1
 }
 
 ##
@@ -551,6 +733,17 @@ EOF
 # @return 진행 상황 메시지 (표준 출력)
 ##
 install_maven() {
+  local func_name=${FUNCNAME[0]}
+  local flag="${INSTALLATION_FLAGS[$func_name]:-0}"
+  
+  if (( flag == 1 )); then
+    return 0
+  fi
+  
+  setup_mvn_config
+
+  echo
+  echo "############### $func_name ###############"
   echo "[진행] Maven 설치 중..."
   
   # 파일명에서 정규식을 사용해 버전(예: 3.9.15)을 파싱
@@ -564,6 +757,9 @@ install_maven() {
   local target_dir="/opt/apache-maven-${mvn_version}"
   if [ -d "$target_dir" ]; then
     echo " - Maven 버전 ${mvn_version} 이(가) 이미 존재하므로 설치를 건너뜁니다."
+    
+    INSTALLATION_FLAGS["$func_name"]=1
+    
     return 0
   fi
 
@@ -574,7 +770,7 @@ install_maven() {
   rm -f "$temp_archive"
   echo " - Maven 바이너리를 $target_dir 에 설치했습니다."
   
-  setup_mvn_config
+  INSTALLATION_FLAGS["$func_name"]=1
 }
 
 ##
@@ -585,6 +781,15 @@ install_maven() {
 # @return 진행 상황 메시지 (표준 출력)
 ##
 setup_mvn_config() {
+  local func_name=${FUNCNAME[0]}
+  local flag="${INSTALLATION_FLAGS[$func_name]:-0}"
+  
+  if (( flag == 1 )); then
+    return 0
+  fi
+  
+  echo
+  echo "############### $func_name ###############"
   echo "[진행] update-mvn-config 설정 중..."
   local bin_dir="$HOME/bin"
   local dest_path="$bin_dir/update-mvn-config"
@@ -619,14 +824,23 @@ EOF
   else
     echo " - ~/.bashrc에 이미 update-mvn-config 설정이 존재합니다."
   fi
+  
+  INSTALLATION_FLAGS["$func_name"]=1
 }
 
 ##
 # 외부설정된 RSA_PUBLIC_KEY_LIST 배열을 통해 ~/.ssh/authorized_keys 파일에 여러 공개키를 등록합니다.
 ##
 setup_ssh_key() {
+  local func_name=${FUNCNAME[0]}
+  local flag="${INSTALLATION_FLAGS[$func_name]:-0}"
+  
+  if (( flag == 1 )); then
+    return 0
+  fi
+  
   echo
-  echo "############### ${FUNCNAME[0]} ###############"
+  echo "############### $func_name ###############"
   echo "[진행] SSH RSA 키 등록 중..."
   local ssh_dir="$HOME/.ssh"
   local auth_file="$ssh_dir/authorized_keys"
@@ -649,6 +863,8 @@ setup_ssh_key() {
   done
   
   chmod 600 "$auth_file"
+  
+  INSTALLATION_FLAGS["$func_name"]=1
 }
 
 # 파라미터가 없는 경우 도움말 호출
@@ -658,32 +874,76 @@ if [ $# -eq 0 ]; then
 fi
 
 # ==========================================
-# 1. 도움말 옵션 사전 검사 (Pre-pass)
+# 파라미터 중복 제거 로직
+# ==========================================
+declare -a UNIQUE_ARGS=()
+declare -A SEEN_ARGS=()
+
+for arg in "$@"; do
+  if [[ -z "${SEEN_ARGS[$arg]}" ]]; then
+    UNIQUE_ARGS+=("$arg")
+    SEEN_ARGS[$arg]=1
+  fi
+done
+
+# 기존 파라미터($@)를 중복이 제거된 배열로 덮어쓰기
+set -- "${UNIQUE_ARGS[@]}"
+
+# 기본 설치 옵션 적용 여부 (1: 적용, 그 외: 미적용)
+INSTALL_DEFAULT_OPTS=1
+APPROVED_OPTS=0
+# ==========================================
+# 1. 옵션 사전 검사 (Pre-pass)
 # ==========================================
 # 파라미터 중 어디에라도 -h 또는 --help가 있다면 다른 작업 없이 도움말만 출력하고 즉시 종료합니다.
 for arg in "$@"; do
-  if [[ "$arg" == "-h" || "$arg" == "--help" ]]; then
-    help
-    exit 0
-  fi
+  case "$arg" in
+    -h | --help)
+      help
+      exit 0
+      ;;
+    --no-default-opts)
+      INSTALL_DEFAULT_OPTS=0
+      ;;
+    --jdk | \
+    --java-config  | \
+    --maven  | \
+    --mvn-config  | \
+    --ssh-key | \
+    --all)
+      APPROVED_OPTS=1
+      ;;    
+  esac  
 done
+
+if (( APPROVED_OPTS != 1 )); then
+  help "지원하는 파라미터가 입력되지 않았습니다." "$LINENO"
+  exit 1
+fi
 
 # ==========================================
 # 2. 필수 기본 설치 진행
 # ==========================================
-# 사전 검사를 무사히 통과했다면(도움말 요청이 아님) 기본 도구들을 무조건 설치합니다.
-_setup_home_bin  
-_setup_sudoers
-_setup_default_tools # DEFAULT_TOOLS 기반 _install_package 실행
-_setup_custom_tools # URL_CUSTOM_TOOLS 배열 기반 자동 처리
-_setup_git_prompt
-_install_vim_options # `vim` 옵션 적용
+# 패키지 업데이트 실행
+_try_pkg_update
+# 사전 검사를 무사히 통과했다면(도움말 요청이 아님) 기본 도구들을 설치합니다.
+if (( INSTALL_DEFAULT_OPTS == 1 )); then
+  _setup_home_bin  
+  _setup_sudoers
+  _setup_default_tools # DEFAULT_TOOLS 기반 _install_package 실행
+  _setup_custom_tools # URL_CUSTOM_TOOL.<식별정보> 배열 기반 자동 처리
+  _setup_git_prompt
+  _install_vim_options # `vim` 옵션 적용
+fi
 
 # ==========================================
 # 3. 메인 실행부 (선택 옵션 처리)
 # ==========================================
 while [[ "$#" -gt 0 ]]; do
-  case $1 in
+  case "$1" in
+    --no-default-opts)
+      shift  # 이미 Pre-pass에서 처리했으므로 skip만
+      ;;
     --jdk)
       install_jdk
       shift
@@ -707,6 +967,7 @@ while [[ "$#" -gt 0 ]]; do
     --all)
       install_jdk
       install_maven
+      setup_ssh_key
       shift
       ;;
     *)
