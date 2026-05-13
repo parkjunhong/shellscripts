@@ -33,7 +33,40 @@ else
   exit 1
 fi
 
-PKG_UPDATED=0
+# ==========================================
+# 외부 설정 파일(Properties) 다운로드 및 로드
+# ==========================================
+CONFIG_URL="https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main/env/configurations.properties"
+CONFIG_FILE="/tmp/configurations.properties"
+
+# curl이 없을 수 있으므로 외부 설정 파일 다운로드를 위해 임시로 설치
+if ! command -v curl &> /dev/null; then
+  echo "[진행] curl 임시 설치 중 (설정 파일 다운로드용)..."
+  $PKG_UPDATE_CMD > /dev/null 2>&1
+  $PKG_INSTALL_CMD curl > /dev/null 2>&1
+fi
+
+curl -sLo "$CONFIG_FILE" "$CONFIG_URL" || { echo "[오류] 외부 설정 파일을 다운로드할 수 없습니다."; exit 1; }
+
+# Properties 파일 내용을 변수로 적용 
+# (bash 문법상 변수명에 '.'을 쓸 수 없으므로, 특수 패턴 항목들은 제외하고 source 실행)
+set -a
+source <(grep -v '^#' "$CONFIG_FILE" | grep -v '^[ \t]*RSA_PUBLIC_KEY\.' | grep -v '^[ \t]*URL_CUSTOM_TOOL\.' | sed -e 's/^[ \t]*//' -e 's/[ \t]*$//' -e 's/ *= */=/')
+set +a
+
+# 1. 다중 RSA 공개키 설정 파싱 및 배열(Array)에 담기
+RSA_PUBLIC_KEY_LIST=()
+while IFS='=' read -r key value; do
+  RSA_PUBLIC_KEY_LIST+=("$value")
+done < <(grep '^[ \t]*RSA_PUBLIC_KEY\.' "$CONFIG_FILE" | sed -e 's/^[ \t]*//' -e 's/[ \t]*$//' -e 's/ *= */=/')
+
+# 2. 다중 사용자 정의 도구 URL 파싱 및 배열(Array)에 담기
+CUSTOM_TOOL_LIST=()
+while IFS='=' read -r key value; do
+  CUSTOM_TOOL_LIST+=("$value")
+done < <(grep '^[ \t]*URL_CUSTOM_TOOL\.' "$CONFIG_FILE" | sed -e 's/^[ \t]*//' -e 's/[ \t]*$//' -e 's/ *= */=/')
+
+rm -f "$CONFIG_FILE"
 
 ##
 # 도움말을 출력합니다.
@@ -67,11 +100,10 @@ help(){
   echo ""
   echo "옵션:"
   echo "  -h, --help      : 도움말을 출력합니다."
-  echo "  --all           : 모든 환경 설정을 한 번에 진행합니다."
-  echo "  --default       : --jdk, --java-config, --maven, --mvn-config 를 설치합니다."
-  echo "  --jdk           : Eclipse Temurin JDK 25를 설치합니다."
+  echo "  --all           : '--jdk, --maven'를 설치합니다."
+  echo "  --jdk           : JDK를 설치합니다. 내부적으로 '--java-config'를 진행합니다."
   echo "  --java-config   : update-java-config 스크립트를 설치하고 설정합니다."
-  echo "  --maven         : Apache Maven을 설치합니다."
+  echo "  --maven         : Apache Maven을 설치합니다. 내부적으로 '--mvn-config'를 진행합니다."
   echo "  --mvn-config    : update-mvn-config 스크립트를 설치하고 설정합니다."
   echo "  --ssh-key       : RSA 공개키를 authorized_keys에 등록합니다."
 }
@@ -88,6 +120,9 @@ error_exit() {
   help "$1" "$2"
   exit 1
 }
+
+# 패키지 업데이트 여부
+PKG_UPDATED=0
 
 ##
 # 스크립트 실행 중 1번만 OS에 맞는 패키지 매니저 업데이트를 실행하도록 보장합니다.
@@ -106,6 +141,34 @@ _try_pkg_update() {
 }
 
 ##
+# OS에 맞는 패키지 매니저로 설치를 진행합니다.
+#
+# @param $1 {string} 패키지 이름
+#
+# @return 진행 상황 메시지 (표준 출력)
+##
+_install_package() {
+  if ! command -v "$1" &> /dev/null; then
+    echo "[진행] $1 설치 중..."
+    _try_pkg_update
+    $PKG_INSTALL_CMD "$1" || error_exit "$1 설치 실패" "$LINENO"
+  fi
+}
+
+##
+# 외부 설정파일의 DEFAULT_TOOLS를 읽어 공통 설치 함수를 통해 설치합니다.
+##
+_setup_default_tools() {
+  echo
+  echo "############### ${FUNCNAME[0]} ###############"
+  IFS=',' read -ra TOOLS <<< "$DEFAULT_TOOLS"
+  for tool in "${TOOLS[@]}"; do
+    tool=$(echo "$tool" | xargs) # 양옆 공백 제거
+    _install_package "$tool"
+  done
+}
+
+##
 # Bash Completion 파일을 시스템의 올바른 경로에 다운로드하고 현재 쉘에 즉시 적용합니다.
 # OS 환경(Ubuntu, Rocky 등)에 따라 설치 경로를 동적으로 탐색합니다.
 #
@@ -115,7 +178,7 @@ _try_pkg_update() {
 # @return 진행 상황 메시지 (표준 출력)
 ##
 _install_completion() {
-  echo "............... ${FUNCNAME[0]} ..............."
+  echo "............... ${FUNCNAME[0]} - $2 ..............."
   
   local comp_url="$1"
   local target_cmd="$2"
@@ -182,6 +245,71 @@ _install_completion() {
 }
 
 ##
+# 사용자 정의 도구 및 bash completion 파일을 다운로드하고 설치합니다.
+# 파일이 이미 존재할 경우 내용을 비교하여 다를 때만 사용자에게 설치 여부를 확인합니다.
+#
+# @param $1 사용자 정의 도구 URL
+#
+# @return 진행 상황 메시지 (표준 출력)
+##
+_install_custom_tools() {
+  local tool_url="$1"
+  local target_cmd=$(basename "$tool_url")
+  
+  echo
+  echo "############### ${FUNCNAME[0]} - $target_cmd ###############"
+  echo "[진행] '$target_cmd' 설치 중..."
+  local bin_dir="$HOME/bin"
+  local temp_bin="/tmp/${target_cmd}"
+  
+  curl -sLo "$temp_bin" "$tool_url" || error_exit "'$target_cmd' 다운로드 실패" "$LINENO"
+  
+  if [ -f "$bin_dir/$target_cmd" ]; then
+    if ! cmp -s "$temp_bin" "$bin_dir/$target_cmd"; then
+      read -p "> '$target_cmd' 실행 파일 내용이 다릅니다. 업데이트하시겠습니까? (y/n): " ch
+      if [[ "$ch" == "y" || "$ch" == "Y" ]]; then
+        mv "$temp_bin" "$bin_dir/$target_cmd" && chmod +x "$bin_dir/$target_cmd"
+        echo " - '$target_cmd' 실행 파일이 업데이트되었습니다."
+      else
+        echo " - '$target_cmd' 실행 파일 설치를 유지합니다."
+        rm -f "$temp_bin"
+      fi
+    else
+      echo " - '$target_cmd' 실행 파일이 이미 최신입니다."
+      rm -f "$temp_bin"
+    fi
+  else
+    mkdir -p "$bin_dir" && mv "$temp_bin" "$bin_dir/$target_cmd" && chmod +x "$bin_dir/$target_cmd"
+    echo " - '$target_cmd' 실행 파일을 설치했습니다."
+  fi
+
+  # 공통 함수를 호출하여 completion 다운로드 및 설치 위임 (URL은 tool_url.completion 규칙 적용)
+  local completion_url="${tool_url}.completion"
+  _install_completion "$completion_url" "$target_cmd"
+}
+
+##
+# 외부 설정파일의 URL_CUSTOM_TOOLS.<식별자> 패턴을 읽어 다수의 사용자 정의 도구를 순차적으로 설치합니다.
+#
+# @param 없음
+#
+# @return 진행 상황 메시지 (표준 출력)
+##
+_setup_custom_tools() {
+  echo
+  echo "############### ${FUNCNAME[0]} ###############"
+  if [ ${#CUSTOM_TOOL_LIST[@]} -gt 0 ]; then
+    for tool_url in "${CUSTOM_TOOL_LIST[@]}"; do
+      if [ -n "$tool_url" ]; then
+        _install_custom_tools "$tool_url"
+      fi
+    done
+  else
+    echo " - 설정된 커스텀 도구가 없습니다."
+  fi
+}
+
+##
 # 사용자의 홈 디렉토리에 bin 디렉토리를 생성하고, PATH 환경변수에 등록합니다.
 #
 # @param 없음
@@ -217,7 +345,6 @@ _setup_home_bin() {
 _setup_git_prompt() {
   echo
   echo "############### ${FUNCNAME[0]} ###############"
-  _install_git
   echo "[진행] git branch 프롬프트 설정 중..."
   if ! grep -q "parse_git_branch()" "$HOME/.bashrc"; then
     cat << 'EOF' >> "$HOME/.bashrc" || error_exit "~/.bashrc 파일 수정 실패" "$LINENO"
@@ -235,7 +362,8 @@ EOF
 }
 
 ##
-# 'ymtech' 사용자를 sudoers 그룹에 등록하고 특정 관리 명령어들의 비밀번호 입력을 면제합니다.
+# 사용자를 sudoers 그룹에 등록하고 특정 관리 명령어들의 비밀번호 입력을 면제합니다.
+# 외부설정된 NO_PASSWORD_COMMANDS 값을 활용하며, 사용자 입력을 통해 대상을 지정합니다.
 #
 # @param 없음
 #
@@ -244,135 +372,68 @@ EOF
 _setup_sudoers() {
   echo
   echo "############### ${FUNCNAME[0]} ###############"
-  echo "[진행] ymtech 사용자 sudoers 설정 중..."
-  local target_user="ymtech"
+  echo "[진행] 사용자 sudoers 설정 중..."
+  
+  # 1. 기본값으로 사용할 현재 접속 계정 확인
+  local current_user="${USER:-$(whoami)}"
+  local target_user=""
+  local interrupted=0
+
+  # 2. Ctrl+C (SIGINT) 입력 시 전체 종료를 막고 플래그만 변경하도록 트랩 설정
+  trap 'interrupted=1' SIGINT
+  
+  # 3. 사용자 입력 대기
+  read -r -p "> sudoers에 등록할 사용자 계정을 입력하세요 (기본값: $current_user) [취소: Ctrl+C]: " target_user
+  
+  # 4. 입력 종료 후 트랩 해제 (기본 동작으로 복구)
+  trap - SIGINT
+  
+  # Ctrl+C가 눌렸을 경우 (interrupted 플래그 확인)
+  if [ "$interrupted" -eq 1 ]; then
+    echo -e "\n - [취소] sudoers 설정을 건너뛰고 다음 단계로 진행합니다."
+    return 0
+  fi
+
+  # 입력값이 비어있으면 기본값(현재 사용자)으로 설정
+  if [ -z "$target_user" ]; then
+    target_user="$current_user"
+  fi
+
   local sudoers_file="/etc/sudoers.d/$target_user"
 
   if ! id "$target_user" &>/dev/null; then
-    error_exit "$target_user 사용자가 시스템에 존재하지 않습니다." "$LINENO"
+    error_exit "'$target_user' 사용자가 시스템에 존재하지 않습니다." "$LINENO"
   fi
 
   echo "$target_user ALL=(ALL) ALL" | sudo tee "$sudoers_file" > /dev/null
   
-  # OS에 따라 패키지 매니저 경로를 다르게 부여
-  local no_pw_cmds="/usr/bin/cat, /usr/bin/systemctl, /usr/bin/update-alternatives, /usr/bin/vi, /usr/bin/vim, /bin/ps, /bin/netstat"
+  # OS에 따라 패키지 매니저 경로를 추가
+  local os_pkg_cmd=""
   if [ "$PKG_MANAGER" == "apt" ]; then
-    echo "$target_user ALL=(ALL) NOPASSWD: /usr/bin/apt, /usr/bin/apt-get, $no_pw_cmds" | sudo tee -a "$sudoers_file" > /dev/null
+    os_pkg_cmd="/usr/bin/apt, /usr/bin/apt-get, "
   elif [ "$PKG_MANAGER" == "dnf" ]; then
-    echo "$target_user ALL=(ALL) NOPASSWD: /usr/bin/dnf, $no_pw_cmds" | sudo tee -a "$sudoers_file" > /dev/null
+    os_pkg_cmd="/usr/bin/dnf, "
   fi
+  
+  local full_no_pw_cmds="${os_pkg_cmd}${NO_PASSWORD_COMMANDS}"
+
+  echo "$target_user ALL=(ALL) NOPASSWD: $full_no_pw_cmds" | sudo tee -a "$sudoers_file" > /dev/null
   
   sudo chmod 440 "$sudoers_file"
   echo " - $target_user sudoers 설정이 완료되었습니다."
 }
 
 ##
-# curl 명령어가 시스템에 없을 경우 OS에 맞는 패키지 매니저로 설치를 진행합니다.
+# /etc/vim/vimrc 파일에 커스텀 기본 옵션들을 활성화합니다. (vim 패키지 설치는 _install_package가 담당)
 #
 # @param 없음
 #
 # @return 진행 상황 메시지 (표준 출력)
 ##
-_install_curl() {
-  echo "............... ${FUNCNAME[0]} ..............."
-  if ! command -v curl &> /dev/null; then
-    echo "[진행] curl 설치 중..."
-    _try_pkg_update
-    $PKG_INSTALL_CMD curl || error_exit "curl 설치 실패" "$LINENO"
-  fi
-}
-
-##
-# git 명령어가 시스템에 없을 경우 OS에 맞는 패키지 매니저로 설치를 진행합니다.
-#
-# @param 없음
-#
-# @return 진행 상황 메시지 (표준 출력)
-##
-_install_git() {
+_install_vim_options() {
   echo
   echo "############### ${FUNCNAME[0]} ###############"
-  if ! command -v git &> /dev/null; then
-    echo "[진행] curl 설치 중..."
-    _try_pkg_update
-    $PKG_INSTALL_CMD git || error_exit "git 설치 실패" "$LINENO"
-  fi
-}
-
-##
-# OS 패키지 관리자를 사용하여 net-tools(ifconfig, netstat 등)를 설치합니다.
-# 이 기능은 옵션에 관계없이 실행됩니다.
-#
-# @param 없음
-#
-# @return 진행 상황 메시지 (표준 출력)
-##
-_install_net_tools() {
-  echo
-  echo "############### ${FUNCNAME[0]} ###############"
-  echo "[진행] net-tools 설치 중..."
-  _try_pkg_update
-  $PKG_INSTALL_CMD net-tools || error_exit "net-tools 설치 실패" "$LINENO"
-  echo " - net-tools 설치가 완료되었습니다."
-}
-
-##
-# vim-cli 스크립트 및 bash completion 파일을 다운로드하고 설치합니다.
-# 파일이 이미 존재할 경우 내용을 비교하여 다를 때만 사용자에게 설치 여부를 확인합니다.
-#
-# @param 없음
-#
-# @return 진행 상황 메시지 (표준 출력)
-##
-install_vim_cli() {
-  echo
-  echo "############### ${FUNCNAME[0]} ###############"
-  _install_curl
-  echo "[진행] vim-cli 설치 중..."
-  local bin_dir="$HOME/bin"
-  local target_cmd="vim-cli"
-  local temp_bin="/tmp/${target_cmd}"
-  
-  curl -sLo "$temp_bin" "https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main/sys/vim-cli" || error_exit "vim-cli 다운로드 실패" "$LINENO"
-  
-  if [ -f "$bin_dir/$target_cmd" ]; then
-    if ! cmp -s "$temp_bin" "$bin_dir/$target_cmd"; then
-      read -p "> vim-cli 실행 파일 내용이 다릅니다. 업데이트하시겠습니까? (y/n): " ch
-      if [[ "$ch" == "y" || "$ch" == "Y" ]]; then
-        mv "$temp_bin" "$bin_dir/$target_cmd" && chmod +x "$bin_dir/$target_cmd"
-        echo " - vim-cli 실행 파일이 업데이트되었습니다."
-      else
-        echo " - vim-cli 실행 파일 설치를 유지합니다."
-        rm -f "$temp_bin"
-      fi
-    else
-      echo " - vim-cli 실행 파일이 이미 최신입니다."
-      rm -f "$temp_bin"
-    fi
-  else
-    mkdir -p "$bin_dir" && mv "$temp_bin" "$bin_dir/$target_cmd" && chmod +x "$bin_dir/$target_cmd"
-    echo " - vim-cli 실행 파일을 설치했습니다."
-  fi
-
-  # 공통 함수를 호출하여 completion 다운로드 및 설치 위임
-  local comp_url="https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main/sys/vim-cli.completion"
-  _install_completion "$comp_url" "$target_cmd"
-}
-
-##
-# OS 패키지 관리자를 사용하여 vim 편집기를 설치하고,
-# /etc/vim/vimrc 파일에 커스텀 기본 옵션들을 활성화합니다.
-#
-# @param 없음
-#
-# @return 진행 상황 메시지 (표준 출력)
-##
-_install_vim() {
-  echo
-  echo "############### ${FUNCNAME[0]} ###############"
-  echo "[진행] vim 설치 및 환경 설정 중..."
-  _try_pkg_update
-  $PKG_INSTALL_CMD vim || error_exit "vim 설치 실패" "$LINENO"
+  echo "[진행] vim 환경 설정 중..."
   
   local vimrc_file="/etc/vim/vimrc"
   
@@ -402,46 +463,42 @@ EOF
   else
     echo " - [경고] vimrc 파일을 찾지 못해 커스텀 설정을 추가하지 못했습니다."
   fi
-  
-  echo " - vim 설치 및 설정이 완료되었습니다."
 }
 
 ##
-# 원격 스크립트를 다운로드하여 Eclipse Temurin JDK 25를 설치합니다.
+# 외부설정된 URL의 원격 스크립트를 통해 Eclipse Temurin JDK 25를 설치합니다.
 #
 # @param 없음
 #
 # @return 진행 상황 메시지 (표준 출력)
 ##
-install_temurin_jdk() {
-  _install_curl
-  echo "[진행] Eclipse Temurin JDK 25 설치 중..."
-  local script_url="https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main/java/install-temurin-25-jdk.sh"
-  local temp_script="/tmp/install-temurin-25-jdk.sh"
+install_jdk() {
+  echo "[진행] JDK 설치 중..."
+  local temp_script="/tmp/install-jdk.sh"
   
-  curl -sLo "$temp_script" "$script_url" || error_exit "JDK 설치 스크립트 다운로드 실패" "$LINENO"
+  curl -sLo "$temp_script" "$URL_JDK_INSTALLER" || error_exit "JDK 설치 스크립트 다운로드 실패" "$LINENO"
   chmod +x "$temp_script"
   sudo "$temp_script" || error_exit "JDK 설치 스크립트 실행 실패" "$LINENO"
   rm -f "$temp_script"
-  echo " - JDK 25 설치가 완료되었습니다."
+  echo " - JDK 설치가 완료되었습니다."
+  
+  setup_java_config
 }
 
 ##
-# update-java-config 스크립트를 다운로드하여 설치하고, .bashrc에 연동 래퍼 함수를 등록합니다.
+# 외부설정된 URL에서 update-java-config 스크립트를 다운로드하고 .bashrc에 래퍼 함수를 등록합니다.
 #
 # @param 없음
 #
 # @return 진행 상황 메시지 (표준 출력)
 ##
 setup_java_config() {
-  _install_curl
   echo "[진행] update-java-config 설정 중..."
   local bin_dir="$HOME/bin"
-  local script_url="https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main/java/update-java-config"
   local dest_path="$bin_dir/update-java-config"
   
   mkdir -p "$bin_dir"
-  curl -sLo "$dest_path" "$script_url" || error_exit "update-java-config 다운로드 실패" "$LINENO"
+  curl -sLo "$dest_path" "$URL_UPDATE_JAVA_CONFIG" || error_exit "update-java-config 다운로드 실패" "$LINENO"
   chmod +x "$dest_path"
   echo " - $dest_path 다운로드 및 실행 권한 부여 완료."
 
@@ -473,41 +530,54 @@ EOF
 }
 
 ##
-# Apache Maven 3.9.15 버전을 다운로드하여 /opt 하위에 설치합니다.
+# 외부설정된 URL로부터 Maven 바이너리를 다운로드하고 /opt 디렉토리에 압축을 해제합니다.
+# 파일명에서 버전을 유추하여 중복 설치를 방지합니다.
 #
 # @param 없음
 #
 # @return 진행 상황 메시지 (표준 출력)
 ##
 install_maven() {
-  _install_curl
   echo "[진행] Maven 설치 중..."
-  local mvn_url="https://dlcdn.apache.org/maven/maven-3/3.9.15/binaries/apache-maven-3.9.15-bin.tar.gz"
-  local temp_archive="/tmp/apache-maven-3.9.15-bin.tar.gz"
   
-  curl -sLo "$temp_archive" "$mvn_url" || error_exit "Maven 다운로드 실패" "$LINENO"
+  # 파일명에서 정규식을 사용해 버전(예: 3.9.15)을 파싱
+  local file_name=$(basename "$URL_MAVEN_FILE")
+  local mvn_version=$(echo "$file_name" | sed -n 's/.*apache-maven-\([0-9\.]*\)-bin.*/\1/p')
+  
+  if [ -z "$mvn_version" ]; then
+    error_exit "Maven 다운로드 URL에서 버전을 파싱할 수 없습니다." "$LINENO"
+  fi
+
+  local target_dir="/opt/apache-maven-${mvn_version}"
+  if [ -d "$target_dir" ]; then
+    echo " - Maven 버전 ${mvn_version} 이(가) 이미 존재하므로 설치를 건너뜁니다."
+    return 0
+  fi
+
+  local temp_archive="/tmp/$file_name"
+  curl -sLo "$temp_archive" "$URL_MAVEN_FILE" || error_exit "Maven 다운로드 실패" "$LINENO"
   sudo mkdir -p /opt || error_exit "/opt 디렉토리 생성 실패" "$LINENO"
   sudo tar -xzf "$temp_archive" -C /opt/ || error_exit "Maven 압축 해제 실패" "$LINENO"
   rm -f "$temp_archive"
-  echo " - Maven 바이너리를 /opt 하위에 설치했습니다."
+  echo " - Maven 바이너리를 $target_dir 에 설치했습니다."
+  
+  setup_mvn_config
 }
 
 ##
-# update-mvn-config 스크립트를 다운로드하여 설치하고, .bashrc에 연동 래퍼 함수를 등록합니다.
+# 외부설정된 URL에서 update-mvn-config 스크립트를 다운로드하고 .bashrc에 래퍼 함수를 등록합니다.
 #
 # @param 없음
 #
 # @return 진행 상황 메시지 (표준 출력)
 ##
 setup_mvn_config() {
-  _install_curl
   echo "[진행] update-mvn-config 설정 중..."
   local bin_dir="$HOME/bin"
-  local script_url="https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main/maven/update-mvn-config"
   local dest_path="$bin_dir/update-mvn-config"
   
   mkdir -p "$bin_dir"
-  curl -sLo "$dest_path" "$script_url" || error_exit "update-mvn-config 다운로드 실패" "$LINENO"
+  curl -sLo "$dest_path" "$URL_UPDATE_MVN_CONFIG" || error_exit "update-mvn-config 다운로드 실패" "$LINENO"
   chmod +x "$dest_path"
   echo " - $dest_path 다운로드 및 실행 권한 부여 완료."
 
@@ -539,31 +609,32 @@ EOF
 }
 
 ##
-# 내부에 제공된 RSA 공개키를 ~/.ssh/authorized_keys 파일에 등록하여 SSH 접속을 허용합니다.
-#
-# @param 없음
-#
-# @return 진행 상황 메시지 (표준 출력)
+# 외부설정된 RSA_PUBLIC_KEY_LIST 배열을 통해 ~/.ssh/authorized_keys 파일에 여러 공개키를 등록합니다.
 ##
 setup_ssh_key() {
+  echo
+  echo "############### ${FUNCNAME[0]} ###############"
   echo "[진행] SSH RSA 키 등록 중..."
   local ssh_dir="$HOME/.ssh"
   local auth_file="$ssh_dir/authorized_keys"
-  local public_key="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC2mUlqLFWYVRfgyKT1+wmsY0Yr/wYEPs16zj1Cvy1/9o0ja7v4WQd+PM7Ha1qS4bDWI1TdtF8pwUmeJGR/UkQNS2tnzMCzdbpI9v7YbV+gR6btYaHLz6EThmNnR8qvXUb5muXBVb9Pf0lu4FfsjPnYZ4mEtMkiQrXUNKvFQEYpgZNewGmd+Mmbpj3LSWFOHGfbn5a+IlI2UemZnlvgTkrf+shGszwftiEeUmTo0El9tg5/LArK480HaWehTB+ndheUb/h05LtNP/oUA+8ZVkI7akEonKF/S+0o5BC6spOzP7iK4S+I7IUVIuoDWuhDLEV6xHYXH1cBEd3092x1YWkh ymtech for internal"
   
-  # 식별자(주석)가 아닌 실제 Base64 키 데이터 부분만 추출하여 검증에 사용
-  local key_body=$(echo "$public_key" | awk '{print $2}')
-
   [ ! -d "$ssh_dir" ] && mkdir -p "$ssh_dir" && chmod 700 "$ssh_dir"
   [ ! -f "$auth_file" ] && touch "$auth_file" && chmod 600 "$auth_file"
 
-  # 정규표현식 특수문자(+) 오작동 방지를 위해 고정 문자열 검색 옵션(-F) 사용
-  if ! grep -qF "$key_body" "$auth_file"; then
-    echo "$public_key" >> "$auth_file"
-    echo " - 공개키를 등록했습니다."
-  else
-    echo " - 이미 등록된 키입니다."
-  fi
+  # 프로퍼티 파일에서 배열로 담은 모든 SSH 키 반복 등록
+  for public_key in "${RSA_PUBLIC_KEY_LIST[@]}"; do
+    # 식별자(주석)가 아닌 실제 Base64 키 데이터 부분만 추출하여 검증에 사용
+    local key_body=$(echo "$public_key" | awk '{print $2}')
+
+    # 정규표현식 특수문자(+) 오작동 방지를 위해 고정 문자열 검색 옵션(-F) 사용
+    if ! grep -qF "$key_body" "$auth_file"; then
+      echo "$public_key" >> "$auth_file"
+      echo " - 공개키를 등록했습니다: ${public_key:0:30}..."
+    else
+      echo " - 이미 등록된 키입니다: ${public_key:0:30}..."
+    fi
+  done
+  
   chmod 600 "$auth_file"
 }
 
@@ -589,10 +660,11 @@ done
 # ==========================================
 # 사전 검사를 무사히 통과했다면(도움말 요청이 아님) 기본 도구들을 무조건 설치합니다.
 _setup_home_bin  
-_setup_git_prompt # _install_git 실행
 _setup_sudoers
-_install_vim_cli # _install_vim 실행
-_install_net_tools
+_setup_default_tools # DEFAULT_TOOLS 기반 _install_package 실행
+_setup_custom_tools # URL_CUSTOM_TOOLS 배열 기반 자동 처리
+_setup_git_prompt
+_install_vim_options # `vim` 옵션 적용
 
 # ==========================================
 # 3. 메인 실행부 (선택 옵션 처리)
@@ -600,7 +672,7 @@ _install_net_tools
 while [[ "$#" -gt 0 ]]; do
   case $1 in
     --jdk)
-      install_temurin_jdk
+      install_jdk
       shift
       ;;
     --java-config)
@@ -619,19 +691,9 @@ while [[ "$#" -gt 0 ]]; do
       setup_ssh_key
       shift
       ;;
-    --default)
-      install_temurin_jdk
-      setup_java_config
-      install_maven
-      setup_mvn_config
-      shift
-      ;;
     --all)
-      install_temurin_jdk
-      setup_java_config
+      install_jdk
       install_maven
-      setup_mvn_config
-      setup_ssh_key
       shift
       ;;
     *)
