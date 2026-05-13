@@ -97,6 +97,7 @@ error_exit() {
 # @return 진행 상황 메시지 (표준 출력)
 ##
 _try_pkg_update() {
+  echo "............... ${FUNCNAME[0]} ..............."
   if [ "$PKG_UPDATED" -eq 0 ]; then
     echo "[진행] 패키지 인덱스 업데이트 중 ($PKG_MANAGER)..."
     $PKG_UPDATE_CMD || true
@@ -114,6 +115,8 @@ _try_pkg_update() {
 # @return 진행 상황 메시지 (표준 출력)
 ##
 _install_completion() {
+  echo "............... ${FUNCNAME[0]} ..............."
+  
   local comp_url="$1"
   local target_cmd="$2"
   
@@ -186,6 +189,8 @@ _install_completion() {
 # @return 진행 상황 메시지 (표준 출력)
 ##
 _setup_home_bin() {
+  echo
+  echo "############### ${FUNCNAME[0]} ###############"
   echo "[진행] ~/bin 디렉토리 설정 중..."
   local bin_dir="$HOME/bin"
   if [ ! -d "$bin_dir" ]; then
@@ -210,6 +215,8 @@ _setup_home_bin() {
 # @return 진행 상황 메시지 (표준 출력)
 ##
 _setup_git_prompt() {
+  echo
+  echo "############### ${FUNCNAME[0]} ###############"
   _install_git
   echo "[진행] git branch 프롬프트 설정 중..."
   if ! grep -q "parse_git_branch()" "$HOME/.bashrc"; then
@@ -235,6 +242,8 @@ EOF
 # @return 진행 상황 메시지 (표준 출력)
 ##
 _setup_sudoers() {
+  echo
+  echo "############### ${FUNCNAME[0]} ###############"
   echo "[진행] ymtech 사용자 sudoers 설정 중..."
   local target_user="ymtech"
   local sudoers_file="/etc/sudoers.d/$target_user"
@@ -265,6 +274,7 @@ _setup_sudoers() {
 # @return 진행 상황 메시지 (표준 출력)
 ##
 _install_curl() {
+  echo "............... ${FUNCNAME[0]} ..............."
   if ! command -v curl &> /dev/null; then
     echo "[진행] curl 설치 중..."
     _try_pkg_update
@@ -280,6 +290,8 @@ _install_curl() {
 # @return 진행 상황 메시지 (표준 출력)
 ##
 _install_git() {
+  echo
+  echo "############### ${FUNCNAME[0]} ###############"
   if ! command -v git &> /dev/null; then
     echo "[진행] curl 설치 중..."
     _try_pkg_update
@@ -296,6 +308,8 @@ _install_git() {
 # @return 진행 상황 메시지 (표준 출력)
 ##
 _install_net_tools() {
+  echo
+  echo "############### ${FUNCNAME[0]} ###############"
   echo "[진행] net-tools 설치 중..."
   _try_pkg_update
   $PKG_INSTALL_CMD net-tools || error_exit "net-tools 설치 실패" "$LINENO"
@@ -311,6 +325,8 @@ _install_net_tools() {
 # @return 진행 상황 메시지 (표준 출력)
 ##
 install_vim_cli() {
+  echo
+  echo "############### ${FUNCNAME[0]} ###############"
   _install_curl
   echo "[진행] vim-cli 설치 중..."
   local bin_dir="$HOME/bin"
@@ -352,6 +368,8 @@ install_vim_cli() {
 # @return 진행 상황 메시지 (표준 출력)
 ##
 _install_vim() {
+  echo
+  echo "############### ${FUNCNAME[0]} ###############"
   echo "[진행] vim 설치 및 환경 설정 중..."
   _try_pkg_update
   $PKG_INSTALL_CMD vim || error_exit "vim 설치 실패" "$LINENO"
