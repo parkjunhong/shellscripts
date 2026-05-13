@@ -39,7 +39,6 @@ fi
 CONFIG_URL="https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main/env/configurations.properties"
 CONFIG_FILE="/tmp/configurations.properties"
 
-# curl이 없을 수 있으므로 외부 설정 파일 다운로드를 위해 임시로 설치
 if ! command -v curl &> /dev/null; then
   echo "[진행] curl 임시 설치 중 (설정 파일 다운로드용)..."
   $PKG_UPDATE_CMD > /dev/null 2>&1
@@ -48,23 +47,37 @@ fi
 
 curl -sLo "$CONFIG_FILE" "$CONFIG_URL" || { echo "[오류] 외부 설정 파일을 다운로드할 수 없습니다."; exit 1; }
 
-# Properties 파일 내용을 변수로 적용 
-# (bash 문법상 변수명에 '.'을 쓸 수 없으므로, 특수 패턴 항목들은 제외하고 source 실행)
-set -a
-source <(grep -v '^#' "$CONFIG_FILE" | grep -v '^[ \t]*RSA_PUBLIC_KEY\.' | grep -v '^[ \t]*URL_CUSTOM_TOOL\.' | sed -e 's/^[ \t]*//' -e 's/[ \t]*$//' -e 's/ *= */=/')
-set +a
+# ---------------------------------------------------------
+# [개선됨] Properties 파일을 가장 안전하게 파싱하여 변수로 등록
+# - 쌍따옴표("), 따옴표('), 공백, 특수문자($) 등이 있어도 오류가 나지 않음
+# ---------------------------------------------------------
+while IFS='=' read -r key value || [ -n "$key" ]; do
+  # 주석(#)이거나 빈 줄이면 건너뛰기
+  if [[ "$key" =~ ^[[:space:]]*# ]] || [[ -z "$key" ]]; then
+    continue
+  fi
 
-# 1. 다중 RSA 공개키 설정 파싱 및 배열(Array)에 담기
+  # Key와 Value의 양옆 공백 제거 (Value 내부의 띄어쓰기는 그대로 유지됨)
+  key=$(echo "$key" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+  value=$(echo "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
+  # 일반 변수만 export 처리 (배열 식별용 점(.)이 포함된 키는 제외)
+  if [[ ! "$key" =~ \. ]]; then
+    export "$key"="$value"
+  fi
+done < "$CONFIG_FILE"
+
+# 1. 다중 RSA 공개키 설정 파싱 및 배열에 담기
 RSA_PUBLIC_KEY_LIST=()
-while IFS='=' read -r key value; do
-  RSA_PUBLIC_KEY_LIST+=("$value")
-done < <(grep '^[ \t]*RSA_PUBLIC_KEY\.' "$CONFIG_FILE" | sed -e 's/^[ \t]*//' -e 's/[ \t]*$//' -e 's/ *= */=/')
+while IFS='=' read -r key value || [ -n "$key" ]; do
+  [[ "$key" =~ ^[[:space:]]*RSA_PUBLIC_KEY\. ]] && RSA_PUBLIC_KEY_LIST+=("$(echo "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')")
+done < "$CONFIG_FILE"
 
-# 2. 다중 사용자 정의 도구 URL 파싱 및 배열(Array)에 담기
-CUSTOM_TOOL_LIST=()
-while IFS='=' read -r key value; do
-  CUSTOM_TOOL_LIST+=("$value")
-done < <(grep '^[ \t]*URL_CUSTOM_TOOL\.' "$CONFIG_FILE" | sed -e 's/^[ \t]*//' -e 's/[ \t]*$//' -e 's/ *= */=/')
+# 2. 다중 사용자 정의 도구 URL 파싱 및 배열에 담기
+CUSTOM_TOOLS_LIST=()
+while IFS='=' read -r key value || [ -n "$key" ]; do
+  [[ "$key" =~ ^[[:space:]]*URL_CUSTOM_TOOL\. ]] && CUSTOM_TOOLS_LIST+=("$(echo "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')")
+done < "$CONFIG_FILE"
 
 rm -f "$CONFIG_FILE"
 
@@ -298,8 +311,8 @@ _install_custom_tools() {
 _setup_custom_tools() {
   echo
   echo "############### ${FUNCNAME[0]} ###############"
-  if [ ${#CUSTOM_TOOL_LIST[@]} -gt 0 ]; then
-    for tool_url in "${CUSTOM_TOOL_LIST[@]}"; do
+  if [ ${#CUSTOM_TOOLS_LIST[@]} -gt 0 ]; then
+    for tool_url in "${CUSTOM_TOOLS_LIST[@]}"; do
       if [ -n "$tool_url" ]; then
         _install_custom_tools "$tool_url"
       fi
