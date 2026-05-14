@@ -32,7 +32,7 @@ elif command -v dnf &> /dev/null; then
   PKG_INSTALL_CMD="sudo dnf install -y"
   PKG_REMOVE_CMD="sudo dnf remove -y"
 else
-  echo "[오류] 지원하지 않는 운영체제입니다. (apt 또는 dnf가 필요합니다.)"
+  echo "[ERROR] 지원하지 않는 운영체제입니다. (apt 또는 dnf가 필요합니다.)"
   exit 1
 fi
 
@@ -48,7 +48,17 @@ if ! command -v curl &> /dev/null; then
   $PKG_INSTALL_CMD curl > /dev/null 2>&1
 fi
 
-curl -sLo "$CONFIG_FILE" "$CONFIG_URL" || { echo "[오류] 외부 설정 파일을 다운로드할 수 없습니다."; exit 1; }
+# ---------------------------------------------------------
+# curl -f 옵션 추가 및 예외 처리 완화
+# 1. -f 옵션: 404 등 서버 에러 시 다운로드를 실패 처리함
+# 2. || 구문: 파일이 없을 경우 전체 스크립트를 중단하지 않고 설치만 건너뜀
+# ---------------------------------------------------------
+if ! curl -sfLo "$CONFIG_FILE" "$CONFIG_URL"; then
+  echo_e "[ERROR] 외부 설정 파일($CONFIG_URL)이 존재하지 않아 다운로드할 수 없습니다."
+  echo_e "[ERROR] 설치를 취소합니다."
+  rm -f "$CONFIG_FILE"
+  exit 1
+fi 
 
 # ---------------------------------------------------------
 # Properties 파일을 가장 안전하게 파싱하여 변수로 등록
@@ -434,8 +444,18 @@ _install_completion() {
   fi
   # ========================================================
 
-  local temp_comp="/tmp/${target_cmd}.completion"
-  curl -sLo "$temp_comp" "$comp_url" || error_exit "${target_cmd} completion 다운로드 실패" "$LINENO"
+  local temp_comp="/tmp/${target_cmd}.completion"  
+  
+  # ---------------------------------------------------------
+  # [개선] curl -f 옵션 추가 및 예외 처리 완화
+  # 1. -f 옵션: 404 등 서버 에러 시 다운로드를 실패 처리함
+  # 2. || 구문: 파일이 없을 경우 전체 스크립트를 중단하지 않고 설치만 건너뜀
+  # ---------------------------------------------------------
+  if ! curl -sfLo "$temp_comp" "$comp_url"; then
+    echo_w " - [알림] '${target_cmd}'의 bash completion 파일이 존재하지 않아 설치를 생략합니다."
+    rm -f "$temp_comp"
+    return 0
+  fi
   
   # 구형 폴더면 .completion 확장자 유지, 신형 표준 폴더면 명령어 이름과 정확히 일치시킴
   local target_comp_file="$comp_dir/$target_cmd"
@@ -450,24 +470,24 @@ _install_completion() {
     if ! cmp -s "$temp_comp" "$target_comp_file"; then
       # [수정] 백슬래시 이스케이프 방지를 위한 -r 옵션 추가
       local ch
-      read -r -p "> ${target_cmd} completion 내용이 다릅니다. 업데이트하시겠습니까? (y/n): " ch
+      read -r -p "> '${target_cmd} completion' 내용이 다릅니다. 업데이트하시겠습니까? (y/n): " ch
       if [[ "$ch" == "y" || "$ch" == "Y" ]]; then
         # [수정] mv 실패 시 임시 파일 삭제 및 에러 처리
-        sudo mv "$temp_comp" "$target_comp_file" || { rm -f "$temp_comp"; error_exit "${target_cmd} completion 파일 업데이트 실패" "$LINENO"; }
-        echo_i " - ${target_cmd} completion 파일이 업데이트되었습니다."
+        sudo mv "$temp_comp" "$target_comp_file" || { rm -f "$temp_comp"; error_exit "'${target_cmd} completion' 파일 업데이트 실패" "$LINENO"; }
+        echo_i " - '${target_cmd} completion' 파일이 업데이트되었습니다."
         installed=1
       else
-        echo " - ${target_cmd} completion 파일 설치를 유지합니다."
+        echo_w " - '${target_cmd} completion' 파일 설치를 유지합니다."
         rm -f "$temp_comp"
       fi
     else
-      echo " - ${target_cmd} completion 파일이 이미 최신입니다."
+      echo_w " - '${target_cmd} completion' 파일이 이미 최신입니다."
       rm -f "$temp_comp"
     fi
   else
     # [수정] mv 실패 시 임시 파일 삭제 및 에러 처리
-    sudo mv "$temp_comp" "$target_comp_file" || { rm -f "$temp_comp"; error_exit "${target_cmd} completion 파일 설치 실패" "$LINENO"; }
-    echo_i " - ${target_cmd} completion 파일을 설치했습니다."
+    sudo mv "$temp_comp" "$target_comp_file" || { rm -f "$temp_comp"; error_exit "'${target_cmd} completion' 파일 설치 실패" "$LINENO"; }
+    echo_i " - '${target_cmd} completion' 파일을 설치했습니다."
     installed=1
   fi
   
@@ -478,10 +498,10 @@ _install_completion() {
     if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
       # source(. ./setup-env.sh) 명령으로 스크립트가 실행된 경우 → 부모 쉘이므로 즉시 적용 가능
       source "$target_comp_file" 2>/dev/null || true
-      echo_i " - [System] ${target_cmd} 자동완성이 현재 터미널에 즉시 적용되었습니다."
+      echo_i " - [System] '${target_cmd}' 자동완성이 현재 터미널에 즉시 적용되었습니다."
     else
       # 서브 쉘(./setup-env.sh)로 실행된 경우 → 안내 메시지 출력
-      echo_w " - [안내] ${target_cmd} 자동완성을 현재 터미널에 즉시 적용하려면 아래 명령을 실행하세요:"
+      echo_w " - [안내] '${target_cmd}' 자동완성을 현재 터미널에 즉시 적용하려면 아래 명령을 실행하세요:"
       echo_w "   source \"$target_comp_file\""
       
       _add_notice "### ${target_cmd} 자동완성 추가 작업 ###"
@@ -500,16 +520,30 @@ _install_completion() {
 # @return 진행 상황 메시지 (표준 출력)
 ##
 _install_custom_tools() {
+  local func_name="${FUNCNAME[0]}"
   local tool_url="$1"
   local target_cmd=$(basename "$tool_url")
   
   echo
-  echo "############### ${FUNCNAME[0]} - $target_cmd ###############"
+  echo "############### $func_name - $target_cmd ###############"
   echo "[진행] '$target_cmd' 설치 중..."
   local bin_dir="$HOME/bin"
   local temp_bin="/tmp/${target_cmd}"
   
-  curl -sLo "$temp_bin" "$tool_url" || error_exit "'$target_cmd' 다운로드 실패" "$LINENO"
+  # ---------------------------------------------------------
+  # curl -f 옵션 추가 및 예외 처리 완화
+  # 1. -f 옵션: 404 등 서버 에러 시 다운로드를 실패 처리함
+  # 2. || 구문: 파일이 없을 경우 전체 스크립트를 중단하지 않고 설치만 건너뜀
+  # ---------------------------------------------------------
+  if ! curl -sfLo "$temp_bin" "$tool_url"; then
+    echo_e " - [ERROR] '사용자 정의 도구파일' 다운로드 실패"
+    echo_e " - [ERROR] '${target_cmd}' 파일이 존재하지 않아 설치를 생략합니다."
+    rm -f "$temp_bin"
+    
+    _add_notice " - [$func_name] [ERROR] '사용자 정의 도구파일' 다운로드 실패"
+    _add_notice " - [$func_name] [ERROR] '${target_cmd}' 파일이 존재하지 않아 설치를 생략합니다."
+    return 0
+  fi
   
   if [ -f "$bin_dir/$target_cmd" ]; then
     if ! cmp -s "$temp_bin" "$bin_dir/$target_cmd"; then
@@ -518,11 +552,11 @@ _install_custom_tools() {
         mv "$temp_bin" "$bin_dir/$target_cmd" && chmod +x "$bin_dir/$target_cmd"
         echo_i " - '$target_cmd' 실행 파일이 업데이트되었습니다."
       else
-        echo " - '$target_cmd' 실행 파일 설치를 유지합니다."
+        echo_w " - '$target_cmd' 실행 파일 설치를 유지합니다."
         rm -f "$temp_bin"
       fi
     else
-      echo " - '$target_cmd' 실행 파일이 이미 최신입니다."
+      echo_w " - '$target_cmd' 실행 파일이 이미 최신입니다."
       rm -f "$temp_bin"
     fi
   else
@@ -606,7 +640,7 @@ _setup_home_bin() {
       _add_notice "   source ~/.bashrc" false
     fi
   else
-    echo " - ~/.bashrc 파일에 이미 PATH 설정이 존재합니다."
+    echo_w " - ~/.bashrc 파일에 이미 PATH 설정이 존재합니다."
   fi
 
   EXECUTED_JOB_FLAGS["$func_name"]=1
@@ -639,9 +673,9 @@ parse_git_branch() {
 
 PS1='[directory] \[\033[01;31m\]$(parse_git_branch)\[\033[00m\]\[\033[01;34m\]\w\[\033[00m\]\n[\t ] \[\033[01;32m\]\u@\h\[\033[00m\]:$ '
 EOF
-    echo " - ~/.bashrc에 프롬프트 설정을 추가했습니다."
+    echo_i " - ~/.bashrc에 프롬프트 설정을 추가했습니다."
   else
-    echo " - ~/.bashrc 파일에 이미 git 프롬프트 설정이 존재합니다."
+    echo_w " - ~/.bashrc 파일에 이미 git 프롬프트 설정이 존재합니다."
   fi
   
   EXECUTED_JOB_FLAGS["$func_name"]=1
@@ -735,14 +769,19 @@ setup_sudoers() {
     sudo chmod 440 "$sudoers_file"
     echo_i " - $target_user sudoers 설정이 안전하게 완료되었습니다."
     EXECUTED_JOB_FLAGS["$func_name"]=1
+    
+    # 작업 완료 후 임시 파일 안전하게 정리
+    rm -f "$tmp_sudoers"    
   else
     # 검증 실패 시 임시 파일 삭제 후 스크립트 오류 처리
     rm -f "$tmp_sudoers"
-    error_exit "sudoers 문법 검증에 실패하여 설정을 취소합니다. (명령어 목록 오타나 콤마 누락 확인 필요)" "$LINENO"
+    
+    echo_e " - [Error] 'sudoers' 문법 검증에 실패하여 설정을 취소합니다. (명령어 목록 오타나 콤마 누락 확인 필요)"
+    
+    _add_notice " - [$func_name] [Error] 'sudoers' 추가 작업 실패"
+    _add_notice " - [$func_name] [Error] 'sudoers' 문법 검증에 실패하여 설정을 취소합니다. (명령어 목록 오타나 콤마 누락 확인 필요)"
+    return 1
   fi
-
-  # 작업 완료 후 임시 파일 안전하게 정리
-  rm -f "$tmp_sudoers"
 }
 
 ##
@@ -785,12 +824,12 @@ set hlsearch
 set nu
 set expandtab
 EOF
-      echo " - $vimrc_file 파일에 커스텀 설정을 추가했습니다."
+      echo_i " - $vimrc_file 파일에 커스텀 설정을 추가했습니다."
     else
-      echo " - $vimrc_file 파일에 이미 커스텀 설정이 존재합니다."
+      echo_w " - $vimrc_file 파일에 이미 커스텀 설정이 존재합니다."
     fi
   else
-    echo " - [경고] vimrc 파일을 찾지 못해 커스텀 설정을 추가하지 못했습니다."
+    echo_e " - [ERROR] vimrc 파일을 찾지 못해 커스텀 설정을 추가하지 못했습니다."
   fi
   
   EXECUTED_JOB_FLAGS["$func_name"]=1
@@ -818,7 +857,21 @@ install_jdk() {
   echo "[진행] JDK 설치 중..."
   local temp_script="/tmp/install-jdk.sh"
   
-  curl -sLo "$temp_script" "$URL_JDK_INSTALLER" || error_exit "JDK 설치 스크립트 다운로드 실패" "$LINENO"
+  # ---------------------------------------------------------
+  # curl -f 옵션 추가 및 예외 처리 완화
+  # 1. -f 옵션: 404 등 서버 에러 시 다운로드를 실패 처리함
+  # 2. || 구문: 파일이 없을 경우 전체 스크립트를 중단하지 않고 설치만 건너뜀
+  # ---------------------------------------------------------
+  if ! curl -sfLo "$temp_script" "$URL_JDK_INSTALLER"; then
+    echo_e " - [ERROR] 'Java 설치 스크립트' 다운로드 실패"
+    echo_e " - [ERROR] '$URL_JDK_INSTALLER' 파일이 존재하지 않아 설치를 생략합니다."
+    rm -f "$temp_script"
+    
+    _add_notice " - [$func_name] [ERROR] 'Java 설치 스크립트' 다운로드 실패"
+    _add_notice " - [$func_name] [ERROR] '$URL_JDK_INSTALLER' 파일이 존재하지 않아 설치를 생략합니다."
+    return 0
+  fi 
+  
   chmod +x "$temp_script"
   sudo "$temp_script" || error_exit "JDK 설치 스크립트 실행 실패" "$LINENO"
   rm -f "$temp_script"
@@ -849,7 +902,22 @@ setup_java_config() {
   local dest_path="$bin_dir/update-java-config"
   
   mkdir -p "$bin_dir"
-  curl -sLo "$dest_path" "$URL_UPDATE_JAVA_CONFIG" || error_exit "update-java-config 다운로드 실패" "$LINENO"
+  
+  # ---------------------------------------------------------
+  # curl -f 옵션 추가 및 예외 처리 완화
+  # 1. -f 옵션: 404 등 서버 에러 시 다운로드를 실패 처리함
+  # 2. || 구문: 파일이 없을 경우 전체 스크립트를 중단하지 않고 설치만 건너뜀
+  # ---------------------------------------------------------
+  if ! curl -sfLo "$dest_path" "$URL_UPDATE_JAVA_CONFIG"; then
+    echo_e " - [ERROR] '기본 Java 설정 도구' 다운로드 실패"
+    echo_e " - [ERROR] '$URL_UPDATE_JAVA_CONFIG' 파일이 존재하지 않아 설치를 생략합니다."
+    rm -f "$dest_path"
+    
+    _add_notice " - [$func_name] [ERROR] '기본 Java 설정 도구' 다운로드 실패"
+    _add_notice " - [$func_name] [ERROR] '$URL_UPDATE_JAVA_CONFIG' 파일이 존재하지 않아 설치를 생략합니다."
+    return 0
+  fi 
+  
   chmod +x "$dest_path"
   echo " - $dest_path 다운로드 및 실행 권한 부여 완료."
 
@@ -876,7 +944,7 @@ function update-java-config() {
 EOF
     echo_i " - ~/.bashrc에 update-java-config 래퍼 함수를 추가했습니다."
   else
-    echo " - ~/.bashrc에 이미 update-java-config 설정이 존재합니다."
+    echo_w " - ~/.bashrc에 이미 update-java-config 설정이 존재합니다."
   fi
   
   EXECUTED_JOB_FLAGS["$func_name"]=1
@@ -914,7 +982,7 @@ install_maven() {
 
   local target_dir="/opt/apache-maven-${mvn_version}"
   if [ -d "$target_dir" ]; then
-    echo " - Maven 버전 ${mvn_version} 이(가) 이미 존재하므로 설치를 건너뜁니다."
+    echo_w " - Maven 버전 ${mvn_version} 이(가) 이미 존재하므로 설치를 건너뜁니다."
     
     EXECUTED_JOB_FLAGS["$func_name"]=1
     
@@ -922,7 +990,22 @@ install_maven() {
   fi
 
   local temp_archive="/tmp/$file_name"
-  curl -sLo "$temp_archive" "$URL_MAVEN_FILE" || error_exit "Maven 다운로드 실패" "$LINENO"
+  
+  # ---------------------------------------------------------
+  # curl -f 옵션 추가 및 예외 처리 완화
+  # 1. -f 옵션: 404 등 서버 에러 시 다운로드를 실패 처리함
+  # 2. || 구문: 파일이 없을 경우 전체 스크립트를 중단하지 않고 설치만 건너뜀
+  # ---------------------------------------------------------
+  if ! curl -sfLo "$temp_archive" "$URL_MAVEN_FILE"; then
+    echo_e " - [ERROR] Maven 다운로드 실패"
+    echo_e " - [ERROR] '$URL_MAVEN_FILE' 파일이 존재하지 않아 설치를 생략합니다."
+    rm -f "$temp_archive"
+    
+    _add_notice " - [$func_name] [ERROR] Maven 다운로드 실패"
+    _add_notice " - [$func_name] [ERROR] '$URL_MAVEN_FILE' 파일이 존재하지 않아 설치를 생략합니다."
+    return 0
+  fi 
+  
   sudo mkdir -p /opt || error_exit "/opt 디렉토리 생성 실패" "$LINENO"
   sudo tar -xzf "$temp_archive" -C /opt/ || error_exit "Maven 압축 해제 실패" "$LINENO"
   rm -f "$temp_archive"
@@ -953,7 +1036,22 @@ setup_mvn_config() {
   local dest_path="$bin_dir/update-mvn-config"
   
   mkdir -p "$bin_dir"
-  curl -sLo "$dest_path" "$URL_UPDATE_MVN_CONFIG" || error_exit "update-mvn-config 다운로드 실패" "$LINENO"
+  
+  # ---------------------------------------------------------
+  # curl -f 옵션 추가 및 예외 처리 완화
+  # 1. -f 옵션: 404 등 서버 에러 시 다운로드를 실패 처리함
+  # 2. || 구문: 파일이 없을 경우 전체 스크립트를 중단하지 않고 설치만 건너뜀
+  # ---------------------------------------------------------
+  if ! curl -sfLo "$dest_path" "$URL_UPDATE_MVN_CONFIG"; then
+    echo_e " - [ERROR] '기본 Maven 버전 설정 도구' 다운로드 실패"
+    echo_e " - [ERROR] '$URL_UPDATE_MVN_CONFIG' 파일이 존재하지 않아 설치를 생략합니다."
+    rm -f "$dest_path"
+    
+    _add_notice " - [$func_name] [ERROR] '기본 Maven 버전 설정 도구' 다운로드 실패"
+    _add_notice " - [$func_name] [ERROR] '$URL_UPDATE_MVN_CONFIG' 파일이 존재하지 않아 설치를 생략합니다."
+    return 0
+  fi 
+  
   chmod +x "$dest_path"
   echo " - $dest_path 다운로드 및 실행 권한 부여 완료."
 
@@ -980,7 +1078,7 @@ function update-mvn-config() {
 EOF
     echo_i " - ~/.bashrc에 update-mvn-config 래퍼 함수를 추가했습니다."
   else
-    echo " - ~/.bashrc에 이미 update-mvn-config 설정이 존재합니다."
+    echo_w " - ~/.bashrc에 이미 update-mvn-config 설정이 존재합니다."
   fi
   
   EXECUTED_JOB_FLAGS["$func_name"]=1
@@ -1016,7 +1114,7 @@ setup_ssh_key() {
       echo "$public_key" >> "$auth_file"
       echo_i " - 공개키를 등록했습니다: ${public_key:0:30}..."
     else
-      echo " - 이미 등록된 키입니다: ${public_key:0:30}..."
+      echo_w " - 이미 등록된 키입니다: ${public_key:0:30}..."
     fi
   done
   
