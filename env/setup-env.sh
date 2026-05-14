@@ -19,15 +19,18 @@ FILENAME=$(basename "$0")
 PKG_MANAGER=""
 PKG_UPDATE_CMD=""
 PKG_INSTALL_CMD=""
+PKG_REMOVE_CMD=""
 
 if command -v apt &> /dev/null; then
   PKG_MANAGER="apt"
   PKG_UPDATE_CMD="sudo apt update"
   PKG_INSTALL_CMD="sudo apt install -y"
+  PKG_REMOVE_CMD="sudo apt purge -y"
 elif command -v dnf &> /dev/null; then
   PKG_MANAGER="dnf"
-  PKG_UPDATE_CMD="sudo dnf check-update"
+  PKG_UPDATE_CMD="sudo dnf makecache"
   PKG_INSTALL_CMD="sudo dnf install -y"
+  PKG_REMOVE_CMD="sudo dnf remove -y"
 else
   echo "[오류] 지원하지 않는 운영체제입니다. (apt 또는 dnf가 필요합니다.)"
   exit 1
@@ -233,8 +236,10 @@ _announce_notices() {
   echo "================================================================================"
 }
 
-# 옵션 설치 여부(값 => 1: 설치완료, 그 외: 미설치)
-declare -A INSTALLATION_FLAGS=()
+# 작업실행 여부
+# 키: '함수 또는 함수+파라미터'
+# 값: 1/진행, 그외/미진행
+declare -A EXECUTED_JOB_FLAGS=()
 
 ##
 # 스크립트 실행 중 1번만 OS에 맞는 패키지 매니저 업데이트를 실행하도록 보장합니다.
@@ -245,7 +250,7 @@ declare -A INSTALLATION_FLAGS=()
 ##
 _try_pkg_update() {
   local func_name=${FUNCNAME[0]}
-  local flag="${INSTALLATION_FLAGS[$func_name]:-0}"
+  local flag="${EXECUTED_JOB_FLAGS[$func_name]:-0}"
   
   if (( flag == 1 )); then
     return 0
@@ -255,7 +260,7 @@ _try_pkg_update() {
   echo "[진행] 패키지 인덱스 업데이트 중 ($PKG_MANAGER)..."
   
   if $PKG_UPDATE_CMD; then
-    INSTALLATION_FLAGS["$func_name"]=1
+    EXECUTED_JOB_FLAGS["$func_name"]=1
   else
     echo_w "[경고] 패키지 인덱스 업데이트에 실패했습니다."
     return 1
@@ -272,7 +277,7 @@ _try_pkg_update() {
 _install_package() {
   local func_name="${FUNCNAME[0]}"
   local package_name="$1"
-  local flag="${INSTALLATION_FLAGS[$func_name.$package_name]:-0}"
+  local flag="${EXECUTED_JOB_FLAGS[$func_name.$package_name]:-0}"
   
   if (( flag == 1 )); then
     return 0
@@ -282,18 +287,67 @@ _install_package() {
     echo "[진행] $package_name 설치 중..."
     $PKG_INSTALL_CMD "$package_name" || error_exit "$package_name 설치 실패" "$LINENO"
 
-    INSTALLATION_FLAGS["$func_name.$package_name"]=1
+    EXECUTED_JOB_FLAGS["$func_name.$package_name"]=1
   else
-    INSTALLATION_FLAGS["$func_name.$package_name"]=1
+    EXECUTED_JOB_FLAGS["$func_name.$package_name"]=1
   fi
 }
+
+##
+# OS에 맞는 패키지 매니저로 삭제를 진행합니다.
+#
+# @param $1 {string} 패키지 이름
+#
+# @return 진행 상황 메시지 (표준 출력)
+##
+_remove_package(){
+  local func_name="${FUNCNAME[0]}"
+  local package_name="$1"
+  local flag="${EXECUTED_JOB_FLAGS[$func_name.$package_name]:-0}"
+  
+  if (( flag == 1 )); then
+    return 0
+  fi
+
+  if ! command -v "$package_name" &> /dev/null; then  
+    echo "[진행] $package_name 제거 중..."
+    $PKG_REMOVE_CMD "$package_name" || error_exit "$package_name 제거 실패" "$LINENO"
+
+    EXECUTED_JOB_FLAGS["$func_name.$package_name"]=1
+  else
+    EXECUTED_JOB_FLAGS["$func_name.$package_name"]=1
+  fi
+}
+
+##
+# 기본적으로 설치된 도구 중에 사용하지 않는 것을 제거합니다.
+## 
+_remove_tools(){
+  local func_name=${FUNCNAME[0]}
+  local flag="${EXECUTED_JOB_FLAGS[$func_name]:-0}"
+  
+  if (( flag == 1 )); then
+    return 0
+  fi
+
+  echo
+  echo "############### $func_name ###############"
+  IFS=',' read -ra TOOLS <<< "$DEFAULT_TOOLS"
+  for tool in "${TOOLS[@]}"; do
+    tool=$(echo "$tool" | xargs) # 양옆 공백 제거
+    _remove_package "$tool"
+  done
+  
+  EXECUTED_JOB_FLAGS["$func_name"]=1
+}
+
 
 ##
 # 외부 설정파일의 DEFAULT_TOOLS를 읽어 공통 설치 함수를 통해 설치합니다.
 ##
 _setup_default_tools() {
   local func_name=${FUNCNAME[0]}
-  local flag="${INSTALLATION_FLAGS[$func_name]:-0}"
+  local flag="${EXECUTED_JOB_FLAGS[$func_name]:-0}"
   
   if (( flag == 1 )); then
     return 0
@@ -307,7 +361,7 @@ _setup_default_tools() {
     _install_package "$tool"
   done
   
-  INSTALLATION_FLAGS["$func_name"]=1
+  EXECUTED_JOB_FLAGS["$func_name"]=1
 }
 
 ##
@@ -464,7 +518,7 @@ _install_custom_tools() {
 ##
 _setup_custom_tools() {
   local func_name=${FUNCNAME[0]}
-  local flag="${INSTALLATION_FLAGS[$func_name]:-0}"
+  local flag="${EXECUTED_JOB_FLAGS[$func_name]:-0}"
   
   if (( flag == 1 )); then
     return 0
@@ -480,7 +534,7 @@ _setup_custom_tools() {
     echo_w " - 설정된 커스텀 도구가 없습니다."
   fi
   
-  INSTALLATION_FLAGS["$func_name"]=1
+  EXECUTED_JOB_FLAGS["$func_name"]=1
 }
 
 ##
@@ -492,7 +546,7 @@ _setup_custom_tools() {
 ##
 _setup_home_bin() {
   local func_name=${FUNCNAME[0]}
-  local flag="${INSTALLATION_FLAGS[$func_name]:-0}"
+  local flag="${EXECUTED_JOB_FLAGS[$func_name]:-0}"
   
   if (( flag == 1 )); then
     return 0
@@ -529,7 +583,7 @@ _setup_home_bin() {
     echo " - ~/.bashrc 파일에 이미 PATH 설정이 존재합니다."
   fi
 
-  INSTALLATION_FLAGS["$func_name"]=1
+  EXECUTED_JOB_FLAGS["$func_name"]=1
 }
 
 ##
@@ -541,7 +595,7 @@ _setup_home_bin() {
 ##
 _setup_git_prompt() {
   local func_name=${FUNCNAME[0]}
-  local flag="${INSTALLATION_FLAGS[$func_name]:-0}"
+  local flag="${EXECUTED_JOB_FLAGS[$func_name]:-0}"
   
   if (( flag == 1 )); then
     return 0
@@ -564,7 +618,7 @@ EOF
     echo " - ~/.bashrc 파일에 이미 git 프롬프트 설정이 존재합니다."
   fi
   
-  INSTALLATION_FLAGS["$func_name"]=1
+  EXECUTED_JOB_FLAGS["$func_name"]=1
 }
 
 ##
@@ -578,7 +632,7 @@ EOF
 ##
 _setup_sudoers() {
   local func_name=${FUNCNAME[0]}
-  local flag="${INSTALLATION_FLAGS[$func_name]:-0}"
+  local flag="${EXECUTED_JOB_FLAGS[$func_name]:-0}"
 
   if (( flag == 1 )); then
     return 0
@@ -654,7 +708,7 @@ _setup_sudoers() {
     sudo cp "$tmp_sudoers" "$sudoers_file"
     sudo chmod 440 "$sudoers_file"
     echo_i " - $target_user sudoers 설정이 안전하게 완료되었습니다."
-    INSTALLATION_FLAGS["$func_name"]=1
+    EXECUTED_JOB_FLAGS["$func_name"]=1
   else
     # 검증 실패 시 임시 파일 삭제 후 스크립트 오류 처리
     rm -f "$tmp_sudoers"
@@ -674,7 +728,7 @@ _setup_sudoers() {
 ##
 _install_vim_options() {
   local func_name=${FUNCNAME[0]}
-  local flag="${INSTALLATION_FLAGS[$func_name]:-0}"
+  local flag="${EXECUTED_JOB_FLAGS[$func_name]:-0}"
   
   if (( flag == 1 )); then
     return 0
@@ -713,7 +767,7 @@ EOF
     echo " - [경고] vimrc 파일을 찾지 못해 커스텀 설정을 추가하지 못했습니다."
   fi
   
-  INSTALLATION_FLAGS["$func_name"]=1
+  EXECUTED_JOB_FLAGS["$func_name"]=1
 }
 
 ##
@@ -725,7 +779,7 @@ EOF
 ##
 install_jdk() {  
   local func_name=${FUNCNAME[0]}
-  local flag="${INSTALLATION_FLAGS[$func_name]:-0}"
+  local flag="${EXECUTED_JOB_FLAGS[$func_name]:-0}"
   
   if (( flag == 1 )); then
     return 0
@@ -744,7 +798,7 @@ install_jdk() {
   rm -f "$temp_script"
   echo_i " - JDK 설치가 완료되었습니다."
   
-  INSTALLATION_FLAGS["$func_name"]=1
+  EXECUTED_JOB_FLAGS["$func_name"]=1
 }
 
 ##
@@ -756,7 +810,7 @@ install_jdk() {
 ##
 setup_java_config() {
   local func_name=${FUNCNAME[0]}
-  local flag="${INSTALLATION_FLAGS[$func_name]:-0}"
+  local flag="${EXECUTED_JOB_FLAGS[$func_name]:-0}"
   
   if (( flag == 1 )); then
     return 0
@@ -799,7 +853,7 @@ EOF
     echo " - ~/.bashrc에 이미 update-java-config 설정이 존재합니다."
   fi
   
-  INSTALLATION_FLAGS["$func_name"]=1
+  EXECUTED_JOB_FLAGS["$func_name"]=1
 }
 
 ##
@@ -812,7 +866,7 @@ EOF
 ##
 install_maven() {
   local func_name=${FUNCNAME[0]}
-  local flag="${INSTALLATION_FLAGS[$func_name]:-0}"
+  local flag="${EXECUTED_JOB_FLAGS[$func_name]:-0}"
   
   if (( flag == 1 )); then
     return 0
@@ -836,7 +890,7 @@ install_maven() {
   if [ -d "$target_dir" ]; then
     echo " - Maven 버전 ${mvn_version} 이(가) 이미 존재하므로 설치를 건너뜁니다."
     
-    INSTALLATION_FLAGS["$func_name"]=1
+    EXECUTED_JOB_FLAGS["$func_name"]=1
     
     return 0
   fi
@@ -848,7 +902,7 @@ install_maven() {
   rm -f "$temp_archive"
   echo_i " - Maven 바이너리를 $target_dir 에 설치했습니다."
   
-  INSTALLATION_FLAGS["$func_name"]=1
+  EXECUTED_JOB_FLAGS["$func_name"]=1
 }
 
 ##
@@ -860,7 +914,7 @@ install_maven() {
 ##
 setup_mvn_config() {
   local func_name=${FUNCNAME[0]}
-  local flag="${INSTALLATION_FLAGS[$func_name]:-0}"
+  local flag="${EXECUTED_JOB_FLAGS[$func_name]:-0}"
   
   if (( flag == 1 )); then
     return 0
@@ -903,7 +957,7 @@ EOF
     echo " - ~/.bashrc에 이미 update-mvn-config 설정이 존재합니다."
   fi
   
-  INSTALLATION_FLAGS["$func_name"]=1
+  EXECUTED_JOB_FLAGS["$func_name"]=1
 }
 
 ##
@@ -911,7 +965,7 @@ EOF
 ##
 setup_ssh_key() {
   local func_name=${FUNCNAME[0]}
-  local flag="${INSTALLATION_FLAGS[$func_name]:-0}"
+  local flag="${EXECUTED_JOB_FLAGS[$func_name]:-0}"
   
   if (( flag == 1 )); then
     return 0
@@ -942,7 +996,7 @@ setup_ssh_key() {
   
   chmod 600 "$auth_file"
   
-  INSTALLATION_FLAGS["$func_name"]=1
+  EXECUTED_JOB_FLAGS["$func_name"]=1
 }
 
 # 파라미터가 없는 경우 도움말 호출
@@ -1012,9 +1066,10 @@ fi
 _try_pkg_update
 # 사전 검사를 무사히 통과했다면(도움말 요청이 아님) 기본 도구들을 설치합니다.
 if (( INSTALL_DEFAULT_OPTS == 1 )); then
+  _remove_tools # REMOVED_TOOLS 기반. 삭제할 도구
   _setup_home_bin  
   _setup_sudoers
-  _setup_default_tools # DEFAULT_TOOLS 기반 _install_package 실행
+  _setup_default_tools # DEFAULT_TOOLS 기반. _install_package 실행
   _setup_custom_tools # URL_CUSTOM_TOOL.<식별정보> 배열 기반 자동 처리
   _setup_git_prompt
   _install_vim_options # `vim` 옵션 적용
