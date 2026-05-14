@@ -146,19 +146,22 @@ help(){
   echo ""
   echo "옵션:"
   echo "  -h, --help        : 도움말을 출력합니다."
-  echo "  --all             : '--jdk, --maven'를 설치합니다."
+  echo_i "  --all             : '--jdk, --maven'를 설치합니다."
   echo "  --jdk             : JDK를 설치합니다. 내부적으로 '--java-config'를 진행합니다."
   echo "  --java-config     : update-java-config 스크립트를 설치하고 설정합니다."
   echo "  --maven           : Apache Maven을 설치합니다. 내부적으로 '--mvn-config'를 진행합니다."
   echo "  --mvn-config      : update-mvn-config 스크립트를 설치하고 설정합니다."
   echo "  --ssh-key         : RSA 공개키를 authorized_keys에 등록합니다."
-  echo "  --no-default-opts : 기본 옵션을 설치하지 않습니다."
+  echo_i "  --no-default-opts : 기본 옵션을 설치하지 않습니다."
   echo "                      - _setup_home_bin: $HOME\bin 경로를 \$PATH에 추가하기."
   echo "                      - _setup_sudoers: 특정 사용자를 'sudoers'에 추가하기."
   echo "                      - _setup_default_tools: 기본 도구 설치하기."
   echo "                      - _setup_custom_tools: 사용자 정의 도구 설치하기."
   echo "                      - _setup_git_prompt: 사용자 정의 프롬프트 적용하기. (git branch 추가)"
   echo "                      - _install_vim_options: 사용자 활성화 옵션 적용하기."  
+  echo_i "  --add-sudoers     : 별도로 '_setup_sudoers' 를 진행합니다. '--no-default-opts'이 자동으로 적용됩니다."
+  echo_i "  --default-tools   : 별도로 '_setup_default_tools:' 를 진행합니다. '--no-default-opts'이 자동으로 적용됩니다."
+  echo_i "  --custom-tools    : 별도로 '_setup_custom_tools:' 를 진행합니다. '--no-default-opts'이 자동으로 적용됩니다."
 }
 
 ##
@@ -174,6 +177,61 @@ error_exit() {
   exit 1
 }
 
+# 작업 완료 후 사용자에게 알려야 하는 메시지.
+declare -a NOTICE_MESSAGES=()
+##
+# 사용자에게 전달할 메시지를 저장합니다.
+#
+# @param $1 {string} 저장할 메시지
+# @param $2 {string} 중복인 경우 추가 여부. (기본값: true / true: 중복이어도 추가, false: 중복이면 무시)
+#
+# @return 없음
+##
+_add_notice() {
+  local msg="$1"
+  local forced="${2:-true}"
+
+  # 메시지가 비어있으면 무시
+  if [ -z "$msg" ]; then
+    return 0
+  fi
+
+  # forced=false 인 경우: 중복 메시지 무시
+  if [[ "$forced" == "false" ]]; then
+    local existing
+    for existing in "${NOTICE_MESSAGES[@]}"; do
+      if [[ "$existing" == "$msg" ]]; then
+        return 0
+      fi
+    done
+  fi
+
+  NOTICE_MESSAGES+=("$msg")
+}
+
+##
+# 저장된 모든 공지 메시지를 출력합니다.
+#
+# @param 없음
+#
+# @return 저장된 메시지 목록 (표준 출력)
+##
+_announce_notices() {
+  if (( ${#NOTICE_MESSAGES[@]} == 0 )); then
+    return 0
+  fi
+
+  echo
+  echo "================================================================================"
+  echo "[공지] 작업 완료 후 확인이 필요한 메시지"
+  echo "================================================================================"
+  local idx=1
+  for msg in "${NOTICE_MESSAGES[@]}"; do
+    echo_w " [$(printf "%-3d" "$idx")] $msg"   # ← $idx 쿼팅 추가
+    (( idx++ ))
+  done
+  echo "================================================================================"
+}
 
 # 옵션 설치 여부(값 => 1: 설치완료, 그 외: 미설치)
 declare -A INSTALLATION_FLAGS=()
@@ -199,7 +257,7 @@ _try_pkg_update() {
   if $PKG_UPDATE_CMD; then
     INSTALLATION_FLAGS["$func_name"]=1
   else
-    echo "[경고] 패키지 인덱스 업데이트에 실패했습니다."
+    echo_w "[경고] 패키지 인덱스 업데이트에 실패했습니다."
     return 1
   fi
 }
@@ -316,7 +374,7 @@ _install_completion() {
       if [[ "$ch" == "y" || "$ch" == "Y" ]]; then
         # [수정] mv 실패 시 임시 파일 삭제 및 에러 처리
         sudo mv "$temp_comp" "$target_comp_file" || { rm -f "$temp_comp"; error_exit "${target_cmd} completion 파일 업데이트 실패" "$LINENO"; }
-        echo " - ${target_cmd} completion 파일이 업데이트되었습니다."
+        echo_i " - ${target_cmd} completion 파일이 업데이트되었습니다."
         installed=1
       else
         echo " - ${target_cmd} completion 파일 설치를 유지합니다."
@@ -329,7 +387,7 @@ _install_completion() {
   else
     # [수정] mv 실패 시 임시 파일 삭제 및 에러 처리
     sudo mv "$temp_comp" "$target_comp_file" || { rm -f "$temp_comp"; error_exit "${target_cmd} completion 파일 설치 실패" "$LINENO"; }
-    echo " - ${target_cmd} completion 파일을 설치했습니다."
+    echo_i " - ${target_cmd} completion 파일을 설치했습니다."
     installed=1
   fi
   
@@ -345,6 +403,10 @@ _install_completion() {
       # 서브 쉘(./setup-env.sh)로 실행된 경우 → 안내 메시지 출력
       echo_w " - [안내] ${target_cmd} 자동완성을 현재 터미널에 즉시 적용하려면 아래 명령을 실행하세요:"
       echo_w "   source \"$target_comp_file\""
+      
+      _add_notice "### ${target_cmd} 자동완성 추가 작업 ###"
+      _add_notice " - 현재 터미널에 즉시 적용하려면 아래 명령을 실행하세요:" 
+      _add_notice "   source \"$target_comp_file\""
     fi
   fi
 }
@@ -374,7 +436,7 @@ _install_custom_tools() {
       read -r -p "> '$target_cmd' 실행 파일 내용이 다릅니다. 업데이트하시겠습니까? (y/n): " ch
       if [[ "$ch" == "y" || "$ch" == "Y" ]]; then
         mv "$temp_bin" "$bin_dir/$target_cmd" && chmod +x "$bin_dir/$target_cmd"
-        echo " - '$target_cmd' 실행 파일이 업데이트되었습니다."
+        echo_i " - '$target_cmd' 실행 파일이 업데이트되었습니다."
       else
         echo " - '$target_cmd' 실행 파일 설치를 유지합니다."
         rm -f "$temp_bin"
@@ -385,7 +447,7 @@ _install_custom_tools() {
     fi
   else
     mkdir -p "$bin_dir" && mv "$temp_bin" "$bin_dir/$target_cmd" && chmod +x "$bin_dir/$target_cmd"
-    echo " - '$target_cmd' 실행 파일을 설치했습니다."
+    echo_i " - '$target_cmd' 실행 파일을 설치했습니다."
   fi
 
   # 공통 함수를 호출하여 completion 다운로드 및 설치 위임 (URL은 tool_url.completion 규칙 적용)
@@ -415,7 +477,7 @@ _setup_custom_tools() {
       fi
     done
   else
-    echo " - 설정된 커스텀 도구가 없습니다."
+    echo_w " - 설정된 커스텀 도구가 없습니다."
   fi
   
   INSTALLATION_FLAGS["$func_name"]=1
@@ -438,11 +500,11 @@ _setup_home_bin() {
   
   echo
   echo "############### $func_name ###############"
-  echo "[진행] ~/bin 디렉토리 설정 중..."
+  echo "[진행] $HOME/bin 디렉토리 설정 중..."
   local bin_dir="$HOME/bin"
   if [ ! -d "$bin_dir" ]; then
     mkdir -p "$bin_dir" || error_exit "~/bin 디렉토리 생성 실패" "$LINENO"
-    echo " - ~/bin 디렉토리를 생성했습니다."
+    echo_i " - ~/bin 디렉토리를 생성했습니다."
   fi
   if ! grep -q "PATH=\$PATH:$bin_dir" "$HOME/.bashrc"; then
     echo "PATH=\$PATH:$bin_dir" >> "$HOME/.bashrc" || error_exit "$HOME/.bashrc 파일 수정 실패" "$LINENO"
@@ -453,10 +515,15 @@ _setup_home_bin() {
       echo_i " - $HOME/bin -> \$PATH 경로 추가가 현재 터미널에 즉시 적용되었습니다."
     else
       # 서브 쉘(./setup-env.sh)로 실행된 경우 → 안내 메시지 출력
-      echo_i " - $HOME/.bashrc 파일에 PATH 설정을 추가했습니다."
+      echo_i " - $HOME/.bashrc 파일에 PATH 설정에 '$HOME/bin' 을 추가했습니다."
       echo_w " - 현재 터미널에 즉시 반영하려면 다음 명령을 실행하세요:"
       echo_w "   source ~/.bashrc"
       echo_w " - 또는 새 터미널을 열면 적용됩니다."
+      
+      _add_notice "### $HOME/bin -> \$PATH 추가 작업 ###"
+      _add_notice " - $HOME/.bashrc 파일에 PATH 설정에 '$HOME/bin' 을 추가했습니다." false
+      _add_notice " - 현재 터미널에 즉시 반영하려면 다음 명령을 실행하세요:" false
+      _add_notice "   source ~/.bashrc" false
     fi
   else
     echo " - ~/.bashrc 파일에 이미 PATH 설정이 존재합니다."
@@ -512,15 +579,15 @@ EOF
 _setup_sudoers() {
   local func_name=${FUNCNAME[0]}
   local flag="${INSTALLATION_FLAGS[$func_name]:-0}"
-  
+
   if (( flag == 1 )); then
     return 0
   fi
-  
+
   echo
   echo "############### $func_name ###############"
   echo "[진행] 사용자 sudoers 설정 중..."
-  
+
   # 1. 기본값으로 사용할 현재 접속 계정 확인
   local current_user="${USER:-$(whoami)}"
   local target_user=""
@@ -528,29 +595,41 @@ _setup_sudoers() {
 
   # 2. Ctrl+C (SIGINT) 입력 시 전체 종료를 막고 플래그만 변경하도록 트랩 설정
   trap 'interrupted=1' SIGINT
-  
-  # 3. 사용자 입력 대기
-  read -r -p "> sudoers에 등록할 사용자 계정을 입력하세요 (기본값: $current_user) [취소: Ctrl+C]: " target_user
-  
+
+  # 3. 유효한 사용자 계정이 입력될 때까지 반복
+  while true; do
+
+    # 3-1. 사용자 입력 대기
+    read -r -p "> sudoers에 등록할 사용자 계정을 입력하세요 (기본값: $current_user) [취소: Ctrl+C 후 'Enter']: " target_user
+
+    # 3-2. Ctrl+C가 눌렸을 경우 (interrupted 플래그 확인)
+    if (( interrupted == 1 )); then
+      echo -e "\n - [취소] sudoers 설정을 취소합니다."
+      trap - SIGINT
+      return 0
+    fi
+
+    # 3-3. 입력값이 비어있으면 기본값(현재 사용자)으로 설정
+    if [ -z "$target_user" ]; then
+      target_user="$current_user"
+    fi
+
+    # 3-4. 시스템에 존재하는 사용자인지 검증
+    #       존재하지 않으면 경고 메시지 출력 후 재입력 요청
+    if ! id "$target_user" &>/dev/null; then
+      echo_w " - [경고] '$target_user' 사용자가 시스템에 존재하지 않습니다. 다시 입력해 주세요."
+      target_user=""   # 초기화 후 루프 재시작
+      continue
+    fi
+
+    # 3-5. 유효한 사용자 확인 → 루프 종료
+    break
+  done
+
   # 4. 입력 종료 후 트랩 해제 (기본 동작으로 복구)
   trap - SIGINT
-  
-  # Ctrl+C가 눌렸을 경우 (interrupted 플래그 확인)
-  if [ "$interrupted" -eq 1 ]; then
-    echo -e "\n - [취소] sudoers 설정을 건너뛰고 다음 단계로 진행합니다."
-    return 0
-  fi
 
-  # 입력값이 비어있으면 기본값(현재 사용자)으로 설정
-  if [ -z "$target_user" ]; then
-    target_user="$current_user"
-  fi
-  
   local sudoers_file="/etc/sudoers.d/$target_user"
-
-  if ! id "$target_user" &>/dev/null; then
-    error_exit "'$target_user' 사용자가 시스템에 존재하지 않습니다." "$LINENO"
-  fi
 
   # 5. OS에 따라 패키지 매니저 경로를 추가
   local os_pkg_cmd=""
@@ -559,7 +638,7 @@ _setup_sudoers() {
   elif [ "$PKG_MANAGER" == "dnf" ]; then
     os_pkg_cmd="/usr/bin/dnf, "
   fi
-  
+
   local full_no_pw_cmds="${os_pkg_cmd}${NO_PASSWORD_COMMANDS}"
 
   # 6. 임시 파일을 생성하여 설정 작성
@@ -568,14 +647,13 @@ _setup_sudoers() {
 
   echo "$target_user ALL=(ALL) ALL" > "$tmp_sudoers"
   echo "$target_user ALL=(ALL) NOPASSWD: $full_no_pw_cmds" >> "$tmp_sudoers"
-  
+
   # 7. visudo를 이용해 임시 파일 문법 사전 검증 (-c: 검사, -f: 지정 파일)
   if sudo visudo -c -f "$tmp_sudoers" &>/dev/null; then
     # 검증 성공 시에만 실제 경로로 복사 및 권한 부여
     sudo cp "$tmp_sudoers" "$sudoers_file"
     sudo chmod 440 "$sudoers_file"
-    echo " - $target_user sudoers 설정이 안전하게 완료되었습니다."
-    
+    echo_i " - $target_user sudoers 설정이 안전하게 완료되었습니다."
     INSTALLATION_FLAGS["$func_name"]=1
   else
     # 검증 실패 시 임시 파일 삭제 후 스크립트 오류 처리
@@ -664,7 +742,7 @@ install_jdk() {
   chmod +x "$temp_script"
   sudo "$temp_script" || error_exit "JDK 설치 스크립트 실행 실패" "$LINENO"
   rm -f "$temp_script"
-  echo " - JDK 설치가 완료되었습니다."
+  echo_i " - JDK 설치가 완료되었습니다."
   
   INSTALLATION_FLAGS["$func_name"]=1
 }
@@ -716,7 +794,7 @@ function update-java-config() {
     fi
 }
 EOF
-    echo " - ~/.bashrc에 update-java-config 래퍼 함수를 추가했습니다."
+    echo_i " - ~/.bashrc에 update-java-config 래퍼 함수를 추가했습니다."
   else
     echo " - ~/.bashrc에 이미 update-java-config 설정이 존재합니다."
   fi
@@ -768,7 +846,7 @@ install_maven() {
   sudo mkdir -p /opt || error_exit "/opt 디렉토리 생성 실패" "$LINENO"
   sudo tar -xzf "$temp_archive" -C /opt/ || error_exit "Maven 압축 해제 실패" "$LINENO"
   rm -f "$temp_archive"
-  echo " - Maven 바이너리를 $target_dir 에 설치했습니다."
+  echo_i " - Maven 바이너리를 $target_dir 에 설치했습니다."
   
   INSTALLATION_FLAGS["$func_name"]=1
 }
@@ -820,7 +898,7 @@ function update-mvn-config() {
     fi  
 }
 EOF
-    echo " - ~/.bashrc에 update-mvn-config 래퍼 함수를 추가했습니다."
+    echo_i " - ~/.bashrc에 update-mvn-config 래퍼 함수를 추가했습니다."
   else
     echo " - ~/.bashrc에 이미 update-mvn-config 설정이 존재합니다."
   fi
@@ -856,7 +934,7 @@ setup_ssh_key() {
     # 정규표현식 특수문자(+) 오작동 방지를 위해 고정 문자열 검색 옵션(-F) 사용
     if ! grep -qF "$key_body" "$auth_file"; then
       echo "$public_key" >> "$auth_file"
-      echo " - 공개키를 등록했습니다: ${public_key:0:30}..."
+      echo_i " - 공개키를 등록했습니다: ${public_key:0:30}..."
     else
       echo " - 이미 등록된 키입니다: ${public_key:0:30}..."
     fi
@@ -912,7 +990,13 @@ for arg in "$@"; do
     --ssh-key | \
     --all)
       APPROVED_OPTS=1
-      ;;    
+      ;;
+    --add-sudoers | \
+    --default-tools | \
+    --custom-tools)
+      APPROVED_OPTS=1
+      INSTALL_DEFAULT_OPTS=0
+      ;;
   esac  
 done
 
@@ -970,10 +1054,29 @@ while [[ "$#" -gt 0 ]]; do
       setup_ssh_key
       shift
       ;;
+    --add-sudoers)
+      _setup_sudoers
+      shift
+      ;;
+    --default-tools)
+      _setup_default_tools
+      shift
+      ;;
+    --custom-tools)
+      _setup_custom_tools
+      shift
+      ;;
     *)
-      error_exit "알 수 없는 옵션: $1" "$LINENO"
+      echo
+      echo_e "############### $1 ###############"
+      echo_e "지원하지 않는 옵션입니다. 옵션: $1"
+      echo
+      shift
       ;;
   esac
 done
+
+_announce_notices
+echo
 
 exit 0
