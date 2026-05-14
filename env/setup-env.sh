@@ -65,12 +65,12 @@ while IFS='=' read -r key value || [ -n "$key" ]; do
   # 일반 변수만 처리 (배열 식별용 점(.)이 포함된 키는 제외)
   if [[ ! "$key" =~ \. ]]; then    
     # [보안 처리] 허용된 변수명 패턴만 등록 (URL_로 시작하거나 특정 키워드인 경우)
-    if [[ "$key" =~ ^(URL_[A-Z0-9_]+|NO_PASSWORD_COMMANDS|DEFAULT_TOOLS)$ ]]; then      
+    #if [[ "$key" =~ ^(URL_[A-Z0-9_]+|NO_PASSWORD_COMMANDS|DEFAULT_TOOLS|REMOVED_TOOLS)$ ]]; then      
       # export 대신 declare -g 를 사용하여 현재 스크립트 실행 범위 내에서만 변수 등록
-      declare -g "$key"="$value"      
-    else
-      echo " - [보안 경고] 허용되지 않은 키명($key)은 시스템 보호를 위해 무시됩니다."
-    fi
+    declare -g "$key"="$value"      
+    #else
+      #echo " - [보안 경고] 허용되지 않은 키명($key)은 시스템 보호를 위해 무시됩니다."
+    #fi
   fi
 done < "$CONFIG_FILE"
 
