@@ -30,7 +30,7 @@ _setup_env_completion() {
   COMPREPLY=()
   cur="${COMP_WORDS[COMP_CWORD]}"
   # 옵션 목록에 신규 파라미터 추가
-  opts="-h --help --all --bin --vim --git --jdk --java-config --maven --mvn-config --ssh-key --sudoers"
+  opts="-h --help --all --jdk --java-config --maven --mvn-config --ssh-key --no-default-opts --add-sudoers --default-tools --custom-tools"
 
   local filter_opts=""
   for opt in $opts; do
