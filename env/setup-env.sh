@@ -68,7 +68,7 @@ while IFS='=' read -r key value || [ -n "$key" ]; do
   # 일반 변수만 처리 (배열 식별용 점(.)이 포함된 키는 제외)
   if [[ ! "$key" =~ \. ]]; then    
     # [보안 처리] 허용된 변수명 패턴만 등록 (URL_로 시작하거나 특정 키워드인 경우)
-    #if [[ "$key" =~ ^(URL_[A-Z0-9_]+|NO_PASSWORD_COMMANDS|DEFAULT_TOOLS|REMOVED_TOOLS)$ ]]; then      
+    #if [[ "$key" =~ ^(URL_[A-Z0-9_]+|NO_PASSWORD_COMMANDS|INSTALL_PACKAGES|REMOVE_PACKAGES)$ ]]; then      
       # export 대신 declare -g 를 사용하여 현재 스크립트 실행 범위 내에서만 변수 등록
     declare -g "$key"="$value"      
     #else
@@ -148,23 +148,24 @@ help(){
   echo "  ./$FILENAME [옵션]"
   echo ""
   echo "옵션:"
-  echo "  -h, --help        : 도움말을 출력합니다."
-  echo_i "  --all             : '--jdk, --maven'를 설치합니다."
-  echo "  --jdk             : JDK를 설치합니다. 내부적으로 '--java-config'를 진행합니다."
-  echo "  --java-config     : update-java-config 스크립트를 설치하고 설정합니다."
-  echo "  --maven           : Apache Maven을 설치합니다. 내부적으로 '--mvn-config'를 진행합니다."
-  echo "  --mvn-config      : update-mvn-config 스크립트를 설치하고 설정합니다."
-  echo "  --ssh-key         : RSA 공개키를 authorized_keys에 등록합니다."
-  echo_i "  --no-default-opts : 기본 옵션을 설치하지 않습니다."
-  echo "                      - _setup_home_bin: $HOME\bin 경로를 \$PATH에 추가하기."
-  echo "                      - _setup_sudoers: 특정 사용자를 'sudoers'에 추가하기."
-  echo "                      - _setup_default_tools: 기본 도구 설치하기."
-  echo "                      - _setup_custom_tools: 사용자 정의 도구 설치하기."
-  echo "                      - _setup_git_prompt: 사용자 정의 프롬프트 적용하기. (git branch 추가)"
-  echo "                      - _install_vim_options: 사용자 활성화 옵션 적용하기."  
-  echo_i "  --add-sudoers     : 별도로 '_setup_sudoers' 를 진행합니다. '--no-default-opts'이 자동으로 적용됩니다."
-  echo_i "  --default-tools   : 별도로 '_setup_default_tools:' 를 진행합니다. '--no-default-opts'이 자동으로 적용됩니다."
-  echo_i "  --custom-tools    : 별도로 '_setup_custom_tools:' 를 진행합니다. '--no-default-opts'이 자동으로 적용됩니다."
+  echo "  -h, --help         : 도움말을 출력합니다."
+  echo_i "  --all              : '--jdk, --maven'를 설치합니다."
+  echo "  --jdk              : JDK를 설치합니다. 내부적으로 '--java-config'를 진행합니다."
+  echo "  --java-config      : update-java-config 스크립트를 설치하고 설정합니다."
+  echo "  --maven            : Apache Maven을 설치합니다. 내부적으로 '--mvn-config'를 진행합니다."
+  echo "  --mvn-config       : update-mvn-config 스크립트를 설치하고 설정합니다."
+  echo "  --ssh-key          : RSA 공개키를 authorized_keys에 등록합니다."
+  echo_i "  --no-default-opts  : 기본 옵션을 설치하지 않습니다."
+  echo "                       - _setup_home_bin: $HOME\bin 경로를 \$PATH에 추가하기."
+  echo "                       - setup_sudoers: 특정 사용자를 'sudoers'에 추가하기."
+  echo "                       - install_packages: 기본 도구 설치하기."
+  echo "                       - setup_custom_tools: 사용자 정의 도구 설치하기."
+  echo "                       - _setup_git_prompt: 사용자 정의 프롬프트 적용하기. (git branch 추가)"
+  echo "                       - _install_vim_options: 사용자 활성화 옵션 적용하기."  
+  echo_i "  --add-sudoers      : 별도로 'setup_sudoers' 를 진행합니다. '--no-default-opts'이 자동으로 적용됩니다."
+  echo_i "  --install-packages : 별도로 'install_packages' 를 진행합니다. '--no-default-opts'이 자동으로 적용됩니다."
+  echo_i "  --remove-packages  : 별도로 'remove_packages' 를 진행합니다. '--no-default-opts'이 자동으로 적용됩니다."
+  echo_i "  --custom-tools     : 별도로 'setup_custom_tools:' 를 진행합니다. '--no-default-opts'이 자동으로 적용됩니다."
 }
 
 ##
@@ -268,6 +269,26 @@ _try_pkg_update() {
 }
 
 ##
+# OS별 패키지 매니저를 통해 실제 패키지가 설치되어 있는지 확인합니다.
+#
+# @param $1 {string} 패키지 이름
+#
+# @return 0(설치됨) 또는 1(설치 안 됨)
+##
+_is_package_installed() {
+  local pkg_name="$1"
+  if [ "$PKG_MANAGER" == "apt" ]; then
+    # Ubuntu/Debian: dpkg를 통해 상태가 'install ok installed' 인지 확인
+    dpkg -s "$pkg_name" 2>/dev/null | grep -q "Status: install ok installed"
+  elif [ "$PKG_MANAGER" == "dnf" ]; then
+    # Rocky/RHEL: rpm -q 를 통해 설치 여부 확인 (매우 빠름)
+    rpm -q "$pkg_name" &>/dev/null
+  else
+    return 1
+  fi
+}
+
+##
 # OS에 맞는 패키지 매니저로 설치를 진행합니다.
 #
 # @param $1 {string} 패키지 이름
@@ -283,12 +304,14 @@ _install_package() {
     return 0
   fi
 
-  if ! command -v "$package_name" &> /dev/null; then  
-    echo "[진행] $package_name 설치 중..."
-    $PKG_INSTALL_CMD "$package_name" || error_exit "$package_name 설치 실패" "$LINENO"
+  # [개선] OS 패키지 매니저를 통한 정확한 설치 여부 확인
+  if ! _is_package_installed "$package_name"; then  
+    echo "[진행] '$package_name' 설치 중..."
+    $PKG_INSTALL_CMD "$package_name" || error_exit "'$package_name' 설치 실패" "$LINENO"
 
     EXECUTED_JOB_FLAGS["$func_name.$package_name"]=1
   else
+    echo_w " - '$package_name' 패키지가 이미 설치되어 있습니다."
     EXECUTED_JOB_FLAGS["$func_name.$package_name"]=1
   fi
 }
@@ -309,12 +332,15 @@ _remove_package(){
     return 0
   fi
 
-  if ! command -v "$package_name" &> /dev/null; then  
-    echo "[진행] $package_name 제거 중..."
-    $PKG_REMOVE_CMD "$package_name" || error_exit "$package_name 제거 실패" "$LINENO"
+  # [개선 및 논리버그 수정] 패키지가 실제로 설치되어 있을 때만(!) 삭제 진행
+  if _is_package_installed "$package_name"; then  
+    echo "[진행] '$package_name' 제거 중..."
+
+    $PKG_REMOVE_CMD "$package_name" || error_exit "'$package_name' 제거 실패" "$LINENO"
 
     EXECUTED_JOB_FLAGS["$func_name.$package_name"]=1
   else
+    echo_w " - '$package_name' 패키지가 시스템에 존재하지 않아 제거를 건너뜁니다."
     EXECUTED_JOB_FLAGS["$func_name.$package_name"]=1
   fi
 }
@@ -322,7 +348,7 @@ _remove_package(){
 ##
 # 기본적으로 설치된 도구 중에 사용하지 않는 것을 제거합니다.
 ## 
-_remove_tools(){
+remove_packages(){
   local func_name=${FUNCNAME[0]}
   local flag="${EXECUTED_JOB_FLAGS[$func_name]:-0}"
   
@@ -332,10 +358,10 @@ _remove_tools(){
 
   echo
   echo "############### $func_name ###############"
-  IFS=',' read -ra TOOLS <<< "$DEFAULT_TOOLS"
-  for tool in "${TOOLS[@]}"; do
-    tool=$(echo "$tool" | xargs) # 양옆 공백 제거
-    _remove_package "$tool"
+  IFS=',' read -ra PKGS <<< "$REMOVE_PACKAGES"
+  for pkg in "${PKGS[@]}"; do
+    pkg=$(echo "$pkg" | xargs) # 양옆 공백 제거
+    _remove_package "$pkg"
   done
   
   EXECUTED_JOB_FLAGS["$func_name"]=1
@@ -343,9 +369,9 @@ _remove_tools(){
 
 
 ##
-# 외부 설정파일의 DEFAULT_TOOLS를 읽어 공통 설치 함수를 통해 설치합니다.
+# 외부 설정파일의 INSTALL_PACKAGES를 읽어 공통 설치 함수를 통해 설치합니다.
 ##
-_setup_default_tools() {
+install_packages() {
   local func_name=${FUNCNAME[0]}
   local flag="${EXECUTED_JOB_FLAGS[$func_name]:-0}"
   
@@ -355,10 +381,10 @@ _setup_default_tools() {
 
   echo
   echo "############### $func_name ###############"
-  IFS=',' read -ra TOOLS <<< "$DEFAULT_TOOLS"
-  for tool in "${TOOLS[@]}"; do
-    tool=$(echo "$tool" | xargs) # 양옆 공백 제거
-    _install_package "$tool"
+  IFS=',' read -ra PKGS <<< "$INSTALL_PACKAGES"
+  for pkg in "${PKGS[@]}"; do
+    pkg=$(echo "$pkg" | xargs) # 양옆 공백 제거
+    _install_package "$pkg"
   done
   
   EXECUTED_JOB_FLAGS["$func_name"]=1
@@ -516,7 +542,7 @@ _install_custom_tools() {
 #
 # @return 진행 상황 메시지 (표준 출력)
 ##
-_setup_custom_tools() {
+setup_custom_tools() {
   local func_name=${FUNCNAME[0]}
   local flag="${EXECUTED_JOB_FLAGS[$func_name]:-0}"
   
@@ -630,7 +656,7 @@ EOF
 #
 # @return 진행 상황 메시지 (표준 출력)
 ##
-_setup_sudoers() {
+setup_sudoers() {
   local func_name=${FUNCNAME[0]}
   local flag="${EXECUTED_JOB_FLAGS[$func_name]:-0}"
 
@@ -1006,7 +1032,7 @@ if [ $# -eq 0 ]; then
 fi
 
 # ==========================================
-# 파라미터 중복 제거 로직
+# 파라미터 중복 제거 및 우선순위/종속성 처리 로직
 # ==========================================
 declare -a UNIQUE_ARGS=()
 declare -A SEEN_ARGS=()
@@ -1018,22 +1044,59 @@ for arg in "$@"; do
   fi
 done
 
-# 기존 파라미터($@)를 중복이 제거된 배열로 덮어쓰기
+# [규칙 1] "-h, --help" 처리 (가장 최우선 실행 후 종료)
+for arg in "${UNIQUE_ARGS[@]}"; do
+  if [[ "$arg" == "-h" || "$arg" == "--help" ]]; then
+    help
+    exit 0
+  fi
+done
+
+# [규칙 2] "--all" 이 있다면 다른 모든 파라미터 무시
+if [[ -n "${SEEN_ARGS[--all]}" ]]; then
+  UNIQUE_ARGS=("--all")
+else
+  # [규칙 4 & 5] 종속 옵션(--java-config, --mvn-config) 제거
+  declare -a FILTERED_ARGS=()
+  for arg in "${UNIQUE_ARGS[@]}"; do
+    # --jdk가 있는데 --java-config가 들어왔다면 무시
+    if [[ "$arg" == "--java-config" && -n "${SEEN_ARGS[--jdk]}" ]]; then
+      continue
+    fi
+    # --maven이 있는데 --mvn-config가 들어왔다면 무시
+    if [[ "$arg" == "--mvn-config" && -n "${SEEN_ARGS[--maven]}" ]]; then
+      continue
+    fi
+    FILTERED_ARGS+=("$arg")
+  done
+  
+  # [규칙 3] "--remove-packages" 가 "--install-packages" 보다 무조건 먼저 실행되도록 재배치
+  if [[ -n "${SEEN_ARGS[--remove-packages]}" && -n "${SEEN_ARGS[--install-packages]}" ]]; then
+    declare -a REORDERED_ARGS=("--remove-packages")
+    for arg in "${FILTERED_ARGS[@]}"; do
+      if [[ "$arg" != "--remove-packages" && "$arg" != "--install-packages" ]]; then
+        REORDERED_ARGS+=("$arg")
+      fi
+    done
+    REORDERED_ARGS+=("--install-packages")
+    UNIQUE_ARGS=("${REORDERED_ARGS[@]}")
+  else
+    UNIQUE_ARGS=("${FILTERED_ARGS[@]}")
+  fi
+fi
+
+# 정제된 최종 파라미터($@) 덮어쓰기
 set -- "${UNIQUE_ARGS[@]}"
 
 # 기본 설치 옵션 적용 여부 (1: 적용, 그 외: 미적용)
 INSTALL_DEFAULT_OPTS=1
 APPROVED_OPTS=0
+
 # ==========================================
 # 1. 옵션 사전 검사 (Pre-pass)
 # ==========================================
-# 파라미터 중 어디에라도 -h 또는 --help가 있다면 다른 작업 없이 도움말만 출력하고 즉시 종료합니다.
 for arg in "$@"; do
   case "$arg" in
-    -h | --help)
-      help
-      exit 0
-      ;;
     --no-default-opts)
       INSTALL_DEFAULT_OPTS=0
       ;;
@@ -1046,7 +1109,8 @@ for arg in "$@"; do
       APPROVED_OPTS=1
       ;;
     --add-sudoers | \
-    --default-tools | \
+    --install-packages | \
+    --remove-packages | \
     --custom-tools)
       APPROVED_OPTS=1
       INSTALL_DEFAULT_OPTS=0
@@ -1066,13 +1130,13 @@ fi
 _try_pkg_update
 # 사전 검사를 무사히 통과했다면(도움말 요청이 아님) 기본 도구들을 설치합니다.
 if (( INSTALL_DEFAULT_OPTS == 1 )); then
-  _remove_tools # REMOVED_TOOLS 기반. 삭제할 도구
   _setup_home_bin  
-  _setup_sudoers
-  _setup_default_tools # DEFAULT_TOOLS 기반. _install_package 실행
-  _setup_custom_tools # URL_CUSTOM_TOOL.<식별정보> 배열 기반 자동 처리
   _setup_git_prompt
   _install_vim_options # `vim` 옵션 적용
+  setup_sudoers
+  remove_packages # REMOVE_PACKAGES 기반. 삭제할 도구
+  install_packages # INSTALL_PACKAGES 기반. _install_package 실행
+  setup_custom_tools # URL_CUSTOM_TOOL.<식별정보> 배열 기반 자동 처리
 fi
 
 # ==========================================
@@ -1103,22 +1167,26 @@ while [[ "$#" -gt 0 ]]; do
       setup_ssh_key
       shift
       ;;
+    --add-sudoers)
+      setup_sudoers
+      shift
+      ;;
+    --remove-packages)
+      remove_packages
+      shift
+      ;;
+    --install-packages)
+      install_packages
+      shift
+      ;;
+    --custom-tools)
+      setup_custom_tools
+      shift
+      ;;
     --all)
       install_jdk
       install_maven
       setup_ssh_key
-      shift
-      ;;
-    --add-sudoers)
-      _setup_sudoers
-      shift
-      ;;
-    --default-tools)
-      _setup_default_tools
-      shift
-      ;;
-    --custom-tools)
-      _setup_custom_tools
       shift
       ;;
     *)
