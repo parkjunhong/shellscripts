@@ -729,7 +729,7 @@ setup_sudoers() {
     fi
 
     # 3-4. 시스템에 존재하는 사용자인지 검증
-    #       존재하지 않으면 경고 메시지 출력 후 재입력 요청
+    #        존재하지 않으면 경고 메시지 출력 후 재입력 요청
     if ! id "$target_user" &>/dev/null; then
       echo_w " - [경고] '$target_user' 사용자가 시스템에 존재하지 않습니다. 다시 입력해 주세요."
       target_user=""   # 초기화 후 루프 재시작
@@ -764,10 +764,12 @@ setup_sudoers() {
 
   # 7. visudo를 이용해 임시 파일 문법 사전 검증 (-c: 검사, -f: 지정 파일)
   if sudo visudo -c -f "$tmp_sudoers" &>/dev/null; then
-    # 검증 성공 시에만 실제 경로로 복사 및 권한 부여
-    sudo cp "$tmp_sudoers" "$sudoers_file"
+  
+    # [핵심 수정 부분] 읽기 전용(440) 파일에도 안전하고 확실하게 내용을 덮어쓰도록 tee 명령어 사용
+    cat "$tmp_sudoers" | sudo tee "$sudoers_file" > /dev/null
+    
     sudo chmod 440 "$sudoers_file"
-    echo_i " - $target_user sudoers 설정이 안전하게 완료되었습니다."
+    echo_i " - $target_user sudoers 설정이 안전하게 업데이트(반영) 되었습니다."
     EXECUTED_JOB_FLAGS["$func_name"]=1
     
     # 작업 완료 후 임시 파일 안전하게 정리
