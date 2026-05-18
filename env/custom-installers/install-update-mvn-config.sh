@@ -1,43 +1,5 @@
 #!/usr/bin/env bash
 
-##
-# 오류 메시지를 출력하고 도움말을 호출한 뒤 프로그램을 종료합니다.
-#
-# @param $1 {string} 발생한 오류 원인 메시지
-# @param $2 {string} 오류가 발생한 라인 번호
-#
-# @return 없음 (스크립트 종료)
-##
-error_exit() {
-  help "$1" "$2"
-  exit 1
-}
-
-# ==========================================
-# 터미널 출력 색상 정의
-# ==========================================
-if [ -t 1 ]; then
-  COLOR_ERROR='\033[1;31m'  # 오류, '31m': 빨강
-  COLOR_WARN='\033[1;33m'   # 경고, '33m': 노랑
-  COLOR_INFO='\033[1;32m'   # 정보, '32m': 녹색
-  COLOR_NC='\033[0m'        # 색상 초기화
-else
-  COLOR_ERROR=''            # 오류
-  COLOR_WARN=''             # 경고
-  COLOR_INFO=''             # 정보
-  COLOR_NC=''               # 색상 초기화
-fi
-
-echo_e() {
-  printf "${COLOR_ERROR}%s${COLOR_NC}\n" "$*"
-}
-echo_w() {
-  printf "${COLOR_WARN}%s${COLOR_NC}\n" "$*"
-}
-echo_i() {
-  printf "${COLOR_INFO}%s${COLOR_NC}\n" "$*"
-}
-
 echo "[진행] update-mvn-config 설정 중..."
 bin_dir="$HOME/bin"
 dest_path="$bin_dir/update-mvn-config"
