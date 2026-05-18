@@ -14,95 +14,6 @@
 FILENAME=$(basename "$0")
 
 # ==========================================
-# 전역 변수: 패키지 매니저 환경 자동 판별
-# ==========================================
-PKG_MANAGER=""
-PKG_UPDATE_CMD=""
-PKG_INSTALL_CMD=""
-PKG_REMOVE_CMD=""
-
-if command -v apt &> /dev/null; then
-  PKG_MANAGER="apt"
-  PKG_UPDATE_CMD="sudo apt update"
-  PKG_INSTALL_CMD="sudo apt install -y"
-  PKG_REMOVE_CMD="sudo apt purge -y"
-elif command -v dnf &> /dev/null; then
-  PKG_MANAGER="dnf"
-  PKG_UPDATE_CMD="sudo dnf makecache"
-  PKG_INSTALL_CMD="sudo dnf install -y"
-  PKG_REMOVE_CMD="sudo dnf remove -y"
-else
-  echo "[ERROR] 지원하지 않는 운영체제입니다. (apt 또는 dnf가 필요합니다.)"
-  exit 1
-fi
-
-# ==========================================
-# 외부 설정 파일(Properties) 다운로드 및 로드
-# ==========================================
-CONFIG_URL="https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main/env/configurations.properties"
-CONFIG_FILE="/tmp/configurations.properties"
-
-if ! command -v curl &> /dev/null; then
-  echo "[진행] curl 임시 설치 중 (설정 파일 다운로드용)..."
-  $PKG_UPDATE_CMD > /dev/null 2>&1
-  $PKG_INSTALL_CMD curl > /dev/null 2>&1
-fi
-
-# ---------------------------------------------------------
-# curl -f 옵션 추가 및 예외 처리 완화
-# 1. -f 옵션: 404 등 서버 에러 시 다운로드를 실패 처리함
-# 2. || 구문: 파일이 없을 경우 전체 스크립트를 중단하지 않고 설치만 건너뜀
-# ---------------------------------------------------------
-if ! curl -sfLo "$CONFIG_FILE" "$CONFIG_URL"; then
-  echo_e "[ERROR] 외부 설정 파일($CONFIG_URL)이 존재하지 않아 다운로드할 수 없습니다."
-  echo_e "[ERROR] 설치를 취소합니다."
-  rm -f "$CONFIG_FILE"
-  exit 1
-fi 
-
-# ---------------------------------------------------------
-# Properties 파일을 가장 안전하게 파싱하여 변수로 등록
-# - 쌍따옴표("), 따옴표('), 공백, 특수문자($) 등이 있어도 오류가 나지 않음
-# - [보안] Whitelist 방식을 적용하여 시스템 변수 오염(Environment Injection) 완벽 방지
-# ---------------------------------------------------------
-while IFS='=' read -r key value || [ -n "$key" ]; do
-  # 주석(#)이거나 빈 줄이면 건너뛰기
-  if [[ "$key" =~ ^[[:space:]]*# ]] || [[ -z "$key" ]]; then
-    continue
-  fi
-
-  # Key와 Value의 양옆 공백 제거 (Value 내부의 띄어쓰기는 그대로 유지됨)
-  key=$(echo "$key" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')  
-  value=$(printf '%s' "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-
-  # 일반 변수만 처리 (배열 식별용 점(.)이 포함된 키는 제외)
-  if [[ ! "$key" =~ \. ]]; then    
-    # [보안 처리] 허용된 변수명 패턴만 등록 (URL_로 시작하거나 특정 키워드인 경우)
-    #if [[ "$key" =~ ^(URL_[A-Z0-9_]+|NO_PASSWORD_COMMANDS|INSTALL_PACKAGES|REMOVE_PACKAGES)$ ]]; then      
-      # export 대신 declare -g 를 사용하여 현재 스크립트 실행 범위 내에서만 변수 등록
-    declare -g "$key"="$value"      
-    #else
-      #echo " - [보안 경고] 허용되지 않은 키명($key)은 시스템 보호를 위해 무시됩니다."
-    #fi
-  fi
-done < "$CONFIG_FILE"
-
-# 1. 다중 RSA 공개키 설정 파싱 및 배열에 담기
-RSA_PUBLIC_KEY_LIST=()
-while IFS='=' read -r key value || [ -n "$key" ]; do
-  [[ "$key" =~ ^[[:space:]]*RSA_PUBLIC_KEY\. ]] && RSA_PUBLIC_KEY_LIST+=("$(echo "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')")
-done < "$CONFIG_FILE"
-
-# 2. 다중 사용자 정의 도구 URL 파싱 및 배열에 담기
-CUSTOM_TOOL_LIST=()
-while IFS='=' read -r key value || [ -n "$key" ]; do
-  [[ "$key" =~ ^[[:space:]]*URL_CUSTOM_TOOL\. ]] && CUSTOM_TOOL_LIST+=("$(echo "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')")
-done < "$CONFIG_FILE"
-
-rm -f "$CONFIG_FILE"
-
-
-# ==========================================
 # 터미널 출력 색상 정의
 # ==========================================
 if [ -t 1 ]; then
@@ -125,6 +36,74 @@ echo_w() {
 }
 echo_i() {
   printf "${COLOR_INFO}%s${COLOR_NC}\n" "$*"
+}
+
+# 작업 완료 후 사용자에게 알려야 하는 메시지.
+# 부모와 자식이 공유할 공통 공지사항 임시 파일 경로 설정
+export NOTICE_MESSAGES_TEMP_FILE="/tmp/setup_env_notice_messages_$$.tmp"
+# 스크립트 시작 시 기존 찌꺼기 파일 초기화
+rm -f "$NOTICE_MESSAGES_TEMP_FILE"
+touch "$NOTICE_MESSAGES_TEMP_FILE"
+
+##
+# 사용자에게 전달할 메시지를 저장합니다.
+#
+# @param $1 {string} 저장할 메시지
+# @param $2 {string} 중복인 경우 추가 여부. (기본값: true / true: 중복이어도 추가, false: 중복이면 무시)
+#
+# @return 없음
+##
+_add_notice() {
+  local msg="$1"
+  local forced="${2:-true}"
+
+  # 메시지가 비어있으면 무시
+  if [ -z "$msg" ]; then
+    return 0
+  fi
+
+  # forced=false 인 경우: 파일 내에 중복된 줄이 있는지 grep으로 검사
+  if [[ "$forced" == "false" ]]; then
+    # grep -F: 정규식이 아닌 단순 문자열 매칭, -x: 라인 전체가 정확히 일치, -q: 결과 출력 생략(조용히)
+    if grep -Fxq "$msg" "$NOTICE_MESSAGES_TEMP_FILE" 2>/dev/null; then
+      return 0 # 이미 존재하면 함수 종료
+    fi
+  fi
+
+  # 파일에 메시지 누적 (Append)
+  echo "$msg" >> "$NOTICE_MESSAGES_TEMP_FILE"
+}
+
+##
+# 저장된 모든 공지 메시지를 출력합니다.
+#
+# @param 없음
+#
+# @return 저장된 메시지 목록 (표준 출력)
+##
+_announce_notices() {
+  # 공지사항 파일이 존재하지 않거나 내용이 비어있는 경우(-s) 종료
+  if [ ! -s "$NOTICE_MESSAGES_TEMP_FILE" ]; then
+    return 0
+  fi
+
+  echo
+  echo "================================================================================"
+  echo "[공지] 작업 완료 후 확인이 필요한 메시지"
+  echo "================================================================================"
+  
+  local idx=1
+  # 파일에서 한 줄씩 안전하게 읽어와 출력 (IFS= 및 -r 옵션으로 공백/백슬래시 원형 유지)
+  while IFS= read -r msg || [ -n "$msg" ]; do
+    # 기존에 구성하신 포맷과 색상 출력 함수(echo_w) 그대로 사용
+    echo_w " [$(printf "%-3d" "$idx")] $msg"   
+    (( idx++ ))
+  done < "$NOTICE_MESSAGES_TEMP_FILE"
+  
+  echo "================================================================================"
+  
+  # 출력이 모두 끝난 후 시스템 정리를 위해 임시 파일 삭제
+  rm -f "$NOTICE_MESSAGES_TEMP_FILE"
 }
 
 ##
@@ -155,28 +134,33 @@ help(){
   fi  
   echo  
   echo "사용법:"
-  echo "  ./$FILENAME [옵션]"
+  echo "  ./$FILENAME"
   echo ""
-  echo "옵션:"
-  echo "  -h, --help         : 도움말을 출력합니다."
-  echo_i "  --all              : '--jdk, --maven'를 설치합니다."
-  echo "  --jdk              : JDK를 설치합니다. 내부적으로 '--java-config'를 진행합니다."
-  echo "  --java-config      : update-java-config 스크립트를 설치하고 설정합니다."
-  echo "  --maven            : Apache Maven을 설치합니다. 내부적으로 '--mvn-config'를 진행합니다."
-  echo "  --mvn-config       : update-mvn-config 스크립트를 설치하고 설정합니다."
-  echo "  --ssh-key          : RSA 공개키를 authorized_keys에 등록합니다."
-  echo_i "  --no-default-opts  : 기본 옵션을 설치하지 않습니다."
-  echo "                       - _setup_home_bin: $HOME\bin 경로를 \$PATH에 추가하기."
-  echo "                       - setup_sudoers: 특정 사용자를 'sudoers'에 추가하기."
-  echo "                       - install_packages: 기본 도구 설치하기."
-  echo "                       - setup_custom_tools: 사용자 정의 도구 설치하기."
-  echo "                       - _setup_git_prompt: 사용자 정의 프롬프트 적용하기. (git branch 추가)"
-  echo "                       - _install_vim_options: 사용자 활성화 옵션 적용하기."  
-  echo_i "  --add-sudoers      : 별도로 'setup_sudoers' 를 진행합니다. '--no-default-opts'이 자동으로 적용됩니다."
-  echo_i "  --install-packages : 별도로 'install_packages' 를 진행합니다. '--no-default-opts'이 자동으로 적용됩니다."
-  echo_i "  --remove-packages  : 별도로 'remove_packages' 를 진행합니다. '--no-default-opts'이 자동으로 적용됩니다."
-  echo_i "  --custom-tools     : 별도로 'setup_custom_tools:' 를 진행합니다. '--no-default-opts'이 자동으로 적용됩니다."
+  echo " - 설치가능한 옵션은 설치하려는 '카탈로그'가 제공하는 옵션에 따라서 안내됩니다."
+  echo "   아래 내용은 설치가능한 모든 옵션 정보입니다."
+  echo ""
+  echo " [옵션]"
+  echo "  --all               : 모든 옵션을 적용합니다."
+  echo "  --add-sudoers       : 특정 사용자를 'sudoers'에 추가합니다. '--no-default-opts'이 자동으로 적용됩니다."
+  echo "  --custom-tools      : 사용자 정의 도구를 설치합니다. '--no-default-opts'이 자동으로 적용됩니다."
+  echo "  --custom-installers : 사용자 정의 설치 스크립트를 실행합니다. '--no-default-opts'이 자동으로 적용됩니다."
+  echo "  --remove-packages   : 사용하지 않을 패키지를 삭제합니다. '--no-default-opts'이 자동으로 적용됩니다."
+  echo "  --install-packages  : 기본 패키지를 설치합니다. '--no-default-opts'이 자동으로 적용됩니다."
+  echo "  --ssh-key           : 설정한 RSA 공개키를 authorized_keys에 등록합니다. '--no-default-opts'이 자동으로 적용됩니다."
+  echo "  --no-default-opts   : 기본 옵션을 설치하지 않습니다."
+  echo "                        - _setup_home_bin: $HOME\bin 경로를 \$PATH에 추가하기."
+  echo "                        - _setup_git_prompt: 사용자 정의 프롬프트 적용하기. (git branch 추가)"
+  echo "                        - _install_vim_options: 사용자 활성화 옵션 적용하기."
 }
+
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    -h | --help)
+      help
+      exit 0
+      ;;
+  esac
+done
 
 ##
 # 오류 메시지를 출력하고 도움말을 호출한 뒤 프로그램을 종료합니다.
@@ -191,66 +175,555 @@ error_exit() {
   exit 1
 }
 
-# 작업 완료 후 사용자에게 알려야 하는 메시지.
-declare -a NOTICE_MESSAGES=()
+# ==========================================
+# 전역 변수: 패키지 매니저 환경 자동 판별
+# ==========================================
+PKG_MANAGER=""
+PKG_UPDATE_CMD=""
+PKG_INSTALL_CMD=""
+PKG_REMOVE_CMD=""
+
+if command -v apt &> /dev/null; then
+  PKG_MANAGER="apt"
+  PKG_UPDATE_CMD="sudo apt update"
+  PKG_INSTALL_CMD="sudo apt install -y"
+  PKG_REMOVE_CMD="sudo apt purge -y"
+elif command -v dnf &> /dev/null; then
+  PKG_MANAGER="dnf"
+  PKG_UPDATE_CMD="sudo dnf makecache"
+  PKG_INSTALL_CMD="sudo dnf install -y"
+  PKG_REMOVE_CMD="sudo dnf remove -y"
+else
+  echo "[ERROR] 지원하지 않는 운영체제입니다. (apt 또는 dnf가 필요합니다.)"
+  exit 1
+fi
+
 ##
-# 사용자에게 전달할 메시지를 저장합니다.
+# OS별 패키지 매니저를 통해 실제 패키지가 설치되어 있는지 확인합니다.
 #
-# @param $1 {string} 저장할 메시지
-# @param $2 {string} 중복인 경우 추가 여부. (기본값: true / true: 중복이어도 추가, false: 중복이면 무시)
+# @param $1 {string} 패키지 이름
 #
-# @return 없음
+# @return 0(설치됨) 또는 1(설치 안 됨)
 ##
-_add_notice() {
-  local msg="$1"
-  local forced="${2:-true}"
-
-  # 메시지가 비어있으면 무시
-  if [ -z "$msg" ]; then
-    return 0
+_is_package_installed() {
+  local pkg_name="$1"
+  if [ "$PKG_MANAGER" == "apt" ]; then
+    # Ubuntu/Debian: dpkg를 통해 상태가 'install ok installed' 인지 확인
+    dpkg -s "$pkg_name" 2>/dev/null | grep -q "Status: install ok installed"
+  elif [ "$PKG_MANAGER" == "dnf" ]; then
+    # Rocky/RHEL: rpm -q 를 통해 설치 여부 확인 (매우 빠름)
+    rpm -q "$pkg_name" &>/dev/null
+  else
+    return 1
   fi
-
-  # forced=false 인 경우: 중복 메시지 무시
-  if [[ "$forced" == "false" ]]; then
-    local existing
-    for existing in "${NOTICE_MESSAGES[@]}"; do
-      if [[ "$existing" == "$msg" ]]; then
-        return 0
-      fi
-    done
-  fi
-
-  NOTICE_MESSAGES+=("$msg")
 }
 
-##
-# 저장된 모든 공지 메시지를 출력합니다.
-#
-# @param 없음
-#
-# @return 저장된 메시지 목록 (표준 출력)
-##
-_announce_notices() {
-  if (( ${#NOTICE_MESSAGES[@]} == 0 )); then
-    return 0
-  fi
+# ==========================================
+# 외부 설정 파일(Properties) 다운로드 및 로드
+# ==========================================
+if ! _is_package_installed "curl"; then
+  $PKG_UPDATE_CMD > /dev/null 2>&1
+  $PKG_INSTALL_CMD curl > /dev/null 2>&1
+fi
 
-  echo
-  echo "================================================================================"
-  echo "[공지] 작업 완료 후 확인이 필요한 메시지"
-  echo "================================================================================"
-  local idx=1
-  for msg in "${NOTICE_MESSAGES[@]}"; do
-    echo_w " [$(printf "%-3d" "$idx")] $msg"   # ← $idx 쿼팅 추가
-    (( idx++ ))
+# ==============================================================================
+# 카탈로그 INI 파싱 및 동적 테이블 생성/선택 테스트 스크립트
+# ==============================================================================
+
+# 1. 데이터 저장을 위한 연관 배열 및 변수
+declare -a CATALOG_SECTIONS=()
+declare -A CATALOG_TITLE=()
+declare -A CATALOG_DESC=()
+declare -A CATALOG_URL=()
+
+MAX_TITLE_WIDTH=4 # '제목' 기본 너비 (한글 2글자 = 4)
+MAX_DESC_WIDTH=4  # '설명' 기본 너비 (한글 2글자 = 4)
+
+# ==============================================================================
+# [유틸리티] 한글/영문 혼용 문자열의 실제 터미널 출력 너비 계산 및 패딩
+# ==============================================================================
+# 문자열의 터미널 출력 너비 계산 (한글=2, 영문/숫자/기호=1)
+_get_display_width() {
+  local str="$1"
+  local width=0
+  local i char
+
+  for (( i=0; i<${#str}; i++ )); do
+    char="${str:$i:1}"
+    # ASCII 범위(영문, 숫자, 기본 기호 및 공백)는 1칸, 그 외(한글 등)는 2칸으로 계산
+    if [[ "$char" == [a-zA-Z0-9\ \!\@\#\$%\^\&\*\(\)\_\+\-\=\[\]\{\}\;\:\'\"\,\.\<\>\/\?\`\~\|\\] ]]; then
+      ((width++))
+    else
+      ((width+=2))
+    fi
   done
-  echo "================================================================================"
+  echo "$width"
 }
+
+# 지정된 너비만큼 공백을 채워 문자열 반환 (좌측 정렬용)
+_pad_string() {
+  local str="$1"
+  local target_width="$2"
+  local current_width=$(_get_display_width "$str")
+  local spaces=$(( target_width - current_width ))
+  
+  echo -n "$str"
+  for (( i=0; i<spaces; i++ )); do
+    echo -n " "
+  done
+}
+
+# ==============================================================================
+# [로직 1] INI 파일 파싱 및 최대 너비 계산
+# ==============================================================================
+parse_ini_catalog() {
+  local ini_file="$1"
+  local cur_sec=""
+
+  if [[ ! -f "$ini_file" ]]; then
+    echo "[오류] $ini_file 파일을 찾을 수 없습니다."
+    exit 1
+  fi
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    # 양옆 공백 제거
+    line=$(echo "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+    
+    # 주석(#, ;) 및 빈 줄 무시
+    [[ -z "$line" || "$line" =~ ^# || "$line" =~ ^\; ]] && continue
+
+    # [섹션] 파싱
+    if [[ "$line" =~ ^\[(.*)\]$ ]]; then
+      cur_sec="${BASH_REMATCH[1]}"
+      CATALOG_SECTIONS+=("$cur_sec")
+      continue
+    fi
+
+    # key=value 파싱
+    if [[ "$line" =~ ^([^=]+)=(.*)$ ]]; then
+      local key="${BASH_REMATCH[1]}"
+      local val="${BASH_REMATCH[2]}"
+      local current_val_width=$(_get_display_width "$val")
+      
+      case "$key" in
+        title)
+          CATALOG_TITLE["$cur_sec"]="$val"
+          (( current_val_width > MAX_TITLE_WIDTH )) && MAX_TITLE_WIDTH=$current_val_width
+          ;;
+        description)
+          CATALOG_DESC["$cur_sec"]="$val"
+          (( current_val_width > MAX_DESC_WIDTH )) && MAX_DESC_WIDTH=$current_val_width
+          ;;
+        catalog_url)
+          CATALOG_URL["$cur_sec"]="$val"
+          ;;
+      esac
+    fi
+  done < "$ini_file"
+}
+
+# ==============================================================================
+# [로직 2] 동적 ASCII 테이블 렌더링
+# ==============================================================================
+_print_border() {
+  # '#'(3) + 양옆 여백(2씩) + 구분선 4개 = 기본 13칸
+  local total_len=$(( 13 + MAX_TITLE_WIDTH + MAX_DESC_WIDTH ))
+  for (( i=0; i<total_len; i++ )); do echo -n "-"; done
+  echo
+}
+
+show_catalog_table() {
+  echo
+  _print_border
+  # 헤더 출력
+  echo -n "|  #  | "
+  _pad_string "제목" "$MAX_TITLE_WIDTH"
+  echo -n " | "
+  _pad_string "설명" "$MAX_DESC_WIDTH"
+  echo " |"
+  _print_border
+
+  # 내용 출력
+  local idx=1
+  for sec in "${CATALOG_SECTIONS[@]}"; do
+    printf "| %3d | " "$idx"
+    _pad_string "${CATALOG_TITLE[$sec]}" "$MAX_TITLE_WIDTH"
+    echo -n " | "
+    _pad_string "${CATALOG_DESC[$sec]}" "$MAX_DESC_WIDTH"
+    echo " |"
+    ((idx++))
+  done
+  _print_border
+  echo
+}
+
+# ==============================================================================
+# [로직 3] 사용자 상호작용 (번호 선택, 검증, 취소 및 진행)
+# ==============================================================================
+select_catalog() {
+  local total_items=${#CATALOG_SECTIONS[@]}
+  local interrupted=0
+
+  while true; do
+    show_catalog_table
+
+    interrupted=0
+    trap 'interrupted=1' SIGINT
+    
+    local choice=""
+    echo -n "> 설치할 카탈로그 번호를 선택하세요 (1-$total_items) [취소: Ctrl+C 후 'Enter']: " >&2
+    read -r choice
+    
+    trap - SIGINT
+
+    # 1. Ctrl + C 처리
+    if [[ "$interrupted" -eq 1 ]]; then
+      echo_w " - [취소] 카탈로그 선택을 종료합니다." >&2
+      return 1
+    fi
+
+    # 2. 유효성 검사 (숫자인지, 범위 내인지)
+    if [[ ! "$choice" =~ ^[0-9]+$ ]] || (( choice < 1 || choice > total_items )); then
+      echo_w " - [경고] 잘못된 번호입니다. 1에서 $total_items 사이의 숫자를 입력해주세요." >&2
+      continue
+    fi
+
+    # 3. 정상 선택 처리
+    local selected_index=$(( choice - 1 ))
+    local selected_sec="${CATALOG_SECTIONS[$selected_index]}"
+    local selected_title="${CATALOG_TITLE[$selected_sec]}"
+    local selected_desc="${CATALOG_DESC[$selected_sec]}"
+    local selected_url="${CATALOG_URL[$selected_sec]}"
+
+    echo -e "\n▶  선택하신 환경: \033[1;36m$selected_title\033[0m" >&2
+    echo -e "▶  상세 설명    : $selected_desc" >&2
+    echo -e "▶  catalog_url  : $selected_url\n" >&2
+
+    # 설치 여부 확인
+    local confirm=""
+    trap 'interrupted=1' SIGINT
+    echo -n "> 위 환경을 설치하시겠습니까? (y/n) [취소: Ctrl+C 후 'Enter']: " >&2
+    read -r confirm
+    trap - SIGINT
+
+    if [[ "$interrupted" -eq 1 ]]; then
+      echo_w " - [취소] 설치 단계를 취소합니다." >&2
+      return 1
+    fi
+
+    if [[ "$confirm" =~ ^[Yy]$ ]]; then
+      echo_i "[시스템] 설치를 진행합니다!" >&2
+      
+      # 향후 setup-env.sh 통합 시, 여기서 추출된 URL을 전역 변수에 저장하거나 
+      # 설정을 다운로드하는 함수를 호출하시면 됩니다.
+      export SELECTED_CATALOG_URL="$selected_url"
+      return 0
+    else
+      echo_w " - 설치를 취소했습니다. 다시 목록에서 선택해 주세요.\n" >&2
+      # 다시 표를 보여줄지 여부는 기호에 맞게 조정 (여기선 표는 생략하고 다시 프롬프트로)
+      continue
+    fi
+  done
+}
+
+##
+# 카탈로그 정의 파일 다운로드
+##
+CATALOGS_INI_URL="https://github.com/parkjunhong/shellscripts/raw/refs/heads/main/env/catalogs.ini"
+CATALOGS_FILE="/tmp/catalogs.ini"
+if ! curl -sfLo "$CATALOGS_FILE" "$CATALOGS_INI_URL"; then
+  echo
+  echo_e "[ERROR] 카탈로그 정의 파일($CATALOGS_INI_URL)이 존재하지 않아 다운로드할 수 없습니다."
+  echo_e "[ERROR] 설치를 취소합니다."
+  rm -f -- "$CATALOGS_FILE"
+  exit 1
+fi
+
+# 카탈로그 분석
+parse_ini_catalog "$CATALOGS_FILE"
+# 카탈로그 선택
+select_catalog
+RET_VAL=$?  # 함수의 반환값(return 0 또는 1)을 변수에 저장
+
+# 임시 카탈로그 파일 삭제
+rm -f -- "$CATALOGS_FILE"
+
+# 3. 반환값 검증 및 분기
+if [[ $RET_VAL -ne 0 ]]; then
+  # 반환값이 0이 아니면(취소했거나 에러인 경우) 즉시 스크립트 종료
+  echo
+  echo_w "[시스템] 사용자가 카탈로그 설치를 취소했습니다."
+  echo_w "종료합니다."
+  exit 0
+fi
+
+# 외부 설정 파일 다운로드
+CONFIG_FILE="/tmp/configurations.properties"
+# ---------------------------------------------------------
+# curl -f 옵션 추가 및 예외 처리 완화
+# 1. -f 옵션: 404 등 서버 에러 시 다운로드를 실패 처리함
+# 2. || 구문: 파일이 없을 경우 전체 스크립트를 중단하지 않고 설치만 건너뜀
+# ---------------------------------------------------------
+if ! curl -sfLo "$CONFIG_FILE" "$SELECTED_CATALOG_URL"; then
+  echo
+  echo_e "[ERROR] 외부 설정 파일($SELECTED_CATALOG_URL)이 존재하지 않아 다운로드할 수 없습니다."
+  echo_e "[ERROR] 설치를 취소합니다."
+  rm -f -- "$CONFIG_FILE"
+  exit 1
+fi 
+
+# ---------------------------------------------------------
+# Properties 파일을 가장 안전하게 파싱하여 변수로 등록
+# - 쌍따옴표("), 따옴표('), 공백, 특수문자($) 등이 있어도 오류가 나지 않음
+# - [보안] Whitelist 방식을 적용하여 시스템 변수 오염(Environment Injection) 완벽 방지
+# ---------------------------------------------------------
+while IFS='=' read -r key value || [ -n "$key" ]; do
+  # 주석(#)이거나 빈 줄이면 건너뛰기
+  if [[ "$key" =~ ^[[:space:]]*# ]] || [[ -z "$key" ]]; then
+    continue
+  fi
+
+  # Key와 Value의 양옆 공백 제거 (Value 내부의 띄어쓰기는 그대로 유지됨)
+  key=$(echo "$key" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')  
+  value=$(printf '%s' "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
+  # 일반 변수만 처리 (배열 식별용 점(.)이 포함된 키는 제외)
+  if [[ ! "$key" =~ \. ]]; then    
+    # [보안 처리] 허용된 변수명 패턴만 등록 (URL_로 시작하거나 특정 키워드인 경우)
+    #if [[ "$key" =~ ^(URL_[A-Z0-9_]+|NO_PASSWORD_COMMANDS|INSTALL_PACKAGES|REMOVE_PACKAGES)$ ]]; then      
+      # export 대신 declare -g 를 사용하여 현재 스크립트 실행 범위 내에서만 변수 등록
+    declare -g "$key"="$value"      
+    #else
+      #echo " - [보안 경고] 허용되지 않은 키명($key)은 시스템 보호를 위해 무시됩니다."
+    #fi
+  fi
+done < "$CONFIG_FILE"
+
+# 1. 다중 사용자 정의 도구 URL 파싱 및 배열에 담기
+CUSTOM_TOOL_LIST=()
+while IFS='=' read -r key value || [ -n "$key" ]; do
+  [[ "$key" =~ ^[[:space:]]*URL_CUSTOM_TOOL\. ]] && CUSTOM_TOOL_LIST+=("$(echo "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')")
+done < "$CONFIG_FILE"
+
+# 2. 다중 사용자 설치 스크립트 URL 파싱 및 배열에 담기
+CUSTOM_INSTALLER_LIST=()
+while IFS='=' read -r key value || [ -n "$key" ]; do
+  [[ "$key" =~ ^[[:space:]]*URL_CUSTOM_INSTALLER\. ]] && CUSTOM_INSTALLER_LIST+=("$(echo "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')")
+done < "$CONFIG_FILE"
+
+# 3. 다중 RSA 공개키 설정 파싱 및 배열에 담기
+RSA_PUBLIC_KEY_LIST=()
+while IFS='=' read -r key value || [ -n "$key" ]; do
+  [[ "$key" =~ ^[[:space:]]*RSA_PUBLIC_KEY\. ]] && RSA_PUBLIC_KEY_LIST+=("$(echo "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')")
+done < "$CONFIG_FILE"
+
+## TODO: 삭제 예정 (테스트 코드)
+# 외부설정파일 확인
+echo
+echo
+cat "$CONFIG_FILE"
+echo
+echo
+
+# 임시 외부설정파일 삭제
+rm -f -- "$CONFIG_FILE"
+
+# ==============================================================================
+# 카탈로그 데이터 기반 동적 설치 옵션 메뉴 생성
+# ==============================================================================
+
+# 1. 사용 가능한 옵션과 설명을 담을 연관 배열 선언
+declare -A OPT_DESCRIPTIONS=()
+declare -a AVAILABLE_OPTS=() # 실제 출력할 옵션 순서를 보장하기 위한 배열
+
+# 2. 각 항목별 검증 및 유효 옵션 등록
+if [[ -n "$REMOVE_PACKAGES" ]]; then
+  AVAILABLE_OPTS+=("--remove-packages")
+  OPT_DESCRIPTIONS["--remove-packages"]="사용하지 않을 패키지를 삭제합니다. '--no-default-opts'이 자동으로 적용됩니다."
+fi
+
+if [[ -n "$NO_PASSWORD_COMMANDS" ]]; then
+  AVAILABLE_OPTS+=("--add-sudoers")
+  OPT_DESCRIPTIONS["--add-sudoers"]="특정 사용자를 'sudoers'에 추가합니다. '--no-default-opts'이 자동으로 적용됩니다."
+fi
+
+if [[ -n "$INSTALL_PACKAGES" ]]; then
+  AVAILABLE_OPTS+=("--install-packages")
+  OPT_DESCRIPTIONS["--install-packages"]="기본 설치 도구 패키지를 설치합니다."
+fi
+
+if (( ${#CUSTOM_TOOL_LIST[@]} > 0 )); then
+  AVAILABLE_OPTS+=("--custom-tools")
+  OPT_DESCRIPTIONS["--custom-tools"]="사용자 정의 도구를 다운로드 및 설치합니다. '--no-default-opts'이 자동으로 적용됩니다."
+fi
+
+if (( ${#CUSTOM_INSTALLER_LIST[@]} > 0 )); then
+  AVAILABLE_OPTS+=("--custom-installers")
+  OPT_DESCRIPTIONS["--custom-installers"]="사용자 정의 설치 스크립트를 실행합니다. '--no-default-opts'이 자동으로 적용됩니다."
+fi
+
+if (( ${#RSA_PUBLIC_KEY_LIST[@]} > 0 )); then
+  AVAILABLE_OPTS+=("--ssh-key")
+  OPT_DESCRIPTIONS["--ssh-key"]="RSA 기반의 ssh 접속을 위한 공개키를 등록합니다."
+fi
+
+# 3. 메뉴 출력 및 사용자 입력 받기
+echo
+echo "========================================================"
+
+if (( ${#AVAILABLE_OPTS[@]} == 0 )); then
+  echo_w " - [안내] 선택한 카탈로그에 시스템에 적용 가능한 설치 옵션이 없습니다."
+  echo "========================================================"
+  rm -f -- "$CONFIG_FILE"
+  exit 0
+fi
+
+echo_i "시스템에 적용 가능한 옵션은 다음과 같습니다."
+echo
+# 3-1. 가장 긴 옵션 이름의 길이 동적 계산
+max_opt_len=5 # 기본값: "--all"의 길이
+for opt in "${AVAILABLE_OPTS[@]}"; do
+  if (( ${#opt} > max_opt_len )); then
+    max_opt_len=${#opt}
+  fi
+done
+
+# 3-2. printf 포맷팅을 활용하여 일정한 너비로 렌더링
+# %-${max_opt_len}s : 변수 길이만큼 공간을 확보하고 문자열을 좌측 정렬(-) 처리
+printf "  [ 0] %-${max_opt_len}s : %s\n" "--all" "모든 옵션을 적용합니다. (이 옵션을 선택하는 경우, 다른 옵션은 무시됩니다.)"
+
+idx=1
+for opt in "${AVAILABLE_OPTS[@]}"; do
+  printf "  [%2d] %-${max_opt_len}s : %s\n" "$idx" "$opt" "${OPT_DESCRIPTIONS[$opt]}"
+  ((idx++))
+done
+
+echo
+echo "========================================================"
+echo "적용하려는 옵션의 [번호]를 입력하기 바랍니다. (여러 개의 경우 띄어쓰기로 구분, 예: 1 3 4)"
+
+read -r -p "적용 옵션 번호: " user_input_nums
+
+if [[ -z "$user_input_nums" ]]; then
+  echo_w " - [취소] 입력된 옵션이 없어 설치를 종료합니다."
+  exit 0
+fi
+
+# 4. 입력받은 번호를 실제 옵션 문자열로 파싱 및 변환
+parsed_opts=""
+for num in $user_input_nums; do
+  # 숫자가 아니거나 범위를 벗어난 입력 무시
+  if [[ ! "$num" =~ ^[0-9]+$ ]] || (( num < 0 || num > ${#AVAILABLE_OPTS[@]} )); then
+    echo_w " - [경고] 무효한 번호($num)가 포함되어 있어 무시됩니다."
+    continue
+  fi
+  
+  if (( num == 0 )); then
+    parsed_opts="--all"
+    break # --all이 선택되면 다른 번호는 모두 무시하고 즉시 종료
+  else
+    opt_idx=$(( num - 1 ))
+    parsed_opts="$parsed_opts ${AVAILABLE_OPTS[$opt_idx]}"
+  fi
+done
+
+# 유효한 번호가 하나도 추출되지 않았을 경우 방어 로직
+if [[ -z "$parsed_opts" ]]; then
+  echo_w " - [에러] 유효한 옵션이 선택되지 않아 스크립트를 종료합니다."
+  exit 1
+fi
+
+# 5. 변환된 문자열을 스크립트 실행 인자($@)로 강제 덮어쓰기
+eval set -- $parsed_opts
 
 # 작업실행 여부
 # 키: '함수 또는 함수+파라미터'
 # 값: 1/진행, 그외/미진행
 declare -A EXECUTED_JOB_FLAGS=()
+
+##
+# 사용자의 홈 디렉토리에 bin 디렉토리를 생성하고, PATH 환경변수에 등록합니다.
+#
+# @param 없음
+#
+# @return 진행 상황 메시지 (표준 출력)
+##
+_setup_home_bin() {
+  local func_name=${FUNCNAME[0]}
+  local flag="${EXECUTED_JOB_FLAGS[$func_name]:-0}"
+  
+  if (( flag == 1 )); then
+    return 0
+  fi
+  
+  echo
+  echo "############### $func_name ###############"
+  echo "[진행] $HOME/bin 디렉토리 설정 중..."
+  local bin_dir="$HOME/bin"
+  if [ ! -d "$bin_dir" ]; then
+    mkdir -p "$bin_dir" || error_exit "~/bin 디렉토리 생성 실패" "$LINENO"
+    echo_i " - ~/bin 디렉토리를 생성했습니다."
+  fi
+  if ! grep -q "PATH=\$PATH:$bin_dir" "$HOME/.bashrc"; then
+    echo "PATH=\$PATH:$bin_dir" >> "$HOME/.bashrc" || error_exit "$HOME/.bashrc 파일 수정 실패" "$LINENO"
+    
+    if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+      # source(. ./setup-env.sh) 명령으로 스크립트가 실행된 경우 → 부모 쉘이므로 즉시 적용 가능
+      source ~/.bashrc 2>/dev/null || true
+      echo_i " - $HOME/bin -> \$PATH 경로 추가가 현재 터미널에 즉시 적용되었습니다."
+    else
+      # 서브 쉘(./setup-env.sh)로 실행된 경우 → 안내 메시지 출력
+      echo_i " - $HOME/.bashrc 파일에 PATH 설정에 '$HOME/bin' 을 추가했습니다."
+      echo_w " - 현재 터미널에 즉시 반영하려면 다음 명령을 실행하세요:"
+      echo_w "   source ~/.bashrc"
+      echo_w " - 또는 새 터미널을 열면 적용됩니다."
+      
+      _add_notice "### $HOME/bin -> \$PATH 추가 작업 ###"
+      _add_notice " - $HOME/.bashrc 파일에 PATH 설정에 '$HOME/bin' 을 추가했습니다." false
+      _add_notice " - 현재 터미널에 즉시 반영하려면 다음 명령을 실행하세요:" false
+      _add_notice "   source ~/.bashrc" false
+    fi
+  else
+    echo_w " - ~/.bashrc 파일에 이미 PATH 설정이 존재합니다."
+  fi
+
+  EXECUTED_JOB_FLAGS["$func_name"]=1
+}
+
+##
+# .bashrc 파일에 현재 위치의 git branch를 표시하는 프롬프트(PS1) 설정을 추가합니다.
+#
+# @param 없음
+#
+# @return 진행 상황 메시지 (표준 출력)
+##
+_setup_git_prompt() {
+  local func_name=${FUNCNAME[0]}
+  local flag="${EXECUTED_JOB_FLAGS[$func_name]:-0}"
+  
+  if (( flag == 1 )); then
+    return 0
+  fi
+  
+  echo
+  echo "############### $func_name ###############"
+  echo "[진행] git branch 프롬프트 설정 중..."
+  if ! grep -q "parse_git_branch()" "$HOME/.bashrc"; then
+    cat << 'EOF' >> "$HOME/.bashrc" || error_exit "~/.bashrc 파일 수정 실패" "$LINENO"
+
+parse_git_branch() {
+  git branch 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/(\1) /' 
+}
+
+PS1='[directory] \[\033[01;31m\]$(parse_git_branch)\[\033[00m\]\[\033[01;34m\]\w\[\033[00m\]\n[\t ] \[\033[01;32m\]\u@\h\[\033[00m\]:$ '
+EOF
+    echo_i " - ~/.bashrc에 프롬프트 설정을 추가했습니다."
+  else
+    echo_w " - ~/.bashrc 파일에 이미 git 프롬프트 설정이 존재합니다."
+  fi
+  
+  EXECUTED_JOB_FLAGS["$func_name"]=1
+}
 
 ##
 # 스크립트 실행 중 1번만 OS에 맞는 패키지 매니저 업데이트를 실행하도록 보장합니다.
@@ -274,26 +747,6 @@ _try_pkg_update() {
     EXECUTED_JOB_FLAGS["$func_name"]=1
   else
     echo_w "[경고] 패키지 인덱스 업데이트에 실패했습니다."
-    return 1
-  fi
-}
-
-##
-# OS별 패키지 매니저를 통해 실제 패키지가 설치되어 있는지 확인합니다.
-#
-# @param $1 {string} 패키지 이름
-#
-# @return 0(설치됨) 또는 1(설치 안 됨)
-##
-_is_package_installed() {
-  local pkg_name="$1"
-  if [ "$PKG_MANAGER" == "apt" ]; then
-    # Ubuntu/Debian: dpkg를 통해 상태가 'install ok installed' 인지 확인
-    dpkg -s "$pkg_name" 2>/dev/null | grep -q "Status: install ok installed"
-  elif [ "$PKG_MANAGER" == "dnf" ]; then
-    # Rocky/RHEL: rpm -q 를 통해 설치 여부 확인 (매우 빠름)
-    rpm -q "$pkg_name" &>/dev/null
-  else
     return 1
   fi
 }
@@ -453,7 +906,7 @@ _install_completion() {
   # ---------------------------------------------------------
   if ! curl -sfLo "$temp_comp" "$comp_url"; then
     echo_w " - [알림] '${target_cmd}'의 bash completion 파일이 존재하지 않아 설치를 생략합니다."
-    rm -f "$temp_comp"
+    rm -f -- "$temp_comp"
     return 0
   fi
   
@@ -473,20 +926,20 @@ _install_completion() {
       read -r -p "> '${target_cmd} completion' 내용이 다릅니다. 업데이트하시겠습니까? (y/n): " ch
       if [[ "$ch" == "y" || "$ch" == "Y" ]]; then
         # [수정] mv 실패 시 임시 파일 삭제 및 에러 처리
-        sudo mv "$temp_comp" "$target_comp_file" || { rm -f "$temp_comp"; error_exit "'${target_cmd} completion' 파일 업데이트 실패" "$LINENO"; }
+        sudo mv "$temp_comp" "$target_comp_file" || { rm -f -- "$temp_comp"; error_exit "'${target_cmd} completion' 파일 업데이트 실패" "$LINENO"; }
         echo_i " - '${target_cmd} completion' 파일이 업데이트되었습니다."
         installed=1
       else
         echo_w " - '${target_cmd} completion' 파일 설치를 유지합니다."
-        rm -f "$temp_comp"
+        rm -f -- "$temp_comp"
       fi
     else
       echo_w " - '${target_cmd} completion' 파일이 이미 최신입니다."
-      rm -f "$temp_comp"
+      rm -f -- "$temp_comp"
     fi
   else
     # [수정] mv 실패 시 임시 파일 삭제 및 에러 처리
-    sudo mv "$temp_comp" "$target_comp_file" || { rm -f "$temp_comp"; error_exit "'${target_cmd} completion' 파일 설치 실패" "$LINENO"; }
+    sudo mv "$temp_comp" "$target_comp_file" || { rm -f -- "$temp_comp"; error_exit "'${target_cmd} completion' 파일 설치 실패" "$LINENO"; }
     echo_i " - '${target_cmd} completion' 파일을 설치했습니다."
     installed=1
   fi
@@ -538,7 +991,7 @@ _install_custom_tools() {
   if ! curl -sfLo "$temp_bin" "$tool_url"; then
     echo_e " - [ERROR] '사용자 정의 도구파일' 다운로드 실패"
     echo_e " - [ERROR] '${target_cmd}' 파일이 존재하지 않아 설치를 생략합니다."
-    rm -f "$temp_bin"
+    rm -f -- "$temp_bin"
     
     _add_notice " - [$func_name] [ERROR] '사용자 정의 도구파일' 다운로드 실패"
     _add_notice " - [$func_name] [ERROR] '${target_cmd}' 파일이 존재하지 않아 설치를 생략합니다."
@@ -553,11 +1006,11 @@ _install_custom_tools() {
         echo_i " - '$target_cmd' 실행 파일이 업데이트되었습니다."
       else
         echo_w " - '$target_cmd' 실행 파일 설치를 유지합니다."
-        rm -f "$temp_bin"
+        rm -f -- "$temp_bin"
       fi
     else
       echo_w " - '$target_cmd' 실행 파일이 이미 최신입니다."
-      rm -f "$temp_bin"
+      rm -f -- "$temp_bin"
     fi
   else
     mkdir -p "$bin_dir" && mv "$temp_bin" "$bin_dir/$target_cmd" && chmod +x "$bin_dir/$target_cmd"
@@ -598,62 +1051,130 @@ setup_custom_tools() {
 }
 
 ##
-# 사용자의 홈 디렉토리에 bin 디렉토리를 생성하고, PATH 환경변수에 등록합니다.
+# 사용자 정의 'installer' 파일을 다운로드하고 설치합니다.
 #
-# @param 없음
+# @param $1 사용자 정의 'installer' URL
 #
 # @return 진행 상황 메시지 (표준 출력)
 ##
-_setup_home_bin() {
-  local func_name=${FUNCNAME[0]}
-  local flag="${EXECUTED_JOB_FLAGS[$func_name]:-0}"
+_execute_custom_installer() {
+  local func_name="${FUNCNAME[0]}"
+  local installer_url="$1"
+  local target_cmd
+  target_cmd=$(basename "$installer_url")
+  # URL을 MD5 해시로 변환하여 고유값으로 사용
+  # - URL의 특수문자(/, :, . 등) 문제 완전 회피
+  # - 어떤 URL이든 32자 고정 길이의 안전한 키 생성
+  local url_hash
+  url_hash=$(printf '%s' "$installer_url" | md5sum | cut -d' ' -f1)
+  local job_flag="$func_name-$url_hash"
+  
+  local flag="${EXECUTED_JOB_FLAGS[$job_flag]:-0}"
   
   if (( flag == 1 )); then
     return 0
   fi
   
   echo
-  echo "############### $func_name ###############"
-  echo "[진행] $HOME/bin 디렉토리 설정 중..."
-  local bin_dir="$HOME/bin"
-  if [ ! -d "$bin_dir" ]; then
-    mkdir -p "$bin_dir" || error_exit "~/bin 디렉토리 생성 실패" "$LINENO"
-    echo_i " - ~/bin 디렉토리를 생성했습니다."
+  echo "############### $func_name - $target_cmd ###############"
+  echo "[진행] '$target_cmd' 설치 중..."
+  
+  # ---------------------------------------------------------
+  # [보안 0] HTTPS URL만 허용 (평문 전송 및 로컬 경로 차단)
+  # ---------------------------------------------------------
+  if [[ "$installer_url" != https://* ]]; then
+    echo_e " - [ERROR] HTTPS URL만 허용됩니다: $installer_url"
+    _add_notice " - [$func_name] [ERROR] HTTPS가 아닌 URL은 허용되지 않습니다: $installer_url"
+    return 1
   fi
-  if ! grep -q "PATH=\$PATH:$bin_dir" "$HOME/.bashrc"; then
-    echo "PATH=\$PATH:$bin_dir" >> "$HOME/.bashrc" || error_exit "$HOME/.bashrc 파일 수정 실패" "$LINENO"
+  
+  local temp_installer="/tmp/${url_hash}"
+  # ---------------------------------------------------------
+  # curl -f 옵션 추가 및 예외 처리 완화
+  # 1. -f 옵션: 404 등 서버 에러 시 다운로드를 실패 처리함
+  # 2. || 구문: 파일이 없을 경우 전체 스크립트를 중단하지 않고 설치만 건너뜀
+  # ---------------------------------------------------------  
+  if ! curl -sfLo "$temp_installer" "$installer_url"; then
+    echo_e " - [ERROR] '사용자 정의 'installer' 파일' 다운로드 실패 ($installer_url)"
+    echo_e " - [ERROR] '${target_cmd}' 파일이 존재하지 않아 설치를 생략합니다."
+    rm -f -- "$temp_installer"
     
-    if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
-      # source(. ./setup-env.sh) 명령으로 스크립트가 실행된 경우 → 부모 쉘이므로 즉시 적용 가능
-      source ~/.bashrc 2>/dev/null || true
-      echo_i " - $HOME/bin -> \$PATH 경로 추가가 현재 터미널에 즉시 적용되었습니다."
-    else
-      # 서브 쉘(./setup-env.sh)로 실행된 경우 → 안내 메시지 출력
-      echo_i " - $HOME/.bashrc 파일에 PATH 설정에 '$HOME/bin' 을 추가했습니다."
-      echo_w " - 현재 터미널에 즉시 반영하려면 다음 명령을 실행하세요:"
-      echo_w "   source ~/.bashrc"
-      echo_w " - 또는 새 터미널을 열면 적용됩니다."
-      
-      _add_notice "### $HOME/bin -> \$PATH 추가 작업 ###"
-      _add_notice " - $HOME/.bashrc 파일에 PATH 설정에 '$HOME/bin' 을 추가했습니다." false
-      _add_notice " - 현재 터미널에 즉시 반영하려면 다음 명령을 실행하세요:" false
-      _add_notice "   source ~/.bashrc" false
-    fi
-  else
-    echo_w " - ~/.bashrc 파일에 이미 PATH 설정이 존재합니다."
+    _add_notice " - [$func_name] [ERROR] '사용자 정의 설치파일' 다운로드 실패"
+    _add_notice " - [$func_name] [ERROR] '${target_cmd}' 파일이 존재하지 않아 설치를 생략합니다."
+    return 0
+  fi
+  
+  # ---------------------------------------------------------
+  # [보안 1] 다운로드 파일 무결성 검증
+  # ---------------------------------------------------------
+  if [ ! -s "$temp_installer" ]; then
+    echo_e " - [ERROR] 다운로드된 파일이 비어 있습니다."
+    rm -f -- "$temp_installer"
+    return 1
   fi
 
-  EXECUTED_JOB_FLAGS["$func_name"]=1
+  # file 명령어가 설치되어 있는 경우에만 쉘 스크립트/텍스트 여부 검사
+  if command -v file &> /dev/null; then
+    local file_type
+    file_type=$(file -b "$temp_installer") # -b 옵션으로 파일명 출력 제외
+    if [[ "$file_type" != *"shell script"* && "$file_type" != *"text"* ]]; then
+      echo_e " - [ERROR] 다운로드된 파일이 쉘 스크립트가 아닙니다: $file_type"
+      rm -f -- "$temp_installer"
+      return 1
+    fi
+  fi
+
+  # ---------------------------------------------------------
+  # [보안 2] /tmp 심볼릭 링크 공격 방지
+  # ---------------------------------------------------------
+  if [ -L "$temp_installer" ]; then
+    echo_e " - [ERROR] 심볼릭 링크가 감지되었습니다. 실행을 중단합니다."
+    rm -f -- "$temp_installer"
+    return 1
+  fi
+
+  # ---------------------------------------------------------
+  # [보안 3] 실행 권한은 소유자만 제한
+  # ---------------------------------------------------------
+  chmod 700 "$temp_installer"
+
+  # ---------------------------------------------------------
+  # [보안 4 & 5] 자식 프로세스(Subshell)를 통한 실행 및 결과 검증
+  # (주의: 커스텀 스크립트가 부모의 환경변수를 써야하므로 env -i는 제외)
+  # ---------------------------------------------------------
+  echo_i " - '$target_cmd' 실행 중..."
+  
+  # 자식 스크립트에서 사용할 수 있도록 부모의 변수와 함수를 명시적으로 상속(Export)
+  export -f _add_notice                 # 자식에서 쓸 _add_notice 함수 상속
+  export -f error_exit                  # (선택) 자식 스크립트에서 중복 정의할 필요 없이 부모 것 재사용 가능
+  export -f echo_e echo_w echo_i # (선택) 색상 출력 함수 재사용 가능
+
+  # 명시적인 /bin/bash 호출로 자식 프로세스에서 안전하게 실행
+  if ! /bin/bash "$temp_installer"; then
+    local exit_code=$?
+    echo_e " - [ERROR] '$target_cmd' 실행 실패 (exit code: $exit_code)"
+    rm -f -- "$temp_installer"
+    
+    _add_notice " - [$func_name] [ERROR] '$target_cmd' 실행 실패 (exit code: $exit_code)"
+    return 1
+  fi
+  
+  # 임시 파일 삭제 및 성공 처리
+  rm -f -- "$temp_installer"
+  echo_i " - '$target_cmd' 설치가 완료되었습니다."
+  
+  EXECUTED_JOB_FLAGS["$job_flag"]=1
+  return 0
 }
 
 ##
-# .bashrc 파일에 현재 위치의 git branch를 표시하는 프롬프트(PS1) 설정을 추가합니다.
+# 외부 설정파일의 URL_CUSTOM_INSTALLER.<식별자> 패턴을 읽어 다수의 사용자 정의 도구를 순차적으로 설치합니다.
 #
 # @param 없음
 #
 # @return 진행 상황 메시지 (표준 출력)
 ##
-_setup_git_prompt() {
+setup_custom_installers() {
   local func_name=${FUNCNAME[0]}
   local flag="${EXECUTED_JOB_FLAGS[$func_name]:-0}"
   
@@ -661,21 +1182,14 @@ _setup_git_prompt() {
     return 0
   fi
   
-  echo
-  echo "############### $func_name ###############"
-  echo "[진행] git branch 프롬프트 설정 중..."
-  if ! grep -q "parse_git_branch()" "$HOME/.bashrc"; then
-    cat << 'EOF' >> "$HOME/.bashrc" || error_exit "~/.bashrc 파일 수정 실패" "$LINENO"
-
-parse_git_branch() {
-  git branch 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/(\1) /' 
-}
-
-PS1='[directory] \[\033[01;31m\]$(parse_git_branch)\[\033[00m\]\[\033[01;34m\]\w\[\033[00m\]\n[\t ] \[\033[01;32m\]\u@\h\[\033[00m\]:$ '
-EOF
-    echo_i " - ~/.bashrc에 프롬프트 설정을 추가했습니다."
+  if [ ${#CUSTOM_INSTALLER_LIST[@]} -gt 0 ]; then
+    for installer_url in "${CUSTOM_INSTALLER_LIST[@]}"; do
+      if [ -n "$installer_url " ]; then
+        _execute_custom_installer "$installer_url"
+      fi
+    done
   else
-    echo_w " - ~/.bashrc 파일에 이미 git 프롬프트 설정이 존재합니다."
+    echo_w " - 설정된 커스텀 'installer'가 없습니다."
   fi
   
   EXECUTED_JOB_FLAGS["$func_name"]=1
@@ -773,10 +1287,10 @@ setup_sudoers() {
     EXECUTED_JOB_FLAGS["$func_name"]=1
     
     # 작업 완료 후 임시 파일 안전하게 정리
-    rm -f "$tmp_sudoers"    
+    rm -f -- "$tmp_sudoers"    
   else
     # 검증 실패 시 임시 파일 삭제 후 스크립트 오류 처리
-    rm -f "$tmp_sudoers"
+    rm -f -- "$tmp_sudoers"
     
     echo_e " - [Error] 'sudoers' 문법 검증에 실패하여 설정을 취소합니다. (명령어 목록 오타나 콤마 누락 확인 필요)"
     
@@ -837,254 +1351,8 @@ EOF
   EXECUTED_JOB_FLAGS["$func_name"]=1
 }
 
-##
-# 외부설정된 URL의 원격 스크립트를 통해 Eclipse Temurin JDK 25를 설치합니다.
-#
-# @param 없음
-#
-# @return 진행 상황 메시지 (표준 출력)
-##
-install_jdk() {  
-  local func_name=${FUNCNAME[0]}
-  local flag="${EXECUTED_JOB_FLAGS[$func_name]:-0}"
-  
-  if (( flag == 1 )); then
-    return 0
-  fi
-  
-  setup_java_config
-  
-  echo
-  echo "############### $func_name ###############"
-  echo "[진행] JDK 설치 중..."
-  local temp_script="/tmp/install-jdk.sh"
-  
-  # ---------------------------------------------------------
-  # curl -f 옵션 추가 및 예외 처리 완화
-  # 1. -f 옵션: 404 등 서버 에러 시 다운로드를 실패 처리함
-  # 2. || 구문: 파일이 없을 경우 전체 스크립트를 중단하지 않고 설치만 건너뜀
-  # ---------------------------------------------------------
-  if ! curl -sfLo "$temp_script" "$URL_JDK_INSTALLER"; then
-    echo_e " - [ERROR] 'Java 설치 스크립트' 다운로드 실패"
-    echo_e " - [ERROR] '$URL_JDK_INSTALLER' 파일이 존재하지 않아 설치를 생략합니다."
-    rm -f "$temp_script"
-    
-    _add_notice " - [$func_name] [ERROR] 'Java 설치 스크립트' 다운로드 실패"
-    _add_notice " - [$func_name] [ERROR] '$URL_JDK_INSTALLER' 파일이 존재하지 않아 설치를 생략합니다."
-    return 0
-  fi 
-  
-  chmod +x "$temp_script"
-  sudo "$temp_script" || error_exit "JDK 설치 스크립트 실행 실패" "$LINENO"
-  rm -f "$temp_script"
-  echo_i " - JDK 설치가 완료되었습니다."
-  
-  EXECUTED_JOB_FLAGS["$func_name"]=1
-}
-
-##
-# 외부설정된 URL에서 update-java-config 스크립트를 다운로드하고 .bashrc에 래퍼 함수를 등록합니다.
-#
-# @param 없음
-#
-# @return 진행 상황 메시지 (표준 출력)
-##
-setup_java_config() {
-  local func_name=${FUNCNAME[0]}
-  local flag="${EXECUTED_JOB_FLAGS[$func_name]:-0}"
-  
-  if (( flag == 1 )); then
-    return 0
-  fi
-  
-  echo
-  echo "############### $func_name ###############"
-  echo "[진행] update-java-config 설정 중..."
-  local bin_dir="$HOME/bin"
-  local dest_path="$bin_dir/update-java-config"
-  
-  mkdir -p "$bin_dir"
-  
-  # ---------------------------------------------------------
-  # curl -f 옵션 추가 및 예외 처리 완화
-  # 1. -f 옵션: 404 등 서버 에러 시 다운로드를 실패 처리함
-  # 2. || 구문: 파일이 없을 경우 전체 스크립트를 중단하지 않고 설치만 건너뜀
-  # ---------------------------------------------------------
-  if ! curl -sfLo "$dest_path" "$URL_UPDATE_JAVA_CONFIG"; then
-    echo_e " - [ERROR] '기본 Java 설정 도구' 다운로드 실패"
-    echo_e " - [ERROR] '$URL_UPDATE_JAVA_CONFIG' 파일이 존재하지 않아 설치를 생략합니다."
-    rm -f "$dest_path"
-    
-    _add_notice " - [$func_name] [ERROR] '기본 Java 설정 도구' 다운로드 실패"
-    _add_notice " - [$func_name] [ERROR] '$URL_UPDATE_JAVA_CONFIG' 파일이 존재하지 않아 설치를 생략합니다."
-    return 0
-  fi 
-  
-  chmod +x "$dest_path"
-  echo " - $dest_path 다운로드 및 실행 권한 부여 완료."
-
-  if ! grep -q "function update-java-config()" "$HOME/.bashrc"; then
-    cat << 'EOF' >> "$HOME/.bashrc" || error_exit "~/.bashrc 파일 수정 실패" "$LINENO"
-
-# ==========================================
-# Java 환경 변수 관리 (update-java-config 연동)
-# ==========================================
-
-# 1. 새 터미널 오픈 및 OS 재부팅 시 환경 변수 유지
-if [ -f ~/.java_env ]; then
-    source ~/.java_env
-fi
-
-# 2. 터미널에서 스크립트 실행 직후 현재 쉘에 즉시 동기화하는 래퍼 함수
-function update-java-config() {
-    ~/bin/update-java-config
-    if [ -f ~/.java_env ]; then
-        source ~/.java_env
-        echo "[System] 현재 터미널의 JAVA_HOME이 즉시 적용되었습니다."
-    fi
-}
-EOF
-    echo_i " - ~/.bashrc에 update-java-config 래퍼 함수를 추가했습니다."
-  else
-    echo_w " - ~/.bashrc에 이미 update-java-config 설정이 존재합니다."
-  fi
-  
-  EXECUTED_JOB_FLAGS["$func_name"]=1
-}
-
-##
-# 외부설정된 URL로부터 Maven 바이너리를 다운로드하고 /opt 디렉토리에 압축을 해제합니다.
-# 파일명에서 버전을 유추하여 중복 설치를 방지합니다.
-#
-# @param 없음
-#
-# @return 진행 상황 메시지 (표준 출력)
-##
-install_maven() {
-  local func_name=${FUNCNAME[0]}
-  local flag="${EXECUTED_JOB_FLAGS[$func_name]:-0}"
-  
-  if (( flag == 1 )); then
-    return 0
-  fi
-  
-  setup_mvn_config
-
-  echo
-  echo "############### $func_name ###############"
-  echo "[진행] Maven 설치 중..."
-  
-  # 파일명에서 정규식을 사용해 버전(예: 3.9.15)을 파싱
-  local file_name=$(basename "$URL_MAVEN_FILE")
-  local mvn_version=$(echo "$file_name" | sed -n 's/.*apache-maven-\([0-9\.]*\)-bin.*/\1/p')
-  
-  if [ -z "$mvn_version" ]; then
-    error_exit "Maven 다운로드 URL에서 버전을 파싱할 수 없습니다." "$LINENO"
-  fi
-
-  local target_dir="/opt/apache-maven-${mvn_version}"
-  if [ -d "$target_dir" ]; then
-    echo_w " - Maven 버전 ${mvn_version} 이(가) 이미 존재하므로 설치를 건너뜁니다."
-    
-    EXECUTED_JOB_FLAGS["$func_name"]=1
-    
-    return 0
-  fi
-
-  local temp_archive="/tmp/$file_name"
-  
-  # ---------------------------------------------------------
-  # curl -f 옵션 추가 및 예외 처리 완화
-  # 1. -f 옵션: 404 등 서버 에러 시 다운로드를 실패 처리함
-  # 2. || 구문: 파일이 없을 경우 전체 스크립트를 중단하지 않고 설치만 건너뜀
-  # ---------------------------------------------------------
-  if ! curl -sfLo "$temp_archive" "$URL_MAVEN_FILE"; then
-    echo_e " - [ERROR] Maven 다운로드 실패"
-    echo_e " - [ERROR] '$URL_MAVEN_FILE' 파일이 존재하지 않아 설치를 생략합니다."
-    rm -f "$temp_archive"
-    
-    _add_notice " - [$func_name] [ERROR] Maven 다운로드 실패"
-    _add_notice " - [$func_name] [ERROR] '$URL_MAVEN_FILE' 파일이 존재하지 않아 설치를 생략합니다."
-    return 0
-  fi 
-  
-  sudo mkdir -p /opt || error_exit "/opt 디렉토리 생성 실패" "$LINENO"
-  sudo tar -xzf "$temp_archive" -C /opt/ || error_exit "Maven 압축 해제 실패" "$LINENO"
-  rm -f "$temp_archive"
-  echo_i " - Maven 바이너리를 $target_dir 에 설치했습니다."
-  
-  EXECUTED_JOB_FLAGS["$func_name"]=1
-}
-
-##
-# 외부설정된 URL에서 update-mvn-config 스크립트를 다운로드하고 .bashrc에 래퍼 함수를 등록합니다.
-#
-# @param 없음
-#
-# @return 진행 상황 메시지 (표준 출력)
-##
-setup_mvn_config() {
-  local func_name=${FUNCNAME[0]}
-  local flag="${EXECUTED_JOB_FLAGS[$func_name]:-0}"
-  
-  if (( flag == 1 )); then
-    return 0
-  fi
-  
-  echo
-  echo "############### $func_name ###############"
-  echo "[진행] update-mvn-config 설정 중..."
-  local bin_dir="$HOME/bin"
-  local dest_path="$bin_dir/update-mvn-config"
-  
-  mkdir -p "$bin_dir"
-  
-  # ---------------------------------------------------------
-  # curl -f 옵션 추가 및 예외 처리 완화
-  # 1. -f 옵션: 404 등 서버 에러 시 다운로드를 실패 처리함
-  # 2. || 구문: 파일이 없을 경우 전체 스크립트를 중단하지 않고 설치만 건너뜀
-  # ---------------------------------------------------------
-  if ! curl -sfLo "$dest_path" "$URL_UPDATE_MVN_CONFIG"; then
-    echo_e " - [ERROR] '기본 Maven 버전 설정 도구' 다운로드 실패"
-    echo_e " - [ERROR] '$URL_UPDATE_MVN_CONFIG' 파일이 존재하지 않아 설치를 생략합니다."
-    rm -f "$dest_path"
-    
-    _add_notice " - [$func_name] [ERROR] '기본 Maven 버전 설정 도구' 다운로드 실패"
-    _add_notice " - [$func_name] [ERROR] '$URL_UPDATE_MVN_CONFIG' 파일이 존재하지 않아 설치를 생략합니다."
-    return 0
-  fi 
-  
-  chmod +x "$dest_path"
-  echo " - $dest_path 다운로드 및 실행 권한 부여 완료."
-
-  if ! grep -q "function update-mvn-config()" "$HOME/.bashrc"; then
-    cat << 'EOF' >> "$HOME/.bashrc" || error_exit "~/.bashrc 파일 수정 실패" "$LINENO"
-
-# ==========================================
-# Maven 환경 변수 관리 (update-mvn-config 연동)
-# ==========================================
-
-# 1. 새 터미널 오픈 및 OS 재부팅 시 환경 변수 유지 (조건 2, 3 충족)
-if [ -f ~/.maven_env ]; then
-    source ~/.maven_env
-fi
-
-# 2. 터미널에서 스크립트 실행 직후 현재 쉘에 즉시 동기화하는 래퍼 함수 (조건 1 충족)
-function update-mvn-config() {
-    ~/bin/update-mvn-config
-    if [ -f ~/.maven_env ]; then
-        source ~/.maven_env
-        echo "[System] 현재 터미널의 M2_HOME, MAVEN_HOME, PATH가 즉시 적용되었습니다."
-    fi  
-}
-EOF
-    echo_i " - ~/.bashrc에 update-mvn-config 래퍼 함수를 추가했습니다."
-  else
-    echo_w " - ~/.bashrc에 이미 update-mvn-config 설정이 존재합니다."
-  fi
-  
-  EXECUTED_JOB_FLAGS["$func_name"]=1
-}
+###########################################
+###########################################
 
 ##
 # 외부설정된 RSA_PUBLIC_KEY_LIST 배열을 통해 ~/.ssh/authorized_keys 파일에 여러 공개키를 등록합니다.
@@ -1124,12 +1392,6 @@ setup_ssh_key() {
   
   EXECUTED_JOB_FLAGS["$func_name"]=1
 }
-
-# 파라미터가 없는 경우 도움말 호출
-if [ $# -eq 0 ]; then
-  help "파라미터가 입력되지 않았습니다." "$LINENO"
-  exit 1
-fi
 
 # ==========================================
 # 파라미터 중복 제거 및 우선순위/종속성 처리 로직
@@ -1197,21 +1459,17 @@ APPROVED_OPTS=0
 # ==========================================
 for arg in "$@"; do
   case "$arg" in
-    --no-default-opts)
-      INSTALL_DEFAULT_OPTS=0
-      ;;
-    --jdk | \
-    --java-config  | \
-    --maven  | \
-    --mvn-config  | \
-    --ssh-key | \
     --all)
       APPROVED_OPTS=1
+      INSTALL_DEFAULT_OPTS=1
+      break
       ;;
     --add-sudoers | \
+    --custom-tools | \
+    --custom-installers | \
     --install-packages | \
     --remove-packages | \
-    --custom-tools)
+    --ssh-key )
       APPROVED_OPTS=1
       INSTALL_DEFAULT_OPTS=0
       ;;
@@ -1230,13 +1488,15 @@ fi
 _try_pkg_update
 # 사전 검사를 무사히 통과했다면(도움말 요청이 아님) 기본 도구들을 설치합니다.
 if (( INSTALL_DEFAULT_OPTS == 1 )); then
+#   setup_sudoers
+#   remove_packages # REMOVE_PACKAGES 기반. 삭제할 도구
+#   install_packages # INSTALL_PACKAGES 기반. _install_package 실행
+#   setup_custom_tools # URL_CUSTOM_TOOL.<식별정보> 배열 기반 자동 처리
+#   setup_custom_installers # URL_CUSTOM_INSTALLER.<식별정보> 배열 기반 자동 처리
+#   setup_ssh_key
   _setup_home_bin  
   _setup_git_prompt
   _install_vim_options # `vim` 옵션 적용
-  setup_sudoers
-  remove_packages # REMOVE_PACKAGES 기반. 삭제할 도구
-  install_packages # INSTALL_PACKAGES 기반. _install_package 실행
-  setup_custom_tools # URL_CUSTOM_TOOL.<식별정보> 배열 기반 자동 처리
 fi
 
 # ==========================================
@@ -1244,25 +1504,6 @@ fi
 # ==========================================
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
-    --no-default-opts)
-      shift  # 이미 Pre-pass에서 처리했으므로 skip만
-      ;;
-    --jdk)
-      install_jdk
-      shift
-      ;;
-    --java-config)
-      setup_java_config
-      shift
-      ;;
-    --maven)
-      install_maven
-      shift
-      ;;
-    --mvn-config)
-      setup_mvn_config
-      shift
-      ;;
     --ssh-key)
       setup_ssh_key
       shift
@@ -1283,9 +1524,16 @@ while [[ "$#" -gt 0 ]]; do
       setup_custom_tools
       shift
       ;;
+    --custom-installers)
+      setup_custom_installers
+      shift
+      ;;
     --all)
-      install_jdk
-      install_maven
+      setup_sudoers
+      remove_packages
+      install_packages
+      setup_custom_tools
+      setup_custom_installers
       setup_ssh_key
       shift
       ;;
