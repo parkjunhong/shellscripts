@@ -11,7 +11,7 @@ mkdir -p "$bin_dir"
 # 1. -f 옵션: 404 등 서버 에러 시 다운로드를 실패 처리함
 # 2. || 구문: 파일이 없을 경우 전체 스크립트를 중단하지 않고 설치만 건너뜀
 # ---------------------------------------------------------
-URL_UPDATE_MVN_CONFIG="https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main/maven/update-mvn-config"
+URL_UPDATE_MVN_CONFIG="https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main/maven/update-mvn-config___"
 if ! curl -sfLo "$dest_path" "$URL_UPDATE_MVN_CONFIG"; then
   echo_e " - [ERROR] '기본 Maven 버전 설정 도구' 다운로드 실패"
   echo_e " - [ERROR] '$URL_UPDATE_MVN_CONFIG' 파일이 존재하지 않아 설치를 생략합니다."
