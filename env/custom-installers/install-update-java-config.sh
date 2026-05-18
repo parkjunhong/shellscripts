@@ -46,7 +46,8 @@ if ! curl -sfLo "$dest_path" "$URL_UPDATE_JAVA_CONFIG"; then
   
   _add_notice " - [$func_name] [ERROR] '기본 Java 설정 도구' 다운로드 실패"
   _add_notice " - [$func_name] [ERROR] '$URL_UPDATE_JAVA_CONFIG' 파일이 존재하지 않아 설치를 생략합니다."
-  return 0
+
+  exit 1
 fi 
 
 chmod +x "$dest_path"
