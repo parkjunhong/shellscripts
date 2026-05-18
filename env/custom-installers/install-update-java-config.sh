@@ -28,8 +28,8 @@ echo_i() {
 # ==========================================
 
 echo "[진행] update-java-config 설정 중..."
-local bin_dir="$HOME/bin"
-local dest_path="$bin_dir/update-java-config"
+bin_dir="$HOME/bin"
+dest_path="$bin_dir/update-java-config"
 
 mkdir -p "$bin_dir"
 
@@ -77,3 +77,5 @@ EOF
 else
   echo_w " - ~/.bashrc에 이미 update-java-config 설정이 존재합니다."
 fi
+
+exit 0
