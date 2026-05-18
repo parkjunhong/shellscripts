@@ -41,7 +41,7 @@ echo_i() {
 echo "[진행] Maven 설치 중..."
   
 # 파일명에서 정규식을 사용해 버전(예: 3.9.15)을 파싱
-URL_MAVEN_FILE="https://dlcdn.apache.org/maven/maven-3/3.9.15/binaries/apache-maven-3.9.15-bin.tar.gz"
+URL_MAVEN_FILE="https://archive.apache.org/dist/maven/maven-3/3.9.15/binaries/apache-maven-3.9.15-bin.tar.gz"
 file_name=$(basename "$URL_MAVEN_FILE")
 mvn_version=$(echo "$file_name" | sed -n 's/.*apache-maven-\([0-9\.]*\)-bin.*/\1/p')
 
