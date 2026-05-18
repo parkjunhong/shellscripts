@@ -1,31 +1,6 @@
 #!/usr/bin/env bash
 
 # ==========================================
-# 터미널 출력 색상 정의
-# ==========================================
-if [ -t 1 ]; then
-  COLOR_ERROR='\033[1;31m'  # 오류, '31m': 빨강
-  COLOR_WARN='\033[1;33m'   # 경고, '33m': 노랑
-  COLOR_INFO='\033[1;32m'   # 정보, '32m': 녹색
-  COLOR_NC='\033[0m'        # 색상 초기화
-else
-  COLOR_ERROR=''            # 오류
-  COLOR_WARN=''             # 경고
-  COLOR_INFO=''             # 정보
-  COLOR_NC=''               # 색상 초기화
-fi
-
-echo_e() {
-  printf "${COLOR_ERROR}%s${COLOR_NC}\n" "$*"
-}
-echo_w() {
-  printf "${COLOR_WARN}%s${COLOR_NC}\n" "$*"
-}
-echo_i() {
-  printf "${COLOR_INFO}%s${COLOR_NC}\n" "$*"
-}
-
-# ==========================================
 
 echo "[진행] update-java-config 설정 중..."
 bin_dir="$HOME/bin"
