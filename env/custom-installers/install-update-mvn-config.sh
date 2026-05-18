@@ -1,10 +1,5 @@
 #!/usr/bin/env bash
 
-
-echo "__add_notice 호출 테스트"
- _add_notice " - [$func_name] [ERROR] '기본 Maven 버전 설정 도구' 다운로드 실패"
-  _add_notice " - [$func_name] [ERROR] '$URL_UPDATE_MVN_CONFIG' 파일이 존재하지 않아 설치를 생략합니다."
-
 echo "[진행] update-mvn-config 설정 중..."
 bin_dir="$HOME/bin"
 dest_path="$bin_dir/update-mvn-config"
