@@ -517,14 +517,6 @@ while IFS='=' read -r key value || [ -n "$key" ]; do
   [[ "$key" =~ ^[[:space:]]*RSA_PUBLIC_KEY\. ]] && RSA_PUBLIC_KEY_LIST+=("$(echo "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')")
 done < "$CONFIG_FILE"
 
-## TODO: 삭제 예정 (테스트 코드)
-# 외부설정파일 확인
-echo
-echo
-cat "$CONFIG_FILE"
-echo
-echo
-
 # 임시 외부설정파일 삭제
 rm -f -- "$CONFIG_FILE"
 
