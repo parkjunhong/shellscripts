@@ -48,4 +48,4 @@ _deploy_profile_completion() {
 }
 
 # 실행파일명에 확장자가 있는 경우와 없는 경우 모두에 대응하도록 매핑 등록
-complete -F _deploy_profile_completion run-deploy
+complete -F _deploy_profile_completion deploy-profile
