@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+# =======================================
+# @author       : parkjunhong77@gmail.com
+# @title        : Profile-based Deployment Script
+# @license      : Apache License 2.0
+# @since        : 2026-05-19
+# @desc         : support RHEL 8+, Oracle Linux 8+, Ubuntu 20.04+, RockyOS 9+
+# @installation : 
+#   1. insert 'source <path>/deploy_profile.sh' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/deploy_profile.sh' into /etc/bashrc for all users.
+# =======================================
+
+FILENAME=$(basename "$0")
+
+##
+# 스크립트 사용 방법 및 예외 발생 시 콜스택 디버깅 정보를 출력합니다.
+#
+# @param $1 {string} 오류 발생 원인 메시지 (생략 가능)
+# @param $2 {string} 오류가 발생한 라인 번호 (생략 가능)
+#
+# @return 도움말 가이드 및 디버깅 스택 트레이스 (표준 출력)
+##
+help(){
+  if [ ! -z "$1" ]; then
+    local indent=10
+    local formatl=" - %-"$indent"s: %s\n"
+    local formatr=" - %"$indent"s: %s\n"
+    echo
+    echo "================================================================================"
+    printf "$formatl" "filename" "$FILENAME"
+    printf "$formatl" "line" "$2"
+    printf "$formatl" "callstack"
+    local idx=1
+    for func in ${FUNCNAME[@]:1}
+    do
+      printf "$formatr" "["$idx"]" $func
+      ((idx++))
+    done
+    printf "$formatl" "cause" "$1"
+    echo "================================================================================"
+  fi
+  echo
+  echo "사용법:"
+  echo "  ./$FILENAME <프로파일_이름>"
+  echo "  ./$FILENAME -h | --help"
+  echo
+  echo "옵션:"
+  echo "  -h, --help    스크립트의 도움말 및 사용법을 출력합니다."
+}
+
+##
+# 지정된 프로파일 디렉토리로 이동하여 타겟 배포 스크립트를 실행합니다.
+#
+# @param $1 {string} 배포 프로파일 이름 (./deploy 하위 디렉토리명)
+#
+# @return 배포 스크립트 실행 결과 포맷 (표준 출력)
+##
+deploy_profile() {
+  local profile="$1"
+
+  # 1. 프로파일 인자 누락 검증
+  if [ -z "$profile" ]; then
+    help "프로파일을 설정하기 바랍니다." "$LINENO"
+    exit 1
+  fi
+
+  # 2. 프로파일 디렉토리 존재 여부 검증
+  if [ ! -d "./deploy/$profile" ]; then
+    help "프로파일이 올바르지 않습니다. 입력값=$profile" "$LINENO"
+    exit 1
+  fi
+
+  pushd . >/dev/null
+
+  # 3. 디렉토리 이동 예외 처리
+  if ! cd "./deploy/$profile" 2>/dev/null; then
+    help "프로파일 디렉토리 접근에 실패했습니다: ./deploy/$profile" "$LINENO"
+    popd >/dev/null
+    exit 1
+  fi
+
+  # 4. 배포 스크립트 존재 및 실행 권한 여부 검증
+  if [ -x "./deploy.sh" ]; then
+    ./deploy.sh
+  else
+    help "deploy.sh 파일이 존재하지 않거나 실행 권한이 없습니다." "$LINENO"
+    popd >/dev/null
+    exit 1
+  fi
+
+  popd >/dev/null
+}
+
+# ==============================================================================
+# 메인 실행부 및 옵션 파싱
+# ==============================================================================
+
+# 도움말 옵션 사전 처리
+if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+  help
+  exit 0
+fi
+
+# 배포 실행 함수 호출
+deploy_profile "$1"
+
+exit 0
+
