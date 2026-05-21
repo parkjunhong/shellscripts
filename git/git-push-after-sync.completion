@@ -1,0 +1,84 @@
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : search files.
+# @license  : Apache License 2.0
+# @since    : 2026-05-21
+# @desc     : support RHEL, Oracle Linux, Ubuntu, RockyOS
+# @installation : 
+#   1. insert 'source <path>/git-push-after-sync.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/git-push-after-sync.completion' into etc/bashrc for all users.
+# =======================================
+
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+# =======================================
+
+##
+# 자동완성 로직을 처리하는 함수입니다.
+#
+# @param $1 {string} 명령어
+# @param $2 {string} 현재 입력 중인 단어
+# @param $3 {string} 이전 입력 단어
+#
+# @return COMPREPLY 배열을 통한 자동완성 목록 반환
+##
+_git_push_after_sync_completion() {
+  local cur prev opts available_opts used_opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+  
+  opts="-s --source -t --target -h --help"
+
+  # 디렉토리 경로 입력 지원
+  case "${prev}" in
+    -s|--source|-t|--target)
+      compopt -o dirnames
+      COMPREPLY=( $(compgen -d -- "${cur}") )
+      return 0
+      ;;
+  esac
+
+  # 이미 입력된 옵션 제거
+  used_opts=""
+  for word in "${COMP_WORDS[@]}"; do
+    if [[ "$opts" == *"$word"* ]]; then
+      used_opts="$used_opts $word "
+    fi
+  done
+
+  available_opts=""
+  for opt in $opts; do
+    if [[ ! "$used_opts" =~ "$opt" ]]; then
+      available_opts="$available_opts $opt"
+    fi
+  done
+
+  # 명령줄에 '-' 없이 <TAB>만 눌러도 남은 옵션이 추천되도록 처리
+  COMPREPLY=( $(compgen -W "${available_opts}" -- "${cur}") )
+  
+  # 사용할 수 있는 옵션이 더 이상 없을 경우, 디렉토리 입력을 기본값으로 제안
+  if [[ ${#COMPREPLY[@]} -eq 0 && ! "${cur}" == -* ]]; then
+    compopt -o dirnames
+    COMPREPLY=( $(compgen -d -- "${cur}") )
+  fi
+
+  return 0
+}
+
+complete -F _git_push_after_sync_completion git-push-after-sync.sh
+
