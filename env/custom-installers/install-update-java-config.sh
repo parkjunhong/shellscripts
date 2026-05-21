@@ -54,7 +54,7 @@ else
   echo_w " - ~/.bashrc에 이미 update-java-config 설정이 존재합니다."
 fi
 
-# 최초 설치시 실행을 한 이후에, MVN_HOME, M2_HOME 가 설정됨.
-$HOME/bin/update-java-config
+# 최초 설치시 실행을 한 이후에, JAVA_HOME 가 설정됨.
+$HOME/bin/update-ava-config
 
 exit 0
