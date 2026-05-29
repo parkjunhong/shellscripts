@@ -46,6 +46,7 @@ help(){
   echo "옵션:"
   echo "  -s, --source  : 변경을 감지하고 복사할 원본 디렉토리"
   echo "  -t, --target  : 복사된 파일이 위치하며 git 연동이 설정된 대상 디렉토리"
+  echo "  -m, --message : 'git commit' 메시지"
   echo "  -h, --help    : 도움말 출력"
 }
 
@@ -152,6 +153,7 @@ rollback_git_state() {
 # 복사된 대상 디렉토리로 이동하여 최신화 후 git 커밋 및 푸시를 진행합니다.
 #
 # @param $1 {string} 대상 디렉토리 경로
+# @param $2 {string} git commit 메시지
 #
 # @return Git 처리 결과 전달 (실패 시 롤백 수행)
 ##
@@ -173,7 +175,7 @@ commit_and_push() {
   
   git add .
   
-  local commit_title="Auto-sync: 소스 변경사항 동기화"
+  local commit_title="$2"
   local commit_body="동기화 일시: $(date +'%Y-%m-%d %H:%M:%S')"
   
   git commit -m "$commit_title" -m "$commit_body"
@@ -226,11 +228,13 @@ monitor_changes() {
 main() {
   local source_dir=""
   local target_dir=""
+  local commit_msg="Auto-sync: 소스 변경사항 동기화"
   
   while [[ "$#" -gt 0 ]]; do
     case $1 in
       -s|--source) source_dir="$2"; shift 2 ;;
       -t|--target) target_dir="$2"; shift 2 ;;
+      -m|--message) commit_msg="$2"; shift 2 ;;
       -h|--help) help; exit 0 ;;
       *) help "알 수 없는 파라미터입니다: $1" "${BASH_LINENO[0]}"; exit 1 ;;
     esac
@@ -249,7 +253,7 @@ main() {
   fi
   
   sync_directories "$source_dir" "$target_dir"
-  commit_and_push "$target_dir"
+  commit_and_push "$target_dir" "$commit_msg"
   
 #  monitor_changes "$source_dir" "$target_dir"
 }
