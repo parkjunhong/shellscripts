@@ -289,6 +289,9 @@ if [ -z "$GROUP_ID" ]; then
     done
   fi
 else
+  echo
+  echo "💡 입력한 '$GROUP_ID Group'에 대해서 진행합니다."
+  echo  
   IFS=',' read -ra selected_groups <<< "$GROUP_ID"
 fi
 
