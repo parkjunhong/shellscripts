@@ -1,0 +1,63 @@
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : nexus snapshot manager.
+# @license  : Apache License 2.0
+# @since    : 2026-06-01
+# @desc     : support RHEL, Oracle Linux, Ubuntu, RockyOS
+# @installation : 
+#   1. insert 'source <path>/<파일명>" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/<파일명>' into 
+#      etc/bashrc for all users.
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+#
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+
+_nexus_snapshot_manager_completion() {
+  local cur prev opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  # 사용 가능한 옵션 목록 (Available options)
+  # -g, --group-id   : Nexus Group ID
+  # -a, --artifact-id: Nexus Artifact ID
+  # -h, --help       : Help
+  opts="-g --group-id -a --artifact-id -h --help"
+
+  # 이미 입력된 옵션을 찾아 제안에서 제외 (Remove already typed options)
+  local typed_opts=""
+  for word in "${COMP_WORDS[@]}"; do
+    if [[ "$opts" == *"$word"* ]]; then
+      opts=$(echo "$opts" | sed "s/\b$word\b//g")
+    fi
+  done
+
+  case "${prev}" in
+    -g|--group-id|-a|--artifact-id)
+      # 일반 값 입력이므로 완성 후보 없음 (No completion for normal values)
+      COMPREPLY=()
+      return 0
+      ;;
+    *)
+      ;;
+  esac
+
+  # 하이픈(-) 없이도 파라미터가 추천되도록 처리 (Suggest options even without '-' prefix)
+  COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+  return 0
+}
+
+complete -F _nexus_snapshot_manager_completion nexus-snapshot-manager.sh
