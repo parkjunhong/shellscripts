@@ -1,0 +1,64 @@
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : firewall-cmd zone info wrapper.
+# @license  : Apache License 2.0
+# @since    : 2026-06-01
+# @desc     : support RHEL, Oracle Linux, Ubuntu, RockyOS
+# @installation : 
+#   1. insert 'source <path>/<파일명>" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/<파일명>' into 
+#      etc/bashrc for all users.
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+#
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+
+_fwc_cus_completion() {
+  local cur prev opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  # 사용 가능한 옵션 목록 (Available options)
+  opts="--zone= --active-zone --reload -h --help"
+
+  # --zone= 옵션의 동적 자동 완성 (Dynamic auto-completion for zones)
+  if [[ "${cur}" == --zone=* ]]; then
+    local prefix="--zone="
+    local typed_zone="${cur#--zone=}"
+    # 시스템에 설정된 전체 zone 목록을 불러와 자동 완성 추천
+    local zones=$(sudo firewall-cmd --get-zones 2>/dev/null)
+    
+    COMPREPLY=( $(compgen -P "$prefix" -W "$zones" -- "$typed_zone") )
+    compopt -o nospace 2>/dev/null
+    return 0
+  fi
+
+  # 이미 입력된 옵션을 찾아 제안에서 제외 (Remove already typed options)
+  # 단, --zone= 은 다중 입력이 가능하므로 제외하지 않음.
+  local word
+  for word in "${COMP_WORDS[@]}"; do
+    if [[ "$word" == "--active-zone" || "$word" == "--reload" || "$word" == "-h" || "$word" == "--help" ]]; then
+      opts=$(echo "$opts" | sed "s/\b$word\b//g")
+    fi
+  done
+
+  # 하이픈(-) 없이도 파라미터가 추천되도록 처리 (Suggest options even without '-' prefix)
+  COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+  return 0
+}
+
+# 스크립트 실행 파일명과 연결
+complete -F _fwc_cus_completion fwc-cus.sh fwc-cus fwc-ctl.sh fwc-ctl
