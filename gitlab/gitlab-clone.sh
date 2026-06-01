@@ -38,7 +38,8 @@ help(){
   echo ""
   echo "옵션:"
   echo "  -u, --url       GitLab 서비스 URL (예: https://gitlab.ymtech.co.kr) (필수)"
-  echo "  -g, --group     GitLab 대상 그룹 정보 (예: etri-igmoip) (필수)"
+  echo "  -g, --group     GitLab 대상 그룹 정보 (예: my-security) (필수)"
+  echo "  -x, --exclude   제외할 SubGroup 이름. 콤마(,)로 구분"
   echo "  -t, --token     GitLab API 접근용 Access Token (필수)"
   echo "  -d, --dir       프로젝트를 Clone 할 대상 최상위 디렉토리 (선택, 기본값: 현재 경로)"
   echo "  -h, --help      도움말 출력"
@@ -82,17 +83,16 @@ urlencode() {
 }
 
 ##
-# 대상 그룹이 GitLab 서비스에 실제로 존재하는지(또는 접근 권한이 있는지) 사전 검증합니다.
+# 대상 그룹이 GitLab 서비스에 실제로 존재하는지 사전 검증합니다.
 #
 # @param $1 {String} 확인할 대상 그룹의 URL 인코딩된 경로
 #
-# @return (그룹이 존재하지 않을 경우, 디렉토리를 생성하지 않고 안내 문구 출력 후 즉시 강제 종료)
+# @return (그룹이 존재하지 않을 경우 안내 문구 출력 후 즉시 종료)
 ##
 verify_group_exists() {
   local group_id="$1"
   local api_url="${GITLAB_HOST}/api/v4/groups/${group_id}"
   
-  # HTTP 상태 코드만 추출하여 존재 여부 확인
   local http_code=$(curl -s -o /dev/null -w "%{http_code}" -H "PRIVATE-TOKEN: $GITLAB_TOKEN" "$api_url")
   
   if [ "$http_code" -ne 200 ]; then
@@ -100,7 +100,6 @@ verify_group_exists() {
     echo "🚫 안내: 요청하신 그룹('${RAW_GROUP_PATH}')은 GitLab 서비스에 존재하지 않거나 접근 권한이 없습니다."
     echo "💡 작업을 중단합니다. 대상 그룹 이름을 다시 한번 확인해 주세요. (HTTP 응답 코드: $http_code)"
     echo ""
-    # 도움말(help) 함수를 호출하지 않고 스크립트를 즉시 종료합니다.
     exit 1
   fi
 }
@@ -110,17 +109,40 @@ verify_group_exists() {
 #
 # @param $1 {String} GitLab API용 그룹 ID 또는 URL 인코딩된 그룹 경로
 # @param $2 {String} 데이터를 저장/생성할 대상 물리 디렉토리 경로
+# @param $3 {String} 출력을 위한 현재 그룹 이름
 #
 # @return (대상 디렉토리 생성 및 하위 프로젝트 git clone 실행)
 ##
 traverse_group() {
+  # 0. 예외 대상인 Group 인지 확인
+  for _ex_group in "${EXCLUDED_GROUPS[@]}"; do
+    if [ "$_ex_group" == "$3" ]; then
+      echo ""
+      echo "🚫 [Group] '$3($1)'은 제외대상이므로 하위 그룹과 프로젝트를 순회하지 않습니다."
+      return 0
+    fi
+  done
+
   local group_id="$1"
   local current_dir="$2"
+  local group_name="$3"
 
   if [ ! -d "$current_dir" ]; then
     mkdir -p "$current_dir" || { help "디렉토리 생성 실패: $current_dir" "$LINENO"; exit 1; }
   fi
 
+  # HTTP API 응답 헤더(X-Total)를 추출하여 Projects/Groups 총개수를 미리 구합니다.
+  local projects_total=$(curl -s -I -H "PRIVATE-TOKEN: $GITLAB_TOKEN" "${GITLAB_HOST}/api/v4/groups/${group_id}/projects?include_subgroups=false" | grep -i '^x-total:' | awk '{print $2}' | tr -d '\r\n ')
+  [ -z "$projects_total" ] && projects_total=0
+
+  local subgroups_total=$(curl -s -I -H "PRIVATE-TOKEN: $GITLAB_TOKEN" "${GITLAB_HOST}/api/v4/groups/${group_id}/subgroups" | grep -i '^x-total:' | awk '{print $2}' | tr -d '\r\n ')
+  [ -z "$subgroups_total" ] && subgroups_total=0
+
+  # [Group] 진입 로그 출력 (빈 줄 포함)
+  echo ""
+  echo "📁 [Group] '${group_name}' (Groups: ${subgroups_total} 개, Projects: ${projects_total} 개)"
+
+  # a-1) 하위 프로젝트 조회
   local page=1
   while true; do
     local projects_api="${GITLAB_HOST}/api/v4/groups/${group_id}/projects?per_page=100&page=${page}&include_subgroups=false"
@@ -135,17 +157,24 @@ traverse_group() {
       local p_url=$(echo "$project" | jq -r '.http_url_to_repo')
       local target_path="${current_dir}/${p_path}"
 
+      # [Clone] 사이 빈 줄 삽입
+      echo ""
+
       if [ ! -d "$target_path" ]; then
-        echo "[Clone] $p_path 프로젝트 복제 중... -> $target_path"
+        # 2칸 들여쓰기 적용
+        echo "  🚀 [Clone] '${p_path}' 프로젝트 복제 중... -> '${p_url}'"
         local auth_url=$(echo "$p_url" | sed -e "s|http://|http://oauth2:${GITLAB_TOKEN}@|" -e "s|https://|https://oauth2:${GITLAB_TOKEN}@|")
-        git clone "$auth_url" "$target_path"
+        
+        # 4칸 들여쓰기 적용: git progress가 파이프(|) 때문에 숨겨지지 않도록 --progress 강제
+        git clone --progress "$auth_url" "$target_path" 2>&1 | sed 's/^/    /'
       else
-        echo "[Skip] 이미 존재하는 프로젝트입니다: $target_path"
+        echo "  ⚠️ [Skip] 이미 존재하는 프로젝트입니다: '${target_path}'"
       fi
     done
     ((page++))
   done
 
+  # a-2) 하위 그룹 조회
   page=1
   while true; do
     local subgroups_api="${GITLAB_HOST}/api/v4/groups/${group_id}/subgroups?per_page=100&page=${page}"
@@ -160,8 +189,8 @@ traverse_group() {
       local sub_path=$(echo "$subgroup" | jq -r '.path')
       local next_dir="${current_dir}/${sub_path}"
 
-      echo "[Group] 서브 그룹 진입: $sub_path"
-      traverse_group "$sub_id" "$next_dir"
+      # 재귀 호출 시 서브 그룹의 이름을 함께 전달합니다.
+      traverse_group "$sub_id" "$next_dir" "$sub_path"
     done
     ((page++))
   done
@@ -179,6 +208,19 @@ parse_arguments() {
     case $1 in
       -u|--url) TARGET_URL="$2"; shift ;;
       -g|--group) TARGET_GROUP="$2"; shift ;;
+      -x|--exclude) 
+        EXCLUDED_GROUPS=()
+        IFS="," read -r -a temp_arr <<< "$2"
+        for item in "${temp_arr[@]}"; do
+          # 1. 앞 공백 제거 (Leading whitespace)
+          item="${item#"${item%%[![:space:]]*}"}"
+          # 2. 뒤 공백 제거 (Trailing whitespace)
+          item="${item%"${item##*[![:space:]]}"}"
+          # 3. 최종 배열에 추가
+          EXCLUDED_GROUPS+=("$item")
+        done
+        shift
+        ;;
       -t|--token) GITLAB_TOKEN="$2"; shift ;;
       -d|--dir) TARGET_DIR="$2"; shift ;;
       -h|--help) help; exit 0 ;;
@@ -188,26 +230,21 @@ parse_arguments() {
   done
 
   local missing_params=""
-  
-  if [ -z "$TARGET_URL" ]; then
-    missing_params+="-u/--url(GitLab 서비스 URL) "
-  fi
-  if [ -z "$TARGET_GROUP" ]; then
-    missing_params+="-g/--group(대상 그룹 정보) "
-  fi
-  if [ -z "$GITLAB_TOKEN" ]; then
-    missing_params+="-t/--token(Access Token) "
-  fi
+  if [ -z "$TARGET_URL" ]; then missing_params+="-u/--url(GitLab 서비스 URL) "; fi
+  if [ -z "$TARGET_GROUP" ]; then missing_params+="-g/--group(대상 그룹 정보) "; fi
+  if [ -z "$GITLAB_TOKEN" ]; then missing_params+="-t/--token(Access Token) "; fi
 
   if [ ! -z "$missing_params" ]; then
     help "다음 필수 파라미터가 입력되지 않았습니다: $missing_params" "$LINENO"
     exit 1
   fi
 
-  if [ -z "$TARGET_DIR" ]; then
-    TARGET_DIR="$(pwd)"
+  if [ -z "$EXCLUDED_GROUPS" ];then 
+    EXCLUDED_GROUPS=();
   fi
-
+  if [ -z "$TARGET_DIR" ]; then 
+    TARGET_DIR="$(pwd)"; 
+  fi
   TARGET_URL="${TARGET_URL%/}"
 }
 
@@ -219,10 +256,11 @@ GITLAB_HOST="$TARGET_URL"
 RAW_GROUP_PATH="$TARGET_GROUP"
 ENCODED_GROUP_PATH=$(urlencode "$RAW_GROUP_PATH")
 
-# [핵심 변경점] 디렉토리를 생성하기 전에, GitLab 서비스에 해당 그룹이 존재하는지 철저히 사전 검증합니다.
+# GitLab 서비스에 그룹 존재 여부 사전 검증
 verify_group_exists "$ENCODED_GROUP_PATH"
 
 ROOT_CLONE_DIR="${TARGET_DIR}/${RAW_GROUP_PATH}"
+ROOT_GROUP_NAME=$(basename "$RAW_GROUP_PATH")
 
 echo "========================================="
 echo "GitLab Host  : $GITLAB_HOST"
@@ -231,8 +269,9 @@ echo "Target Dir   : $TARGET_DIR"
 echo "Clone Dir    : $ROOT_CLONE_DIR"
 echo "========================================="
 
-traverse_group "$ENCODED_GROUP_PATH" "$ROOT_CLONE_DIR"
+# 재귀 호출 시작 (최상위 루트 그룹 이름도 함께 전달)
+traverse_group "$ENCODED_GROUP_PATH" "$ROOT_CLONE_DIR" "$ROOT_GROUP_NAME"
 
+echo ""
 echo "작업이 성공적으로 완료되었습니다."
 exit 0
-
