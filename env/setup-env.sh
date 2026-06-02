@@ -1249,7 +1249,7 @@ setup_sudoers() {
   # 4. 입력 종료 후 트랩 해제 (기본 동작으로 복구)
   trap - SIGINT
 
-  local sudoers_file="/etc/sudoers.d/$target_user"
+  local sudoers_file="/etc/sudoers.d/user-$target_user"
 
   # 5. OS에 따라 패키지 매니저 경로를 추가
   local os_pkg_cmd=""
