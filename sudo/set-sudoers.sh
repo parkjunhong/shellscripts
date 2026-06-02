@@ -35,19 +35,23 @@ help(){
   fi  
   echo  
   echo "사용법(Usage): $FILENAME [옵션] [명령어1] [명령어2] ..."
-  echo "지정된 계정 또는 그룹에 대해 특정 명령어의 NOPASSWD 권한을 부여하고 병합합니다."
-  echo "명령어가 존재하지 않는 경우 패키지 관리자를 통한 설치를 제안합니다."
+  echo "지정된 대상(계정/그룹)에 대해 상세 Sudoers 정책(호스트, 권한, 옵션)을 부여하고 병합합니다."
   echo ""
-  echo "옵션:"
+  echo "대상 옵션 (택 1 필수):"
   echo "  -u, --user <계정명>    권한을 부여할 대상 시스템 계정"
   echo "  -g, --group <그룹명>   권한을 부여할 대상 시스템 그룹"
+  echo ""
+  echo "정책 옵션 (선택):"
+  echo "  -H, --host <호스트>    명령어 실행을 허용할 호스트 (기본값: ALL)"
+  echo "  -r, --runas <사용자>   명령어 실행 시 빌려올 권한 (기본값: ALL)"
+  echo "                         예: oracle, :dba, tomcat:was 등 (자동 포맷팅 지원)"
+  echo "  -o, --option <옵션>    태그 옵션 (기본값: NOPASSWD)"
+  echo "                         예: NOPASSWD, PASSWD, NOEXEC, SETENV 등"
   echo "  -h, --help             도움말 출력"
   echo ""
-  echo "※ 주의: -u 와 -g 옵션은 동시에 사용할 수 없습니다."
-  echo ""
   echo "예시:"
-  echo "  $FILENAME -u admin cat /usr/bin/systemctl htop"
-  echo "  $FILENAME -g developer cat /usr/bin/firewalld"
+  echo "  $FILENAME -u admin cat /usr/bin/systemctl"
+  echo "  $FILENAME -g devops -H web-server-01 -r tomcat -o NOPASSWD,NOEXEC cat /usr/bin/systemctl"
 }
 
 check_user_exists() {
@@ -61,29 +65,51 @@ check_group_exists() {
 TARGET_TYPE=""
 TARGET_NAME=""
 TARGET_PREFIX=""
+PARAM_HOST="ALL"
+PARAM_RUNAS="(ALL)"
+PARAM_OPTION="NOPASSWD"
 COMMANDS=()
 
 # 파라미터 파싱
 while [[ "$#" -gt 0 ]]; do
   case $1 in
     -u|--user)
-      if [ -n "$TARGET_TYPE" ]; then
-        help "대상은 계정(-u) 또는 그룹(-g) 중 하나만 지정해야 합니다." "${BASH_LINENO[0]}"
-        exit 1
-      fi
+      if [ -n "$TARGET_TYPE" ]; then help "대상은 계정(-u) 또는 그룹(-g) 중 하나만 지정해야 합니다." "${BASH_LINENO[0]}"; exit 1; fi
       TARGET_TYPE="user"
       TARGET_NAME="$2"
       TARGET_PREFIX="$2"
       shift 2
       ;;
     -g|--group)
-      if [ -n "$TARGET_TYPE" ]; then
-        help "대상은 계정(-u) 또는 그룹(-g) 중 하나만 지정해야 합니다." "${BASH_LINENO[0]}"
-        exit 1
-      fi
+      if [ -n "$TARGET_TYPE" ]; then help "대상은 계정(-u) 또는 그룹(-g) 중 하나만 지정해야 합니다." "${BASH_LINENO[0]}"; exit 1; fi
       TARGET_TYPE="group"
       TARGET_NAME="$2"
       TARGET_PREFIX="%${2}"
+      shift 2
+      ;;
+    -H|--host)
+      PARAM_HOST="$2"
+      shift 2
+      ;;
+    -r|--runas)
+      raw_runas="$2"
+      if [[ "$raw_runas" != \(* ]]; then
+        if [[ "$raw_runas" == *:* ]]; then
+          u=$(echo "$raw_runas" | cut -d: -f1)
+          g=$(echo "$raw_runas" | cut -d: -f2)
+          if [ -n "$g" ] && [[ "$g" != %* ]]; then g="%${g}"; fi
+          PARAM_RUNAS="(${u}:${g})"
+        else
+          # ALL 인 경우 (ALL)로 포맷팅, 일반 계정인 경우 (user)로 포맷팅
+          PARAM_RUNAS="(${raw_runas})"
+        fi
+      else
+        PARAM_RUNAS="$raw_runas"
+      fi
+      shift 2
+      ;;
+    -o|--option)
+      PARAM_OPTION="$2"
       shift 2
       ;;
     -h|--help)
@@ -119,7 +145,7 @@ if [ ${#COMMANDS[@]} -eq 0 ]; then
   exit 1
 fi
 
-# 1. 파일명 접두어 결정 (user- / group-)
+# 1. 파일명 접두어 결정
 SUDOERS_DIR="/etc/sudoers.d"
 if [ "$TARGET_TYPE" == "user" ]; then
   SUDOERS_FILE="${SUDOERS_DIR}/user-${TARGET_NAME}"
@@ -134,32 +160,27 @@ elif command -v yum &>/dev/null; then PKG_MGR="yum"
 elif command -v apt-get &>/dev/null; then PKG_MGR="apt-get"
 fi
 
-# 3. 기존 sudoers 파일 라인별 파싱 (별개 옵션 보존 및 NOPASSWD 병합)
+# 3. 기존 sudoers 파일 파싱 (Unique Key 매칭 알고리즘)
+MATCH_PREFIX="${TARGET_PREFIX} ${PARAM_HOST}=${PARAM_RUNAS} ${PARAM_OPTION}:"
 FINAL_CMDS=()
 PRESERVED_LINES=()
 
 if sudo test -f "$SUDOERS_FILE"; then
   while IFS= read -r line || [ -n "$line" ]; do
-    # NOPASSWD 설정 라인인지 정확히 매칭 검사
-    if [[ "$line" == "${TARGET_PREFIX} ALL=(ALL) NOPASSWD:"* ]]; then
-      CMDS_STR=$(echo "$line" | sed "s/^${TARGET_PREFIX} ALL=(ALL) NOPASSWD: *//")
+    if [[ "$line" == "${MATCH_PREFIX}"* ]]; then
+      CMDS_STR=$(echo "$line" | sed "s/^${MATCH_PREFIX} *//")
       IFS=',' read -ra CMDS_ARR <<< "$CMDS_STR"
       for cmd in "${CMDS_ARR[@]}"; do
         cmd=$(echo "$cmd" | xargs)
-        if [ -n "$cmd" ]; then
-          FINAL_CMDS+=("$cmd")
-        fi
+        if [ -n "$cmd" ]; then FINAL_CMDS+=("$cmd"); fi
       done
     else
-      # 다른 설정(예: ALL=(ALL) ALL)이거나 주석인 경우 배열에 그대로 보존
-      if [ -n "$line" ]; then
-        PRESERVED_LINES+=("$line")
-      fi
+      if [ -n "$line" ]; then PRESERVED_LINES+=("$line"); fi
     fi
   done < <(sudo cat "$SUDOERS_FILE")
 fi
 
-# 4. Phase 1: 명령어 존재 여부 확인 및 대화형 설치
+# 4. Phase 1: 명령어 존재 여부 확인 및 설치
 echo "======================================================================"
 echo "[1단계] 명령어 존재 여부 검증 및 설치"
 echo "======================================================================"
@@ -172,9 +193,7 @@ for i in "${!COMMANDS[@]}"; do
   
   if [[ "$cmd" == */* ]]; then
     is_path=1
-    if [ -e "$cmd" ]; then
-      resolved=$(realpath "$cmd" 2>/dev/null || readlink -f "$cmd" 2>/dev/null)
-    fi
+    if [ -e "$cmd" ]; then resolved=$(realpath "$cmd" 2>/dev/null || readlink -f "$cmd" 2>/dev/null); fi
   else
     resolved=$(command -v "$cmd" 2>/dev/null)
   fi
@@ -182,7 +201,6 @@ for i in "${!COMMANDS[@]}"; do
   if [ -z "$resolved" ] || [ ! -e "$resolved" ]; then
     if [ "$is_path" -eq 0 ] && [ "$PKG_MGR" != "unknown" ]; then
       is_installable=0
-      
       if [ "$PKG_MGR" == "apt-get" ]; then
         if apt-cache show "$cmd" &>/dev/null; then is_installable=1; fi
       elif [[ "$PKG_MGR" == "dnf" || "$PKG_MGR" == "yum" ]]; then
@@ -197,15 +215,9 @@ for i in "${!COMMANDS[@]}"; do
             echo "  >>> '$cmd' 설치를 진행합니다..."
             sudo $PKG_MGR install -y "$cmd"
             resolved=$(command -v "$cmd" 2>/dev/null)
-            if [ -n "$resolved" ] && [ -e "$resolved" ]; then
-              echo "  >>> [성공] 설치 완료 ($resolved)"
-            else
-              echo "  >>> [실패] 설치되었으나 실행 파일을 찾을 수 없습니다."
-            fi
+            if [ -n "$resolved" ] && [ -e "$resolved" ]; then echo "  >>> [성공] 설치 완료 ($resolved)"; else echo "  >>> [실패] 설치 실패."; fi
             ;;
-          * ) 
-            echo "  >>> 설치를 건너뜁니다."
-            ;;
+          * ) echo "  >>> 설치를 건너뜁니다." ;;
         esac
       fi
     fi
@@ -228,8 +240,7 @@ for i in "${!COMMANDS[@]}"; do
     is_duplicate=0
     for ext_cmd in "${FINAL_CMDS[@]}"; do
       if [ "$ext_cmd" == "$resolved" ]; then
-        is_duplicate=1
-        break
+        is_duplicate=1; break
       fi
     done
 
@@ -252,27 +263,21 @@ if [ "$NEW_ADDED" -eq 0 ]; then
   exit 0
 fi
 
-if ! sudo test -d "$SUDOERS_DIR"; then
-  sudo mkdir -p "$SUDOERS_DIR"
-fi
+if ! sudo test -d "$SUDOERS_DIR"; then sudo mkdir -p "$SUDOERS_DIR"; fi
 
-# 병합된 명령어 배열을 콤마(,)로 연결
 JOINED_CMDS=$(printf ", %s" "${FINAL_CMDS[@]}")
 JOINED_CMDS=${JOINED_CMDS:2}
 
-# 보존된 라인(기존 권한)과 새로 갱신된 NOPASSWD 라인을 함께 작성
 {
-  for line in "${PRESERVED_LINES[@]}"; do
-    echo "$line"
-  done
-  echo "${TARGET_PREFIX} ALL=(ALL) NOPASSWD: ${JOINED_CMDS}"
+  for line in "${PRESERVED_LINES[@]}"; do echo "$line"; done
+  echo "${MATCH_PREFIX} ${JOINED_CMDS}"
 } | sudo tee "$SUDOERS_FILE" > /dev/null
 
 sudo chmod 0440 "$SUDOERS_FILE"
 
 sudo visudo -c -f "$SUDOERS_FILE" &>/dev/null
 if [ $? -eq 0 ]; then
-  echo "[성공] '${TARGET_NAME}'(${TARGET_TYPE}) 대상에 대한 NOPASSWD 적용이 완료되었습니다."
+  echo "[성공] '${TARGET_NAME}'(${TARGET_TYPE}) 대상에 대한 Sudoers 적용이 완료되었습니다."
   echo ""
   echo "----------------------------------------------------------------------"
   echo "[$SUDOERS_FILE 파일 내용 확인]"
