@@ -738,7 +738,7 @@ _try_pkg_update() {
   if $PKG_UPDATE_CMD; then
     EXECUTED_JOB_FLAGS["$func_name"]=1
   else
-    echo_w "[⚠️] 패키지 인덱스 업데이트에 실패했습니다."
+    echo_w "⚠️ - 패키지 인덱스 업데이트에 실패했습니다."
     return 1
   fi
 }
@@ -806,7 +806,7 @@ _remove_package(){
 remove_packages(){
   if [ -z "${REMOVE_PACKAGES}" ]; then
     echo ""
-    echo_i "[⚠] '삭제할 패키지' 목록이 존재하지 않습니다."
+    echo_w "⚠ - '삭제할 패키지' 목록이 존재하지 않습니다."
     return 0
   fi
   
@@ -835,7 +835,7 @@ remove_packages(){
 install_packages() {
   if [ -z "${INSTALL_PACKAGES}" ]; then
     echo ""
-    echo_i "[⚠] '설치할 패키지' 목록이 존재하지 않습니다."
+    echo_w "⚠ - '설치할 패키지' 목록이 존재하지 않습니다."
     return 0
   fi
   
@@ -1036,7 +1036,7 @@ _install_custom_tools() {
 setup_custom_tools() {
   if [ ${#CUSTOM_TOOL_LIST[@]} -lt 1 ]; then  
     echo ""
-    echo_w "⚠️ '설정된 커스텀 도구'가 존재하지 않습니다."
+    echo_w "⚠️ - '설정된 커스텀 도구'가 존재하지 않습니다."
   fi
 
   local func_name=${FUNCNAME[0]}
@@ -1182,7 +1182,7 @@ _execute_custom_installer() {
 setup_custom_installers() {
   if [ ${#CUSTOM_INSTALLER_LIST[@]} -lt 1 ]; then
     echo ""
-    echo_w "[⚠️] '설정된 커스텀 installer'가 존재하지 않습니다."
+    echo_w "⚠️ - '설정된 커스텀 installer'가 존재하지 않습니다."
   fi
   
   local func_name=${FUNCNAME[0]}
@@ -1213,7 +1213,7 @@ setup_custom_installers() {
 setup_sudoers() {
   if [ -z "${NO_PASSWORD_COMMANDS}" ]; then
     echo ""
-    echo_i "[⚠] '비밀번호를 입력 받지 않는 명령어' 목록이 존재하지 않습니다."
+    echo_w "⚠ - '비밀번호를 입력 받지 않는 명령어' 목록이 존재하지 않습니다."
     return 0
   fi
   
