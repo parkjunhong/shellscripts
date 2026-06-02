@@ -26,7 +26,7 @@
 # - $3: arg3
 # =======================================
 
-_set_sudoers_sh_completions()
+_sudoers_cli_sh_completions()
 {
   local cur prev opts
   COMPREPLY=()
@@ -83,4 +83,4 @@ _set_sudoers_sh_completions()
   return 0
 }
 
-complete -F _set_sudoers_sh_completions set-sudoers.sh
+complete -F _sudoers_cli_sh_completions sudoers-cli.sh
