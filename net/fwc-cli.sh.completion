@@ -25,7 +25,7 @@
 # - $2: arg4
 # - $3: arg3
 
-_fwc_cus_completion() {
+_fwc_cli_completion() {
   local cur prev opts
   COMPREPLY=()
   cur="${COMP_WORDS[COMP_CWORD]}"
@@ -61,4 +61,4 @@ _fwc_cus_completion() {
 }
 
 # 스크립트 실행 파일명과 연결
-complete -F _fwc_cus_completion fwc-cus.sh fwc-cus fwc-ctl.sh fwc-ctl
+complete -F _fwc_cli_completion fwc-cli.sh
