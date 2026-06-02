@@ -1373,6 +1373,7 @@ setup_ssh_key() {
   if [ ${#RSA_PUBLIC_KEY_LIST[@]} -lt 1 ]; then  
     echo ""
     echo_w "⚠️ '등록할 RSA 공개키'가 존재하지 않습니다."
+    return 0
   fi
   
   local func_name=${FUNCNAME[0]}
