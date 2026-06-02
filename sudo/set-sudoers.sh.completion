@@ -26,47 +26,61 @@
 # - $3: arg3
 # =======================================
 
-_set_nopasswd_sh_completions()
+_set_sudoers_sh_completions()
 {
   local cur prev opts
   COMPREPLY=()
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  # 스크립트에서 사용되는 옵션 정의 / Define options used in the script
-  opts="-u --user -g --group -h --help"
+  opts="-u --user -g --group -H --host -r --runas -o --option -h --help"
 
-  # 이전 파라미터가 -u 또는 --user인 경우, 시스템의 '계정' 목록 추천
+  # 계정 추천
   if [[ ${prev} == "-u" || ${prev} == "--user" ]]; then
     local users=$(cut -d: -f1 /etc/passwd 2>/dev/null)
     COMPREPLY=( $(compgen -W "${users}" -- "${cur}") )
     return 0
   fi
 
-  # 이전 파라미터가 -g 또는 --group인 경우, 시스템의 '그룹' 목록 추천
+  # 그룹 추천
   if [[ ${prev} == "-g" || ${prev} == "--group" ]]; then
     local groups=$(cut -d: -f1 /etc/group 2>/dev/null)
     COMPREPLY=( $(compgen -W "${groups}" -- "${cur}") )
     return 0
   fi
 
-  # 사용자가 이미 입력한 옵션은 추천 목록(opts)에서 제외
+  # 호스트 추천 (기본적으로 ALL 추천)
+  if [[ ${prev} == "-H" || ${prev} == "--host" ]]; then
+    COMPREPLY=( $(compgen -W "ALL localhost" -- "${cur}") )
+    return 0
+  fi
+
+  # 권한(RunAs) 추천 (기본적으로 ALL과 시스템 계정 추천)
+  if [[ ${prev} == "-r" || ${prev} == "--runas" ]]; then
+    local users=$(cut -d: -f1 /etc/passwd 2>/dev/null)
+    COMPREPLY=( $(compgen -W "ALL ${users}" -- "${cur}") )
+    return 0
+  fi
+
+  # Sudo 옵션 태그 추천
+  if [[ ${prev} == "-o" || ${prev} == "--option" ]]; then
+    COMPREPLY=( $(compgen -W "NOPASSWD PASSWD NOEXEC EXEC SETENV NOSETENV" -- "${cur}") )
+    return 0
+  fi
+
   for word in "${COMP_WORDS[@]}"; do
     if [[ "$opts" == *"$word"* ]]; then
       opts=${opts/$word/}
     fi
   done
 
-  # 현재 입력 값이 경로를 의미하는 경우 탭(TAB) 키로 파일/디렉토리 추천
   if [[ ${cur} == /* || ${cur} == ./* || ${cur} == ~* || ${cur} == ..* ]]; then
     COMPREPLY=( $(compgen -f -d -- "${cur}") )
     return 0
   fi
 
-  # 명령어 이후 '-'를 입력하지 않고 <TAB>만 입력해도 파라미터가 추천되도록 처리
   COMPREPLY=( $(compgen -W "${opts}" -c -- "${cur}") )
   return 0
 }
 
-# 자동 완성 함수를 스크립트 파일명과 매핑합니다.
-complete -F _set_nopasswd_sh_completions set-nopasswd.sh
+complete -F _set_sudoers_sh_completions set-sudoers.sh
