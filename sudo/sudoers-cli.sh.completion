@@ -64,21 +64,33 @@ _sudoers_cli_sh_completions()
 
   # Sudo 옵션 태그 추천
   if [[ ${prev} == "-o" || ${prev} == "--option" ]]; then
-    COMPREPLY=( $(compgen -W "NOPASSWD PASSWD NOEXEC EXEC SETENV NOSETENV" -- "${cur}") )
+    COMPREPLY=( $(compgen -W "NOPASSWD PASSWD NOEXEC EXEC SETENV NOSETENV LOG_INPUT NOLOG_INPUT" -- "${cur}") )
     return 0
   fi
 
-  for word in "${COMP_WORDS[@]}"; do
-    if [[ "$opts" == *"$word"* ]]; then
-      opts=${opts/$word/}
+  # (핵심 버그 수정 부분) 이미 입력한 옵션은 추천(opts)에서 안전하게 제외
+  local new_opts=""
+  for opt in $opts; do
+    local is_used=0
+    for word in "${COMP_WORDS[@]}"; do
+      if [[ "$opt" == "$word" ]]; then
+        is_used=1
+        break
+      fi
+    done
+    if [[ $is_used -eq 0 ]]; then
+      new_opts="$new_opts $opt"
     fi
   done
+  opts="$new_opts"
 
+  # 경로/파일 추천 
   if [[ ${cur} == /* || ${cur} == ./* || ${cur} == ~* || ${cur} == ..* ]]; then
     COMPREPLY=( $(compgen -f -d -- "${cur}") )
     return 0
   fi
 
+  # 옵션 및 시스템 명령어 추천
   COMPREPLY=( $(compgen -W "${opts}" -c -- "${cur}") )
   return 0
 }
