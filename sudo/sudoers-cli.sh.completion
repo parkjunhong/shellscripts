@@ -34,7 +34,6 @@ _sudoers_cli_sh_completions() {
 
   opts="-u --user -g --group -H --host -r --runas -o --option -h --help"
 
-  # 1. 이전 파라미터(prev) 값에 따른 동적 자동 완성 (Dynamic auto-completion)
   case "${prev}" in
     -u|--user)
       COMPREPLY=( $(compgen -W "$(cut -d: -f1 /etc/passwd 2>/dev/null)" -- "${cur}") )
@@ -53,22 +52,17 @@ _sudoers_cli_sh_completions() {
       return 0
       ;;
     -o|--option)
-      COMPREPLY=( $(compgen -W "NOPASSWD PASSWD NOEXEC EXEC SETENV NOSETENV LOG_INPUT NOLOG_INPUT" -- "${cur}") )
+      # 일반 권한 배포를 위한 'NONE' 옵션 키워드 자동완성 추가
+      COMPREPLY=( $(compgen -W "NOPASSWD PASSWD NOEXEC EXEC SETENV NOSETENV LOG_INPUT NOLOG_INPUT NONE" -- "${cur}") )
       return 0
       ;;
   esac
 
-  # 2. 이미 입력된 옵션을 찾아 제안에서 제외 (Remove already typed options)
-  # 테스트해주신 sed 방식을 차용하되, '-u'가 '--user'의 'u'까지 지우는 정규식 버그를 막기 위해 앞뒤 공백(space) 매칭을 사용합니다.
   opts=" ${opts} "
   local word
   for word in "${COMP_WORDS[@]}"; do
     case "$word" in
-      -u|--user)
-        # -u 와 -g 는 상호 배타적이므로 함께 제외
-        opts=$(echo "$opts" | sed -e 's/ -u / /g' -e 's/ --user / /g' -e 's/ -g / /g' -e 's/ --group / /g')
-        ;;
-      -g|--group)
+      -u|--user|-g|--group)
         opts=$(echo "$opts" | sed -e 's/ -u / /g' -e 's/ --user / /g' -e 's/ -g / /g' -e 's/ --group / /g')
         ;;
       -H|--host)
@@ -86,23 +80,19 @@ _sudoers_cli_sh_completions() {
     esac
   done
 
-  # 3. 파일/경로 자동 완성 (Path auto-completion)
   if [[ "${cur}" == /* || "${cur}" == ./* || "${cur}" == ~* || "${cur}" == ..* ]]; then
     COMPREPLY=( $(compgen -f -d -- "${cur}") )
     return 0
   fi
 
-  # 4. 옵션 및 명령어 제안 (Suggest options and commands)
-  # 빈 입력값("")에서 compgen -c 를 실행하면 수천 개의 명령어를 로드하느라 쉘이 뻗는(Freeze) 현상을 방지합니다.
-  # 입력값(알파벳 등)이 존재하고, 하이픈(-)으로 시작하지 않을 때만 시스템 명령어를 제안합니다.
+  # 입력값이 채워졌을 때만 무거운 자원 호출을 수행하되, 'ALL' 예약어 토큰을 목록에 병합 추천
   if [[ -n "${cur}" && "${cur}" != -* ]]; then
-    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") $(compgen -c -- "${cur}") )
+    COMPREPLY=( $(compgen -W "${opts} ALL" -- "${cur}") $(compgen -c -- "${cur}") )
   else
-    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+    COMPREPLY=( $(compgen -W "${opts} ALL" -- "${cur}") )
   fi
 
   return 0
 }
 
-# 스크립트 실행 파일명과 연결
 complete -F _sudoers_cli_sh_completions sudoers-cli.sh
