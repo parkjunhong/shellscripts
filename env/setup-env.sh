@@ -1257,7 +1257,7 @@ setup_sudoers() {
     # 3-4. 시스템에 존재하는 사용자인지 검증
     #        존재하지 않으면 경고 메시지 출력 후 재입력 요청
     if ! id "$target_user" &>/dev/null; then
-      echo_w " - [⚠️ ] '$target_user' 사용자가 시스템에 존재하지 않습니다. 다시 입력해 주세요."
+      echo_w " - '$target_user' 사용자가 시스템에 존재하지 않습니다. 다시 입력해 주세요."
       target_user=""   # 초기화 후 루프 재시작
       continue
     fi
@@ -1354,7 +1354,7 @@ set expandtab
 EOF
       echo_i " - [💡] $vimrc_file 파일에 커스텀 설정을 추가했습니다."
     else
-      echo_w " - [⚠️ ] $vimrc_file 파일에 이미 커스텀 설정이 존재합니다."
+      echo_w " - $vimrc_file 파일에 이미 커스텀 설정이 존재합니다."
     fi
   else
     echo_e " - [❌] vimrc 파일을 찾지 못해 커스텀 설정을 추가하지 못했습니다."
