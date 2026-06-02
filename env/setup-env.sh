@@ -1036,7 +1036,8 @@ setup_custom_tools() {
       fi
     done
   else
-    echo_w " - 설정된 커스텀 도구가 없습니다."
+    echo ""
+    echo_w "⚠️ '설정된 커스텀 도구'가 없습니다."
   fi
   
   EXECUTED_JOB_FLAGS["$func_name"]=1
@@ -1181,7 +1182,8 @@ setup_custom_installers() {
       fi
     done
   else
-    echo_w " - 설정된 커스텀 'installer'가 없습니다."
+    echo ""
+    echo_w "⚠️ '설정된 커스텀 installer'가 없습니다."
   fi
   
   EXECUTED_JOB_FLAGS["$func_name"]=1
