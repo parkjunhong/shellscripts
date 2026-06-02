@@ -45,48 +45,187 @@ help(){
   echo "  -H, --host <호스트>    명령어 실행을 허용할 호스트 (기본값: ALL)"
   echo "  -r, --runas <사용자>   명령어 실행 시 빌려올 권한 (기본값: ALL)"
   echo "                         예: oracle, :dba, tomcat:was 등 (자동 포맷팅 지원)"
-  echo "  -o, --option <옵션>    Sudoers 태그 옵션 (기본값: NOPASSWD)"
+  echo "  -o, --option <옵션>    Sudoers 태그 옵션 (기본값: NONE)"
+  echo "                         비밀번호 면제 규칙을 생성하려면 명시적으로 'NOPASSWD'를 입력해야 합니다."
   echo "                         복수 옵션이 필요한 경우 콤마(,)로 연결하여 입력합니다."
   echo "                         [지원 옵션 상세]"
+  echo "                         - NONE       : 별도의 태그 옵션이 없는 표준 권한 설정을 적용합니다. (비밀번호 필수)"
   echo "                         - NOPASSWD   : 비밀번호 입력 없이 명령어 실행을 허용합니다."
-  echo "                         - PASSWD     : 비밀번호 입력을 강제로 요구합니다. (상위 NOPASSWD 설정 무효화)"
-  echo "                         - NOEXEC     : 허용된 명령어 내부에서 하위 쉘(!bash 등) 및 외부 명령 실행을 차단합니다. (보안 필수)"
+  echo "                         - PASSWD     : 비밀번호 입력을 강제로 요구합니다."
+  echo "                         - NOEXEC     : 명령어 내부에서 하위 쉘 및 외부 명령 실행을 차단합니다."
   echo "                         - EXEC       : 하위 쉘 실행 차단을 해제하고 허용합니다."
-  echo "                         - SETENV     : 사용자의 기존 환경변수(PATH 등)를 sudo 실행 시에도 그대로 유지합니다."
-  echo "                         - NOSETENV   : 환경변수 유지를 차단하고 안전하게 초기화합니다. (보안 기본값)"
-  echo "                         - LOG_INPUT  : 명령어 실행 시 사용자의 표준 입력(Standard Input)을 로그에 기록합니다."
+  echo "                         - SETENV     : 사용자의 기존 환경변수를 sudo 실행 시에도 유지합니다."
+  echo "                         - NOSETENV   : 환경변수 유지를 차단하고 안전하게 초기화합니다."
+  echo "                         - LOG_INPUT  : 명령어 실행 시 사용자의 표준 입력을 로그에 기록합니다."
   echo "                         - NOLOG_INPUT: 표준 입력 로그 기록을 중지합니다."
   echo "  -h, --help             도움말 출력"
   echo ""
   echo "예시:"
-  echo "  $FILENAME -u admin cat /usr/bin/systemctl"
+  echo "  $FILENAME -u ymtech ALL"
+  echo "  $FILENAME -u ymtech -o NOPASSWD /usr/bin/cat /usr/bin/systemctl"
+  echo "  $FILENAME -g devops -H web-server-01 -o NOPASSWD,NOEXEC /usr/bin/systemctl"
 }
 
+##
+# 대상 계정이 시스템에 존재하는지 검증합니다.
+#
+# @param $1 {string} 계정명
+#
+# @return 계정이 존재하면 0, 존재하지 않으면 1 반환
+##
 check_user_exists() {
-  if id "$1" &>/dev/null; then
-    return 0; 
-  else 
-    return 1; 
-  fi
+  if id "$1" &>/dev/null; then return 0; else return 1; fi
 }
 
+##
+# 대상 그룹이 시스템에 존재하는지 검증합니다.
+#
+# @param $1 {string} 그룹명
+#
+# @return 그룹이 존재하면 0, 존재하지 않으면 1 반환
+##
 check_group_exists() {
-  if getent group "$1" &>/dev/null; then 
-    return 0; 
-  else 
-    return 1; 
-  fi
+  if getent group "$1" &>/dev/null; then return 0; else return 1; fi
 }
 
+##
+# 기존 Sudoers 설정 파일에서 완벽하게 일치하는 정책 라인을 찾아 명령어를 추출하고 나머지를 보존합니다.
+#
+# @return 파싱 작업이 정상 완료되면 0 반환
+##
+parse_existing_sudoers() {
+  if sudo test -f "$SUDOERS_FILE"; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      local is_match=0
+      local cmds_str=""
+      
+      if [ "$PARAM_OPTION" != "NONE" ] && [ -n "$PARAM_OPTION" ]; then
+        if [[ "$line" == "${MATCH_PREFIX}"* ]]; then
+          is_match=1
+          cmds_str=$(echo "$line" | sed "s/^${MATCH_PREFIX} *//")
+        fi
+      else
+        if [[ "$line" == "${MATCH_PREFIX}"* ]]; then
+          local remaining=$(echo "$line" | sed "s/^${MATCH_PREFIX} *//")
+          if [[ "$remaining" != *"NOPASSWD:"* && "$remaining" != *"PASSWD:"* && "$remaining" != *"NOEXEC:"* && "$remaining" != *"EXEC:"* && "$remaining" != *"SETENV:"* && "$remaining" != *"NOSETENV:"* && "$remaining" != *"LOG_INPUT:"* && "$remaining" != *"NOLOG_INPUT:"* ]]; then
+            is_match=1
+            cmds_str="$remaining"
+          fi
+        fi
+      fi
+
+      if [ "$is_match" -eq 1 ]; then
+        local cmds_arr=()
+        IFS=',' read -ra cmds_arr <<< "$cmds_str"
+        for cmd in "${cmds_arr[@]}"; do
+          cmd=$(echo "$cmd" | xargs)
+          if [ -n "$cmd" ]; then FINAL_CMDS+=("$cmd"); fi
+        done
+      else
+        if [ -n "$line" ]; then PRESERVED_LINES+=("$line"); fi
+      fi
+    done < <(sudo cat "$SUDOERS_FILE")
+  fi
+  return 0
+}
+
+##
+# 입력받은 명령어 목록의 실재 여부를 검증하고 시스템에 존재하지 않는 경우 설치를 제안합니다.
+#
+# @return 검증 및 설치 프로세스가 종료되면 0 반환
+##
+validate_and_install_commands() {
+  echo "======================================================================"
+  echo "[1단계] 명령어 존재 여부 검증 및 설치"
+  echo "======================================================================"
+  
+  for i in "${!COMMANDS[@]}"; do
+    local cmd="${COMMANDS[$i]}"
+    local resolved=""
+    local is_path=0
+    
+    if [ "$cmd" = "ALL" ]; then
+      resolved="ALL"
+    elif [[ "$cmd" == */* ]]; then
+      is_path=1
+      if [ -e "$cmd" ]; then resolved=$(realpath "$cmd" 2>/dev/null || readlink -f "$cmd" 2>/dev/null); fi
+    else
+      resolved=$(command -v "$cmd" 2>/dev/null)
+    fi
+
+    if [ -z "$resolved" ] || [ ! -e "$resolved" ]; then
+      if [ "$cmd" != "ALL" ] && [ "$is_path" -eq 0 ] && [ "$PKG_MGR" != "unknown" ]; then
+        local is_installable=0
+        if [ "$PKG_MGR" == "apt-get" ]; then
+          if apt-cache show "$cmd" &>/dev/null; then is_installable=1; fi
+        elif [[ "$PKG_MGR" == "dnf" || "$PKG_MGR" == "yum" ]]; then
+          if $PKG_MGR info "$cmd" &>/dev/null; then is_installable=1; fi
+        fi
+
+        if [ "$is_installable" -eq 1 ]; then
+          echo ""
+          read -p "  [?] '$cmd' 명령어를 찾을 수 없습니다. 패키지 관리자($PKG_MGR)로 설치하시겠습니까? (y/N): " yn
+          case $yn in
+            [Yy]* ) 
+              echo "  >>> '$cmd' 설치를 진행합니다..."
+              sudo $PKG_MGR install -y "$cmd"
+              resolved=$(command -v "$cmd" 2>/dev/null)
+              if [ -n "$resolved" ] && [ -e "$resolved" ]; then echo "  >>> [성공] 설치 완료 ($resolved)"; else echo "  >>> [실패] 설치 실패."; fi
+              ;;
+            * ) echo "  >>> 설치를 건너뜁니다." ;;
+          esac
+        fi
+      fi
+    fi
+    RESOLVED_COMMANDS[$i]="$resolved"
+  done
+  echo ""
+  return 0
+}
+
+##
+# 최종 권한 규칙 구조를 파일에 기입하고 visudo 엔진으로 문법 정합성을 검증합니다.
+#
+# @return 문법 통과 시 파일 가독을 위한 cat 출력 후 0 반환
+##
+write_and_verify_sudoers() {
+  if ! sudo test -d "$SUDOERS_DIR"; then sudo mkdir -p "$SUDOERS_DIR"; fi
+
+  local joined_cmds=$(printf ", %s" "${FINAL_CMDS[@]}")
+  joined_cmds=${joined_cmds:2}
+
+  {
+    for line in "${PRESERVED_LINES[@]}"; do echo "$line"; done
+    echo "${MATCH_PREFIX} ${joined_cmds}"
+  } | sudo tee "$SUDOERS_FILE" > /dev/null
+
+  sudo chmod 0440 "$SUDOERS_FILE"
+
+  sudo visudo -c -f "$SUDOERS_FILE" &>/dev/null
+  if [ $? -eq 0 ]; then
+    echo "[성공] '${TARGET_NAME}'(${TARGET_TYPE}) 대상에 대한 Sudoers 적용이 완료되었습니다."
+    echo ""
+    echo "----------------------------------------------------------------------"
+    echo "[$SUDOERS_FILE 파일 내용 확인]"
+    sudo cat "$SUDOERS_FILE"
+    echo "----------------------------------------------------------------------"
+  else
+    sudo rm -f "$SUDOERS_FILE"
+    help "생성된 sudoers 파일의 문법 검증에 실패하여 롤백했습니다." "${BASH_LINENO[0]}"
+    exit 1
+  fi
+  return 0
+}
+
+# 변수 초기화 및 파라미터 제어 변수 선언
 TARGET_TYPE=""
 TARGET_NAME=""
 TARGET_PREFIX=""
 PARAM_HOST="ALL"
 PARAM_RUNAS="(ALL)"
-PARAM_OPTION="NOPASSWD"
+PARAM_OPTION="NONE" # (설개 변경 핵심) 기본값을 NOPASSWD에서 NONE으로 수정
 COMMANDS=()
 
-# 파라미터 파싱
 while [[ "$#" -gt 0 ]]; do
   case $1 in
     -u|--user)
@@ -116,7 +255,6 @@ while [[ "$#" -gt 0 ]]; do
           if [ -n "$g" ] && [[ "$g" != %* ]]; then g="%${g}"; fi
           PARAM_RUNAS="(${u}:${g})"
         else
-          # ALL 인 경우 (ALL)로 포맷팅, 일반 계정인 경우 (user)로 포맷팅
           PARAM_RUNAS="(${raw_runas})"
         fi
       else
@@ -161,7 +299,6 @@ if [ ${#COMMANDS[@]} -eq 0 ]; then
   exit 1
 fi
 
-# 1. 파일명 접두어 결정
 SUDOERS_DIR="/etc/sudoers.d"
 if [ "$TARGET_TYPE" == "user" ]; then
   SUDOERS_FILE="${SUDOERS_DIR}/user-${TARGET_NAME}"
@@ -169,80 +306,25 @@ else
   SUDOERS_FILE="${SUDOERS_DIR}/group-${TARGET_NAME}"
 fi
 
-# 2. 패키지 관리자 감지
+if [ "$PARAM_OPTION" != "NONE" ] && [ -n "$PARAM_OPTION" ]; then
+  MATCH_PREFIX="${TARGET_PREFIX} ${PARAM_HOST}=${PARAM_RUNAS} ${PARAM_OPTION}:"
+else
+  MATCH_PREFIX="${TARGET_PREFIX} ${PARAM_HOST}=${PARAM_RUNAS}"
+fi
+
 PKG_MGR="unknown"
 if command -v dnf &>/dev/null; then PKG_MGR="dnf"
 elif command -v yum &>/dev/null; then PKG_MGR="yum"
 elif command -v apt-get &>/dev/null; then PKG_MGR="apt-get"
 fi
 
-# 3. 기존 sudoers 파일 파싱 (Unique Key 매칭 알고리즘)
-MATCH_PREFIX="${TARGET_PREFIX} ${PARAM_HOST}=${PARAM_RUNAS} ${PARAM_OPTION}:"
 FINAL_CMDS=()
 PRESERVED_LINES=()
-
-if sudo test -f "$SUDOERS_FILE"; then
-  while IFS= read -r line || [ -n "$line" ]; do
-    if [[ "$line" == "${MATCH_PREFIX}"* ]]; then
-      CMDS_STR=$(echo "$line" | sed "s/^${MATCH_PREFIX} *//")
-      IFS=',' read -ra CMDS_ARR <<< "$CMDS_STR"
-      for cmd in "${CMDS_ARR[@]}"; do
-        cmd=$(echo "$cmd" | xargs)
-        if [ -n "$cmd" ]; then FINAL_CMDS+=("$cmd"); fi
-      done
-    else
-      if [ -n "$line" ]; then PRESERVED_LINES+=("$line"); fi
-    fi
-  done < <(sudo cat "$SUDOERS_FILE")
-fi
-
-# 4. Phase 1: 명령어 존재 여부 확인 및 설치
-echo "======================================================================"
-echo "[1단계] 명령어 존재 여부 검증 및 설치"
-echo "======================================================================"
 RESOLVED_COMMANDS=()
 
-for i in "${!COMMANDS[@]}"; do
-  cmd="${COMMANDS[$i]}"
-  resolved=""
-  is_path=0
-  
-  if [[ "$cmd" == */* ]]; then
-    is_path=1
-    if [ -e "$cmd" ]; then resolved=$(realpath "$cmd" 2>/dev/null || readlink -f "$cmd" 2>/dev/null); fi
-  else
-    resolved=$(command -v "$cmd" 2>/dev/null)
-  fi
+parse_existing_sudoers
+validate_and_install_commands
 
-  if [ -z "$resolved" ] || [ ! -e "$resolved" ]; then
-    if [ "$is_path" -eq 0 ] && [ "$PKG_MGR" != "unknown" ]; then
-      is_installable=0
-      if [ "$PKG_MGR" == "apt-get" ]; then
-        if apt-cache show "$cmd" &>/dev/null; then is_installable=1; fi
-      elif [[ "$PKG_MGR" == "dnf" || "$PKG_MGR" == "yum" ]]; then
-        if $PKG_MGR info "$cmd" &>/dev/null; then is_installable=1; fi
-      fi
-
-      if [ "$is_installable" -eq 1 ]; then
-        echo ""
-        read -p "  [?] '$cmd' 명령어를 찾을 수 없습니다. 패키지 관리자($PKG_MGR)로 설치하시겠습니까? (y/N): " yn
-        case $yn in
-          [Yy]* ) 
-            echo "  >>> '$cmd' 설치를 진행합니다..."
-            sudo $PKG_MGR install -y "$cmd"
-            resolved=$(command -v "$cmd" 2>/dev/null)
-            if [ -n "$resolved" ] && [ -e "$resolved" ]; then echo "  >>> [성공] 설치 완료 ($resolved)"; else echo "  >>> [실패] 설치 실패."; fi
-            ;;
-          * ) echo "  >>> 설치를 건너뜁니다." ;;
-        esac
-      fi
-    fi
-  fi
-  RESOLVED_COMMANDS[$i]="$resolved"
-done
-echo ""
-
-# 5. Phase 2: 중복 판별 및 병합 결과 출력
 echo "======================================================================"
 echo "[2단계] 명령어 병합 및 최종 결과"
 echo "======================================================================"
@@ -252,7 +334,7 @@ for i in "${!COMMANDS[@]}"; do
   cmd="${COMMANDS[$i]}"
   resolved="${RESOLVED_COMMANDS[$i]}"
   
-  if [ -n "$resolved" ] && [ -e "$resolved" ]; then
+  if [ -n "$resolved" ]; then
     is_duplicate=0
     for ext_cmd in "${FINAL_CMDS[@]}"; do
       if [ "$ext_cmd" == "$resolved" ]; then
@@ -279,30 +361,6 @@ if [ "$NEW_ADDED" -eq 0 ]; then
   exit 0
 fi
 
-if ! sudo test -d "$SUDOERS_DIR"; then sudo mkdir -p "$SUDOERS_DIR"; fi
-
-JOINED_CMDS=$(printf ", %s" "${FINAL_CMDS[@]}")
-JOINED_CMDS=${JOINED_CMDS:2}
-
-{
-  for line in "${PRESERVED_LINES[@]}"; do echo "$line"; done
-  echo "${MATCH_PREFIX} ${JOINED_CMDS}"
-} | sudo tee "$SUDOERS_FILE" > /dev/null
-
-sudo chmod 0440 "$SUDOERS_FILE"
-
-sudo visudo -c -f "$SUDOERS_FILE" &>/dev/null
-if [ $? -eq 0 ]; then
-  echo "[성공] '${TARGET_NAME}'(${TARGET_TYPE}) 대상에 대한 Sudoers 적용이 완료되었습니다."
-  echo ""
-  echo "----------------------------------------------------------------------"
-  echo "[$SUDOERS_FILE 파일 내용 확인]"
-  sudo cat "$SUDOERS_FILE"
-  echo "----------------------------------------------------------------------"
-else
-  sudo rm -f "$SUDOERS_FILE"
-  help "생성된 sudoers 파일의 문법 검증에 실패하여 롤백했습니다." "${BASH_LINENO[0]}"
-  exit 1
-fi
+write_and_verify_sudoers
 
 exit 0
