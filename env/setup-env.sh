@@ -452,7 +452,7 @@ rm -f -- "$CATALOGS_FILE"
 if [[ $RET_VAL -ne 0 ]]; then
   # 반환값이 0이 아니면(취소했거나 에러인 경우) 즉시 스크립트 종료
   echo
-  echo_w "[🛠] 사용자가 카탈로그 설치를 취소했습니다."
+  echo_w "[🛠 ] 사용자가 카탈로그 설치를 취소했습니다."
   echo_w "종료합니다."
   exit 0
 fi
@@ -955,7 +955,7 @@ _install_completion() {
     if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
       # source(. ./setup-env.sh) 명령으로 스크립트가 실행된 경우 → 부모 쉘이므로 즉시 적용 가능
       source "$target_comp_file" 2>/dev/null || true
-      echo_i " - [🛠] '${target_cmd}' 자동완성이 현재 터미널에 즉시 적용되었습니다."
+      echo_i " - [🛠 ] '${target_cmd}' 자동완성이 현재 터미널에 즉시 적용되었습니다."
     else
       # 서브 쉘(./setup-env.sh)로 실행된 경우 → 안내 메시지 출력
       echo_w " - [💡] '${target_cmd}' 자동완성을 현재 터미널에 즉시 적용하려면 아래 명령을 실행하세요:"
@@ -1166,7 +1166,7 @@ _execute_custom_installer() {
   
   # 임시 파일 삭제 및 성공 처리
   rm -f -- "$temp_installer"
-  echo_i " - [🛠] '$target_cmd' 설치가 완료되었습니다."
+  echo_i " - [🛠 ] '$target_cmd' 설치가 완료되었습니다."
   
   EXECUTED_JOB_FLAGS["$job_flag"]=1
   return 0
@@ -1240,7 +1240,7 @@ setup_sudoers() {
   while true; do
 
     # 3-1. 사용자 입력 대기
-    read -r -p "> [⌨] sudoers에 등록할 사용자 계정을 입력하세요 (기본값: $current_user) [취소: Ctrl+C 후 'Enter']: " target_user
+    read -r -p "> [⌨  ] sudoers에 등록할 사용자 계정을 입력하세요 (기본값: $current_user) [취소: Ctrl+C 후 'Enter']: " target_user
 
     # 3-2. Ctrl+C가 눌렸을 경우 (interrupted 플래그 확인)
     if (( interrupted == 1 )); then
@@ -1295,7 +1295,7 @@ setup_sudoers() {
     cat "$tmp_sudoers" | sudo tee "$sudoers_file" > /dev/null
     
     sudo chmod 440 "$sudoers_file"
-    echo_i " - [🛠] $target_user sudoers 설정이 안전하게 업데이트(반영) 되었습니다."
+    echo_i " - [🛠 ] $target_user sudoers 설정이 안전하게 업데이트(반영) 되었습니다."
     EXECUTED_JOB_FLAGS["$func_name"]=1
     
     # 작업 완료 후 임시 파일 안전하게 정리
@@ -1402,7 +1402,7 @@ setup_ssh_key() {
       echo "$public_key" >> "$auth_file"
       echo_i " - [💡] 공개키를 등록했습니다: ${public_key:0:30}..."
     else
-      echo_w " - [⚠] 이미 등록된 키입니다: ${public_key:0:30}..."
+      echo_w " - [⚠ ] 이미 등록된 키입니다: ${public_key:0:30}..."
     fi
   done
   
