@@ -384,7 +384,7 @@ select_catalog() {
 
     # 2. 유효성 검사 (숫자인지, 범위 내인지)
     if [[ ! "$choice" =~ ^[0-9]+$ ]] || (( choice < 1 || choice > total_items )); then
-      echo_w " - [⚠️] 잘못된 번호입니다. 1에서 $total_items 사이의 숫자를 입력해주세요." >&2
+      echo_w "⚠️ - 잘못된 번호입니다. 1에서 $total_items 사이의 숫자를 입력해주세요." >&2
       continue
     fi
 
@@ -606,7 +606,7 @@ parsed_opts=""
 for num in $user_input_nums; do
   # 숫자가 아니거나 범위를 벗어난 입력 무시
   if [[ ! "$num" =~ ^[0-9]+$ ]] || (( num < 0 || num > ${#AVAILABLE_OPTS[@]} )); then
-    echo_w " - [⚠️] 무효한 번호($num)가 포함되어 있어 무시됩니다."
+    echo_w "⚠️  - 무효한 번호($num)가 포함되어 있어 무시됩니다."
     continue
   fi
   
@@ -738,7 +738,7 @@ _try_pkg_update() {
   if $PKG_UPDATE_CMD; then
     EXECUTED_JOB_FLAGS["$func_name"]=1
   else
-    echo_w "⚠️ - 패키지 인덱스 업데이트에 실패했습니다."
+    echo_w "❌ 패키지 인덱스 업데이트에 실패했습니다."
     return 1
   fi
 }
@@ -806,7 +806,7 @@ _remove_package(){
 remove_packages(){
   if [ -z "${REMOVE_PACKAGES}" ]; then
     echo ""
-    echo_w "⚠ - '삭제할 패키지' 목록이 존재하지 않습니다."
+    echo_w "⚠️  '삭제할 패키지' 목록이 존재하지 않습니다."
     return 0
   fi
   
@@ -835,7 +835,7 @@ remove_packages(){
 install_packages() {
   if [ -z "${INSTALL_PACKAGES}" ]; then
     echo ""
-    echo_w "⚠ - '설치할 패키지' 목록이 존재하지 않습니다."
+    echo_w "⚠️  '설치할 패키지' 목록이 존재하지 않습니다."
     return 0
   fi
   
@@ -895,7 +895,7 @@ _install_completion() {
   fi
 
   if [ -z "$comp_dir" ]; then
-    echo " - [⚠️] bash-completion 경로를 찾지 못했습니다. 임시로 /etc/bash_completion.d를 생성합니다."
+    echo "⚠️ - bash-completion 경로를 찾지 못했습니다. 임시로 /etc/bash_completion.d를 생성합니다."
     comp_dir="/etc/bash_completion.d"
     sudo mkdir -p "$comp_dir"
   fi
@@ -1036,7 +1036,7 @@ _install_custom_tools() {
 setup_custom_tools() {
   if [ ${#CUSTOM_TOOL_LIST[@]} -lt 1 ]; then  
     echo ""
-    echo_w "⚠️ - '설정된 커스텀 도구'가 존재하지 않습니다."
+    echo_w "⚠️  '설정된 커스텀 도구'가 존재하지 않습니다."
   fi
 
   local func_name=${FUNCNAME[0]}
@@ -1182,7 +1182,7 @@ _execute_custom_installer() {
 setup_custom_installers() {
   if [ ${#CUSTOM_INSTALLER_LIST[@]} -lt 1 ]; then
     echo ""
-    echo_w "⚠️ - '설정된 커스텀 installer'가 존재하지 않습니다."
+    echo_w "⚠️  '설정된 커스텀 installer'가 존재하지 않습니다."
   fi
   
   local func_name=${FUNCNAME[0]}
@@ -1213,7 +1213,7 @@ setup_custom_installers() {
 setup_sudoers() {
   if [ -z "${NO_PASSWORD_COMMANDS}" ]; then
     echo ""
-    echo_w "⚠ - '비밀번호를 입력 받지 않는 명령어' 목록이 존재하지 않습니다."
+    echo_w "⚠️  '비밀번호를 입력 받지 않는 명령어' 목록이 존재하지 않습니다."
     return 0
   fi
   
@@ -1257,7 +1257,7 @@ setup_sudoers() {
     # 3-4. 시스템에 존재하는 사용자인지 검증
     #        존재하지 않으면 경고 메시지 출력 후 재입력 요청
     if ! id "$target_user" &>/dev/null; then
-      echo_w " - [⚠️] '$target_user' 사용자가 시스템에 존재하지 않습니다. 다시 입력해 주세요."
+      echo_w " - [⚠️ ] '$target_user' 사용자가 시스템에 존재하지 않습니다. 다시 입력해 주세요."
       target_user=""   # 초기화 후 루프 재시작
       continue
     fi
@@ -1354,7 +1354,7 @@ set expandtab
 EOF
       echo_i " - [💡] $vimrc_file 파일에 커스텀 설정을 추가했습니다."
     else
-      echo_w " - [⚠] $vimrc_file 파일에 이미 커스텀 설정이 존재합니다."
+      echo_w " - [⚠️ ] $vimrc_file 파일에 이미 커스텀 설정이 존재합니다."
     fi
   else
     echo_e " - [❌] vimrc 파일을 찾지 못해 커스텀 설정을 추가하지 못했습니다."
@@ -1372,7 +1372,7 @@ EOF
 setup_ssh_key() {
   if [ ${#RSA_PUBLIC_KEY_LIST[@]} -lt 1 ]; then  
     echo ""
-    echo_w "⚠️ '등록할 RSA 공개키'가 존재하지 않습니다."
+    echo_w "⚠️  '등록할 RSA 공개키'가 존재하지 않습니다."
     return 0
   fi
   
