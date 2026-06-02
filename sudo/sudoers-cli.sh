@@ -135,9 +135,9 @@ parse_existing_sudoers() {
 # @return 검증 및 설치 프로세스가 종료되면 0 반환
 ##
 validate_and_install_commands() {
-  echo "======================================================================"
-  echo "[1단계] 명령어 존재 여부 검증 및 설치"
-  echo "======================================================================"
+  echo ""
+  echo "[✨] 명령어 존재 여부 검증 및 설치"
+  echo "----------------------------------------------------------------------"
   
   for i in "${!COMMANDS[@]}"; do
     local cmd="${COMMANDS[$i]}"
@@ -202,14 +202,7 @@ write_and_verify_sudoers() {
   sudo chmod 0440 "$SUDOERS_FILE"
 
   sudo visudo -c -f "$SUDOERS_FILE" &>/dev/null
-  if [ $? -eq 0 ]; then
-    echo "[성공] '${TARGET_NAME}'(${TARGET_TYPE}) 대상에 대한 Sudoers 적용이 완료되었습니다."
-    echo ""
-    echo "----------------------------------------------------------------------"
-    echo "[$SUDOERS_FILE 파일 내용 확인]"
-    sudo cat "$SUDOERS_FILE"
-    echo "----------------------------------------------------------------------"
-  else
+  if [ $? -ne 0 ]; then
     sudo rm -f "$SUDOERS_FILE"
     help "생성된 sudoers 파일의 문법 검증에 실패하여 롤백했습니다." "${BASH_LINENO[0]}"
     exit 1
@@ -325,9 +318,9 @@ RESOLVED_COMMANDS=()
 parse_existing_sudoers
 validate_and_install_commands
 
-echo "======================================================================"
-echo "[2단계] 명령어 병합 및 최종 결과"
-echo "======================================================================"
+echo ""
+echo "[✨] 명령어 병합 및 최종 결과"
+echo "----------------------------------------------------------------------"
 NEW_ADDED=0
 
 for i in "${!COMMANDS[@]}"; do
@@ -353,14 +346,24 @@ for i in "${!COMMANDS[@]}"; do
     printf "%-19s -> %-26s [%s]\n" "$cmd" "NOT_EXIST" "거부"
   fi
 done
-echo "======================================================================"
+
 echo ""
 
 if [ "$NEW_ADDED" -eq 0 ]; then
-  echo "[안내] 새로 추가할 유효한 명령어가 없거나 모두 중복되어 작업을 종료합니다."
-  exit 0
+  echo
+  echo "[✨] 새로 추가할 유효한 명령어가 없거나 모두 중복되어 작업을 종료합니다."
+else
+  write_and_verify_sudoers
 fi
 
-write_and_verify_sudoers
+echo
+echo "======================================================================"
+echo "[🎯] '${TARGET_NAME}'(${TARGET_TYPE}) 대상에 대한 Sudoers 적용이 완료되었습니다."
+echo "----------------------------------------------------------------------"
+echo "[$SUDOERS_FILE 파일 내용 확인]"
+echo ""
+sudo cat "$SUDOERS_FILE"
+echo ""
+echo "======================================================================"
 
 exit 0
