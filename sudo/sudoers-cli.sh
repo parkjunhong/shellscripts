@@ -45,14 +45,21 @@ help(){
   echo "  -H, --host <호스트>    명령어 실행을 허용할 호스트 (기본값: ALL)"
   echo "  -r, --runas <사용자>   명령어 실행 시 빌려올 권한 (기본값: ALL)"
   echo "                         예: oracle, :dba, tomcat:was 등 (자동 포맷팅 지원)"
-  echo "  -o, --option <옵션>    태그 옵션 (기본값: NOPASSWD)"
-  echo "                         예: NOPASSWD, PASSWD, NOEXEC, SETENV 등"
+  echo "  -o, --option <옵션>    Sudoers 태그 옵션 (기본값: NOPASSWD)"
+  echo "                         복수 옵션이 필요한 경우 콤마(,)로 연결하여 입력합니다."
+  echo "                         [지원 옵션 상세]"
+  echo "                         - NOPASSWD   : 비밀번호 입력 없이 명령어 실행을 허용합니다."
+  echo "                         - PASSWD     : 비밀번호 입력을 강제로 요구합니다. (상위 NOPASSWD 설정 무효화)"
+  echo "                         - NOEXEC     : 허용된 명령어 내부에서 하위 쉘(!bash 등) 및 외부 명령 실행을 차단합니다. (보안 필수)"
+  echo "                         - EXEC       : 하위 쉘 실행 차단을 해제하고 허용합니다."
+  echo "                         - SETENV     : 사용자의 기존 환경변수(PATH 등)를 sudo 실행 시에도 그대로 유지합니다."
+  echo "                         - NOSETENV   : 환경변수 유지를 차단하고 안전하게 초기화합니다. (보안 기본값)"
+  echo "                         - LOG_INPUT  : 명령어 실행 시 사용자의 표준 입력(Standard Input)을 로그에 기록합니다."
+  echo "                         - NOLOG_INPUT: 표준 입력 로그 기록을 중지합니다."
   echo "  -h, --help             도움말 출력"
   echo ""
   echo "예시:"
   echo "  $FILENAME -u admin cat /usr/bin/systemctl"
-  echo "  $FILENAME -g devops -H web-server-01 -r tomcat -o NOPASSWD,NOEXEC cat /usr/bin/systemctl"
-}
 
 check_user_exists() {
   if id "$1" &>/dev/null; then return 0; else return 1; fi
