@@ -60,13 +60,22 @@ help(){
   echo ""
   echo "예시:"
   echo "  $FILENAME -u admin cat /usr/bin/systemctl"
+}
 
 check_user_exists() {
-  if id "$1" &>/dev/null; then return 0; else return 1; fi
+  if id "$1" &>/dev/null; then
+    return 0; 
+  else 
+    return 1; 
+  fi
 }
 
 check_group_exists() {
-  if getent group "$1" &>/dev/null; then return 0; else return 1; fi
+  if getent group "$1" &>/dev/null; then 
+    return 0; 
+  else 
+    return 1; 
+  fi
 }
 
 TARGET_TYPE=""
@@ -252,14 +261,14 @@ for i in "${!COMMANDS[@]}"; do
     done
 
     if [ "$is_duplicate" -eq 1 ]; then
-      printf "%-19s -> %-26s (%s)\n" "$cmd" "$resolved" "중복 (제외)"
+      printf "%-19s -> %-26s [%s]\n" "$cmd" "$resolved" "중복 (제외)"
     else
-      printf "%-19s -> %-26s (%s)\n" "$cmd" "$resolved" "신규 (허용)"
+      printf "%-19s -> %-26s [%s]\n" "$cmd" "$resolved" "신규 (허용)"
       FINAL_CMDS+=("$resolved")
       NEW_ADDED=1
     fi
   else
-    printf "%-19s -> %-26s (%s)\n" "$cmd" "NOT_EXIST" "거부"
+    printf "%-19s -> %-26s [%s]\n" "$cmd" "NOT_EXIST" "거부"
   fi
 done
 echo "======================================================================"
