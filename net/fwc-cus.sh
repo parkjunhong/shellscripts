@@ -97,9 +97,9 @@ print_zone_info() {
   echo "================================================================================"
   
   if ! sudo firewall-cmd --zone="$zone_name" --list-all 2>/dev/null; then
+    echo ""
     echo "⚠️  '$zone_name' zone을 찾을 수 없거나 정보를 조회할 수 없습니다."
   fi
-  echo ""
 }
 
 # -----------------------------------------------------------------------------
@@ -146,9 +146,9 @@ fi
 
 # 1. --reload 처리 (방화벽 설정 리로드 및 active-zone 강제 활성화)
 if [ "$RELOAD_FLAG" == "true" ]; then
+  echo ""
   echo "🔄 Reloading firewall list..."
   sudo firewall-cmd --reload
-  echo ""
   
   # reload 시 항상 활성화된 zone 정보를 제공하도록 플래그 켜기
   ACTIVE_ZONE_FLAG="true"
@@ -172,6 +172,7 @@ done
 
 # 4. 결과 출력 (알파벳 순으로 정렬하여 출력)
 if [ ${#UNIQUE_ZONES[@]} -eq 0 ]; then
+  echo ""
   echo "⚠️ 조회할 대상 zone이 없습니다."
   exit 0
 fi
@@ -182,5 +183,6 @@ for z in "${sorted_zones[@]}"; do
   print_zone_info "$z"
 done
 
+echo ""
 echo "✨ 모든 작업이 완료되었습니다!"
 exit 0
