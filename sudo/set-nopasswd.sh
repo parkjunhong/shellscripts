@@ -104,7 +104,7 @@ fi
 
 # 2. 기존 sudoers 파일 파싱 (중복 검사를 위함)
 SUDOERS_DIR="/etc/sudoers.d"
-SUDOERS_FILE="${SUDOERS_DIR}/${TARGET_USER}_custom_nopasswd"
+SUDOERS_FILE="${SUDOERS_DIR}/${TARGET_USER}" # 파일명을 계정명과 동일하게 수정
 FINAL_CMDS=()
 
 if sudo test -f "$SUDOERS_FILE"; then
@@ -240,4 +240,3 @@ else
 fi
 
 exit 0
-
