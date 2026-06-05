@@ -111,7 +111,7 @@ Commands:
 
   -a, --add-connection
     - 새로운 SSH connection 정보를 추가합니다 (interactive).
-    - auth_type 이 'key' 인 경우, key path 는 항상 "절대경로"로 저장됩니다.
+    - auth_type 이 'key' 인 경우, key path 는 입력값 그대로 저장됩니다. 접속 시점에 ~, \$VAR, \${VAR} 만 해석합니다.
     - auth_type 이 'password' 인 경우, connection 저장 후 sshpass 가 없으면 자동 설치를 시도합니다.
 
   -m, --modify-connection [expr]
@@ -685,6 +685,122 @@ resolve_path_abs() {
 }
 
 ##
+# 입력받은 key path의 환경변수 문법 오류 및 허용되지 않는 문자를 검증합니다.
+#
+# @param $1 {string} 검증할 경로 문자열
+# @return 유효하면 0, 문법 오류 또는 금지 문자 발견 시 1 반환
+##
+validate_key_path_syntax() {
+  local p="$1"
+  [[ -z "$p" ]] && return 0
+
+  # 1) ${xxx 문법 오류 검사 (닫히지 않은 중괄호)
+  local remainder="$p"
+  while [[ "$remainder" == *"\${"* ]]; do
+    remainder="${remainder#*\$\{}"
+    if [[ "$remainder" != *"}"* ]]; then
+      printf '입력 오류: 환경변수 문법 오류가 발생했습니다. (닫히지 않은 "${")\n' >&2
+      return 1
+    fi
+  done
+
+  # 2) 제어 문자 등 경로명에 사용할 수 없는 유해 문자 검증
+  if [[ "$p" =~ [[:cntrl:]] ]]; then
+    printf '입력 오류: 경로명에 허용되지 않는 문자(제어 문자)가 포함되어 있습니다.\n' >&2
+    return 1
+  fi
+
+  return 0
+}
+
+##
+# 입력받은 key path의 맨 앞 틸드(~)를 $HOME 문자열로 변환하여 저장용 경로로 정규화합니다.
+# (중간에 있는 틸드는 무시하며, ~username 패턴 보호를 위해 ~/ 또는 ~ 인 경우만 변환)
+#
+# @param $1 {string} 원본 경로
+# @return STDOUT로 정규화된 경로 출력
+##
+normalize_key_path_for_save() {
+  local p="$1"
+  if [[ "$p" == "~" ]]; then
+    printf '%s\n' "\$HOME"
+  # [수정] 틸드가 쉘에 의해 강제 확장되지 않도록 "~/"로 따옴표 처리
+  elif [[ "$p" == "~/"* ]]; then
+    printf '%s\n' "\$HOME${p:1}"
+  else
+    printf '%s\n' "$p"
+  fi
+}
+
+##
+# 저장된 원본 경로를 런타임 시점에 이스케이프 규칙에 맞춰 동적으로 확장합니다.
+#
+# @param $1 {string} 저장된 원본 경로
+# @return STDOUT로 동적 치환이 완료된 최종 절대경로 출력
+##
+expand_key_path_runtime() {
+  local p="$1"
+  [[ -z "$p" ]] && { echo ""; return 0; }
+
+  # 1) $(...) 명령어 치환 무력화를 위한 마스킹 격리
+  while [[ "$p" == *"\$("* ]]; do
+    p="${p//\$(/__LITERAL_CMD_START__}"
+  done
+
+  # 2) \$xxx 문자열 보존을 위한 마스킹 격리
+  while [[ "$p" == *"\\$"* ]]; do
+    p="${p//\\$/__ESCAPED_DOLLAR_SIGN__}"
+  done
+
+  # [핵심 수정 1] 정규식을 별도의 변수에 할당하여 Bash 버전(3.2~5.x) 간의
+  # 정규식 엔진 파싱(역슬래시 해석) 오류 및 매칭 실패 문제를 완벽히 해결합니다.
+  local re_bare='\$([A-Za-z_][A-Za-z0-9_]*)'
+  local re_braced='\$\{([A-Za-z_][A-Za-z0-9_]*)\}'
+
+  local max_iter=20
+  local iter=0
+
+  # 3) $VAR 형식 확장
+  iter=0
+  while [[ "$p" =~ $re_bare ]] && (( iter < max_iter )); do
+    local var_name="${BASH_REMATCH[1]}"
+    local var_val="${!var_name:-}"
+    # [핵심 수정 2] 타겟 문자열을 작은따옴표로 결합하여 치환자 인식 오류 차단
+    local target='$'${var_name}
+    p="${p//"$target"/${var_val}}"
+    ((iter++))
+  done
+
+  # 4) ${VAR} 형식 확장
+  iter=0
+  while [[ "$p" =~ $re_braced ]] && (( iter < max_iter )); do
+    local var_name="${BASH_REMATCH[1]}"
+    local var_val="${!var_name:-}"
+    # [핵심 수정 2] 타겟 문자열을 작은따옴표로 결합하여 치환자 인식 오류 차단
+    local target='${'${var_name}'}'
+    p="${p//"$target"/${var_val}}"
+    ((iter++))
+  done
+
+  # 5) 마스킹했던 특수 토큰 복원 (이스케이프 역슬래시 소진)
+  while [[ "$p" == *"__ESCAPED_DOLLAR_SIGN__"* ]]; do
+    # 사용자가 이스케이프 목적으로 입력한 '\'를 소진시키고 순수 '$'만 남깁니다.
+    p="${p//__ESCAPED_DOLLAR_SIGN__/$}"
+  done
+
+  while [[ "$p" == *"__LITERAL_CMD_START__"* ]]; do
+    p="${p//__LITERAL_CMD_START__/\$(}"
+  done
+
+  # 6) 틸드(~) 기호 사용자 홈 디렉토리 확장
+  if [[ "$p" == ~* ]]; then
+    p="${p/#\~/$HOME}"
+  fi
+
+  echo "$p"
+}
+
+##
 # SHOW_CREDENTIAL 플래그에 따라 credential 출력값을 결정한다.
 # Decide how to display credential value depending on SHOW_CREDENTIAL flag.
 #
@@ -1135,9 +1251,13 @@ _build_search_filter_inner() {
 
     # op (and|or) 파싱
     rest="${rest#"${rest%%[![:space:]]*}"}"
-    if [[ "$rest" =~ ^(and|or)[[:space:]]+(.*)$ ]]; then
+    if [[ "$rest" =~ ^(and|or)[[:space:]]+(.*)$ ]];
+    then
       ops+=( "${BASH_REMATCH[1]}" )
       rest="${BASH_REMATCH[2]}"
+    elif [[ -n "$rest" ]]; then
+      # 검색 엔진처럼 암묵적(implicit) 'and' 연산자로 처리하여 모두 포함
+      ops+=( "and" )
     else
       break
     fi
@@ -2179,10 +2299,17 @@ cmd_add_connection() {
       fi
     done
   else
-    while true; do
+    while true;
+    do
       credential="$(prompt_credential_with_icon "🔑" "key path" "key" "")"
-      credential="$(resolve_path_abs "$credential")"
-      if validate_non_empty "key path" "$credential"; then
+      
+      credential="$(normalize_key_path_for_save "$credential")"
+      
+      if ! validate_key_path_syntax "$credential"; then
+        continue
+      fi
+      if validate_non_empty "key path" "$credential";
+      then
         break
       fi
     done
@@ -2306,8 +2433,12 @@ cmd_connect() {
     echo 
     sshpass -p "$credential" ssh "${ssh_opts[@]}" -p "$port" "${username}@${host}"
   else
-    if [[ ! -f "$credential" ]]; then
-      die "key file not found: $credential"
+    # 런타임 실시간 동적 확장 함수 연동
+    local expanded_credential
+    expanded_credential="$(expand_key_path_runtime "$credential")"
+    
+    if [[ ! -f "$expanded_credential" ]]; then
+      die "key file not found: $expanded_credential"
     fi
     echo 
     echo "🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐" >&2
@@ -2318,7 +2449,7 @@ cmd_connect() {
     echo "🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐" >&2
     echo "🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐🔐" >&2
     echo 
-    exec ssh "${ssh_opts[@]}" -p "$port" -i "$credential" "${username}@${host}"
+    exec ssh "${ssh_opts[@]}" -p "$port" -i "$expanded_credential" "${username}@${host}"
   fi
 }
 
@@ -2466,14 +2597,22 @@ cmd_modify_connection() {
       break
     done
   else
-    while true; do
+    while true;
+    do
       tmp="$(prompt_credential_with_icon "🔑" "key path" "key" "$credential")"
-      if [[ -z "$tmp" ]]; then
-        new_credential="$credential"
+      if [[ -z "$tmp" ]];
+      then
+        new_credential="$(normalize_key_path_for_save "$credential")"
       else
-        new_credential="$(resolve_path_abs "$tmp")"
+        tmp="$(normalize_key_path_for_save "$tmp")"
+        
+        if ! validate_key_path_syntax "$tmp"; then
+          continue
+        fi
+        new_credential="$tmp"
       fi
-      if validate_non_empty "key path" "$new_credential"; then
+      if validate_non_empty "key path" "$new_credential";
+      then
         break
       fi
     done
