@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# ===================================================================
+# Bash completion for update-after-git-pull.sh
+# ===================================================================
+
+_update_after_git_pull_completions() {
+  local cur prev opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  # 사용 가능한 옵션 목록
+  opts="-g --git-dir -s --src-dir -t --tgt-dir -h --help"
+
+  # 이전 단어(prev)가 디렉토리 입력을 요구하는 옵션일 경우 디렉토리만 자동 완성
+  case "${prev}" in
+    -g|--git-dir|-s|--src-dir|-t|--tgt-dir)
+      # 디렉토리 경로 자동 완성 (compgen -d)
+      COMPREPLY=( $(compgen -d -- "${cur}") )
+      return 0
+      ;;
+    *)
+      ;;
+  esac
+
+  # 현재 단어(cur)가 '-'로 시작하면 옵션 스위치 자동 완성
+  if [[ "${cur}" == -* ]] ; then
+    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+    return 0
+  fi
+}
+
+# 스크립트 이름이 update-after-git-pull.sh 인 경우 이 자동완성 함수를 바인딩
+complete -F _update_after_git_pull_completions update-after-git-pull.sh
+
