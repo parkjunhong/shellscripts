@@ -128,7 +128,7 @@ main() {
     mkdir -p "$tgt_dir" || die "타겟 디렉토리를 생성할 수 없습니다: $tgt_dir"
   fi
 
-  if cp -p "$(remove_slash $src_dir)"/* "$(remove_slash $tgt_dir)"/; then
+  if cp -v -p "$(remove_slash $src_dir)"/* "$(remove_slash $tgt_dir)"/; then
     log INFO "복사 성공: $src_dir -> $tgt_dir/"
   else
     die "파일 복사 중 문제가 발생했습니다."
