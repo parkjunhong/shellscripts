@@ -50,6 +50,18 @@ die() {
   exit 1
 }
 
+
+#
+# $1 {string}: 경로
+extend_allfiles(){
+  local dir="$1"
+  if [ "$dir" == "/" ]; then
+    echo "/*"
+  else
+    echo="$(echo "$dir" | sed 's:/*$::')/*"
+  fi
+}
+
 # =======================================
 # main
 # =======================================
@@ -121,7 +133,7 @@ main() {
     mkdir -p "$tgt_dir" || die "타겟 디렉토리를 생성할 수 없습니다: $tgt_dir"
   fi
 
-  if cp -p "$src_dir/*" "$tgt_dir/"; then
+  if cp -p "$(extend_allfiles $src_dir)" "$tgt_dir/"; then
     log INFO "복사 성공: $src_dir -> $tgt_dir/"
   else
     die "파일 복사 중 문제가 발생했습니다."
