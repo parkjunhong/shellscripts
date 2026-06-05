@@ -111,10 +111,9 @@ main() {
   # 2단계: 설정 파일 복사
   # ------------------------------------------------------------------------------
   log INFO "설정 파일 복사 진행..."
-  local src_file="${src_dir}/configuration.conf"
 
-  if [[ ! -f "$src_file" ]]; then
-    die "복사할 원본 파일을 찾을 수 없습니다: $src_file"
+  if [[ ! -f "$src_dir" ]]; then
+    die "복사할 원본을 찾을 수 없습니다: $src_file"
   fi
 
   if [[ ! -d "$tgt_dir" ]]; then
@@ -122,8 +121,8 @@ main() {
     mkdir -p "$tgt_dir" || die "타겟 디렉토리를 생성할 수 없습니다: $tgt_dir"
   fi
 
-  if cp -p "$src_file" "$tgt_dir/"; then
-    log INFO "복사 성공: $src_file -> $tgt_dir/"
+  if cp -p "$src_dir" "$tgt_dir/"; then
+    log INFO "복사 성공: $src_dir -> $tgt_dir/"
   else
     die "파일 복사 중 문제가 발생했습니다."
   fi
