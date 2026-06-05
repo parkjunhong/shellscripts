@@ -113,7 +113,7 @@ main() {
   log INFO "설정 파일 복사 진행..."
 
   if [[ ! -f "$src_dir" ]]; then
-    die "복사할 원본을 찾을 수 없습니다: $src_file"
+    die "복사할 원본을 찾을 수 없습니다: $src_dir"
   fi
 
   if [[ ! -d "$tgt_dir" ]]; then
