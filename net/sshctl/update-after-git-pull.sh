@@ -58,7 +58,7 @@ extend_allfiles(){
   if [ "$dir" == "/" ]; then
     echo "/*"
   else
-    echo="$(echo "$dir" | sed 's:/*$::')/*"
+    echo "$(echo "$dir" | sed 's:/*$::')/*"
   fi
 }
 
