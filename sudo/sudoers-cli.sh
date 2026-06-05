@@ -3,7 +3,7 @@
 # @author   : parkjunhong77@gmail.com
 # @title    : search files.
 # @license  : Apache License 2.0
-# @since    : 2026-06-02
+# @since    : 2026-06-05
 # @desc     : support RHEL 7+, Oracle Linux 7+, Ubuntu 18.04+, RockyOS 8+
 # @installation : 
 #   1. insert 'source <path>/<파일명>" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
@@ -216,7 +216,7 @@ TARGET_NAME=""
 TARGET_PREFIX=""
 PARAM_HOST="ALL"
 PARAM_RUNAS="(ALL)"
-PARAM_OPTION="NONE" # (설개 변경 핵심) 기본값을 NOPASSWD에서 NONE으로 수정
+PARAM_OPTION="NONE"
 COMMANDS=()
 
 while [[ "$#" -gt 0 ]]; do
@@ -329,6 +329,31 @@ for i in "${!COMMANDS[@]}"; do
   
   if [ -n "$resolved" ]; then
     is_duplicate=0
+    
+    # [교정 요점 1] 기존 목록에 이미 'ALL' 권한이 등록되어 있는 경우
+    # 신규로 어떤 명령어가 들어오든 무의미하므로 즉시 중복(제외) 처리합니다.
+    for ext_cmd in "${FINAL_CMDS[@]}"; do
+      if [ "$ext_cmd" == "ALL" ]; then
+        is_duplicate=1
+        break
+      fi
+    done
+    
+    if [ "$is_duplicate" -eq 1 ]; then
+      printf "%-19s -> %-26s [%s]\n" "$cmd" "$resolved" "중복 (제외)"
+      continue
+    fi
+    
+    # [교정 요점 2] 새로 추가하려는 명령어 자체가 전역 권한 'ALL'인 경우
+    # 기존에 누적되어 있던 하위 개별 명령어들을 모두 흡수하므로 배열을 비우고 ALL만 삽입합니다.
+    if [ "$resolved" == "ALL" ]; then
+      FINAL_CMDS=("ALL")
+      NEW_ADDED=1
+      printf "%-19s -> %-26s [%s]\n" "$cmd" "$resolved" "신규 (기존 명령어 대체 허용)"
+      continue
+    fi
+
+    # 3. 일반적인 동일 명령어 중복 체크
     for ext_cmd in "${FINAL_CMDS[@]}"; do
       if [ "$ext_cmd" == "$resolved" ]; then
         is_duplicate=1; break
@@ -351,7 +376,7 @@ echo ""
 
 if [ "$NEW_ADDED" -eq 0 ]; then
   echo
-  echo "[✨] 새로 추가할 유효한 명령어가 없거나 모두 중복되어 작업을 종료합니다."
+  echo "[안내] 새로 추가할 유효한 명령어가 없거나 모두 중복되어 작업을 종료합니다."
 else
   write_and_verify_sudoers
 fi
