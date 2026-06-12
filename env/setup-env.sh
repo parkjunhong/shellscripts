@@ -511,6 +511,12 @@ while IFS='=' read -r key value || [ -n "$key" ]; do
   [[ "$key" =~ ^[[:space:]]*URL_CUSTOM_INSTALLER\. ]] && CUSTOM_INSTALLER_LIST+=("$(echo "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')")
 done < "$CONFIG_FILE"
 
+# 3. 다중 사용자 실행 명령어 파싱 및 배열에 담기
+CUSTOM_COMMAND_LIST=()
+while IFS='=' read -r key value || [ -n "$key" ]; do
+  [[ "$key" =~ ^[[:space:]]*URL_CUSTOM_COMMAND\. ]] && CUSTOM_COMMAND_LIST+=("$(echo "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')")
+done < "$CONFIG_FILE"
+
 # 3. 다중 RSA 공개키 설정 파싱 및 배열에 담기
 RSA_PUBLIC_KEY_LIST=()
 while IFS='=' read -r key value || [ -n "$key" ]; do
@@ -552,6 +558,11 @@ fi
 if (( ${#CUSTOM_INSTALLER_LIST[@]} > 0 )); then
   AVAILABLE_OPTS+=("--custom-installers")
   OPT_DESCRIPTIONS["--custom-installers"]="사용자 정의 설치 스크립트를 실행합니다. '--no-default-opts'이 자동으로 적용됩니다."
+fi
+
+if (( ${#CUSTOM_COMMAND_LIST[@]} > 0 )); then
+  AVAILABLE_OPTS+=("--custom-commands")
+  OPT_DESCRIPTIONS["--custom-commands"]="사용자 정의 명령어를 실행합니다. '--no-default-opts'이 자동으로 적용됩니다."
 fi
 
 if (( ${#RSA_PUBLIC_KEY_LIST[@]} > 0 )); then
@@ -1062,16 +1073,16 @@ setup_custom_tools() {
 #
 # @return 진행 상황 메시지 (표준 출력)
 ##
-_execute_custom_installer() {
+_execute_custom_script() {
   local func_name="${FUNCNAME[0]}"
-  local installer_url="$1"
+  local script_url="$1"
   local target_cmd
-  target_cmd=$(basename "$installer_url")
+  target_cmd=$(basename "$script_url")
   # URL을 MD5 해시로 변환하여 고유값으로 사용
   # - URL의 특수문자(/, :, . 등) 문제 완전 회피
   # - 어떤 URL이든 32자 고정 길이의 안전한 키 생성
   local url_hash
-  url_hash=$(printf '%s' "$installer_url" | md5sum | cut -d' ' -f1)
+  url_hash=$(printf '%s' "$script_url" | md5sum | cut -d' ' -f1)
   local job_flag="$func_name-$url_hash"
   
   local flag="${EXECUTED_JOB_FLAGS[$job_flag]:-0}"
@@ -1087,22 +1098,22 @@ _execute_custom_installer() {
   # ---------------------------------------------------------
   # [보안 0] HTTPS URL만 허용 (평문 전송 및 로컬 경로 차단)
   # ---------------------------------------------------------
-  if [[ "$installer_url" != https://* ]]; then
-    echo_e " - [❌] HTTPS URL만 허용됩니다: $installer_url"
-    _add_notice " - [$func_name] [❌] HTTPS가 아닌 URL은 허용되지 않습니다: $installer_url"
+  if [[ "$script_url" != https://* ]]; then
+    echo_e " - [❌] HTTPS URL만 허용됩니다: $script_url"
+    _add_notice " - [$func_name] [❌] HTTPS가 아닌 URL은 허용되지 않습니다: $script_url"
     return 1
   fi
   
-  local temp_installer="/tmp/${url_hash}"
+  local temp_script="/tmp/${url_hash}"
   # ---------------------------------------------------------
   # curl -f 옵션 추가 및 예외 처리 완화
   # 1. -f 옵션: 404 등 서버 에러 시 다운로드를 실패 처리함
   # 2. || 구문: 파일이 없을 경우 전체 스크립트를 중단하지 않고 설치만 건너뜀
   # ---------------------------------------------------------  
-  if ! curl -sfLo "$temp_installer" "$installer_url"; then
-    echo_e " - [❌] '사용자 정의 'installer' 파일' 다운로드 실패 ($installer_url)"
+  if ! curl -sfLo "$temp_script" "$script_url"; then
+    echo_e " - [❌] '사용자 정의 'installer' 파일' 다운로드 실패 ($script_url)"
     echo_e " - [❌] '${target_cmd}' 파일이 존재하지 않아 설치를 생략합니다."
-    rm -f -- "$temp_installer"
+    rm -f -- "$temp_script"
     
     _add_notice " - [$func_name] [❌] '사용자 정의 설치파일' 다운로드 실패"
     _add_notice " - [$func_name] [❌] '${target_cmd}' 파일이 존재하지 않아 설치를 생략합니다."
@@ -1112,19 +1123,19 @@ _execute_custom_installer() {
   # ---------------------------------------------------------
   # [보안 1] 다운로드 파일 무결성 검증
   # ---------------------------------------------------------
-  if [ ! -s "$temp_installer" ]; then
+  if [ ! -s "$temp_script" ]; then
     echo_e " - [❌] 다운로드된 파일이 비어 있습니다."
-    rm -f -- "$temp_installer"
+    rm -f -- "$temp_script"
     return 1
   fi
 
   # file 명령어가 설치되어 있는 경우에만 쉘 스크립트/텍스트 여부 검사
   if command -v file &> /dev/null; then
     local file_type
-    file_type=$(file -b "$temp_installer") # -b 옵션으로 파일명 출력 제외
+    file_type=$(file -b "$temp_script") # -b 옵션으로 파일명 출력 제외
     if [[ "$file_type" != *"shell script"* && "$file_type" != *"text"* ]]; then
       echo_e " - [❌] 다운로드된 파일이 쉘 스크립트가 아닙니다: $file_type"
-      rm -f -- "$temp_installer"
+      rm -f -- "$temp_script"
       return 1
     fi
   fi
@@ -1132,16 +1143,16 @@ _execute_custom_installer() {
   # ---------------------------------------------------------
   # [보안 2] /tmp 심볼릭 링크 공격 방지
   # ---------------------------------------------------------
-  if [ -L "$temp_installer" ]; then
+  if [ -L "$temp_script" ]; then
     echo_e " - [❌] 심볼릭 링크가 감지되었습니다. 실행을 중단합니다."
-    rm -f -- "$temp_installer"
+    rm -f -- "$temp_script"
     return 1
   fi
 
   # ---------------------------------------------------------
   # [보안 3] 실행 권한은 소유자만 제한
   # ---------------------------------------------------------
-  chmod 700 "$temp_installer"
+  chmod 700 "$temp_script"
 
   # ---------------------------------------------------------
   # [보안 4 & 5] 자식 프로세스(Subshell)를 통한 실행 및 결과 검증
@@ -1155,18 +1166,18 @@ _execute_custom_installer() {
   export -f echo_e echo_w echo_i # (선택) 색상 출력 함수 재사용 가능
 
   # 명시적인 /bin/bash 호출로 자식 프로세스에서 안전하게 실행
-  if ! /bin/bash "$temp_installer"; then
+  if ! /bin/bash "$temp_script"; then
     local exit_code=$?
     echo_e " - [❌] '$target_cmd' 실행 실패 (exit code: $exit_code)"
-    rm -f -- "$temp_installer"
+    rm -f -- "$temp_script"
     
     _add_notice " - [$func_name] [❌] '$target_cmd' 실행 실패 (exit code: $exit_code)"
     return 1
   fi
   
   # 임시 파일 삭제 및 성공 처리
-  rm -f -- "$temp_installer"
-  echo_i " - [🛠 ] '$target_cmd' 설치가 완료되었습니다."
+  rm -f -- "$temp_script"
+  echo_i " - [🛠 ] '$target_cmd' 실행이 완료되었습니다."
   
   EXECUTED_JOB_FLAGS["$job_flag"]=1
   return 0
@@ -1194,11 +1205,41 @@ setup_custom_installers() {
   
   for installer_url in "${CUSTOM_INSTALLER_LIST[@]}"; do
     if [ -n "$installer_url " ]; then
-      _execute_custom_installer "$installer_url"
+      _execute_custom_script "$installer_url"
     fi
   done
     
   EXECUTED_JOB_FLAGS["$func_name"]=1
+}
+
+##
+# 외부 설정파일의 URL_CUSTOM_COMMAND.<식별자> 패턴을 읽어 다수의 사용자 정의 명령어를 순차적으로 실행합니다.
+#
+# @param 없음
+#
+# @return 진행 상황 메시지 (표준 출력)
+##
+setup_custom_commands(){
+  if [ ${#CUSTOM_COMMAND_LIST[@]} -lt 1 ]; then
+    echo ""
+    echo_w "⚠️  '설정된 커스텀 명령어'가 존재하지 않습니다."
+  fi
+  
+  local func_name=${FUNCNAME[0]}
+  local flag="${EXECUTED_JOB_FLAGS[$func_name]:-0}"
+  
+  if (( flag == 1 )); then
+    return 0
+  fi
+  
+  for command_url in "${CUSTOM_COMMAND_LIST[@]}"; do
+    if [ -n "$command_url " ]; then
+      _execute_custom_script "$command_url"
+    fi
+  done
+    
+  EXECUTED_JOB_FLAGS["$func_name"]=1
+
 }
 
 ##
@@ -1485,6 +1526,7 @@ for arg in "$@"; do
     --add-sudoers | \
     --custom-tools | \
     --custom-installers | \
+    --custom-commands | \
     --install-packages | \
     --remove-packages | \
     --ssh-key )
@@ -1546,12 +1588,17 @@ while [[ "$#" -gt 0 ]]; do
       setup_custom_installers
       shift
       ;;
+    --custom-commands)
+      setup_custom_commands
+      shift
+      ;;
     --all)
       setup_sudoers
       remove_packages
       install_packages
       setup_custom_tools
       setup_custom_installers
+      setup_custom_commands
       setup_ssh_key
       shift
       ;;
