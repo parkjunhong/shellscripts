@@ -9,21 +9,6 @@
 #   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/fwc-cli.sh' into 
 #      etc/bashrc for all users.
 # =======================================
-# Global Reserved Variables
-# 1. COMP_WORDS: an array, contains all arguments
-# 2. COMP_CWORD: a index of a cursor
-# 3. COMP_LINE: all command string
-# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
-#
-# Arguments of a function
-# 1. $1: command
-# 2. $2: current
-# 3. $3: previous
-#
-# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
-# - $1: mycmd
-# - $2: arg4
-# - $3: arg3
 
 _fwc_cli_completion() {
   local cur prev opts
@@ -34,6 +19,8 @@ _fwc_cli_completion() {
   # 사용 가능한 옵션 목록: =없는 단독 형태와 =있는 형태를 모두 제공
   opts="--zone= --active-zone --reload --permanent \
         --add-sources= --add-services= --add-ports= --add-protocols= \
+        --add-forward-ports= --add-source-ports= --add-icmp-blocks= \
+        --add-rich-rules= --add-interfaces= \
         --remove-sources --remove-sources= \
         --remove-services --remove-services= \
         --remove-ports --remove-ports= \
@@ -68,4 +55,3 @@ _fwc_cli_completion() {
 }
 
 complete -F _fwc_cli_completion fwc-cli.sh
-
