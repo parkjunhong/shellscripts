@@ -44,7 +44,9 @@ help(){
   echo "  --active-zone          활성화된 모든 zone의 정보 조회"
   echo "  --reload               방화벽 설정 리로드 및 활성화된 zone 정보 조회"
   echo "  --permanent            설정을 영구적(permanent)으로 적용"
-  echo "  --add-<항목>=<값>      (sources, services, ports, protocols) 지정된 zone에 규칙 추가 (콤마 구분)"
+  echo "  --add-<항목>=<값>      지정된 zone에 규칙 추가 (콤마 구분)."
+  echo "                         지원항목: sources, services, ports, protocols, forward-ports, source-ports,"
+  echo "                                   icmp-blocks, rich-rules, interfaces"
   echo "  --remove-<항목>[=<값>] 지정된 zone에서 규칙 삭제 (콤마 구분). 값 생략 시 해당 항목의 모든 규칙 삭제"
   echo "                         지원항목: sources, services, ports, protocols, forward-ports, source-ports,"
   echo "                                   icmp-blocks, rich-rules, interfaces"
@@ -103,7 +105,11 @@ ACTIVE_ZONE_FLAG="false"
 RELOAD_FLAG="false"
 PERMANENT_FLAG="false"
 
+# 추가 배열 선언
 declare -a ADD_SOURCES ADD_SERVICES ADD_PORTS ADD_PROTOCOLS
+declare -a ADD_FWD_PORTS ADD_SRC_PORTS ADD_ICMP_BLOCKS ADD_RICH_RULES ADD_INTERFACES
+
+# 삭제 배열 선언
 declare -a REM_SOURCES REM_SERVICES REM_PORTS REM_PROTOCOLS
 declare -a REM_FWD_PORTS REM_SRC_PORTS REM_ICMP_BLOCKS REM_RICH_RULES REM_INTERFACES
 
@@ -126,10 +132,16 @@ while [[ "$#" -gt 0 ]]; do
     --reload) RELOAD_FLAG="true"; shift ;;
     --permanent) PERMANENT_FLAG="true"; shift ;;
     
+    # Add 옵션
     --add-sources=*) parse_and_store "${1#*=}" "ADD_SOURCES"; shift ;;
     --add-services=*) parse_and_store "${1#*=}" "ADD_SERVICES"; shift ;;
     --add-ports=*) parse_and_store "${1#*=}" "ADD_PORTS"; shift ;;
     --add-protocols=*) parse_and_store "${1#*=}" "ADD_PROTOCOLS"; shift ;;
+    --add-forward-ports=*) parse_and_store "${1#*=}" "ADD_FWD_PORTS"; shift ;;
+    --add-source-ports=*) parse_and_store "${1#*=}" "ADD_SRC_PORTS"; shift ;;
+    --add-icmp-blocks=*) parse_and_store "${1#*=}" "ADD_ICMP_BLOCKS"; shift ;;
+    --add-rich-rules=*) parse_and_store "${1#*=}" "ADD_RICH_RULES"; shift ;;
+    --add-interfaces=*) parse_and_store "${1#*=}" "ADD_INTERFACES"; shift ;;
     
     # Remove 옵션: 값이 없는 경우(--remove-XXX)와 있는 경우(--remove-XXX=val) 분기 처리
     --remove-sources) REM_ALL_SOURCES="true"; shift ;;
@@ -159,6 +171,7 @@ done
 # 변경 사항(추가/삭제)이 있는지 확인
 has_modification="false"
 if [ ${#ADD_SOURCES[@]} -gt 0 ] || [ ${#ADD_SERVICES[@]} -gt 0 ] || [ ${#ADD_PORTS[@]} -gt 0 ] || [ ${#ADD_PROTOCOLS[@]} -gt 0 ] || \
+   [ ${#ADD_FWD_PORTS[@]} -gt 0 ] || [ ${#ADD_SRC_PORTS[@]} -gt 0 ] || [ ${#ADD_ICMP_BLOCKS[@]} -gt 0 ] || [ ${#ADD_RICH_RULES[@]} -gt 0 ] || [ ${#ADD_INTERFACES[@]} -gt 0 ] || \
    [ ${#REM_SOURCES[@]} -gt 0 ] || [ ${#REM_SERVICES[@]} -gt 0 ] || [ ${#REM_PORTS[@]} -gt 0 ] || [ ${#REM_PROTOCOLS[@]} -gt 0 ] || \
    [ ${#REM_FWD_PORTS[@]} -gt 0 ] || [ ${#REM_SRC_PORTS[@]} -gt 0 ] || [ ${#REM_ICMP_BLOCKS[@]} -gt 0 ] || [ ${#REM_RICH_RULES[@]} -gt 0 ] || [ ${#REM_INTERFACES[@]} -gt 0 ] || \
    [ "$REM_ALL_SOURCES" == "true" ] || [ "$REM_ALL_SERVICES" == "true" ] || [ "$REM_ALL_PORTS" == "true" ] || [ "$REM_ALL_PROTOCOLS" == "true" ] || \
@@ -233,6 +246,11 @@ if [ "$has_modification" == "true" ]; then
     apply_items "--add-service" "${ADD_SERVICES[@]}"
     apply_items "--add-port" "${ADD_PORTS[@]}"
     apply_items "--add-protocol" "${ADD_PROTOCOLS[@]}"
+    apply_items "--add-forward-port" "${ADD_FWD_PORTS[@]}"
+    apply_items "--add-source-port" "${ADD_SRC_PORTS[@]}"
+    apply_items "--add-icmp-block" "${ADD_ICMP_BLOCKS[@]}"
+    apply_items "--add-rich-rule" "${ADD_RICH_RULES[@]}"
+    apply_items "--add-interface" "${ADD_INTERFACES[@]}"
     
     # 항목들 순차 적용 (삭제) - ALL 플래그가 켜져있으면 전부 삭제, 아니면 개별 삭제
     [ "$REM_ALL_SOURCES" == "true" ] && remove_all_items "--list-sources" "--remove-source" || apply_items "--remove-source" "${REM_SOURCES[@]}"
@@ -291,4 +309,3 @@ done
 echo ""
 echo "✨ 모든 작업이 완료되었습니다!"
 exit 0
-
