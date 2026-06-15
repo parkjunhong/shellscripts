@@ -96,6 +96,49 @@ print_zone_info() {
 }
 
 # -----------------------------------------------------------------------------
+# 공용 추가/삭제 함수 정의
+# -----------------------------------------------------------------------------
+apply_items() {
+  local target_zone="$1"
+  local action="$2"
+  shift 2
+  for item in "$@"; do
+    echo " - [$target_zone] $action: $item"
+    "${local_cmd[@]}" --zone="$target_zone" "$action=$item" >/dev/null
+  done
+}
+
+remove_all_items() {
+  local target_zone="$1"
+  local action_list="$2"
+  local action_remove="$3"
+  
+  # 조회 전용 명령어 조합 (영구 모드일 땐 영구 목록에서 조회)
+  local list_cmd=(sudo firewall-cmd --zone="$target_zone")
+  [ "$PERMANENT_FLAG" == "true" ] && list_cmd+=("--permanent")
+
+  if [ "$action_list" == "--list-rich-rules" ]; then
+    while IFS= read -r rule; do
+      rule="${rule#"${rule%%[![:space:]]*}"}"
+      rule="${rule%"${rule##*[![:space:]]}"}"
+      if [ -n "$rule" ]; then
+        echo " - [$target_zone] $action_remove (전체): $rule"
+        "${local_cmd[@]}" --zone="$target_zone" "$action_remove=$rule" >/dev/null
+      fi
+    done < <("${list_cmd[@]}" "$action_list" 2>/dev/null)
+  else
+    local raw_output
+    raw_output=$("${list_cmd[@]}" "$action_list" 2>/dev/null)
+    for item in $raw_output; do
+      if [ -n "$item" ]; then
+        echo " - [$target_zone] $action_remove (전체): $item"
+        "${local_cmd[@]}" --zone="$target_zone" "$action_remove=$item" >/dev/null
+      fi
+    done
+  fi
+}
+
+# -----------------------------------------------------------------------------
 # 메인 로직 시작
 # -----------------------------------------------------------------------------
 
@@ -146,7 +189,7 @@ while [[ "$#" -gt 0 ]]; do
     --add-rich-rules=*) parse_and_store "${1#*=}" "ADD_RICH_RULES"; shift ;;
     --add-interfaces=*) parse_and_store "${1#*=}" "ADD_INTERFACES"; shift ;;
     
-    # Remove 옵션: 값이 없는 경우(--remove-XXX)와 있는 경우(--remove-XXX=val) 분기 처리
+    # Remove 옵션
     --remove-sources) REM_ALL_SOURCES="true"; shift ;;
     --remove-sources=*) parse_and_store "${1#*=}" "REM_SOURCES"; shift ;;
     --remove-services) REM_ALL_SERVICES="true"; shift ;;
@@ -171,7 +214,7 @@ while [[ "$#" -gt 0 ]]; do
   esac
 done
 
-# 변경 사항(추가/삭제)이 있는지 확인
+# 변경 사항 확인
 has_modification="false"
 if [ ${#ADD_SOURCES[@]} -gt 0 ] || [ ${#ADD_SERVICES[@]} -gt 0 ] || [ ${#ADD_PORTS[@]} -gt 0 ] || [ ${#ADD_PROTOCOLS[@]} -gt 0 ] || \
    [ ${#ADD_FWD_PORTS[@]} -gt 0 ] || [ ${#ADD_SRC_PORTS[@]} -gt 0 ] || [ ${#ADD_ICMP_BLOCKS[@]} -gt 0 ] || [ ${#ADD_RICH_RULES[@]} -gt 0 ] || [ ${#ADD_INTERFACES[@]} -gt 0 ] || \
@@ -206,82 +249,45 @@ if [ "$has_modification" == "true" ]; then
   fi
 
   for zone in "${TARGET_ZONES[@]}"; do
-    # (1) 개별 추가/삭제 처리 함수
-    apply_items() {
-      local action="$1"; shift
-      for item in "$@"; do
-        echo " - [$zone] $action: $item"
-        "${local_cmd[@]}" --zone="$zone" "$action=$item" >/dev/null
-      done
-    }
-
-    # (2) "전체 삭제" 처리 함수
-    remove_all_items() {
-      local action_list="$1"
-      local action_remove="$2"
-      
-      # 조회 전용 명령어 조합 (영구 모드일 땐 영구 목록에서 조회)
-      local list_cmd=(sudo firewall-cmd --zone="$zone")
-      [ "$PERMANENT_FLAG" == "true" ] && list_cmd+=("--permanent")
-
-      if [ "$action_list" == "--list-rich-rules" ]; then
-        local rules
-        mapfile -t rules < <("${list_cmd[@]}" "$action_list" 2>/dev/null)
-        for rule in "${rules[@]}"; do
-          [ -z "$rule" ] && continue
-          echo " - [$zone] $action_remove (전체): $rule"
-          "${local_cmd[@]}" --zone="$zone" "$action_remove=$rule" >/dev/null
-        done
-      else
-        local raw_output
-        raw_output=$("${list_cmd[@]}" "$action_list" 2>/dev/null)
-        for item in $raw_output; do
-          [ -z "$item" ] && continue
-          echo " - [$zone] $action_remove (전체): $item"
-          "${local_cmd[@]}" --zone="$zone" "$action_remove=$item" >/dev/null
-        done
-      fi
-    }
-
+    
     # ---------------------------------------------------------
     # [우선순위 1] 항목들 삭제 처리 (Clear-all 우선 또는 개별 삭제)
     # ---------------------------------------------------------
     if [ "$CLEAR_ALL_FLAG" == "true" ]; then
       echo " 🧹 [$zone] --clear-all: 모든 방화벽 규칙 항목을 삭제합니다..."
-      remove_all_items "--list-sources" "--remove-source"
-      remove_all_items "--list-services" "--remove-service"
-      remove_all_items "--list-ports" "--remove-port"
-      remove_all_items "--list-protocols" "--remove-protocol"
-      remove_all_items "--list-forward-ports" "--remove-forward-port"
-      remove_all_items "--list-source-ports" "--remove-source-port"
-      remove_all_items "--list-icmp-blocks" "--remove-icmp-block"
-      remove_all_items "--list-rich-rules" "--remove-rich-rule"
-      remove_all_items "--list-interfaces" "--remove-interface"
+      remove_all_items "$zone" "--list-sources" "--remove-source"
+      remove_all_items "$zone" "--list-services" "--remove-service"
+      remove_all_items "$zone" "--list-ports" "--remove-port"
+      remove_all_items "$zone" "--list-protocols" "--remove-protocol"
+      remove_all_items "$zone" "--list-forward-ports" "--remove-forward-port"
+      remove_all_items "$zone" "--list-source-ports" "--remove-source-port"
+      remove_all_items "$zone" "--list-icmp-blocks" "--remove-icmp-block"
+      remove_all_items "$zone" "--list-rich-rules" "--remove-rich-rule"
+      remove_all_items "$zone" "--list-interfaces" "--remove-interface"
     else
-      # Clear-all이 아닐 때만 기존 remove 규칙 적용
-      [ "$REM_ALL_SOURCES" == "true" ] && remove_all_items "--list-sources" "--remove-source" || apply_items "--remove-source" "${REM_SOURCES[@]}"
-      [ "$REM_ALL_SERVICES" == "true" ] && remove_all_items "--list-services" "--remove-service" || apply_items "--remove-service" "${REM_SERVICES[@]}"
-      [ "$REM_ALL_PORTS" == "true" ] && remove_all_items "--list-ports" "--remove-port" || apply_items "--remove-port" "${REM_PORTS[@]}"
-      [ "$REM_ALL_PROTOCOLS" == "true" ] && remove_all_items "--list-protocols" "--remove-protocol" || apply_items "--remove-protocol" "${REM_PROTOCOLS[@]}"
-      [ "$REM_ALL_FWD_PORTS" == "true" ] && remove_all_items "--list-forward-ports" "--remove-forward-port" || apply_items "--remove-forward-port" "${REM_FWD_PORTS[@]}"
-      [ "$REM_ALL_SRC_PORTS" == "true" ] && remove_all_items "--list-source-ports" "--remove-source-port" || apply_items "--remove-source-port" "${REM_SRC_PORTS[@]}"
-      [ "$REM_ALL_ICMP_BLOCKS" == "true" ] && remove_all_items "--list-icmp-blocks" "--remove-icmp-block" || apply_items "--remove-icmp-block" "${REM_ICMP_BLOCKS[@]}"
-      [ "$REM_ALL_RICH_RULES" == "true" ] && remove_all_items "--list-rich-rules" "--remove-rich-rule" || apply_items "--remove-rich-rule" "${REM_RICH_RULES[@]}"
-      [ "$REM_ALL_INTERFACES" == "true" ] && remove_all_items "--list-interfaces" "--remove-interface" || apply_items "--remove-interface" "${REM_INTERFACES[@]}"
+      if [ "$REM_ALL_SOURCES" == "true" ]; then remove_all_items "$zone" "--list-sources" "--remove-source"; else apply_items "$zone" "--remove-source" "${REM_SOURCES[@]}"; fi
+      if [ "$REM_ALL_SERVICES" == "true" ]; then remove_all_items "$zone" "--list-services" "--remove-service"; else apply_items "$zone" "--remove-service" "${REM_SERVICES[@]}"; fi
+      if [ "$REM_ALL_PORTS" == "true" ]; then remove_all_items "$zone" "--list-ports" "--remove-port"; else apply_items "$zone" "--remove-port" "${REM_PORTS[@]}"; fi
+      if [ "$REM_ALL_PROTOCOLS" == "true" ]; then remove_all_items "$zone" "--list-protocols" "--remove-protocol"; else apply_items "$zone" "--remove-protocol" "${REM_PROTOCOLS[@]}"; fi
+      if [ "$REM_ALL_FWD_PORTS" == "true" ]; then remove_all_items "$zone" "--list-forward-ports" "--remove-forward-port"; else apply_items "$zone" "--remove-forward-port" "${REM_FWD_PORTS[@]}"; fi
+      if [ "$REM_ALL_SRC_PORTS" == "true" ]; then remove_all_items "$zone" "--list-source-ports" "--remove-source-port"; else apply_items "$zone" "--remove-source-port" "${REM_SRC_PORTS[@]}"; fi
+      if [ "$REM_ALL_ICMP_BLOCKS" == "true" ]; then remove_all_items "$zone" "--list-icmp-blocks" "--remove-icmp-block"; else apply_items "$zone" "--remove-icmp-block" "${REM_ICMP_BLOCKS[@]}"; fi
+      if [ "$REM_ALL_RICH_RULES" == "true" ]; then remove_all_items "$zone" "--list-rich-rules" "--remove-rich-rule"; else apply_items "$zone" "--remove-rich-rule" "${REM_RICH_RULES[@]}"; fi
+      if [ "$REM_ALL_INTERFACES" == "true" ]; then remove_all_items "$zone" "--list-interfaces" "--remove-interface"; else apply_items "$zone" "--remove-interface" "${REM_INTERFACES[@]}"; fi
     fi
 
     # ---------------------------------------------------------
     # [우선순위 2] 항목들 추가 처리 (삭제 완료 후 추가 진행)
     # ---------------------------------------------------------
-    apply_items "--add-source" "${ADD_SOURCES[@]}"
-    apply_items "--add-service" "${ADD_SERVICES[@]}"
-    apply_items "--add-port" "${ADD_PORTS[@]}"
-    apply_items "--add-protocol" "${ADD_PROTOCOLS[@]}"
-    apply_items "--add-forward-port" "${ADD_FWD_PORTS[@]}"
-    apply_items "--add-source-port" "${ADD_SRC_PORTS[@]}"
-    apply_items "--add-icmp-block" "${ADD_ICMP_BLOCKS[@]}"
-    apply_items "--add-rich-rule" "${ADD_RICH_RULES[@]}"
-    apply_items "--add-interface" "${ADD_INTERFACES[@]}"
+    apply_items "$zone" "--add-source" "${ADD_SOURCES[@]}"
+    apply_items "$zone" "--add-service" "${ADD_SERVICES[@]}"
+    apply_items "$zone" "--add-port" "${ADD_PORTS[@]}"
+    apply_items "$zone" "--add-protocol" "${ADD_PROTOCOLS[@]}"
+    apply_items "$zone" "--add-forward-port" "${ADD_FWD_PORTS[@]}"
+    apply_items "$zone" "--add-source-port" "${ADD_SRC_PORTS[@]}"
+    apply_items "$zone" "--add-icmp-block" "${ADD_ICMP_BLOCKS[@]}"
+    apply_items "$zone" "--add-rich-rule" "${ADD_RICH_RULES[@]}"
+    apply_items "$zone" "--add-interface" "${ADD_INTERFACES[@]}"
 
   done
   echo ""
@@ -315,17 +321,31 @@ for z in "${TARGET_ZONES[@]}"; do
   UNIQUE_ZONES["$z"]=1
 done
 
-# 4. 결과 출력
-if [ ${#UNIQUE_ZONES[@]} -eq 0 ]; then
-  echo "⚠️ 조회할 대상 zone이 없습니다."
-  exit 0
+# 4. 결과 출력 로직 개선 (변경 사항이 있으면 --reload시에만 출력)
+PRINT_FLAG="false"
+if [ "$has_modification" == "false" ]; then
+  PRINT_FLAG="true" # 단순 조회일 경우 항상 출력
+elif [ "$RELOAD_FLAG" == "true" ] || [ "$ACTIVE_ZONE_FLAG" == "true" ]; then
+  PRINT_FLAG="true" # 수정 사항이 반영된 최신 런타임을 확인할 명시적 요청이 있을 때 출력
 fi
 
-mapfile -t sorted_zones < <(printf "%s\n" "${!UNIQUE_ZONES[@]}" | sort)
+if [ "$PRINT_FLAG" == "true" ]; then
+  if [ ${#UNIQUE_ZONES[@]} -eq 0 ]; then
+    echo "⚠️ 조회할 대상 zone이 없습니다."
+    exit 0
+  fi
 
-for z in "${sorted_zones[@]}"; do
-  print_zone_info "$z"
-done
+  mapfile -t sorted_zones < <(printf "%s\n" "${!UNIQUE_ZONES[@]}" | sort)
+
+  for z in "${sorted_zones[@]}"; do
+    print_zone_info "$z"
+  done
+else
+  # 수정을 진행했지만, --reload 등을 하지 않아 화면 출력만 생략하는 경우
+  echo "💡 안내: 규칙 변경이 완료되었습니다. (현재 런타임 상태 출력 생략)"
+  echo "   - 새로 적용된 최신 상태를 확인하시려면 --reload 옵션과 함께 실행하시거나,"
+  echo "   - 순수하게 대상 zone만 지정(--zone=...)하여 다시 조회해 주시기 바랍니다."
+fi
 
 echo ""
 echo "✨ 모든 작업이 완료되었습니다!"
