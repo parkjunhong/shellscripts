@@ -5,7 +5,7 @@
 # @since    : 2026-06-01
 # @desc     : support RHEL, Oracle Linux, Ubuntu, RockyOS
 # @installation : 
-#   1. insert 'source <path>/fwc-cli.sh" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   1. insert 'source <path>/fwc-cli.sh" into ~/bin/.rc or ~/bin/.bash_profile for a personal usage.
 #   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/fwc-cli.sh' into 
 #      etc/bashrc for all users.
 # =======================================
@@ -17,7 +17,7 @@ _fwc_cli_completion() {
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
   # 사용 가능한 옵션 목록: =없는 단독 형태와 =있는 형태를 모두 제공
-  opts="--zone= --active-zone --reload --permanent \
+  opts="--zone= --active-zone --reload --permanent --clear-all \
         --add-sources= --add-services= --add-ports= --add-protocols= \
         --add-forward-ports= --add-source-ports= --add-icmp-blocks= \
         --add-rich-rules= --add-interfaces= \
@@ -45,7 +45,7 @@ _fwc_cli_completion() {
 
   local word
   for word in "${COMP_WORDS[@]}"; do
-    if [[ "$word" == "--active-zone" || "$word" == "--reload" || "$word" == "--permanent" || "$word" == "-h" || "$word" == "--help" ]]; then
+    if [[ "$word" == "--active-zone" || "$word" == "--reload" || "$word" == "--permanent" || "$word" == "--clear-all" || "$word" == "-h" || "$word" == "--help" ]]; then
       opts=$(echo "$opts" | sed "s/\b$word\b//g")
     fi
   done
