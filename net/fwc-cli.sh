@@ -44,6 +44,7 @@ help(){
   echo "  --active-zone          활성화된 모든 zone의 정보 조회"
   echo "  --reload               방화벽 설정 리로드 및 활성화된 zone 정보 조회"
   echo "  --permanent            설정을 영구적(permanent)으로 적용"
+  echo "  --clear-all            지정된 zone의 모든 규칙 항목을 일괄 삭제 (가장 먼저 수행되며 개별 remove 무시)"
   echo "  --add-<항목>=<값>      지정된 zone에 규칙 추가 (콤마 구분)."
   echo "                         지원항목: sources, services, ports, protocols, forward-ports, source-ports,"
   echo "                                   icmp-blocks, rich-rules, interfaces"
@@ -104,6 +105,7 @@ TARGET_ZONES=()
 ACTIVE_ZONE_FLAG="false"
 RELOAD_FLAG="false"
 PERMANENT_FLAG="false"
+CLEAR_ALL_FLAG="false"
 
 # 추가 배열 선언
 declare -a ADD_SOURCES ADD_SERVICES ADD_PORTS ADD_PROTOCOLS
@@ -131,6 +133,7 @@ while [[ "$#" -gt 0 ]]; do
     --active-zone) ACTIVE_ZONE_FLAG="true"; shift ;;
     --reload) RELOAD_FLAG="true"; shift ;;
     --permanent) PERMANENT_FLAG="true"; shift ;;
+    --clear-all) CLEAR_ALL_FLAG="true"; shift ;;
     
     # Add 옵션
     --add-sources=*) parse_and_store "${1#*=}" "ADD_SOURCES"; shift ;;
@@ -175,17 +178,18 @@ if [ ${#ADD_SOURCES[@]} -gt 0 ] || [ ${#ADD_SERVICES[@]} -gt 0 ] || [ ${#ADD_POR
    [ ${#REM_SOURCES[@]} -gt 0 ] || [ ${#REM_SERVICES[@]} -gt 0 ] || [ ${#REM_PORTS[@]} -gt 0 ] || [ ${#REM_PROTOCOLS[@]} -gt 0 ] || \
    [ ${#REM_FWD_PORTS[@]} -gt 0 ] || [ ${#REM_SRC_PORTS[@]} -gt 0 ] || [ ${#REM_ICMP_BLOCKS[@]} -gt 0 ] || [ ${#REM_RICH_RULES[@]} -gt 0 ] || [ ${#REM_INTERFACES[@]} -gt 0 ] || \
    [ "$REM_ALL_SOURCES" == "true" ] || [ "$REM_ALL_SERVICES" == "true" ] || [ "$REM_ALL_PORTS" == "true" ] || [ "$REM_ALL_PROTOCOLS" == "true" ] || \
-   [ "$REM_ALL_FWD_PORTS" == "true" ] || [ "$REM_ALL_SRC_PORTS" == "true" ] || [ "$REM_ALL_ICMP_BLOCKS" == "true" ] || [ "$REM_ALL_RICH_RULES" == "true" ] || [ "$REM_ALL_INTERFACES" == "true" ]; then
+   [ "$REM_ALL_FWD_PORTS" == "true" ] || [ "$REM_ALL_SRC_PORTS" == "true" ] || [ "$REM_ALL_ICMP_BLOCKS" == "true" ] || [ "$REM_ALL_RICH_RULES" == "true" ] || [ "$REM_ALL_INTERFACES" == "true" ] || \
+   [ "$CLEAR_ALL_FLAG" == "true" ]; then
   has_modification="true"
 fi
 
 if [ "$has_modification" == "true" ] && [ ${#TARGET_ZONES[@]} -eq 0 ]; then
-  help "오류: --add-* 또는 --remove-* 옵션을 사용할 때는 반드시 --zone=<이름> 옵션을 한 개 이상 지정해야 합니다." "$LINENO"
+  help "오류: --add-*, --remove-*, --clear-all 옵션을 사용할 때는 반드시 --zone=<이름> 옵션을 한 개 이상 지정해야 합니다." "$LINENO"
   exit 1
 fi
 
 if [ ${#TARGET_ZONES[@]} -eq 0 ] && [ "$ACTIVE_ZONE_FLAG" == "false" ] && [ "$RELOAD_FLAG" == "false" ] && [ "$has_modification" == "false" ]; then
-  help "조회할 대상(--zone=<이름> 등) 또는 동작(--reload, --add-*, --remove-*)을 입력해 주세요." "$LINENO"
+  help "조회할 대상(--zone=<이름> 등) 또는 동작(--reload, --add-*, --remove-*, --clear-all)을 입력해 주세요." "$LINENO"
   exit 1
 fi
 
@@ -221,7 +225,6 @@ if [ "$has_modification" == "true" ]; then
       [ "$PERMANENT_FLAG" == "true" ] && list_cmd+=("--permanent")
 
       if [ "$action_list" == "--list-rich-rules" ]; then
-        # Rich Rule은 띄어쓰기가 있으므로 줄바꿈(Line) 기준으로 배열 생성
         local rules
         mapfile -t rules < <("${list_cmd[@]}" "$action_list" 2>/dev/null)
         for rule in "${rules[@]}"; do
@@ -230,7 +233,6 @@ if [ "$has_modification" == "true" ]; then
           "${local_cmd[@]}" --zone="$zone" "$action_remove=$rule" >/dev/null
         done
       else
-        # 그 외 항목은 공백(Space) 단위 분리
         local raw_output
         raw_output=$("${list_cmd[@]}" "$action_list" 2>/dev/null)
         for item in $raw_output; do
@@ -241,7 +243,36 @@ if [ "$has_modification" == "true" ]; then
       fi
     }
 
-    # 항목들 순차 적용 (추가)
+    # ---------------------------------------------------------
+    # [우선순위 1] 항목들 삭제 처리 (Clear-all 우선 또는 개별 삭제)
+    # ---------------------------------------------------------
+    if [ "$CLEAR_ALL_FLAG" == "true" ]; then
+      echo " 🧹 [$zone] --clear-all: 모든 방화벽 규칙 항목을 삭제합니다..."
+      remove_all_items "--list-sources" "--remove-source"
+      remove_all_items "--list-services" "--remove-service"
+      remove_all_items "--list-ports" "--remove-port"
+      remove_all_items "--list-protocols" "--remove-protocol"
+      remove_all_items "--list-forward-ports" "--remove-forward-port"
+      remove_all_items "--list-source-ports" "--remove-source-port"
+      remove_all_items "--list-icmp-blocks" "--remove-icmp-block"
+      remove_all_items "--list-rich-rules" "--remove-rich-rule"
+      remove_all_items "--list-interfaces" "--remove-interface"
+    else
+      # Clear-all이 아닐 때만 기존 remove 규칙 적용
+      [ "$REM_ALL_SOURCES" == "true" ] && remove_all_items "--list-sources" "--remove-source" || apply_items "--remove-source" "${REM_SOURCES[@]}"
+      [ "$REM_ALL_SERVICES" == "true" ] && remove_all_items "--list-services" "--remove-service" || apply_items "--remove-service" "${REM_SERVICES[@]}"
+      [ "$REM_ALL_PORTS" == "true" ] && remove_all_items "--list-ports" "--remove-port" || apply_items "--remove-port" "${REM_PORTS[@]}"
+      [ "$REM_ALL_PROTOCOLS" == "true" ] && remove_all_items "--list-protocols" "--remove-protocol" || apply_items "--remove-protocol" "${REM_PROTOCOLS[@]}"
+      [ "$REM_ALL_FWD_PORTS" == "true" ] && remove_all_items "--list-forward-ports" "--remove-forward-port" || apply_items "--remove-forward-port" "${REM_FWD_PORTS[@]}"
+      [ "$REM_ALL_SRC_PORTS" == "true" ] && remove_all_items "--list-source-ports" "--remove-source-port" || apply_items "--remove-source-port" "${REM_SRC_PORTS[@]}"
+      [ "$REM_ALL_ICMP_BLOCKS" == "true" ] && remove_all_items "--list-icmp-blocks" "--remove-icmp-block" || apply_items "--remove-icmp-block" "${REM_ICMP_BLOCKS[@]}"
+      [ "$REM_ALL_RICH_RULES" == "true" ] && remove_all_items "--list-rich-rules" "--remove-rich-rule" || apply_items "--remove-rich-rule" "${REM_RICH_RULES[@]}"
+      [ "$REM_ALL_INTERFACES" == "true" ] && remove_all_items "--list-interfaces" "--remove-interface" || apply_items "--remove-interface" "${REM_INTERFACES[@]}"
+    fi
+
+    # ---------------------------------------------------------
+    # [우선순위 2] 항목들 추가 처리 (삭제 완료 후 추가 진행)
+    # ---------------------------------------------------------
     apply_items "--add-source" "${ADD_SOURCES[@]}"
     apply_items "--add-service" "${ADD_SERVICES[@]}"
     apply_items "--add-port" "${ADD_PORTS[@]}"
@@ -251,17 +282,7 @@ if [ "$has_modification" == "true" ]; then
     apply_items "--add-icmp-block" "${ADD_ICMP_BLOCKS[@]}"
     apply_items "--add-rich-rule" "${ADD_RICH_RULES[@]}"
     apply_items "--add-interface" "${ADD_INTERFACES[@]}"
-    
-    # 항목들 순차 적용 (삭제) - ALL 플래그가 켜져있으면 전부 삭제, 아니면 개별 삭제
-    [ "$REM_ALL_SOURCES" == "true" ] && remove_all_items "--list-sources" "--remove-source" || apply_items "--remove-source" "${REM_SOURCES[@]}"
-    [ "$REM_ALL_SERVICES" == "true" ] && remove_all_items "--list-services" "--remove-service" || apply_items "--remove-service" "${REM_SERVICES[@]}"
-    [ "$REM_ALL_PORTS" == "true" ] && remove_all_items "--list-ports" "--remove-port" || apply_items "--remove-port" "${REM_PORTS[@]}"
-    [ "$REM_ALL_PROTOCOLS" == "true" ] && remove_all_items "--list-protocols" "--remove-protocol" || apply_items "--remove-protocol" "${REM_PROTOCOLS[@]}"
-    [ "$REM_ALL_FWD_PORTS" == "true" ] && remove_all_items "--list-forward-ports" "--remove-forward-port" || apply_items "--remove-forward-port" "${REM_FWD_PORTS[@]}"
-    [ "$REM_ALL_SRC_PORTS" == "true" ] && remove_all_items "--list-source-ports" "--remove-source-port" || apply_items "--remove-source-port" "${REM_SRC_PORTS[@]}"
-    [ "$REM_ALL_ICMP_BLOCKS" == "true" ] && remove_all_items "--list-icmp-blocks" "--remove-icmp-block" || apply_items "--remove-icmp-block" "${REM_ICMP_BLOCKS[@]}"
-    [ "$REM_ALL_RICH_RULES" == "true" ] && remove_all_items "--list-rich-rules" "--remove-rich-rule" || apply_items "--remove-rich-rule" "${REM_RICH_RULES[@]}"
-    [ "$REM_ALL_INTERFACES" == "true" ] && remove_all_items "--list-interfaces" "--remove-interface" || apply_items "--remove-interface" "${REM_INTERFACES[@]}"
+
   done
   echo ""
   
