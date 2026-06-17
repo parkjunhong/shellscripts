@@ -5,53 +5,205 @@
 # @since    : 2026-06-01
 # @desc     : support RHEL, Oracle Linux, Ubuntu, RockyOS
 # @installation : 
-#   1. insert 'source <path>/fwc-cli.sh" into ~/bin/.rc or ~/bin/.bash_profile for a personal usage.
+#   1. insert 'source <path>/fwc-cli.sh" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
 #   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/fwc-cli.sh' into 
 #      etc/bashrc for all users.
 # =======================================
 
 _fwc_cli_completion() {
-  local cur prev opts
+  local cur prev prev_prev opts active_zone
   COMPREPLY=()
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
-
-  # 사용 가능한 옵션 목록: =없는 단독 형태와 =있는 형태를 모두 제공
-  opts="--zone= --active-zone --reload --permanent --clear-all \
-        --add-sources= --add-services= --add-ports= --add-protocols= \
-        --add-forward-ports= --add-source-ports= --add-icmp-blocks= \
-        --add-rich-rules= --add-interfaces= \
-        --remove-sources --remove-sources= \
-        --remove-services --remove-services= \
-        --remove-ports --remove-ports= \
-        --remove-protocols --remove-protocols= \
-        --remove-forward-ports --remove-forward-ports= \
-        --remove-source-ports --remove-source-ports= \
-        --remove-icmp-blocks --remove-icmp-blocks= \
-        --remove-rich-rules --remove-rich-rules= \
-        --remove-interfaces --remove-interfaces= \
-        -h --help"
-
-  # --zone= 옵션의 동적 자동 완성
-  if [[ "${cur}" == --zone=* ]]; then
-    local prefix="--zone="
-    local typed_zone="${cur#--zone=}"
-    local zones=$(sudo firewall-cmd --get-zones 2>/dev/null)
-    
-    COMPREPLY=( $(compgen -P "$prefix" -W "$zones" -- "$typed_zone") )
-    compopt -o nospace 2>/dev/null
-    return 0
+  
+  # 인덱스 오류 방지를 위해 이전-이전 단어 안전하게 추출
+  if [ $COMP_CWORD -ge 2 ]; then
+    prev_prev="${COMP_WORDS[COMP_CWORD-2]}"
+  else
+    prev_prev=""
   fi
 
-  local word
-  for word in "${COMP_WORDS[@]}"; do
-    if [[ "$word" == "--active-zone" || "$word" == "--reload" || "$word" == "--permanent" || "$word" == "--clear-all" || "$word" == "-h" || "$word" == "--help" ]]; then
-      opts=$(echo "$opts" | sed "s/\b$word\b//g")
+  # ==========================================
+  # [수정됨] 현재 입력된 명령어에서 활성 Zone 강력하게 추출
+  # ==========================================
+  active_zone=""
+  local i
+  for (( i=0; i < ${#COMP_WORDS[@]}; i++ )); do
+    # Bash가 등호(=)를 기준으로 단어를 쪼갠 경우 ( "--zone", "=", "work" )
+    if [[ "${COMP_WORDS[i]}" == "--zone" && "${COMP_WORDS[i+1]}" == "=" ]]; then
+      local temp_zone="${COMP_WORDS[i+2]}"
+      # temp_zone이 다음 옵션(시작이 '-')이 아니고, 비어있지 않을 때만 할당
+      if [[ -n "$temp_zone" && "$temp_zone" != -* ]]; then
+        active_zone="$temp_zone"
+      fi
+    # Bash 환경에 따라 단어가 쪼개지지 않고 통째로 들어온 경우 ( "--zone=work" )
+    elif [[ "${COMP_WORDS[i]}" == --zone=* ]]; then
+      local temp_zone="${COMP_WORDS[i]#--zone=}"
+      if [[ -n "$temp_zone" && "$temp_zone" != -* ]]; then
+        active_zone="$temp_zone"
+      fi
     fi
   done
 
+  # '--zone=' 이 입력되지 않았다면 추가/삭제 옵션을 숨기고 zone 입력을 강제합니다.
+  if [[ -z "$active_zone" ]]; then
+    opts="--zone= --active-zone --reload -h --help"
+  else
+    opts="--zone= --active-zone --reload --permanent --clear-all \
+          --add-sources= --add-services= --add-ports= --add-protocols= \
+          --add-forward-ports= --add-source-ports= --add-icmp-blocks= \
+          --add-rich-rules= --add-interfaces= \
+          --remove-sources --remove-sources= \
+          --remove-services --remove-services= \
+          --remove-ports --remove-ports= \
+          --remove-protocols --remove-protocols= \
+          --remove-forward-ports --remove-forward-ports= \
+          --remove-source-ports --remove-source-ports= \
+          --remove-icmp-blocks --remove-icmp-blocks= \
+          --remove-rich-rules --remove-rich-rules= \
+          --remove-interfaces --remove-interfaces="
+  fi
+
+  # ==========================================
+  # 동적 자동 완성 타겟 판별 (Target Flag 추출)
+  # ==========================================
+  local target_flag=""
+  local typed_val=""
+  local prefix_str=""
+
+  # 입력 패턴에 따라 어떤 옵션(--add-* / --remove-*)을 입력 중인지 추출합니다.
+  if [[ "$prev" == "=" ]]; then
+    target_flag="$prev_prev"
+    typed_val="$cur"
+  elif [[ "$cur" == "=" ]]; then
+    target_flag="$prev"
+    typed_val=""
+  elif [[ "$cur" == *=* ]]; then
+    target_flag="${cur%%=*}"
+    prefix_str="${target_flag}="
+    typed_val="${cur#*=}"
+  fi
+
+  if [[ "$target_flag" != --* ]]; then
+    target_flag=""
+  fi
+
+  # ==========================================
+  # 타겟에 맞는 데이터(Candidates) 동적 수집
+  # ==========================================
+  if [[ -n "$target_flag" ]]; then
+    local candidates=""
+    
+    case "$target_flag" in
+      # 1. 시스템 정보 조회 (Add)
+      --zone) candidates=$(sudo firewall-cmd --get-zones 2>/dev/null) ;;
+      --add-services) candidates=$(sudo firewall-cmd --get-services 2>/dev/null) ;;
+      --add-interfaces) candidates=$(ls /sys/class/net/ 2>/dev/null | grep -v '^lo$') ;;
+      --add-protocols) candidates=$(awk '/^[a-z]/ {print $1}' /etc/protocols 2>/dev/null | sort -u) ;;
+      
+      # 2. 존(Zone) 내부 정보 조회 (Remove)
+      --remove-*)
+        if [[ -n "$active_zone" ]]; then
+          local list_cmd=""
+          case "$target_flag" in
+            --remove-services) list_cmd="--list-services" ;;
+            --remove-ports) list_cmd="--list-ports" ;;
+            --remove-sources) list_cmd="--list-sources" ;;
+            --remove-interfaces) list_cmd="--list-interfaces" ;;
+            --remove-protocols) list_cmd="--list-protocols" ;;
+            --remove-forward-ports) list_cmd="--list-forward-ports" ;;
+            --remove-source-ports) list_cmd="--list-source-ports" ;;
+            --remove-icmp-blocks) list_cmd="--list-icmp-blocks" ;;
+            --remove-rich-rules) list_cmd="--list-rich-rules" ;;
+          esac
+          
+          if [[ -n "$list_cmd" ]]; then
+            if [[ "$target_flag" == "--remove-rich-rules" ]]; then
+              while IFS= read -r rule; do
+                rule="${rule#"${rule%%[![:space:]]*}"}"
+                rule="${rule%"${rule##*[![:space:]]}"}"
+                [[ -n "$rule" ]] && candidates+="$rule"$'\n'
+              done < <(sudo firewall-cmd --zone="$active_zone" "$list_cmd" 2>/dev/null)
+            else
+              candidates=$(sudo firewall-cmd --zone="$active_zone" "$list_cmd" 2>/dev/null)
+            fi
+          fi
+        fi
+        ;;
+    esac
+
+    # CSV 파싱 & 중복 제거
+    if [[ "$target_flag" != "--zone" && "$target_flag" != "--remove-rich-rules" && "$typed_val" == *,* ]]; then
+      local base_csv="${typed_val%,*},"   
+      prefix_str="${prefix_str}${base_csv}" 
+      
+      local used_items
+      IFS=',' read -ra used_items <<< "${typed_val%,*}"
+      
+      local filtered_candidates=""
+      for cand in $candidates; do
+        local is_used="false"
+        for used in "${used_items[@]}"; do
+          if [[ "$cand" == "$used" ]]; then
+            is_used="true"
+            break
+          fi
+        done
+        if [[ "$is_used" == "false" ]]; then
+          filtered_candidates="$filtered_candidates $cand"
+        fi
+      done
+      candidates="$filtered_candidates"
+
+      typed_val="${typed_val##*,}"        
+    fi
+
+    # 최종 추천
+    local old_ifs=$IFS
+    if [[ "$target_flag" == "--remove-rich-rules" ]]; then
+      IFS=$'\n'
+    fi
+
+    if [[ -n "$prefix_str" ]]; then
+      COMPREPLY=( $(compgen -P "$prefix_str" -W "$candidates" -- "$typed_val") )
+    else
+      COMPREPLY=( $(compgen -W "$candidates" -- "$typed_val") )
+    fi
+    IFS=$old_ifs
+    
+    if [[ "$target_flag" != "--zone" ]]; then
+      compopt -o nospace 2>/dev/null
+    fi
+    return 0
+  fi
+
+  # ==========================================
+  # 일반 옵션 추천 로직 (기사용 옵션 필터링 포함)
+  # ==========================================
+  local new_opts=""
+  for opt in $opts; do
+    local found="false"
+    for word in "${COMP_WORDS[@]}"; do
+      # --zone= 은 여러 번 사용 가능하도록 유지
+      if [[ "$opt" != "--zone=" && ( "$word" == "$opt" || "$word" == "${opt%=}"* ) ]]; then
+        found="true"
+        break
+      fi
+    done
+    if [[ "$found" == "false" ]]; then
+      new_opts="$new_opts $opt"
+    fi
+  done
+  opts="$new_opts"
+
   COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+
+  if [[ ${#COMPREPLY[@]} -eq 1 && "${COMPREPLY[0]}" == *= ]]; then
+    compopt -o nospace 2>/dev/null
+  fi
+
   return 0
 }
 
 complete -F _fwc_cli_completion fwc-cli.sh
+complete -F _fwc_cli_completion ./fwc-cli.sh
