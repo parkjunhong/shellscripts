@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 
-# trusted 존의 Ingress와 Egress 우선순위를 모두 -10으로 조정
 sudo firewall-cmd --permanent --zone=trusted --set-priority=-10
+sudo firewall-cmd --permanent --zone=work --set-priority=-7
+sudo firewall-cmd --permanent --zone=internal --set-priority=-4
+sudo firewall-cmd --permanent --zone=external --set-priority=-1
+sudo firewall-cmd --reload
 
 exit 0
