@@ -26,7 +26,7 @@ help(){
   echo "사용법: ./$FILENAME -g <그룹 경로> [-d <저장디렉토리>]"
   echo ""
   echo "옵션:"
-  echo "  -g, --group     GitLab 대상 그룹 정보 (예: etri-igmoip) (필수)"
+  echo "  -g, --group     GitLab 대상 그룹 정보 (필수)"
   echo "  -d, --dir       프로젝트를 Clone 할 대상 최상위 디렉토리 (선택, 기본값: 현재 경로)"
   echo "  -h, --help      도움말 출력"
 }
