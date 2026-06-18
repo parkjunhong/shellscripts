@@ -73,7 +73,7 @@ parse_arguments $@
 # Gitlab URL (예: https://gitlab.your-company.com)
 GITLAB_URL="https://gitlab.ymtech.co.kr"
 # Gitlab Personal Access Token
-GITLAB_PAT="bRH68-L1-n3-HiHYX54M"
+GITLAB_PAT="612By-zzzFRoNNe4-2BK"
 # gitlab-clone.sh -u <GitLab URL> -g <그룹 경로> -t <AccessToken> [-d <저장디렉토리>]
 gitlab-clone.sh -u "${GITLAB_URL}" -t "${GITLAB_PAT}" $@
 
