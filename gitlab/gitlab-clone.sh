@@ -3,7 +3,7 @@
 # @author   : parkjunhong77@gmail.com
 # @title    : gitlab-clone.sh
 # @license  : Apache License 2.0
-# @since    : 2026-05-07
+# @since    : 2026-06-18
 # @desc     : support RHEL, Oracle Linux, Ubuntu, RockyOS
 # @installation : 
 #   1. insert 'source <path>/gitlab-clone.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
@@ -13,6 +13,14 @@
 
 FILENAME=$(basename "$0")
 
+##
+# 스크립트 사용법 및 옵션 도움말을 출력합니다.
+#
+# @param $1 {String} 오류 발생 원인 메시지 (선택)
+# @param $2 {Number} 오류가 발생한 라인 번호 (선택)
+#
+# @return 도움말 및 호출 스택 정보 출력
+##
 help(){
   if [ ! -z "$1" ];
   then
@@ -34,11 +42,12 @@ help(){
     echo "================================================================================"
   fi  
   echo  
-  echo "사용법: ./$FILENAME -u <GitLab URL> -g <그룹 경로> -t <AccessToken> [-d <저장디렉토리>]"
+  echo "사용법: ./$FILENAME -u <GitLab URL> -g <그룹 경로> -t <AccessToken> [-d <저장디렉토리>] [-n <클론그룹이름>] [-x <제외그룹>]"
   echo ""
   echo "옵션:"
   echo "  -u, --url       GitLab 서비스 URL (예: https://gitlab.ymtech.co.kr) (필수)"
   echo "  -g, --group     GitLab 대상 그룹 정보 (예: my-security) (필수)"
+  echo "  -n, --name      클론 디렉토리의 상위 그룹 폴더명을 대체할 이름 (선택)"
   echo "  -x, --exclude   제외할 SubGroup 이름. 콤마(,)로 구분"
   echo "  -t, --token     GitLab API 접근용 Access Token (필수)"
   echo "  -d, --dir       프로젝트를 Clone 할 대상 최상위 디렉토리 (선택, 기본값: 현재 경로)"
@@ -48,7 +57,7 @@ help(){
 ##
 # 필수 유틸리티(curl, jq, git) 설치 여부를 확인합니다.
 #
-# @return (설치되지 않은 유틸리티가 있을 경우 오류 메시지와 함께 스크립트 종료)
+# @return 설치되지 않은 유틸리티가 있을 경우 오류 메시지와 함께 스크립트 종료
 ##
 check_dependencies() {
   for cmd in curl jq git; do
@@ -87,7 +96,7 @@ urlencode() {
 #
 # @param $1 {String} 확인할 대상 그룹의 URL 인코딩된 경로
 #
-# @return (그룹이 존재하지 않을 경우 안내 문구 출력 후 즉시 종료)
+# @return 그룹이 존재하지 않을 경우 안내 문구 출력 후 즉시 종료
 ##
 verify_group_exists() {
   local group_id="$1"
@@ -111,7 +120,7 @@ verify_group_exists() {
 # @param $2 {String} 데이터를 저장/생성할 대상 물리 디렉토리 경로
 # @param $3 {String} 출력을 위한 현재 그룹 이름
 #
-# @return (대상 디렉토리 생성 및 하위 프로젝트 git clone 실행)
+# @return 대상 디렉토리 생성 및 하위 프로젝트 git clone 실행
 ##
 traverse_group() {
   # 0. 예외 대상인 Group 인지 확인
@@ -127,6 +136,7 @@ traverse_group() {
   local current_dir="$2"
   local group_name="$3"
 
+  # 결과물을 저장하는 디렉토리의 중간 경로가 없는 경우 자동 생성 처리 (mkdir -p)
   if [ ! -d "$current_dir" ]; then
     mkdir -p "$current_dir" || { help "디렉토리 생성 실패: $current_dir" "$LINENO"; exit 1; }
   fi
@@ -201,13 +211,14 @@ traverse_group() {
 #
 # @param $@ {Array} 스크립트 실행 시 전달된 전체 파라미터
 #
-# @return (변수 할당 및 필수 파라미터 누락 시 명확한 도움말 출력 후 종료)
+# @return 변수 할당 및 필수 파라미터 누락 또는 경로 부재 시 오류 출력 후 종료
 ##
 parse_arguments() {
   while [[ "$#" -gt 0 ]]; do
     case $1 in
       -u|--url) TARGET_URL="$2"; shift ;;
       -g|--group) TARGET_GROUP="$2"; shift ;;
+      -n|--name) TARGET_NAME="$2"; shift ;;
       -x|--exclude) 
         EXCLUDED_GROUPS=()
         IFS="," read -r -a temp_arr <<< "$2"
@@ -242,6 +253,13 @@ parse_arguments() {
   if [ -z "$EXCLUDED_GROUPS" ];then 
     EXCLUDED_GROUPS=();
   fi
+
+  # 입력 데이터로 사용되는 대상 디렉토리 경로가 존재하는지 검증 (없는 경우 오류)
+  if [ ! -z "$TARGET_DIR" ] && [ ! -d "$TARGET_DIR" ]; then
+    help "입력하신 대상 저장 디렉토리 경로가 존재하지 않습니다: $TARGET_DIR" "$LINENO"
+    exit 1
+  fi
+
   if [ -z "$TARGET_DIR" ]; then 
     TARGET_DIR="$(pwd)"; 
   fi
@@ -259,8 +277,14 @@ ENCODED_GROUP_PATH=$(urlencode "$RAW_GROUP_PATH")
 # GitLab 서비스에 그룹 존재 여부 사전 검증
 verify_group_exists "$ENCODED_GROUP_PATH"
 
-ROOT_CLONE_DIR="${TARGET_DIR}/${RAW_GROUP_PATH}"
-ROOT_GROUP_NAME=$(basename "$RAW_GROUP_PATH")
+# -n / --name 옵션 값 유무에 따른 동적 경로 및 상위 그룹명 할당 처리
+if [ ! -z "$TARGET_NAME" ]; then
+  ROOT_CLONE_DIR="${TARGET_DIR}/${TARGET_NAME}"
+  ROOT_GROUP_NAME="$TARGET_NAME"
+else
+  ROOT_CLONE_DIR="${TARGET_DIR}/${RAW_GROUP_PATH}"
+  ROOT_GROUP_NAME=$(basename "$RAW_GROUP_PATH")
+fi
 
 echo "========================================="
 echo "GitLab Host  : $GITLAB_HOST"

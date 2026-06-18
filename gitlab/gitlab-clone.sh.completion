@@ -1,12 +1,12 @@
 # =======================================
 # @author   : parkjunhong77@gmail.com
-# @title    : gitlab-clone.sh completions.
+# @title    : gitlab-clone.sh completions
 # @license  : Apache License 2.0
-# @since    : 2026-05-07
+# @since    : 2026-06-18
 # @desc     : support RHEL, Oracle Linux, Ubuntu, RockyOS
 # @installation : 
-#   1. insert 'source <path>/gitlab-clone.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/gitlab-clone.completion' into 
+#   1. insert 'source <path>/gitlab-clone.sh.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/gitlab-clone.sh.completion' into 
 #      etc/bashrc for all users.
 # =======================================
 # Global Reserved Variables
@@ -31,9 +31,10 @@ _gitlab_clone_completions() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  opts="-u --url -g --group -t --token -d --dir -h --help"
+  # 잔여 파라미터 추천 목록에 -n 및 --name 추가 / Added -n and --name to available options
+  opts="-u --url -g --group -n --name -x --exclude -t --token -d --dir -h --help"
 
-  # 이미 입력된 옵션 확인
+  # 이미 입력된 옵션 확인 / Check already entered options
   local entered_opts=""
   for word in "${COMP_WORDS[@]}"; do
     if [[ "$word" == -* ]]; then
@@ -41,7 +42,7 @@ _gitlab_clone_completions() {
     fi
   done
 
-  # 사용하지 않은 옵션만 필터링
+  # 사용하지 않은 옵션만 필터링 / Filter out used options
   local remaining_opts=""
   for opt in $opts; do
     if [[ ! " $entered_opts " =~ " $opt " ]]; then
@@ -49,22 +50,30 @@ _gitlab_clone_completions() {
     fi
   done
 
-  # 이전 파라미터(prev)에 따른 컨텍스트 대응
+  # 이전 파라미터(prev)에 따른 컨텍스트 대응 / Context response according to previous parameter (prev)
   case "${prev}" in
     -u|--url)
-      # URL 입력 대기 (추천 없음)
+      # URL 입력 대기 (추천 없음) / Waiting for URL input (No recommendations)
       return 0
       ;;
     -g|--group)
-      # 그룹 경로 입력 대기 (추천 없음)
+      # 그룹 경로 입력 대기 (추천 없음) / Waiting for group path input (No recommendations)
       return 0
       ;;
     -t|--token)
-      # Token 입력 대기 (추천 없음)
+      # Token 입력 대기 (추천 없음) / Waiting for token input (No recommendations)
+      return 0
+      ;;
+    -n|--name)
+      # 클론 그룹 대체 이름 입력 대기 (추천 없음) / Waiting for custom clone group name (No recommendations)
+      return 0
+      ;;
+    -x|--exclude)
+      # 제외할 서브그룹 이름 입력 대기 (추천 없음) / Waiting for excluded subgroups input (No recommendations)
       return 0
       ;;
     -d|--dir)
-      # 파라미터가 파일/경로인 경우 디렉토리 전용 자동완성
+      # 파라미터가 파일/경로인 경우 디렉토리 전용 자동완성 / Directory-only autocompletion for file/path parameters
       compopt -o dirnames
       COMPREPLY=( $(compgen -d -- "${cur}") )
       return 0
@@ -73,10 +82,9 @@ _gitlab_clone_completions() {
       ;;
   esac
 
-  # '-' 없이 <TAB>만 입력해도 잔여 파라미터가 추천되도록 처리
+  # '-' 없이 <TAB>만 입력해도 잔여 파라미터가 추천되도록 처리 / Handle parameter suggestions even if <TAB> is pressed without '-'
   COMPREPLY=( $(compgen -W "${remaining_opts}" -- "${cur}") )
   return 0
 }
 
 complete -F _gitlab_clone_completions gitlab-clone.sh
-
