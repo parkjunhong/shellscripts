@@ -75,6 +75,6 @@ GITLAB_URL="https://gitlab.ymtech.co.kr"
 # Gitlab Personal Access Token
 GITLAB_PAT="612By-zzzFRoNNe4-2BK"
 # gitlab-clone.sh -u <GitLab URL> -g <그룹 경로> -t <AccessToken> [-d <저장디렉토리>]
-gitlab-clone.sh -u "${GITLAB_URL}" -t "${GITLAB_PAT}" $@
+gitlab-clone.sh -u "${GITLAB_URL}" -t "${GITLAB_PAT}" -x deprecated-projects,datasource-mgmt $@
 
 exit 0
