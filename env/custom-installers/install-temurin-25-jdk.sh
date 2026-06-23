@@ -44,7 +44,7 @@ help(){
     echo "================================================================================"
   fi  
   echo  
-  echo "사용법: sudo ./$FILENAME [옵션]"
+  echo "사용법: ./$FILENAME [옵션]"
   echo "옵션:"
   echo "  -h, --help    이 도움말을 표시하고 종료합니다."
 }
@@ -89,11 +89,6 @@ while [[ "$#" -gt 0 ]]; do
   shift
 done
 
-# root 권한 확인
-if [[ "${EUID}" -ne 0 ]]; then
-  die "root 권한이 필요합니다. 예: sudo ./$FILENAME"
-fi
-
 # OS 릴리즈 파일 존재 여부 확인
 if [[ ! -r /etc/os-release ]]; then
   die "/etc/os-release 파일을 찾을 수 없습니다."
@@ -114,16 +109,16 @@ install_ubuntu() {
   fi
 
   log "Ubuntu ${VERSION_ID} 환경에서 Temurin 25 JDK 설치를 시작합니다."
-  apt-get update -y
-  apt-get install -y wget apt-transport-https gnupg
+  sudo apt-get update -y
+  sudo apt-get install -y wget apt-transport-https gnupg
 
   # Adoptium GPG 키 및 저장소 추가
   local keyring_path="/etc/apt/trusted.gpg.d/adoptium.gpg"
-  wget -qO - "https://packages.adoptium.net/artifactory/api/gpg/key/public" | gpg --dearmor | tee "${keyring_path}" > /dev/null
-  echo "deb https://packages.adoptium.net/artifactory/deb ${VERSION_CODENAME} main" | tee /etc/apt/sources.list.d/adoptium.list
+  wget -qO - "https://packages.adoptium.net/artifactory/api/gpg/key/public" | gpg --dearmor | sudo tee "${keyring_path}" > /dev/null
+  echo "deb https://packages.adoptium.net/artifactory/deb ${VERSION_CODENAME} main" | sudo tee /etc/apt/sources.list.d/adoptium.list > /dev/null
 
-  apt-get update -y
-  apt-get install -y temurin-25-jdk
+  sudo apt-get update -y
+  sudo apt-get install -y temurin-25-jdk
 }
 
 ##
@@ -146,11 +141,11 @@ install_el() {
   
   # 상위 디렉토리 존재 여부 확인 및 생성
   if [[ ! -d "$(dirname "${repo_path}")" ]]; then
-    mkdir -p "$(dirname "${repo_path}")"
+    sudo mkdir -p "$(dirname "${repo_path}")"
   fi
 
   # Adoptium 저장소 추가 (CentOS/RHEL/Rocky 모두 centos 경로 호환)
-  cat <<EOF > "${repo_path}"
+  cat <<EOF | sudo tee "${repo_path}" > /dev/null
 [Adoptium]
 name=Adoptium
 baseurl=https://packages.adoptium.net/artifactory/rpm/centos/${EL_MAJOR}/$(uname -m)
@@ -159,8 +154,8 @@ gpgcheck=1
 gpgkey=https://packages.adoptium.net/artifactory/api/gpg/key/public
 EOF
 
-  dnf check-update || true
-  dnf install -y temurin-25-jdk
+  sudo dnf check-update || true
+  sudo dnf install -y temurin-25-jdk
 }
 
 # OS에 따른 설치 함수 분기
