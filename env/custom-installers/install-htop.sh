@@ -13,7 +13,7 @@
 
 set -Eeuo pipefail
 
-readonly EPEL_BASE_URL="[https://dl.fedoraproject.org/pub/epel](https://dl.fedoraproject.org/pub/epel)"
+readonly EPEL_BASE_URL="https://dl.fedoraproject.org/pub/epel"
 FILENAME=$(basename "$0")
 
 ##
@@ -45,7 +45,7 @@ help(){
     echo "================================================================================"
   fi  
   echo  
-  echo "사용법: sudo ./$FILENAME [옵션]"
+  echo "사용법: ./$FILENAME [옵션]"
   echo "옵션:"
   echo "  -h, --help    이 도움말을 표시하고 종료합니다."
 }
@@ -100,10 +100,7 @@ while [[ "$#" -gt 0 ]]; do
   shift
 done
 
-if [[ "${EUID}" -ne 0 ]]; then
-  die "root 권한이 필요합니다. 예: sudo ./$FILENAME"
-fi
-
+# OS 릴리즈 파일 존재 여부 확인
 if [[ ! -r /etc/os-release ]]; then
   die "/etc/os-release 파일을 찾을 수 없습니다."
 fi
@@ -123,16 +120,17 @@ install_ubuntu() {
   fi
 
   log "Ubuntu ${VERSION_ID} 감지"
-  apt-get update -y
+  sudo apt-get update -y
 
+  # 패키지 검색(apt-cache show)은 일반 권한으로 가능
   if ! apt-cache show htop >/dev/null 2>&1; then
     log "universe 저장소를 활성화합니다."
-    apt-get install -y software-properties-common
-    add-apt-repository -y universe
-    apt-get update -y
+    sudo apt-get install -y software-properties-common
+    sudo add-apt-repository -y universe
+    sudo apt-get update -y
   fi
 
-  apt-get install -y htop
+  sudo apt-get install -y htop
 }
 
 ##
@@ -145,6 +143,7 @@ install_ubuntu() {
 install_epel_release() {
   local epel_rpm_url="${EPEL_BASE_URL}/epel-release-latest-${EL_MAJOR}.noarch.rpm"
 
+  # rpm 질의는 일반 권한으로 가능
   if rpm -q epel-release >/dev/null 2>&1; then
     log "EPEL이 이미 설치되어 있습니다."
     return
@@ -152,11 +151,11 @@ install_epel_release() {
 
   log "EPEL ${EL_MAJOR} 저장소를 설치합니다."
 
-  if [[ "${ID}" != "rhel" ]] && dnf -y install epel-release; then
+  if [[ "${ID}" != "rhel" ]] && sudo dnf -y install epel-release; then
     return
   fi
 
-  dnf -y install "${epel_rpm_url}"
+  sudo dnf -y install "${epel_rpm_url}"
 }
 
 ##
@@ -178,20 +177,21 @@ install_el() {
   case "${ID}" in
     rocky|centos)
       log "CRB 저장소를 활성화합니다."
-      dnf -y install dnf-plugins-core
-      dnf config-manager --set-enabled crb
+      sudo dnf -y install dnf-plugins-core
+      sudo dnf config-manager --set-enabled crb
       ;;
     rhel)
       if ! command -v subscription-manager >/dev/null 2>&1; then
         die "RHEL에서는 subscription-manager가 필요합니다."
       fi
 
-      if ! subscription-manager identity >/dev/null 2>&1; then
+      # subscription-manager identity 확인은 root 권한 필요
+      if ! sudo subscription-manager identity >/dev/null 2>&1; then
         die "RHEL 시스템이 등록되지 않았습니다. 등록 후 다시 실행하세요."
       fi
 
       log "CodeReady Builder 저장소를 활성화합니다."
-      subscription-manager repos \
+      sudo subscription-manager repos \
         --enable "codeready-builder-for-rhel-${EL_MAJOR}-$(arch)-rpms"
       ;;
     *)
@@ -203,11 +203,11 @@ install_el() {
 
   if [[ "${ID}" == "centos" ]] && ! rpm -q epel-next-release >/dev/null 2>&1; then
     log "CentOS Stream용 EPEL Next 설치를 시도합니다."
-    dnf -y install epel-next-release || \
+    sudo dnf -y install epel-next-release || \
       warn "epel-next-release를 설치하지 못했습니다. htop 설치를 계속 시도합니다."
   fi
 
-  dnf -y --refresh install htop
+  sudo dnf -y --refresh install htop
 }
 
 case "${ID}" in
@@ -222,6 +222,7 @@ case "${ID}" in
     ;;
 esac
 
+# 실행 파일 확인 및 버전 정보 출력은 일반 권한으로 가능
 if command -v htop >/dev/null 2>&1; then
   log "htop 설치 완료: $(htop --version | head -n 1)"
 else
