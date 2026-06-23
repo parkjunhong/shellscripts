@@ -756,10 +756,11 @@ _try_pkg_update() {
 
 ##
 # OS에 맞는 패키지 매니저로 설치를 진행합니다.
+# 설치에 실패하더라도 전체 스크립트를 중단하지 않고 로그를 남긴 후 다음으로 넘어갑니다.
 #
 # @param $1 {string} 패키지 이름
 #
-# @return 진행 상황 메시지 (표준 출력)
+# @return 성공 시 0, 실패 시 1
 ##
 _install_package() {
   local func_name="${FUNCNAME[0]}"
@@ -773,13 +774,25 @@ _install_package() {
   # [개선] OS 패키지 매니저를 통한 정확한 설치 여부 확인
   if ! _is_package_installed "$package_name"; then  
     echo "[✨] '$package_name' 설치 중..."
-    $PKG_INSTALL_CMD "$package_name" || error_exit "'$package_name' 설치 실패" "$LINENO"
+    
+    # [수정] error_exit을 제거하고 예외 처리 분기 추가
+    if ! $PKG_INSTALL_CMD "$package_name"; then
+      echo_e " - [ERROR] '$package_name' 패키지 설치 중 오류가 발생하여 설치를 건너뜁니다."
+      
+      # 작업 완료 후 출력되는 공지사항(NOTICE)에 실패 내역 추가
+      _add_notice " - [$func_name] [ERROR] '$package_name' 패키지 설치 실패 (수동 확인 필요)"
+      
+      return 1 # 실패 상태 코드로 반환하되, 스크립트 실행은 계속됨
+    fi
 
+    echo_i " - '$package_name' 설치가 완료되었습니다."
     EXECUTED_JOB_FLAGS["$func_name.$package_name"]=1
   else
     echo_w " - '$package_name' 패키지가 이미 설치되어 있습니다."
     EXECUTED_JOB_FLAGS["$func_name.$package_name"]=1
   fi
+  
+  return 0
 }
 
 ##
