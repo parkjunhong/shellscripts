@@ -1,171 +1,249 @@
 #!/usr/bin/env bash
 
 # =======================================
-# @auther : parkjunhong77@gmail.com
-# @title  : git merge from A to B
-# @license: Apache License 2.0
-# @since  : 2020-08-18
+# @author   : parkjunhong77@gmail.com
+# @title    : git merge from A to B
+# @license  : Apache License 2.0
+# @since    : 2026-06-23
+# @desc     : support RHEL, Oracle Linux, Ubuntu, RockyOS
+# @installation : 
+#   1. insert 'source <path>/git-merge" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/git-merge.completion' into 
+#      etc/bashrc for all users.
 # =======================================
 
+FILENAME=$(basename "$0")
+
+##
+# 도움말 및 에러 메시지 출력
+#
+# @param $1 {string} 에러 원인 메시지 (선택)
+# @param $2 {number} 에러 발생 라인 번호 (선택)
+#
+# @return 표준 출력
+##
 help(){
-	
-	if [ $# -gt 0 ];then
-		echo
-		echo "['${FUNCNAME[1]}' says] " $1
-	fi
+  if [ ! -z "$1" ];
+  then
+    local indent=10
+    local formatl=" - %-"$indent"s: %s\n"
+    local formatr=" - %"$indent"s: %s\n"
     echo
-    echo "[Usage]"
-    echo "git-merge.sh -s <source> -t <target>"
-    echo
-    echo "[Arguments]"
-    echo " -s | --source: a source branch. If not set, search automatically. Just select !"
-    echo " -t | --target: a target branch. If not set, search automatically. Just select !"
+    echo "================================================================================"
+    printf "$formatl" "filename" "$FILENAME"
+    printf "$formatl" "line" "$2"
+    printf "$formatl" "callstack"
+    local idx=1
+    for func in "${FUNCNAME[@]:1}"
+    do  
+      printf "$formatr" "[$idx]" "$func"
+      ((idx++))
+    done
+    printf "$formatl" "cause" "$1"
+    echo "================================================================================"
+  fi  
+  echo  
+  echo "[사용법]"
+  echo "$FILENAME -s <source> -t <target> [-l]"
+  echo
+  echo "[파라미터]"
+  echo " -s | --source      : 소스 브랜치. 미지정 시 자동으로 검색하여 선택할 수 있습니다."
+  echo " -t | --target      : 타겟 브랜치. 미지정 시 자동으로 검색하여 선택할 수 있습니다."
+  echo " -l | --local-source: 소스 브랜치가 로컬에만 존재하는 경우 사용 (Source 브랜치의 git pull 생략)."
+  echo " -h | --help        : 도움말 및 사용법 출력"
 }
 
 SOURCE=""
 TARGET=""
+LOCAL_SOURCE=0
 
 while [ "$1" != "" ];
 do
-    case $1 in
-        -s | --source)
-            shift
-            SOURCE="$1"
-            ;;
-        -t | --target)
-            shift
-            TARGET="$1"
-            ;;
-        -h | --help)
-            help
-            exit 0
-            ;;
-        *)
-            ;;
-    esac
-    shift
+  case "$1" in
+    -s | --source)
+      shift
+      SOURCE="$1"
+      ;;
+    -t | --target)
+      shift
+      TARGET="$1"
+      ;;
+    -l | --local-source)
+      LOCAL_SOURCE=1
+      ;;
+    -h | --help)
+      help
+      exit 0
+      ;;
+    *)
+      ;;
+  esac
+  shift
 done
 
-# Read current branches.
+##
+# 현재 저장소의 브랜치 목록을 읽어옵니다.
+#
+# @return 브랜치 이름들의 배열 (문자열 형태로 띄어쓰기 구분)
+##
 read-branches(){
-	local _branches=()
-	uuid=$(uuidgen)
-	while read -r branch
-	do
-		if [[ "$branch" == \** ]];then
-			_branches+=(${branch:2})
-		elif [ "$branch" = "$uuid" ];then
-			_branches=()
-			break
-		else
-			_branches+=($branch)
-		fi
-	done <<< $(git branch 2>/dev/null || echo $uuid)
+  local _branches=()
+  local uuid=$(uuidgen 2>/dev/null || echo "fallback-uuid")
+  while read -r branch
+  do
+    if [[ "$branch" == \** ]];then
+      _branches+=("${branch:2}")
+    elif [ "$branch" = "$uuid" ];then
+      _branches=()
+      break
+    else
+      _branches+=("$branch")
+    fi
+  done <<< "$(git branch 2>/dev/null || echo "$uuid")"
 
-	echo "${_branches[@]}"
+  echo "${_branches[@]}"
 }
 
-# Show branches.
+##
+# 조회된 브랜치 목록을 화면에 출력합니다.
+#
+# @return 표준 출력
+##
 show-branches(){
-	echo
-	echo "* Current branches"
-	for idx in "${!BRANCHES[@]}";
-	do
-		((idx=idx+1))
-		printf " [%2s] %s\n" $idx "${BRANCHES[$idx-1]}"
-	done
-	echo
+  echo
+  echo "* Current branches"
+  for idx in "${!BRANCHES[@]}";
+  do
+    ((idx=idx+1))
+    printf " [%2s] %s\n" "$idx" "${BRANCHES[$idx-1]}"
+  done
+  echo
 }
 
-# Select a branch.
-# $1 {string}: title or purpose.
+##
+# 사용자로부터 브랜치를 선택받습니다.
+#
+# @param $1 {string} 선택할 브랜치의 목적 (예: source 또는 target)
+#
+# @return 선택된 브랜치 이름
+##
 select-branch(){
-	read -p "Select '$1' branch [1 ~ ${#BRANCHES[@]}]: " index
-	re="^[0-9]+$"
-	if [ -z "$index" ] || ! [[ $index =~ $re ]] || [ $index -gt ${#BRANCHES[@]} ] || [ $index -lt 1 ]; then
-		index=$(date +%s)
-	fi
-	echo ${BRANCHES[$index-1]}
+  local index
+  read -p "Select '$1' branch [1 ~ ${#BRANCHES[@]}]: " index
+  local re="^[0-9]+$"
+  if [ -z "$index" ] || ! [[ "$index" =~ $re ]] || [ "$index" -gt "${#BRANCHES[@]}" ] || [ "$index" -lt 1 ];
+  then
+    index=$(date +%s)
+  fi
+  echo "${BRANCHES[$index-1]}"
 }
 
-# @param $1 {string}: a name of an array
-# @param $2 {any}: value
-# @return 0 means no, 1 yes
+##
+# 배열 내에 특정 값이 존재하는지 확인합니다.
+#
+# @param $1 {string} 배열의 이름
+# @param $2 {string} 찾을 값
+#
+# @return 1 (존재함), 0 (존재하지 않음)
+##
 has-value(){
-	c=0
-	ar="\${$1[@]}"
-	for v in $(eval "echo ${ar}");
-	do
-		if [ "$v" == "$2" ];then
-			c=1
-			break
-		fi
-	done
+  local c=0
+  local array_name="$1[@]"
+  local search_val="$2"
+  
+  for v in "${!array_name}";
+  do
+    if [ "$v" == "$search_val" ];then
+      c=1
+      break
+    fi
+  done
 
-	echo $c
+  echo "$c"
 }
 
-# @param $1 {string} branch type. [source|target]
+##
+# 브랜치를 대화형으로 할당합니다.
+#
+# @param $1 {string} 브랜치 타입 (source | target)
+#
+# @return 전역 변수 SOURCE, TARGET 수정
+##
 assign-branch(){
-	show-branches
-	local branch=$(select-branch "$1")
+  show-branches
+  local branch=$(select-branch "$1")
 
-	if [ -z "$branch" ];then
-		echo
-		echo "[ERROR] * * * The selected 'source' branch is invalid, empty"
-		help	
-		exit 1
-	fi
-	
-	if [ "$1" == "source" ];then
-		SOURCE="$branch"
-	elif [ "$1" == "target" ];then
-		TARGET="$branch"
-	fi
+  if [ -z "$branch" ];then
+    help "선택된 '$1' 브랜치가 유효하지 않거나 비어 있습니다." "$LINENO"
+    exit 1
+  fi
+  
+  if [ "$1" == "source" ];then
+    SOURCE="$branch"
+  elif [ "$1" == "target" ];then
+    TARGET="$branch"
+  fi
 }
 
+# ---------------------------------------------------------
+# Main Logic
+# ---------------------------------------------------------
+
+# 브랜치 목록 초기화
 BRANCHES=($(read-branches))
-if [ ${#BRANCHES[@]} -lt 1 ];then
-	echo "[ERROR] * * * (A current or one of above folders) is not a git repository."
-	help
-	exit 1
+if [ "${#BRANCHES[@]}" -lt 1 ];then
+  help "(현재 폴더 또는 상위 폴더)가 Git 저장소가 아닙니다." "$LINENO"
+  exit 1
 fi
 
+# 현재 브랜치 확인
 CUR_BRANCH=$(git branch 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/\1/')
 
+# Source / Target 미입력 시 대화형 모드 처리 또는 현재 브랜치 자동 할당
 if [ -z "$SOURCE" ] && [ -z "$TARGET" ];then
-	assign-branch "source"
-	assign-branch "target"
+  assign-branch "source"
+  assign-branch "target"
 elif [ -z "$SOURCE" ];then
-	SOURCE="$CUR_BRANCH"
+  SOURCE="$CUR_BRANCH"
 elif [ -z "$TARGET" ];then
-	TARGET="$CUR_BRANCH"
+  TARGET="$CUR_BRANCH"
 fi
 
-# check source and target
-_branches=( $SOURCE $TARGET )
-for _branch in ${_branches[@]};
+# 지정된 브랜치가 실제 존재하는지 검증
+_branches=( "$SOURCE" "$TARGET" )
+for _branch in "${_branches[@]}";
 do
-	if [ $(has-value "BRANCHES" "$_branch") -lt 1 ];then
-		echo
-		echo "*** branch('$_branch') DOES NOT exists."
-		help
-		exit 1
-	fi 
+  if [ "$(has-value BRANCHES "$_branch")" -lt 1 ];then
+    help "브랜치('$_branch')가 존재하지 않습니다." "$LINENO"
+    exit 1
+  fi 
 done
 
+# Source와 Target이 같은지 검증
 if [ "$SOURCE" == "$TARGET" ];then
-	echo
-	echo "[ERROR] * * * Invalid a source and a target branches. source (=) target."
-	help
-	exit 1
+  help "Source 브랜치와 Target 브랜치가 동일합니다." "$LINENO"
+  exit 1
 fi
 
-# 1. update from 'remote' of 'source' branch
+# Git 상태 확인 (Uncommitted 변경사항 체크)
+if ! git diff-index --quiet HEAD --; then
+  help "커밋되지 않은 변경사항이 존재합니다. 작업 내용을 커밋하거나 스태시(stash) 처리 후 다시 시도하세요." "$LINENO"
+  exit 1
+fi
+
+# Git 명령어 오류 발생 시 즉시 중단 (Fail-fast)
+set -e
+
+# 1. update from 'remote' of 'source' branch (로컬 전용 옵션 체크)
 echo
 echo " > > > git checkout \"${SOURCE}\""
 git checkout "${SOURCE}"
-git pull
+
+if [ "$LOCAL_SOURCE" -eq 1 ]; then
+  echo " > > > skip 'git pull' (Local-only source branch specified)"
+else
+  git pull
+fi
 
 # 2. update from 'remote' of 'target' branch
 echo
@@ -189,5 +267,3 @@ echo " > > > git checkout \"${CUR_BRANCH}\""
 git checkout "${CUR_BRANCH}"
 
 exit 0
-
-

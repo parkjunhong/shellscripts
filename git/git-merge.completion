@@ -1,0 +1,74 @@
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : git merge from A to B
+# @license  : Apache License 2.0
+# @since    : 2026-06-23
+# @desc     : support RHEL, Oracle Linux, Ubuntu, RockyOS
+# @installation : 
+#   1. insert 'source <path>/git-merge" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/git-merge.completion' into 
+#      etc/bashrc for all users.
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+#
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+# =======================================
+
+_git_merge_completion() {
+  local cur prev opts branches
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  # 명령어 옵션 목록 / Command options
+  opts="-s --source -t --target -l --local-source -h --help"
+
+  # 로컬 브랜치 목록 동적 추출 / Get dynamic local git branches
+  branches=$(git branch 2>/dev/null | sed -e 's/*//' | tr -d ' ')
+
+  # 이전 파라미터가 source/target 인 경우, 파일/경로 대신 브랜치 목록 추천
+  # Suggest branch names if the previous parameter is for source or target
+  case "${prev}" in
+    -s|--source|-t|--target)
+      COMPREPLY=( $(compgen -W "${branches}" -- "${cur}") )
+      return 0
+      ;;
+    *)
+      ;;
+  esac
+
+  # 이미 입력된 옵션을 추천 목록에서 제거 (중복 입력 방지)
+  # Remove already typed options to prevent duplicates
+  local available_opts=""
+  for opt in $opts; do
+    local is_used=0
+    for word in "${COMP_WORDS[@]}"; do
+      if [ "$word" == "$opt" ]; then
+        is_used=1
+        break
+      fi
+    done
+    if [ $is_used -eq 0 ]; then
+      available_opts="$available_opts $opt"
+    fi
+  done
+
+  # '-' 로 시작하지 않아도(TAB만 눌러도) 남은 옵션이 추천되도록 적용
+  # Suggest remaining options even when <TAB> is pressed without a preceding '-'
+  COMPREPLY=( $(compgen -W "${available_opts}" -- "${cur}") )
+}
+
+# git-merge 명령어에 대한 completion 바인딩
+complete -F _git_merge_completion git-merge
