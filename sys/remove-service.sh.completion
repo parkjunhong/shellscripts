@@ -1,0 +1,71 @@
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : completely remove linux service.
+# @license  : Apache License 2.0
+# @since    : 2026-06-25
+# @desc     : support Ubuntu 18+, RockyOS 9+, Oracle Linux 8+, RHEL 8+, CentOS 6+, CentOS Stream 9+
+# @installation : 
+#   1. insert 'source <path>/remove-service.sh.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/remove-service.sh.completion' into 
+#      etc/bashrc for all users.
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+#
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+# =======================================
+
+##
+# remove-service.sh 스크립트의 자동완성(Auto-completion)을 지원하는 함수
+# Auto-completion function for remove-service.sh script.
+##
+_remove_service_completion() {
+  local cur prev opts services
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  # 기본 지원 옵션들 (Default options)
+  opts="-h --help"
+
+  # 이미 입력한 옵션은 다시 제안하지 않음 (Remove already typed non-repeatable options)
+  for word in "${COMP_WORDS[@]}"; do
+    opts=$(echo "$opts" | sed "s/\b$word\b//g")
+  done
+
+  # 시스템에 등록된 서비스 목록을 동적으로 추출 (Extract registered services dynamically)
+  if command -v systemctl >/dev/null 2>&1; then
+    # Systemd 기반 시스템 (Extract from systemd)
+    # list-unit-files로 설치된 전체 서비스 목록을 가져온 후 .service 문자열을 제거
+    services=$(systemctl list-unit-files --type=service --no-pager --no-legend 2>/dev/null | awk '{print $1}' | sed 's/\.service//g')
+  elif command -v chkconfig >/dev/null 2>&1; then
+    # SysVinit 기반 시스템 - CentOS 6 등 (Extract from init.d)
+    services=$(ls /etc/init.d/ 2>/dev/null | grep -vE 'functions|README')
+  else
+    services=""
+  fi
+
+  # '-' 또는 '--'를 입력하지 않고 <TAB> 만 입력해도 옵션과 서비스명이 추천되도록 처리
+  # Recommend options and service names even if <TAB> is pressed without '-' or '--'
+  if [[ ${cur} == * ]] ; then
+    COMPREPLY=( $(compgen -W "${opts} ${services}" -- "${cur}") )
+    # 파일/경로 파라미터가 있을 경우를 위해 bash 내장 파일 자동완성 추가 
+    # Add built-in file completion fallback
+    COMPREPLY+=($(compgen -f -d -- "${cur}"))
+    return 0
+  fi
+}
+
+# 스크립트 파일명과 자동완성 함수 연결
+complete -F _remove_service_completion remove-service.sh
