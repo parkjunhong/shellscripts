@@ -63,6 +63,22 @@ die() {
 
 trap 'help "스크립트 실행 중 오류가 발생했습니다." "$LINENO"' ERR
 
+##
+# 작업 내용과 실행할 명령어를 로그로 출력한 뒤 실행합니다.
+#
+# @param $1 {string} 작업 내용
+# @param $@ {any} 실행할 명령어 및 인자 배열 (2번째 파라미터부터)
+#
+# @return (명령어 실행 결과)
+##
+execute() {
+  local desc="$1"
+  shift
+  printf '[INFO] %s\n' "${desc}"
+  printf '  > %s\n' "$*"
+  "$@"
+}
+
 # 파라미터가 없는 경우 도움말 출력
 if [[ "$#" -eq 0 ]]; then
   help "삭제할 서비스 이름을 입력해야 합니다." "$LINENO"
@@ -145,13 +161,11 @@ remove_systemd_service() {
 
   # 1. 서비스 중지 및 비활성화
   if systemctl is-active --quiet "${svc}"; then
-    log "서비스를 중지합니다..."
-    sudo systemctl stop "${svc}"
+    execute "서비스를 중지합니다." sudo systemctl stop "${svc}"
   fi
 
   if systemctl is-enabled --quiet "${svc}" 2>/dev/null; then
-    log "서비스 자동 시작을 비활성화합니다..."
-    sudo systemctl disable "${svc}"
+    execute "서비스 자동 시작을 비활성화합니다." sudo systemctl disable "${svc}"
   fi
 
   # 2. 서비스 데몬 파일 및 관련 Drop-in 디렉토리 삭제
@@ -165,8 +179,7 @@ remove_systemd_service() {
   local removed=0
   for target_path in "${paths[@]}"; do
     if sudo test -e "${target_path}"; then
-      log "삭제 중: ${target_path}"
-      sudo rm -rf "${target_path}"
+      execute "[${target_path}] 데몬 파일/디렉토리 삭제" sudo rm -vrf "${target_path}"
       removed=1
     fi
   done
@@ -176,8 +189,11 @@ remove_systemd_service() {
   fi
 
   # 3. 데몬 리로드 및 캐시 초기화
-  log "Systemd 데몬을 재설정합니다..."
-  sudo systemctl daemon-reload
+  execute "Systemd 데몬을 재설정합니다." sudo systemctl daemon-reload
+  
+  # 리다이렉션(||, >)이 포함된 명령어는 execute 래퍼 대신 직접 로깅
+  printf '[INFO] %s\n' "실패 상태를 초기화합니다."
+  printf '  > %s\n' "sudo systemctl reset-failed ${svc}"
   sudo systemctl reset-failed "${svc}" 2>/dev/null || true
 
   log "[${svc_file}] 삭제가 완료되었습니다."
@@ -194,19 +210,16 @@ remove_sysvinit_service() {
   log "SysVinit 서비스 [${svc}] 삭제 프로세스를 시작합니다."
 
   if sudo service "${svc}" status >/dev/null 2>&1; then
-    log "서비스를 중지합니다..."
-    sudo service "${svc}" stop
+    execute "서비스를 중지합니다." sudo service "${svc}" stop
   fi
 
   if chkconfig --list "${svc}" >/dev/null 2>&1; then
-    log "chkconfig에서 서비스를 비활성화 및 삭제합니다..."
-    sudo chkconfig "${svc}" off
-    sudo chkconfig --del "${svc}"
+    execute "chkconfig에서 서비스를 비활성화합니다." sudo chkconfig "${svc}" off
+    execute "chkconfig에서 서비스를 삭제합니다." sudo chkconfig --del "${svc}"
   fi
 
   if sudo test -f "/etc/init.d/${svc}"; then
-    log "삭제 중: /etc/init.d/${svc}"
-    sudo rm -f "/etc/init.d/${svc}"
+    execute "[/etc/init.d/${svc}] 초기화 스크립트 삭제" sudo rm -vf "/etc/init.d/${svc}"
   else
     warn "시스템에서 [${svc}] 초기화 스크립트를 찾을 수 없습니다."
   fi
