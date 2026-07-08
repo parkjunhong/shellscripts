@@ -181,9 +181,6 @@ _git_getpr_completion() {
     opts="-p --project"
   elif [[ $has_g -eq 0 ]]; then
     opts="-g --git-url"
-    if [[ -n "$GIT_GETPR_GIT_URL" && "$GIT_GETPR_GIT_URL" == *"https://"* ]]; then
-      opts="$opts -p --project"
-    fi
   fi
 
   # 플래그 제안 시에는 콜론 버그가 발생하지 않으므로 기본 bash_cur 사용
