@@ -123,13 +123,27 @@ sync_resource() {
   local src="$1"
   local dest="$2"
 
+  # 1. 대상(Local)이 존재하는 경우
   if [ -e "$dest" ]; then
+    # [치명적 오류 방어] 원격 자원과 로컬 자원의 유형(파일/디렉토리) 불일치 검사
+    if [ -f "$src" ] && [ -d "$dest" ]; then
+      print_log "🚨 [치명적 오류] 다운로드 대상은 '파일'이나, 로컬 경로('$dest')에 '디렉토리'가 이미 존재합니다."
+      print_log "   데이터 유실을 방지하기 위해 작업을 즉시 중단합니다."
+      exit 1
+    elif [ -d "$src" ] && [ -f "$dest" ]; then
+      print_log "🚨 [치명적 오류] 다운로드 대상은 '디렉토리'이나, 로컬 경로('$dest')에 '파일'이 이미 존재합니다."
+      print_log "   데이터 유실을 방지하기 위해 작업을 즉시 중단합니다."
+      exit 1
+    fi
+
+    # 유형이 같은 경우에만 덮어쓰기 진행 여부 확인
     if ! prompt_overwrite "$dest"; then
       print_log "⏭️  건너뜀: $dest"
       return 0
     fi
   fi
 
+  # 2. 자원이 파일인 경우
   if [ -f "$src" ]; then
     if [ -f "$dest" ]; then
       OLD_HASH=$(calc_sha256 "$dest")
@@ -140,18 +154,15 @@ sync_resource() {
         print_log "✨ 새로운 파일로 변경: $dest"
       fi
     else
-      if [ -d "$dest" ]; then
-        rm -rf "$dest"
-      fi
+      # 기존에 있던 rm -rf 삭제 위험 로직 제거됨
       print_log "✅ 새로운 파일 다운로드: $dest"
     fi
     mkdir -p "$(dirname "$dest")"
     cp -f "$src" "$dest"
 
+  # 3. 자원이 디렉토리인 경우
   elif [ -d "$src" ]; then
-    if [ -f "$dest" ]; then
-      rm -f "$dest"
-    fi
+    # 기존에 있던 rm -f 삭제 위험 로직 제거됨
     mkdir -p "$dest"
     
     shopt -s dotglob
