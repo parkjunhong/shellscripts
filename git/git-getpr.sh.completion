@@ -1,0 +1,196 @@
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : search files.
+# @license  : Apache License 2.0
+# @since    : 2026-07-08
+# @desc     : support Ubuntu 20+, Rocky Linux 9+, RHEL 8+, Oracle Linux 9+, CentOS Stream 9+, macOS
+# @installation : 
+#   1. insert 'source <path>/git-getpr.sh" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/git-getpr.sh' into 
+#      etc/bashrc for all users.
+# =======================================
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+# 
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+# =======================================
+
+##
+# @desc git-getpr.sh 명령어에 대한 순차적 자동완성(Wizard) 기능을 제공합니다.
+#       Provides sequential auto-completion for git-getpr.sh command.
+#
+# @param $1 {string} 명령어 이름
+# @param $2 {string} 현재 입력 중인 단어
+# @param $3 {string} 이전에 입력된 단어
+##
+_git_getpr_completion() {
+  local bash_cur="${COMP_WORDS[COMP_CWORD]}"
+  local prev="${COMP_WORDS[COMP_CWORD-1]}"
+  COMPREPLY=()
+
+  local val_g="" val_p="" val_b="" val_t="" val_r="" val_o=""
+  local has_g=0 has_p=0 has_b=0 has_t=0 has_r=0 has_o=0
+  
+  local active_flag=""
+  local active_val=""
+  
+  # 사용자가 값을 모두 입력한 뒤 '스페이스바'를 눌러 다음 옵션(Flag)을 대기 중인지 판별
+  local ready_for_flag=0
+  if [[ -z "$bash_cur" && ! "$prev" =~ ^- ]]; then
+    ready_for_flag=1
+  fi
+
+  # [핵심] COMP_WORDBREAKS(콜론 ':' 등)로 인해 조각난 단어들을 결합하여,
+  # 현재 어떤 옵션(Flag)의 값(Value)을 입력 중인지 전체 문자열을 정확히 추적합니다.
+  local i=1
+  while [[ $i -le $COMP_CWORD ]]; do
+    local word="${COMP_WORDS[i]}"
+    if [[ "$word" =~ ^- ]]; then
+      local j=$((i+1))
+      local temp_val=""
+      while [[ $j -le $COMP_CWORD && ! "${COMP_WORDS[j]}" =~ ^- ]]; do
+        temp_val+="${COMP_WORDS[j]}"
+        ((j++))
+      done
+      
+      case "$word" in
+        -g|--git-url) has_g=1; val_g="$temp_val" ;;
+        -p|--project) has_p=1; val_p="$temp_val" ;;
+        -b|--branch) has_b=1; val_b="$temp_val" ;;
+        -t|--resource-type) has_t=1; val_t="$temp_val" ;;
+        -r|--resource) has_r=1; val_r="$temp_val" ;;
+        -o|--output-path) has_o=1; val_o="$temp_val" ;;
+      esac
+      
+      # 해당 옵션의 값이 현재 커서 위치까지 이어져 있다면, 이를 '활성 옵션'으로 지정
+      if [[ $j -gt $COMP_CWORD ]]; then
+        active_flag="$word"
+        active_val="$temp_val"
+      fi
+      
+      i=$((j-1))
+    fi
+    ((i++))
+  done
+
+  # 값을 입력하고 스페이스바를 누른 상태라면, 다음 Flag 추천을 위해 활성 상태 초기화
+  if [[ $ready_for_flag -eq 1 ]]; then
+    active_flag=""
+  fi
+
+  # [핵심] Bash의 콜론(:) 치환 버그를 해결하는 Workaround 함수
+  # 제안된 문자열에서 Bash가 내부적으로 인식한 커서(bash_cur) 이전의 문자열(접두사)을 
+  # 잘라내어 반환함으로써 https://https:// 형태의 중복 입력을 방지합니다.
+  _set_compreply() {
+    local suggestions=( $(compgen -W "$1" -- "$active_val") )
+    if [[ "$active_val" != "$bash_cur" ]]; then
+      local prefix="${active_val%$bash_cur}"
+      COMPREPLY=( "${suggestions[@]#$prefix}" )
+    else
+      COMPREPLY=( "${suggestions[@]}" )
+    fi
+  }
+
+  # ====================================================================
+  # 1. 이전 단어가 옵션 플래그이거나, 현재 플래그의 '값(Value)'을 입력 중인 경우
+  # ====================================================================
+  if [[ -n "$active_flag" ]]; then
+    case "$active_flag" in
+      -g|--git-url)
+        compopt -o nospace 2>/dev/null
+        if [[ -n "$GIT_GETPR_GIT_URL" ]]; then
+          IFS=',' read -ra URLS <<< "$GIT_GETPR_GIT_URL"
+          local clean_urls=""
+          for url in "${URLS[@]}"; do
+            url="${url#"${url%%[![:space:]]*}"}"
+            url="${url%"${url##*[![:space:]]}"}"
+            clean_urls="$clean_urls $url"
+          done
+          _set_compreply "$clean_urls"
+        else
+          _set_compreply "https://"
+        fi
+        return 0
+        ;;
+      -p|--project)
+        COMPREPLY=()
+        return 0
+        ;;
+      -b|--branch)
+        local remote_url=""
+        if [[ $has_g -eq 1 && -n "$val_g" ]]; then
+          remote_url="${val_g%/}/${val_p#/}"
+        elif [[ -n "$GIT_GETPR_GIT_URL" ]]; then
+          IFS=',' read -ra URLS <<< "$GIT_GETPR_GIT_URL"
+          if [[ ${#URLS[@]} -eq 1 ]]; then
+            local clean_url="${URLS[0]}"
+            clean_url="${clean_url#"${clean_url%%[![:space:]]*}"}"
+            clean_url="${clean_url%"${clean_url##*[![:space:]]}"}"
+            remote_url="${clean_url%/}/${val_p#/}"
+          fi
+        fi
+        
+        if [[ -n "$remote_url" ]]; then
+          local branches=$(git ls-remote --heads "$remote_url" 2>/dev/null | awk '{print $2}' | sed 's|refs/heads/||' | grep -vE '^(dependabot|pull|merge-requests|bot)/')
+          _set_compreply "$branches"
+        fi
+        return 0
+        ;;
+      -t|--resource-type)
+        _set_compreply "directory d file f"
+        return 0
+        ;;
+      -r|--resource)
+        COMPREPLY=()
+        return 0
+        ;;
+      -o|--output-path)
+        compopt -o nospace 2>/dev/null
+        COMPREPLY=( $(compgen -f -d -- "$bash_cur") )
+        return 0
+        ;;
+    esac
+  fi
+
+  # ====================================================================
+  # 2. 새로운 단어를 시작할 때 -> 순차적 '옵션 플래그(Option)' 제안
+  # ====================================================================
+  local opts=""
+  
+  if [[ $has_o -eq 0 && $has_r -eq 1 ]]; then
+    opts="-o --output-path"
+  elif [[ $has_r -eq 0 && $has_t -eq 1 ]]; then
+    opts="-r --resource"
+  elif [[ $has_t -eq 0 && $has_b -eq 1 ]]; then
+    opts="-t --resource-type"
+  elif [[ $has_b -eq 0 && $has_p -eq 1 ]]; then
+    opts="-b --branch"
+  elif [[ $has_p -eq 0 && $has_g -eq 1 ]]; then
+    opts="-p --project"
+  elif [[ $has_g -eq 0 ]]; then
+    opts="-g --git-url"
+    if [[ -n "$GIT_GETPR_GIT_URL" && "$GIT_GETPR_GIT_URL" == *"https://"* ]]; then
+      opts="$opts -p --project"
+    fi
+  fi
+
+  # 플래그 제안 시에는 콜론 버그가 발생하지 않으므로 기본 bash_cur 사용
+  COMPREPLY=( $(compgen -W "${opts}" -- "$bash_cur") )
+  return 0
+}
+
+# 자동완성 함수 등록 (Register completion function)
+complete -F _git_getpr_completion git-getpr.sh
+
