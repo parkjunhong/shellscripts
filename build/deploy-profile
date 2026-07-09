@@ -81,7 +81,7 @@ deploy_profile() {
 
   # 4. 배포 스크립트 존재 및 실행 권한 여부 검증
   if [ -x "./deploy.sh" ]; then
-    ./deploy.sh
+    ./deploy.sh ${@:2}
   else
     help "deploy.sh 파일이 존재하지 않거나 실행 권한이 없습니다." "$LINENO"
     popd >/dev/null
@@ -102,7 +102,7 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
 fi
 
 # 배포 실행 함수 호출
-deploy_profile "$1"
+deploy_profile "$@"
 
 exit 0
 
