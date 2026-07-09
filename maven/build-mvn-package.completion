@@ -1,22 +1,23 @@
 #!/usr/bin/env bash
 
 # =======================================
-# @author		: parkjunhong77@gmail.com
-# @title		: build maven projects with user-custom 'profile' for build.
-# @license		: Apache License 2.0
-# @since		: 2021-03-25
-# @desc			: support macOS 11.2.3, Ubuntu 18.04, CentOS 7
-# @installation	: 
-#		1. insert 'source <path>/build-mvn-package_completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#		2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/build-mvn-package_completion' into /etc/bashrc for all users.
+# @author       : parkjunhong77@gmail.com
+# @title        : build maven projects with user-custom 'profile' for build.
+# @license      : Apache License 2.0
+# @since        : 2026-07-09
+# @desc         : support RHEL 8/9, Oracle Linux 8/9, Ubuntu 20.04/22.04/24.04, RockyOS 8/9
+# @installation : 
+#   1. insert 'source <path>/build-mvn-package.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/build-mvn-package.completion' into /etc/bashrc for all users.
 # =======================================
 
+# =======================================
 # Global Reserved Variables
 # 1. COMP_WORDS: an array, contains all arguments
 # 2. COMP_CWORD: a index of a cursor
 # 3. COMP_LINE: all command string
 # 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
-
+# 
 # Arguments of a function
 # 1. $1: command
 # 2. $2: current
@@ -26,180 +27,112 @@
 # - $1: mycmd
 # - $2: arg4
 # - $3: arg3
+# =======================================
 
-# initialize arguments
-
-# $1: found
-# $2: added
-_bldmvnpkg-add_if_new(){
-	local __new=1
-	for word in ${COMP_WORDS[@]}
-	do
-		if [ "$word" = "$1" ];then
-			_bldmvnpkg-log "'$word' already exists"
-			__new=0
-			break
-		fi
-	done
-
-	if [ $__new -eq 1 ];then
-		for word in ${COMP_WORDS[@]}
-		do
-			if [ "$word" = "$2" ];then
-				_bldmvnpkg-log "'$2' already exists"
-				__new=0
-				break
-			fi
-		done
-		if [ $__new -eq 1 ];then
-			COMPREPLY+=("$2")
-		fi
-	fi
+##
+# 디버깅 메시지를 외부 로그 파일에 기록합니다.
+# Prints log messages to an external file for debugging.
+#
+# @param $* {string} 로그 메시지 내용 / Log message content
+##
+_bldmvnpkg_log() {
+  # 로그를 남기려면 아래 주석을 해제하세요. / Uncomment below lines to enable logging.
+  # local _category="bldmvnpkg"
+  # printf "[%s] [%-10s] " "$(date '+%Y/%m/%d %H:%M:%S')" "$_category" >> ~/user-custom-completion.log
+  # echo -e "$@" >> ~/user-custom-completion.log
+  echo "$@" >/dev/null
 }
 
-_bldmvnpkg-add_default_options(){
-	declare -A ARG
-	ARG["-d"]="--deploy"
-	ARG["-h"]="--help"
-	ARG["-o"]="--offline"
-	ARG["-p"]="--profile"
-	ARG["-t"]="--test"
-	ARG["-u"]="--update"
-	ARG["-x"]="--debug"
-
-	local _keys=(${!ARG[@]})
-
-	for key in ${_keys[@]}
-	do
-		_bldmvnpkg-add_if_new "$key" "${ARG[$key]}"
-	done
-}
-
-# $1: directory path
-_bldmvnpkg-read_profiles(){
-#	local _profiles=()
-#	if [ ! -d "$PWD/config.profiles" ];then
-#		echo ""
-#	else
-#		for dir in $(ls -p "$PWD/config.profiles" | grep -E "^[^/]+/$" 2>/dev/null);
-#		do
-#			_profiles+=(${dir::-1})
-#		done
-#		echo ${_profiles[@]}
-#	fi
-
-  # begin - applied "ChatGTP's report" updated 2025/03/10.
+##
+# config 및 config/profile 디렉토리에서 유효한 프로파일 목록을 읽어옵니다.
+# Reads valid profile list from config and config/profile directories.
+#
+# @return {string} 조회된 프로파일 목록 (공백으로 구분됨) / Space-separated list of found profiles
+##
+_bldmvnpkg_read_profiles() {
   local _profiles=()
   local _dirs=("$PWD/config" "$PWD/config.profiles")
+  local _profile_dir
 
   for _profile_dir in "${_dirs[@]}"; do
-    if [[ -d "$_profile_dir" && -n "$(ls -A $_profile_dir 2>/dev/null)" ]]; then
+    if [[ -d "$_profile_dir" && -n "$(ls -A "$_profile_dir" 2>/dev/null)" ]]; then
+      local dir
       for dir in $(ls -p "$_profile_dir" | grep -E "^[^/]+/$" 2>/dev/null); do
-        dir="${dir::-1}"  # Remove trailing slash
-        [[ "$dir" == "import" ]] && continue  # Exclude 'import' directory, that is a directory for additional configuration files. (e.g. yaml, ...)
-        [[ "$dir" == "init" ]] && continue  # Exclude 'init' directory, that is a directory for data-initialization
-        [[ "$dir" == "profile" ]] && continue  # Exclude 'profile' directory
+        dir="${dir::-1}"  # 맨 뒤 슬래시 제거 / Remove trailing slash
+        [[ "$dir" == "import" ]] && continue   # import 디렉토리 제외 / Exclude 'import' directory
+        [[ "$dir" == "init" ]] && continue     # init 디렉토리 제외 / Exclude 'init' directory        
+        [[ "$dir" == "profile" ]] && continue  # profile 디렉토리 제외 / Exclude 'profile' directory
+   
         _profiles+=("$dir")
       done
-   fi
+    fi
   done
 
   echo "${_profiles[@]}"
-  # end - applied "ChatGTP's report" updated 2025/03/10.
 }
 
-# $1: current
-# $2: previous
-_bldmvnpkg-handle_current(){
-	_bldmvnpkg-log "in '_bldmvnpkg-handle_current' " $@
-	case "$1" in
-		-dep | --dep*)
-			COMPREPLY+=("-d")
-			;;
-		-h | --h*)
-			COMPREPLY+=("-h")
-			;;
-		-o | --o*)
-			COMPREPLY+=("-o")
-			;;
-		-p | --p*)
-			COMPREPLY+=("-p")
-			;;
-		-t | --t*)
-			COMPREPLY+=("-t")
-			;;
-		-u | --u*)
-			COMPREPLY+=("-u")
-			;;
-		-x | --deb*)
-			COMPREPLY+=("-x")
-			;;
-		*)
-			_bldmvnpkg-add_default_options
-			;;
-	esac
+##
+# build-mvn-package 스크립트의 자동완성 사전을 정의하고 제안합니다.
+# Defines and suggests completion words for the build-mvn-package script.
+#
+# @param $1 {string} 실행된 명령어 이름 / Command name
+# @param $2 {string} 현재 입력 중인 파라미터 단어 / Current word being typed
+# @param $3 {string} 이전에 입력된 파라미터 단어 / Previous word typed
+##
+_build_mvn_package_completion() {
+  local cur prev opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  # 디버깅 로그 기록 / Record debugging logs
+  _bldmvnpkg_log "====================================================="
+  _bldmvnpkg_log "COMP_WORDS : ${COMP_WORDS[*]}"
+  _bldmvnpkg_log "COMP_LINE  : ${COMP_LINE}"
+  _bldmvnpkg_log "COMP_CWORD : $COMP_CWORD, #WORDS: ${#COMP_WORDS[@]}"
+  _bldmvnpkg_log "CURRENT    : $cur, PREVIOUS: $prev"
+
+  # 전체 가능한 옵션 목록 / List of all possible options
+  opts="--help --deploy --offline --profile --test --update --debug"
+
+  # 특정 옵션 뒤에 오는 파라미터 처리 / Handle parameters following specific options
+  case "${prev}" in
+    --profile)
+      # 기존 파일의 특정 디렉토리 추출 로직 연동 / Integrate profile directory extraction logic
+      local profiles
+      profiles=$(_bldmvnpkg_read_profiles)
+      COMPREPLY=( $(compgen -W "${profiles}" -- "${cur}") )
+      return 0
+      ;;
+    --deploy)
+      # 경로 및 파일 자동완성 지원 (Tab 키 연동) / Support path and file completion via Tab key
+      COMPREPLY=( $(compgen -f -- "${cur}") )
+      return 0
+      ;;
+  esac
+
+  # 이미 입력된 옵션은 중복 제안하지 않도록 제거 / Remove already entered options to prevent duplicate suggestions
+  local word
+  for word in "${COMP_WORDS[@]}"; do
+    if [[ "$word" != "$cur" ]]; then
+      opts="${opts/ $word / }"
+      opts="${opts/^$word /}"
+      opts="${opts/ $word$/}"
+    fi
+  done
+
+  # '-' 또는 '--'를 입력하지 않고 <TAB>만 눌러도 파라미터가 추천되도록 처리
+  # Suggest parameters even when <TAB> is pressed without leading '-' or '--'
+  COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+  
+  # '--deploy' 옵션이 단독으로 자동완성된 경우, 이후 빈칸(Space) 추가를 방지합니다.
+  if [[ ${#COMPREPLY[@]} -eq 1 && "${COMPREPLY[0]}" == "--deploy" ]]; then
+    compopt -o nospace
+  fi
+
+  return 0
 }
 
-# $1: current
-# $2: previous
-_bldmvnpkg-handle_previous(){
-	_bldmvnpkg-log "in '_bldmvnpkg-handle_previous' \$1: $1, \$2:$2"
-	case "$2" in
-		-d | --d*)
-			_bldmvnpkg-handle_current "$1"
-			;;
-		-h | --h*)
-			_bldmvnpkg-handle_current "$1"
-			;;
-		-p | --p*)
-			if [ -z "$1" ];then
-				#COMPREPLY+=( $(compgen -W "$(find $PWD/config.profiles -mindepth 1 -maxdepth 1 -type d -printf '%P ')") )
-				COMPREPLY+=( $(compgen -W "$(_bldmvnpkg-read_profiles)") )
-			else
-				#local _words=$(compgen -W "$(find $PWD/config.profiles -mindepth 1 -maxdepth 1 -type d -printf '%P ')" -- $1)
-				local _words=$(compgen -W "$(_bldmvnpkg-read_profiles)" -- $1)
-				_bldmvnpkg-log "_words=${_words[@]}"
-				if [ ${#_words[@]} -gt 0 ];then
-					COMPREPLY+=(${_words[@]})
-				fi
-			fi
-			;;	
-		-t | --t*)
-			_bldmvnpkg-handle_current "$1" 
-			;;
-		-u | --u*)
-			_bldmvnpkg-handle_current "$1"
-			;;
-		*)
-			_bldmvnpkg-handle_current "$1"
-			;;
-	esac
-}
-
-# print logs to a external file.
-_bldmvnpkg-log(){
-	# To log messages, change a comment '#'.
-	#local _category="bldmvnpkg"
-	#printf "[%s] [%-10s] " "$(date '+%Y/%m/%d %H:%M:%S')" "$_category"  >>  ~/user-custom-completion.log
-	#echo -e "$@" >> ~/user-custom-completion.log
-	echo "$@" >/dev/null
-}
-
-# $1: command
-# $2: current
-# $3: previous
-_bldmvnpkg-profile(){
-	_bldmvnpkg-log "====================================================="
-	_bldmvnpkg-log $(printf "%-15s: %s" "COMP_WORDS" "${COMP_WORDS[@]}")
-	_bldmvnpkg-log $(printf "%-15s: %s" "COMP_LINE" "${COMP_LINE}")
-	_bldmvnpkg-log $(printf "%-15s: %s, %s: %s" "COMP_CWORD" "$COMP_CWORD" "#WORDS" "${#COMP_WORDS[@]}") 
-	_bldmvnpkg-log $(printf "%s: %s, %s: %s" "CURRENT" "$2" "PREVIOUS" "$3")
-
-	if [ $COMP_CWORD -eq 1 ];then
-		_bldmvnpkg-handle_current "$2" "$3"
-	else
-		_bldmvnpkg-handle_previous "$2" "$3"
-	fi
-}
-
-complete -F _bldmvnpkg-profile build-mvn-package
+# 자동완성 함수 등록 (기본 명령어 및 상대 경로 실행 모두 지원) / Register completion function
+complete -F _build_mvn_package_completion build-mvn-package
+complete -F _build_mvn_package_completion ./build-mvn-package

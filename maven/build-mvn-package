@@ -1,136 +1,166 @@
 #!/usr/bin/env bash
 
 # =======================================
-# @auther : parkjunhong77@gmail.com
-# @title  : build maven projects with user-custom 'profile' for build.
-# @license: Apache License 2.0
-# @since  : 2020-12-21
-# @desc   : support macOS 11.2.3, Ubuntu 18.04, CentOS 7
-# @completion: build-mvn-package_completion
-#            1. insert 'source <path>/build-mvn-packet_completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#            2. copy the above file to /etc/bash_completion.d/ for all users.
+# @author       : parkjunhong77@gmail.com
+# @title        : build maven projects with user-custom 'profile' for build.
+# @license      : Apache License 2.0
+# @since        : 2026-07-09
+# @desc         : support RHEL 8/9, Oracle Linux 8/9, Ubuntu 20.04/22.04/24.04, RockyOS 8/9
+# @installation : 
+#   1. insert 'source <path>/build-mvn-package' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/build-mvn-package' into /etc/bashrc for all users.
 # =======================================
 
-FILENAME="$0"
-
+##
+# 도움말 및 에러 메시지를 출력합니다.
+#
+# @param $1 {string} 오류 원인 메시지 (선택 사항)
+# @param $2 {string} 오류 발생 라인 번호 (선택 사항)
+#
+# @return 화면 출력 (표준 출력)
+##
 help(){
-	if [ ! -z "$1" ];
-	then
-		local indent=10
-		local formatl=" - %-"$indent"s: %s\n"
-		local formatr=" - %"$indent"s: %s\n"
-		echo
-		echo "================================================================================"
-		printf "$formatl" "filename" "$FILENAME"
-		printf "$formatl" "line" "$2"
-		printf "$formatl" "callstack"
-		local idx=1
-		for func in ${FUNCNAME[@]:1}
-		do
-			printf "$formatr" "["$idx"]" $func
-			((idx++))
-		done
-		printf "$formatl" "cause" "$1"
-		echo "================================================================================"
-	fi
-	echo
-	echo "Usage:"
-	echo "./build-mvn-package [-h|--help] [-d|--deploy] -p <profile> [-t|--test] [-u|--update] [-x|--debug] [-o | --offline]"
-	echo
-	echo "Options:"
-	echo " -d | --deploy: deploy after build."
-	echo " -h | --help: show help messages."
-	echo " -o | --offline: build with offline dependencies."
-	echo " -p | --profile: Profile"
-	echo " -t | --test: run Junit TestCase"
-	echo " -u | --update: 'git pull' before build sources."
-	echo " -x | --debug: enable maven 'debug' mode"
+  if [ ! -z "$1" ]; then
+    local indent=10
+    local formatl=" - %-"$indent"s: %s\n"
+    local formatr=" - %"$indent"s: %s\n"
+    echo
+    echo "================================================================================"
+    printf "$formatl" "filename" "$(basename "$0")"
+    printf "$formatl" "line" "$2"
+    printf "$formatl" "callstack"
+    local idx=1
+    for func in "${FUNCNAME[@]:1}"; do
+      printf "$formatr" "[$idx]" "$func"
+      ((idx++))
+    done
+    printf "$formatl" "cause" "$1"
+    echo "================================================================================"
+  fi
+  echo
+  echo "💡 Usage:"
+  echo "./$(basename "$0") [-h|--help] [-d|--deploy=\"<옵션값>\"] -p <profile> [-t|--test] [-u|--update] [-x|--debug] [-o | --offline]"
+  echo
+  echo "⚙️ Options:"
+  echo " -d | --deploy=\"<value>\" : 빌드 후 배포 스크립트에 옵션값을 전달하며 배포를 수행합니다. 🚀 (값에 공백 포함 시 따옴표 필요)"
+  echo " -h | --help             : 도움말 메시지를 표시합니다. ❓"
+  echo " -o | --offline          : 오프라인 의존성으로 빌드를 수행합니다. 🔌"
+  echo " -p | --profile <profile>: 빌드 프로파일을 지정합니다. (필수) 📝"
+  echo " -t | --test             : Junit TestCase를 실행합니다. 🧪"
+  echo " -u | --update           : 소스 빌드 전에 'git pull'을 수행합니다. 🔄"
+  echo " -x | --debug            : 메이븐 'debug' 모드를 활성화합니다. 🐛"
 }
 
 PROFILE=""
 DEPLOY=0
+DEPLOY_OPTS=()
 TEST="true"
 GIT_PULL="false"
 DEBUG=""
 OFFLINE=""
 
-while [ ! -z "$1" ];
-do
-	case "$1" in
-		-d | --deploy)
-			DEPLOY=1
-			;;
-		-h | --help)
-			help
-			exit 0
-			;;
-		-o | --offline)
-			OFFLINE="-o"
-			;;
-		-p | --profile)
-			shift
-			PROFILE=$1
-			;;
-		-t | --test)
-			TEST="false"
-			;;
-		-u | --update)
-			GIT_PULL="true"
-			;;
-		-x | --debug)
-			DEBUG="-X"
-			;;
-		*)
-			;;
-	esac
-	shift
+# 옵션 파싱 루프
+while [ ! -z "$1" ]; do
+  case "$1" in
+    --deploy)
+      shift
+      DEPLOY=1
+      ;;
+    --deploy=*)
+      DEPLOY=1
+      read -r -a DEPLOY_OPTS <<< "${1#*=}"
+      ;;
+    --help)
+      help
+      exit 0
+      ;;
+    --offline)
+      OFFLINE="-o"
+      ;;
+    --profile)
+      shift
+      PROFILE="$1"
+      ;;
+    --test)
+      TEST="false"
+      ;;
+    --update)
+      GIT_PULL="true"
+      ;;
+    --debug)
+      DEBUG="-X"
+      ;;
+    *)
+      ;;
+  esac
+  shift
 done
 
-if [ -z $PROFILE ];
-then
-	help "Please, input a PROFILE"
-	exit 1
+# 프로파일 필수값 검증
+if [ -z "$PROFILE" ]; then
+  help "프로파일(PROFILE) 파라미터가 누락되었습니다. ❌" "$LINENO"
+  exit 1
 fi
 
+JAVA_HOME=$(update-java-home.sh 2>/dev/null)
+
 echo
-echo " ################################################"
+echo " ☕ ################################################"
 if [ -n "$JAVA_HOME" ]; then
   export JAVA_HOME
-  echo " JAVA_HOME  = $JAVA_HOME"
+  echo " ✅ JAVA_HOME  = $JAVA_HOME"
 else
   echo
   echo " !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-  echo " ⚠️  JAVA_HOME이 비어 있습니다."
+  echo " ⚠️  update-java-home.sh 실행 실패 또는 JAVA_HOME이 비어 있습니다."
   echo "     기본 JDK 설정을 사용하거나, JAVA_HOME을 수동으로 설정해주세요."
   echo " !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
 fi
 
-echo " MAVEN_HOME = $M2_HOME"
+echo " 📦 MAVEN_HOME = $M2_HOME"
 echo " ################################################"
 
-if [ "${GIT_PULL}" == "true" ];
-then
-	echo
-	echo "git pull"
-	git pull
+if [ "${GIT_PULL}" == "true" ]; then
+  echo
+  echo " 🔄 git pull 실행 중..."
+  git pull
 fi
 
-CMD="mvn $OFFLINE clean package $DEBUG -Dmaven.test.skip=${TEST} -Dbuild.profile=$PROFILE -U -up"
+CMD="mvn $OFFLINE clean package $DEBUG -Dmaven.test.skip=\"${TEST}\" -Dbuild.profile=\"$PROFILE\" -U -up"
 echo
-echo " > $CMD"
-eval $CMD
+echo " ▶️  실행 커맨드: $CMD"
+eval "$CMD"
 
-if [ $DEPLOY -ne 1 ];
-then
-	exit 0
+if [ $DEPLOY -ne 1 ]; then
+  echo " ✅ 빌드가 완료되었습니다. (배포 생략) 🎉"
+  exit 0
 fi
 
 echo
-pushd .
-echo " > cd ./deploy/$PROFILE"
-cd ./deploy/$PROFILE
-echo " > ./deploy.sh"
-./deploy.sh
-popd
+echo " 🚀 배포 프로세스를 시작합니다..."
+pushd . > /dev/null
 
+DEPLOY_DIR="./deploy/$PROFILE"
+# 배포 대상 디렉토리 유효성 검증 및 생성
+if [ ! -d "$DEPLOY_DIR" ]; then
+  echo " ⚠️  배포 디렉토리($DEPLOY_DIR)가 존재하지 않아 자동 생성합니다. 📂"
+  mkdir -p "$DEPLOY_DIR" || { help "디렉토리 생성 실패: $DEPLOY_DIR" "$LINENO"; exit 1; }
+fi
+
+echo " > cd \"$DEPLOY_DIR\""
+cd "$DEPLOY_DIR" || { help "디렉토리 이동 실패: $DEPLOY_DIR" "$LINENO"; exit 1; }
+
+# deploy.sh 파일 존재 여부 확인
+if [ ! -f "./deploy.sh" ]; then
+  echo " ❌ 배포 스크립트(deploy.sh)를 찾을 수 없습니다. 현재 경로: $(pwd)"
+  popd > /dev/null
+  exit 1
+fi
+
+echo " > ./deploy.sh ${DEPLOY_OPTS[*]}"
+./deploy.sh "${DEPLOY_OPTS[@]}"
+
+popd > /dev/null
+
+echo " ✅ 배포 작업이 완료되었습니다. 🎉"
 exit 0
