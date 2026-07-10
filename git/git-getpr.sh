@@ -81,7 +81,7 @@ calc_sha256() {
 #
 # @param $1 {string} 충돌이 발생한 대상 경로
 #
-# @return 진행(0) 또는 건너뜀(1) 상태 코드
+# @return 진행(0), 건너뜀(1) 또는 백업후진행(2) 상태 코드
 ##
 prompt_overwrite() {
   local target="$1"
@@ -90,17 +90,42 @@ prompt_overwrite() {
     return 0
   elif [ "$OVERWRITE_MODE" == "SKIP" ]; then
     return 1
+  elif [ "$OVERWRITE_MODE" == "BACKUP_ALL" ]; then
+    return 2
   fi
   
   while true; do
-    read -p "⚠️  '$target' 경로가 이미 존재합니다. 덮어쓰시겠습니까? (yY/fF/nN/xX): " ynfx
+    echo "⚠️  '$target'에 대한 경로가 이미 존재합니다. 진행할 방식을 아래에서 선택해 주세요:"
+    echo " - yY: 현재 대상만 'YES'로써 진행."
+    echo " - fF: 이후 모든 대상에 대해서 '중복'인 경우 'YES'로써 '다운로드' 진행."
+    echo " - bB: 현재 대상만 '백업' 생성 후 '다운로드' 진행"
+    echo " - uU: 이후 모든 대상에 대해서 '중복'인 경우 '백업' 생성 후 '다운로드' 진행"
+    echo " - nN: 현재 대상만 'NO' 로써 다운로드 안함."
+    echo " - xX: 이후 모든 대상에 대해서 '중복'인 'NO'로써 '다운로드' 안함."
+    read -p "👉 선택 (yY/fF/bB/uU/nN/xX): " ynfx
+    
+    local valid=0
+    local ret=0
     case $ynfx in
-      [Yy]* ) return 0;;
-      [Ff]* ) OVERWRITE_MODE="FORCE"; return 0;;
-      [Nn]* ) return 1;;
-      [Xx]* ) OVERWRITE_MODE="SKIP"; return 1;;
-      * ) print_log "ℹ️  'y', 'f', 'n', 'x' 중 하나를 입력해 주세요.";;
+      [Yy]* ) valid=1; ret=0 ;;
+      [Ff]* ) valid=1; ret=0; OVERWRITE_MODE="FORCE" ;;
+      [Bb]* ) valid=1; ret=2 ;;
+      [Uu]* ) valid=1; ret=2; OVERWRITE_MODE="BACKUP_ALL" ;;
+      [Nn]* ) valid=1; ret=1 ;;
+      [Xx]* ) valid=1; ret=1; OVERWRITE_MODE="SKIP" ;;
+      * ) valid=0 ;;
     esac
+
+    if [ $valid -eq 1 ]; then
+      # 터미널 커서를 8줄 위로 올리고 아래 내용을 모두 지움(Clean-up)
+      printf "\033[8A\033[0J"
+      print_log "⚠️  '$target'에 대한 경로가 이미 존재합니다. 진행할 방식을 아래에서 선택해 주세요: $ynfx"
+      return $ret
+    else
+      # 잘못된 입력 시에도 8줄 위로 올려 메뉴를 지우고 에러 메시지를 출력
+      printf "\033[8A\033[0J"
+      print_log "❌ 잘못된 입력입니다. 'y, f, b, u, n, x' 중 하나를 입력해 주세요."
+    fi
   done
 }
 
@@ -137,9 +162,18 @@ sync_resource() {
     fi
 
     # 유형이 같은 경우에만 덮어쓰기 진행 여부 확인
-    if ! prompt_overwrite "$dest"; then
+    prompt_overwrite "$dest"
+    local ow_res=$?
+    
+    if [ $ow_res -eq 1 ]; then
       print_log "⏭️  건너뜀: $dest"
       return 0
+    elif [ $ow_res -eq 2 ]; then
+      # 백업 생성 로직 (현재 시간에 대한 타임스탬프 부여)
+      local ts=$(date +%Y%m%d%H%M%S)
+      local bak_path="${dest}.${ts}.bak"
+      mv -f "$dest" "$bak_path"
+      print_log "💾 백업 생성됨: $bak_path"
     fi
   fi
 
@@ -154,7 +188,7 @@ sync_resource() {
         print_log "✨ 새로운 파일로 변경: $dest"
       fi
     else
-      # 기존에 있던 rm -rf 삭제 위험 로직 제거됨
+      # 백업되어 기존 파일이 사라졌거나 원래 없었던 경우
       print_log "✅ 새로운 파일 다운로드: $dest"
     fi
     mkdir -p "$(dirname "$dest")"
@@ -162,7 +196,6 @@ sync_resource() {
 
   # 3. 자원이 디렉토리인 경우
   elif [ -d "$src" ]; then
-    # 기존에 있던 rm -f 삭제 위험 로직 제거됨
     mkdir -p "$dest"
     
     shopt -s dotglob
