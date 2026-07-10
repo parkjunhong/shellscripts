@@ -21,7 +21,7 @@ echo "📥 [3/3] 'workdir/deploy.sh' 파일 자원을 가져오는 중입니다.
 git-getpr.sh --git-url https://github.com/parkjunhong --project maven-deploy-config --branch main --resource-type file --resource workdir/deploy.sh --output-path workdir/deploy.sh
 echo ""
 
-# 3. 완료 및 안내 메시지 출력
+# 4. 완료 및 안내 메시지 출력
 echo "✅ 모든 자원 다운로드가 완료되었습니다!"
 echo "================================================================================"
 echo "📖 설명에 관한 자세한 사항은 아래 가이드 링크를 확인해 주시기 바랍니다."
