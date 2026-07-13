@@ -42,13 +42,13 @@ help(){
   echo "./$(basename "$0") [-h|--help] [-d|--deploy=\"<옵션값>\"] -p <profile> [-t|--test] [-u|--update] [-x|--debug] [-o | --offline]"
   echo
   echo "⚙️ Options:"
-  echo " -d | --deploy=\"<value>\" : 빌드 후 배포 스크립트에 옵션값을 전달하며 배포를 수행합니다. 🚀 (값에 공백 포함 시 따옴표 필요)"
-  echo " -h | --help             : 도움말 메시지를 표시합니다. ❓"
-  echo " -o | --offline          : 오프라인 의존성으로 빌드를 수행합니다. 🔌"
-  echo " -p | --profile <profile>: 빌드 프로파일을 지정합니다. (필수) 📝"
-  echo " -t | --test             : Junit TestCase를 실행합니다. 🧪"
-  echo " -u | --update           : 소스 빌드 전에 'git pull'을 수행합니다. 🔄"
-  echo " -x | --debug            : 메이븐 'debug' 모드를 활성화합니다. 🐛"
+  echo " --deploy=\"<value>\" : 빌드 후 배포 스크립트에 옵션값을 전달하며 배포를 수행합니다. 🚀 (값에 공백 포함 시 따옴표 필요)"
+  echo " --help             : 도움말 메시지를 표시합니다. ❓"
+  echo " --offline          : 오프라인 의존성으로 빌드를 수행합니다. 🔌"
+  echo " --profile <profile>: 빌드 프로파일을 지정합니다. (필수) 📝"
+  echo " --test             : Junit TestCase를 실행합니다. 🧪"
+  echo " --update           : 소스 빌드 전에 'git pull'을 수행합니다. 🔄"
+  echo " --debug            : 메이븐 'debug' 모드를 활성화합니다. 🐛"
 }
 
 PROFILE=""
