@@ -2,8 +2,8 @@
 # @author   : parkjunhong77@gmail.com
 # @title    : remove deploy directories.
 # @license  : Apache License 2.0
-# @since    : 2026-07-13
-# @desc     : support RHEL 7+, Oracle Linux 7+, Ubuntu 16.04+, RockyOS 8+
+# @since    : 2026-07-14
+# @desc     : support RHEL, Oracle Linux, Ubuntu, RockyOS
 # @installation : 
 #   1. insert 'source <path>/remove-deploy.sh.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
 #   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/remove-deploy.sh.completion' into 
