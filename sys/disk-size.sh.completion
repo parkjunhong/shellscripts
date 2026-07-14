@@ -1,0 +1,59 @@
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : calculate a directory size.
+# @license  : Apache License 2.0
+# @since    : 2026-07-14
+# @desc     : support RHEL, Oracle Linux, Ubuntu, RockyOS
+# @installation : 
+#   1. insert 'source <path>/disk-size.sh.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/disk-size.sh.completion' into 
+#      etc/bashrc for all users.
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+#
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+# =======================================
+
+##
+# disk-size.sh 스크립트의 자동완성(Auto-completion)을 지원하는 함수입니다.
+# Auto-completion function for disk-size.sh script.
+##
+_disk_size_completion() {
+  local cur prev opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  # 기본 지원 옵션들 (Default options)
+  opts="-h --help -r -sa -sd"
+
+  # 이미 입력한 옵션은 다시 제안하지 않음 (Remove already typed non-repeatable options)
+  for word in "${COMP_WORDS[@]}"; do
+    opts=$(echo "$opts" | sed "s/\b$word\b//g")
+  done
+
+  # '-' 또는 '--'를 입력하지 않고 <TAB> 만 입력해도 옵션과 디렉토리명이 추천되도록 처리
+  # Recommend options and directory names even if <TAB> is pressed without '-' or '--'
+  if [[ ${cur} == * ]] ; then
+    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+    # 디렉토리를 탐색하는 스크립트이므로 bash 내장 디렉토리 자동완성 추가 
+    # Add built-in directory completion fallback
+    COMPREPLY+=($(compgen -d -- "${cur}"))
+    return 0
+  fi
+}
+
+# 스크립트 파일명과 자동완성 함수 연결
+complete -F _disk_size_completion disk-size.sh
