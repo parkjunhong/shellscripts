@@ -7,21 +7,26 @@ echo "🚀 [배포 환경 구성] 관련 자원 다운로드를 시작합니다.
 echo "================================================================================"
 
 # 1. Docker 디렉토리 다운로드
-echo "📥 [1/3] 'docker' 디렉토리 자원을 가져오는 중입니다..."
+echo "📥 [1/4] 'docker' 디렉토리 자원을 가져오는 중입니다..."
 git-getpr.sh --git-url https://github.com/parkjunhong --project maven-deploy-config --branch main --resource-type directory --resource docker
 echo ""
 
 # 2. Docker Compose 디렉토리 다운로드
-echo "📥 [2/3] 'docker-compose' 디렉토리 자원을 가져오는 중입니다..."
+echo "📥 [2/4] 'docker-compose' 디렉토리 자원을 가져오는 중입니다..."
 git-getpr.sh --git-url https://github.com/parkjunhong --project maven-deploy-config --branch main --resource-type directory --resource docker-compose
 echo ""
 
 # 3. Docker Compose 디렉토리 다운로드
-echo "📥 [3/3] 'workdir/deploy.sh' 파일 자원을 가져오는 중입니다..."
+echo "📥 [3/4] 'workdir/install' 디렉토리 자원을 가져오는 중입니다..."
+git-getpr.sh --git-url https://github.com/parkjunhong --project maven-deploy-config --branch main --resource-type directory --resource workdir/install --output-path workdir/install
+echo ""
+
+# 4. Docker Compose 디렉토리 다운로드
+echo "📥 [4/4] 'workdir/deploy.sh' 파일 자원을 가져오는 중입니다..."
 git-getpr.sh --git-url https://github.com/parkjunhong --project maven-deploy-config --branch main --resource-type file --resource workdir/deploy.sh --output-path workdir/deploy.sh
 echo ""
 
-# 4. 완료 및 안내 메시지 출력
+# 5. 완료 및 안내 메시지 출력
 echo "✅ 모든 자원 다운로드가 완료되었습니다!"
 echo "================================================================================"
 echo "📖 설명에 관한 자세한 사항은 아래 가이드 링크를 확인해 주시기 바랍니다."
