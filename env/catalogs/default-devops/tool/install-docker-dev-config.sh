@@ -148,7 +148,7 @@ else
     # 2) 사용자가 선택한 번호(1,2,3,4)에 매핑된 키워드를 사용
     cleaned_item=$(echo "$item" | xargs)
     
-    local mapped_item=""
+    mapped_item=""
     case "$cleaned_item" in
       1) mapped_item="docker" ;;
       2) mapped_item="docker-compose" ;;
