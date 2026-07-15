@@ -88,13 +88,11 @@ execute_download() {
       ;;
     os_version)
       echo "📥 'workdir/install' 디렉토리 자원을 가져오는 중입니다..."
-      mkdir -p "workdir/install"
       git-getpr.sh --git-url https://github.com/parkjunhong --project maven-deploy-config --branch main --resource-type directory --resource workdir/install --output-path workdir/install
       echo ""
       ;;
     deploy.sh)
       echo "📥 'workdir/deploy.sh' 파일 자원을 가져오는 중입니다..."
-      mkdir -p "workdir"
       git-getpr.sh --git-url https://github.com/parkjunhong --project maven-deploy-config --branch main --resource-type file --resource workdir/deploy.sh --output-path workdir/deploy.sh
       echo ""
       ;;
