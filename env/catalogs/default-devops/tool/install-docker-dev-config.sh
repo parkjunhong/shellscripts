@@ -160,7 +160,7 @@ else
         ;;
     esac
     
-    execute_download "$cleaned_item"
+    execute_download "$mapped_item"
   done
 fi
 
