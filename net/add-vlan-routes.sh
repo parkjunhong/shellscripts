@@ -394,7 +394,6 @@ else
     echo "================================================================================"
     echo "⚙️ [설정] 다중 네트워크 감지: VLAN 라우팅을 담당할 내부망 인터페이스를 선택하세요."
     
-    # [인라인 UX 패치] 사용자가 선택할 메뉴 번호와 함께 해당 인터페이스의 "0.0.0.0" 게이트웨이 라우팅 정보를 즉시 병합 출력
     idx=1
     for cand in "${CANDIDATES[@]}"; do
         if command -v route >/dev/null 2>&1; then
@@ -412,7 +411,6 @@ else
         ((idx++))
     done
     
-    # 커스텀 입력을 통해 번호를 받아 배열 인덱스로 매핑
     while true; do
         read -p " ├─▶ 인터페이스 번호를 입력하세요: " sel_idx
         if [[ "$sel_idx" =~ ^[0-9]+$ ]] && [ "$sel_idx" -ge 1 ] && [ "$sel_idx" -le "${#CANDIDATES[@]}" ]; then
@@ -426,20 +424,23 @@ else
     echo
 fi
 
-# 선택된 인터페이스를 바탕으로 서브넷 및 기본 게이트웨이 파생
+# 선택된 인터페이스를 바탕으로 서브넷 대역 파생
 IP_CIDR=$(ip -4 addr show dev "$IFACE" 2>/dev/null | awk '/inet / {print $2}' | head -n1)
 CUR_SUBNET=$(get_network_address "$IP_CIDR")
 
-# 기존 라우팅 테이블에서 해당 인터페이스를 통해 나가는 게이트웨이 탐색
-DEF_GW=$(ip -4 route show dev "$IFACE" 2>/dev/null | grep -v 'scope link' | grep 'via' | awk '{print $3}' | head -n1)
+# [핵심 패치] 정밀한 Base Gateway 식별 및 Trunk GW (+1) 연산 로직 구현
+# 1. 해당 인터페이스의 디폴트 게이트웨이(default via) 최우선 탐색
+BASE_GW=$(ip -4 route show default dev "$IFACE" 2>/dev/null | awk '{print $3}' | head -n1)
 
-# 게이트웨이가 없다면 네트워크 대역 IP의 마지막 자리에 1을 더하여 추정(Trunk GW 후보)
-if [ ! -z "$DEF_GW" ]; then
-    TRUNK_GW="$DEF_GW"
-else
+# 2. 디폴트 게이트웨이가 명시되지 않았다면(내부망 전용 등), 서브넷 대역의 첫 번째 IP(.1)를 Base GW로 자동 추정
+if [ -z "$BASE_GW" ]; then
     IFS=. read -r n1 n2 n3 n4 <<< "${CUR_SUBNET%/*}"
-    TRUNK_GW="$n1.$n2.$n3.$((n4 + 1))"
+    BASE_GW="$n1.$n2.$n3.$((n4 + 1))"
 fi
+
+# 3. Base GW의 마지막 옥텟에 무조건 +1을 수행하여 Trunk GW 설정 (요구사항 충족)
+IFS=. read -r g1 g2 g3 g4 <<< "$BASE_GW"
+TRUNK_GW="${g1}.${g2}.${g3}.$((g4 + 1))"
 
 # [단계 2] 프리플라이트 상태 점검 출력
 show_current_routes "$IFACE" "$CUR_SUBNET"
@@ -601,4 +602,3 @@ fi
 echo "================================================================================"
 echo "🎉 모든 라이프사이클 작업이 안전하게 완료되었습니다."
 exit 0
-
