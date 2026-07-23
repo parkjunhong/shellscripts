@@ -7,8 +7,7 @@
 # @desc     : support RHEL 7+, Oracle Linux 7+, Ubuntu 16.04+, RockyOS 8+
 # @installation : 
 #   1. insert 'source <path>/clean-projects.sh" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/clean-projects.sh' into 
-#      etc/bashrc for all users.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/clean-projects.sh' into /etc/bashrc for all users.
 # =======================================
 
 set -Eeuo pipefail

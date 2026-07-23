@@ -7,8 +7,7 @@
 # @desc     : support Ubuntu 18+, RockyOS 9+, Oracle Linux 8+, RHEL 8+, CentOS 6+, CentOS Stream 9+
 # @installation : 
 #   1. insert 'source <path>/remove-service.sh" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/remove-service.sh' into 
-#      etc/bashrc for all users.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/remove-service.sh' into /etc/bashrc for all users.
 # =======================================
 
 set -Eeuo pipefail

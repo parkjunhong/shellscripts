@@ -7,8 +7,7 @@
 # @desc     : support Ubuntu 20.04+, Rocky Linux 9+
 # @installation : 
 #   1. insert 'source <path>/install-docker.sh" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/install-docker.sh' into 
-#      etc/bashrc for all users.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/install-docker.sh' into /etc/bashrc for all users.
 # =======================================
 
 set -Eeuo pipefail

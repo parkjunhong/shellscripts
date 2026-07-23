@@ -7,8 +7,7 @@
 # @desc     : support RHEL, Oracle Linux, Ubuntu, RockyOS
 # @installation : 
 #   1. insert 'source <path>/disk-size.sh" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/disk-size.sh' into 
-#      etc/bashrc for all users.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/disk-size.sh' into /etc/bashrc for all users.
 # =======================================
 
 set -Eeuo pipefail

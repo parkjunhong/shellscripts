@@ -7,8 +7,7 @@
 # @desc     : support RHEL, Oracle Linux, Ubuntu, RockyOS
 # @installation : 
 #   1. insert 'source <path>/gitlab-clone.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/gitlab-clone.completion' into 
-#      etc/bashrc for all users.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/gitlab-clone.completion' into /etc/bashrc for all users.
 # =======================================
 
 FILENAME=$(basename "$0")

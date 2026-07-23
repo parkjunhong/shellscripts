@@ -7,8 +7,7 @@
 # @desc     : support Ubuntu 24.04+, RockyOS 9+, RHEL 9+, CentOS Stream 9+
 # @installation : 
 #   1. insert 'source <path>/install-temurin-25-jdk.sh" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/install-temurin-25-jdk.sh' into 
-#      etc/bashrc for all users.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/install-temurin-25-jdk.sh' into /etc/bashrc for all users.
 # =======================================
 
 set -Eeuo pipefail

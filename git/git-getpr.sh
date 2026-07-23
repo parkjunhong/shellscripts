@@ -7,8 +7,7 @@
 # @desc     : support Ubuntu 20+, Rocky Linux 9+, RHEL 8+, Oracle Linux 9+, CentOS Stream 9+, macOS
 # @installation : 
 #   1. insert 'source <path>/git-getpr.sh" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/git-getpr.sh' into 
-#      etc/bashrc for all users.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/git-getpr.sh' into /etc/bashrc for all users.
 # =======================================
 
 FILENAME=$(basename "$0")

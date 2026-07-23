@@ -7,8 +7,7 @@
 # @desc     : support Ubuntu 24+, Rocky Linux 9+
 # @installation : 
 #   1. insert 'source <path>/setup-env.sh" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/setup-env.sh' into 
-#   etc/bashrc for all users.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/setup-env.sh' into /etc/bashrc for all users.
 # =======================================
 
 FILENAME=$(basename "$0")
