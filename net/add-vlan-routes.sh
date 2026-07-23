@@ -314,7 +314,7 @@ configure_ubuntu_add() {
     cmd_chmod=$(resolve_command "chmod")
 
     if [ "$DRY_RUN" = true ]; then
-        echo "   🧪 [DRY-RUN] 추가 에뮬레이션: $target_subnet via $gateway ->; $target_file"
+        echo "   🧪 [DRY-RUN] 추가 에뮬레이션: $target_subnet via $gateway -> $target_file"
     else
         if [ -f "$target_file" ]; then
             echo "   ⏭️ [건너뜀] 이미 동일 대역의 설정 파일이 존재함: $target_subnet"
