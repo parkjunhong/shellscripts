@@ -1,0 +1,65 @@
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : search files.
+# @license : Apache License 2.0
+# @since : 2026-07-23
+# @desc : support macOS 11.2.3, Ubuntu 18.04 or higher, CentOS 7 or higher
+# @installation :
+# 1. insert 'source <path>/<파일명>' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/<파일명>' into etc/bashrc for all users.
+# =======================================
+
+# ----------------------------------------------------------------------
+# [Bash Completion 파라미터 설명]
+# - COMP_WORDS: 현재 커맨드 라인에 입력된 단어들의 배열
+# - COMP_CWORD: 현재 커서가 위치한 단어의 인덱스 (COMP_WORDS 배열 내 위치)
+# - COMP_LINE: 현재까지 커맨드 라인에 입력된 전체 문자열
+# - COMPREPLY: bash completion이 제안할 단어들의 배열 (이 배열에 값을 넣으면 화면에 출력됨)
+# - $1: 명령의 이름 (이 completion이 바인딩된 커맨드 이름)
+# - $2: 현재 커서에서 완성하려고 하는 단어 (현재 단어)
+# - $3: 현재 완성하려고 하는 단어의 바로 이전 단어
+# ----------------------------------------------------------------------
+
+_add_vlan_routes() {
+    local cur prev opts
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    # 스크립트에서 지원하는 전체 옵션 목록
+    local all_opts="-h --help -d --dry-run -a --add-vlan-networks -r --remove-vlan-networks"
+    opts=""
+
+    # 이미 입력한 옵션은 다시 제안하지 않도록 필터링 (반복 사용 가능 옵션 없음)
+    for opt in $all_opts; do
+        local is_used=false
+        # 마지막 단어(현재 입력 중인 단어)를 제외하고 이전까지 입력된 단어들 검사
+        for (( i=1; i < ${#COMP_WORDS[@]}-1; i++ )); do
+            if [[ "${COMP_WORDS[i]}" == "$opt" ]]; then
+                is_used=true
+                break
+            fi
+        done
+        
+        # 사용되지 않은 옵션만 제안 풀(Pool)에 추가
+        if [[ "$is_used" == false ]]; then
+            opts="$opts $opt"
+        fi
+    done
+
+    case "${prev}" in
+        -a|--add-vlan-networks|-r|--remove-vlan-networks)
+            # 대역(CIDR)을 입력해야 하는 위치이므로, 디렉터리 내 파일명이 뜨지 않도록 빈 배열 반환
+            COMPREPLY=()
+            return 0
+            ;;
+        *)
+            # 사용 가능한 옵션들에 대해 자동 완성 제공
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+    esac
+}
+
+# 'add-vlan-routes.sh' 명령어에 _add_vlan_routes 완성 함수를 바인딩
+complete -F _add_vlan_routes add-vlan-routes.sh
