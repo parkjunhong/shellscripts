@@ -57,7 +57,7 @@ help(){
     echo "  목적지 VLAN 대역으로 향하는 영구(Permanent) 정적 라우팅을 제어합니다."
 }
 
-# 파라미터 옵션 처리 파이프라인 (안전한 플래그 및 값 매핑 도입)
+# 파라미터 옵션 처리 파이프라인
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -h|--help)
@@ -136,7 +136,7 @@ check_sudo() {
 }
 
 ##
-# 시스템의 배포판 종류를 분석하여 Ubuntu 계열과 RHEL 계열을 판별합니다.
+# 시스템의 배포판 종류를 분석하여 판별합니다.
 #
 # @returns {string} "ubuntu" 또는 "rhel" 형식으로 표준 출력
 ##
@@ -181,25 +181,28 @@ get_network_address() {
 }
 
 ##
-# 콤마(,) 구분자를 파싱하고 공백을 Trim 처리하여 배열로 반환합니다.
+# [보안/호환성 패치] 콤마(,) 구분자를 파싱하고 공백을 제거하여 순수 공백 분리 문자열로 반환합니다.
+# eval 및 local -n의 보안/호환성 한계를 극복하기 위해 문자열 스트림 형태로 결과를 반환합니다.
 #
 # @param $1 {string} 원본 입력 문자열
-# @param $2 {array} 결과를 저장할 배열 참조명
+#
+# @returns {string} 정제된 네트워크 대역 목록 (공백으로 구분된 문자열)
 ##
 parse_networks() {
     local input="$1"
-    local -n out_array=$2
-    out_array=()
+    local out_string=""
+    
     if [ ! -z "$input" ]; then
         IFS=',' read -r -a raw_networks <<< "$input"
         for net in "${raw_networks[@]}"; do
             local trimmed
             trimmed=$(echo "$net" | tr -d '[:space:]')
             if [ ! -z "$trimmed" ]; then
-                out_array+=("$trimmed")
+                out_string+="$trimmed "
             fi
         done
     fi
+    echo "$out_string"
 }
 
 ##
@@ -428,7 +431,7 @@ fi
 IP_CIDR=$(ip -4 addr show dev "$IFACE" 2>/dev/null | awk '/inet / {print $2}' | head -n1)
 CUR_SUBNET=$(get_network_address "$IP_CIDR")
 
-# [핵심 패치] 정밀한 Base Gateway 식별 및 Trunk GW (+1) 연산 로직 구현
+# 정밀한 Base Gateway 식별 및 Trunk GW (+1) 연산 로직 구현
 # 1. 해당 인터페이스의 디폴트 게이트웨이(default via) 최우선 탐색
 BASE_GW=$(ip -4 route show default dev "$IFACE" 2>/dev/null | awk '{print $3}' | head -n1)
 
@@ -438,7 +441,7 @@ if [ -z "$BASE_GW" ]; then
     BASE_GW="$n1.$n2.$n3.$((n4 + 1))"
 fi
 
-# 3. Base GW의 마지막 옥텟에 무조건 +1을 수행하여 Trunk GW 설정 (요구사항 충족)
+# 3. Base GW의 마지막 옥텟에 무조건 +1을 수행하여 Trunk GW 설정
 IFS=. read -r g1 g2 g3 g4 <<< "$BASE_GW"
 TRUNK_GW="${g1}.${g2}.${g3}.$((g4 + 1))"
 
@@ -500,8 +503,15 @@ fi
 
 ADD_NETWORKS=()
 REMOVE_NETWORKS=()
-parse_networks "$ADD_VLAN_INPUT" ADD_NETWORKS
-parse_networks "$REMOVE_VLAN_INPUT" REMOVE_NETWORKS
+
+# [보안/호환성 패치 적용] 안전한 문자열 변환 및 read -a 기반 배열 형변환
+if [ ! -z "$ADD_VLAN_INPUT" ]; then
+    read -r -a ADD_NETWORKS <<< "$(parse_networks "$ADD_VLAN_INPUT")"
+fi
+
+if [ ! -z "$REMOVE_VLAN_INPUT" ]; then
+    read -r -a REMOVE_NETWORKS <<< "$(parse_networks "$REMOVE_VLAN_INPUT")"
+fi
 
 echo "🚀 [실행] 네트워크 라우팅 변경 작업 시작"
 printf "   - 가동 모드            :"
