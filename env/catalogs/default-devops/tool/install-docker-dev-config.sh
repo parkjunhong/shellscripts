@@ -238,7 +238,7 @@ else
   for item in "${ADDR[@]}"; do
     cleaned_item=$(echo "$item" | xargs)
     
-    local mapped_item=""
+    mapped_item=""
     case "$cleaned_item" in
       1) mapped_item="docker" ;;
       2) mapped_item="docker-compose" ;;
