@@ -1,0 +1,66 @@
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : search files.
+# @license  : Apache License 2.0
+# @since    : 2026-07-27
+# @desc     : support RHEL 7+, Oracle Linux 7+, Ubuntu 16.04+, RockyOS 8+, CentOS 7+
+# @installation : 
+#   1. insert 'source <path>/mtr-netstat-conns.sh.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/mtr-netstat-conns.sh.completion' into /etc/bashrc for all users.
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+#
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+# =======================================
+
+##
+# mtr-netstat-conns.sh 스크립트의 자동완성(Auto-completion)을 지원하는 함수입니다.
+# Auto-completion function for mtr-netstat-conns.sh script.
+##
+_mtr_netstat_conns_completion() {
+  local cur prev opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  # 스크립트 기본 지원 옵션들 (Default options)
+  opts="-h --help --filter --sort"
+
+  # --sort 옵션 다음에 오는 정렬 기준 추천 
+  # Recommend sort options after --sort
+  if [[ "${prev}" == "--sort" ]]; then
+    COMPREPLY=( $(compgen -W "local remote pid" -- "${cur}") )
+    return 0
+  fi
+
+  # 이미 입력한 옵션은 다시 제안하지 않음 (반복 가능한 필터나 플래그 제외)
+  # Remove already typed non-repeatable options
+  for word in "${COMP_WORDS[@]}"; do
+    opts=$(echo "$opts" | sed "s/\b$word\b//g")
+  done
+
+  # '-' 또는 '--'를 입력하지 않고 <TAB> 만 입력해도 파라미터가 추천되도록 처리
+  # Recommend options and directories even if <TAB> is pressed without '-' or '--'
+  if [[ ${cur} == * ]] ; then
+    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+    # 파일/경로 파라미터가 있을 경우를 위해 bash 내장 파일/디렉토리 자동완성 추가 
+    # Add built-in file/directory completion fallback
+    COMPREPLY+=($(compgen -f -d -- "${cur}"))
+    return 0
+  fi
+}
+
+# 스크립트 파일명과 자동완성 함수 연결
+complete -F _mtr_netstat_conns_completion mtr-netstat-conns.sh
