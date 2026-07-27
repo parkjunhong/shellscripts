@@ -1,75 +1,132 @@
 #!/usr/bin/env bash
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : search files.
+# @license  : Apache License 2.0
+# @since    : 2026-07-27
+# @desc     : support RHEL, Oracle Linux, Ubuntu, RockyOS, CentOS
+# @installation : 
+#   1. insert 'source <path>/vim-cli" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/vim-cli' into /etc/bashrc for all users.
+# =======================================
 
-# =======================================
-# @auther : parkjunhong77@gmail.com
-# @title  : execute vim to edit a command only with the name of it.
-# @license: Apache License 2.0
-# @since  : 2021-03-21
-# @description: To find commands automatically, run this command after download a this file.
-#               cp vim-cli ~/bin/;complete -c -W "-h -v" vim-cli
-# =======================================
+set -Eeuo pipefail
+
+FILENAME=$(basename "$0")
+
+##
+# 스크립트 사용 방법 및 오류 원인을 출력합니다.
+#
+# @param $1 {string} (오류 발생 시 원인 메시지)
+# @param $2 {string} (오류 발생 라인)
+#
+# @return (도움말 내용 출력)
+##
+help(){
+  if [ ! -z "${1:-}" ]; then
+    local indent=10
+    local formatl=" - %-"$indent"s: %s\n"
+    local formatr=" - %"$indent"s: %s\n"
+    echo
+    echo "================================================================================"
+    printf "$formatl" "filename" "$FILENAME"
+    printf "$formatl" "line" "${2:-}"
+    printf "$formatl" "callstack"
+    local idx=1
+    for func in ${FUNCNAME[@]:1}; do  
+      printf "$formatr" "["$idx"]" $func
+      idx=$((idx + 1))
+    done
+    printf "$formatl" "cause" "$1"
+    echo "================================================================================"
+  fi  
+  echo  
+  echo "사용법: ./$FILENAME [-v] <command>"
+  echo ""
+  echo "[옵션 (Options)]"
+  echo "  -v            명령어의 전체 경로(Full path)를 출력합니다."
+  echo "  -h, --help    이 도움말을 표시하고 종료합니다."
+}
+
+trap 'help "스크립트 실행 중 오류가 발생했습니다." "$LINENO"' ERR
+
+if [[ "$#" -eq 0 ]]; then
+  help "명령어가 입력되지 않았습니다." "$LINENO"
+  exit 1
+fi
 
 CMD=""
 VERBOSE=0
 
-while [ "$1" != "" ];
-do
-	case $1 in
-		-h | --help)
-			echo
-			echo "vim-cli.sh [-v] <command>"
-			echo
-			echo "[Options]"
-			echo " -v : show a fullpath of a command."
-			
-			exit 0
-			;;	
-		-v)
-			VERBOSE=1
-			;;
-		*)
-			CMD=$1
-			;;
-	esac
-	shift
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -h|--help)
+      help "" ""
+      exit 0
+      ;;  
+    -v)
+      VERBOSE=1
+      ;;
+    -*)
+      help "지원하지 않는 옵션입니다: $1" "$LINENO"
+      exit 1
+      ;;
+    *)
+      if [[ -n "$CMD" ]]; then
+        help "명령어는 하나만 입력 가능합니다: $1" "$LINENO"
+        exit 1
+      fi
+      CMD="$1"
+      ;;
+  esac
+  shift
 done
 
-RTV=0
-# @param $1 {string}: command path
-# @param $2 {number}: exit or not. 0: pass, 1:exit
-check-empty-or-notfile(){
-	if [ -z $1 ] || [ ! -f "$1" ];then
-		echo
-		echo "[ERROR] Invalid command path. command=$CMD, path=$1"
-		RTV=1
-		if [ $2 -eq 1 ];then
-			exit 1
-		fi
-	else
-		RTV=0
-	fi
+if [[ -z "$CMD" ]]; then
+  help "대상 명령어가 지정되지 않았습니다." "$LINENO"
+  exit 1
+fi
+
+##
+# 대상 파일 경로가 유효한지 검증합니다.
+#
+# @param $1 {string} 검증할 파일 경로
+# @param $2 {string} 오류 메시지에 표시할 대상 이름 (예: 명령어, 에디터)
+#
+# @return (유효하지 않을 경우 exit 1)
+##
+check_empty_or_notfile() {
+  local target_path="${1:-}"
+  local target_name="${2:-}"
+
+  if [[ -z "$target_path" || ! -f "$target_path" ]]; then
+    help "유효하지 않은 $target_name 경로입니다. (path='$target_path')" "$LINENO"
+    exit 1
+  fi
 }
 
-# check a target command
-cmd_path=$(command -v $CMD)
-check-empty-or-notfile "$cmd_path" 1
+# 1. 명령어 경로 확인 (set -e 환경에서 command -v 실패 시 안전한 우회)
+cmd_path=$(command -v "$CMD" || true)
+check_empty_or_notfile "$cmd_path" "명령어($CMD)"
 
-
-if [ $VERBOSE -eq 1 ];then
-	echo "$CMD => $cmd_path"
-	exit 0
+if [[ $VERBOSE -eq 1 ]]; then
+  echo "$CMD => $cmd_path"
+  exit 0
 fi
 
-# check a editor command
-editor=$(command -v vim)
-check-empty-or-notfile "$editor" 0
-if [ $RTV -ne 0 ];then
-	editor=$(command -v vi)
-	check-empty-or-notfile "$editor" 1
+# 2. 에디터 경로 확인 (vim 우선, 없을 시 vi 할당)
+editor=$(command -v vim || true)
+if [[ -z "$editor" || ! -f "$editor" ]]; then
+  editor=$(command -v vi || true)
 fi
+check_empty_or_notfile "$editor" "에디터(vim/vi)"
 
-$editor $cmd_path 
+# 3. 쓰기 권한 확인 및 실행 (요구사항 반영)
+if [[ -w "$cmd_path" ]]; then
+  "$editor" "$cmd_path"
+else
+  echo "ℹ️ '$cmd_path' 파일에 대한 쓰기 권한이 없어 'sudo' 권한으로 에디터를 실행합니다."
+  sudo "$editor" "$cmd_path"
+fi
 
 exit 0
-
-
