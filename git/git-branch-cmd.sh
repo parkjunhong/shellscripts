@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # =======================================
-# @author   : parkjunhong77@gmail.com
-# @title    : search files.
-# @license  : Apache License 2.0
-# @since    : 2026-07-28
-# @desc     : support RHEL 8+, Oracle Linux 9+, Ubuntu 20.04+, RockyOS 9+, CentOS 7+
+# @author : parkjunhong77@gmail.com
+# @title : search files.
+# @license : Apache License 2.0
+# @since : 2026-08-06
+# @desc : support RHEL 8+, Oracle Linux 9+, Ubuntu 20.04+, RockyOS 9+, CentOS 7
 # @installation : 
-#   1. insert 'source <path>/git-branch-migration.sh" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/git-branch-migration.sh' into /etc/bashrc for all users.
+# 1. insert 'source <path>/git-branch-cmd.sh" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/git-branch-cmd.sh' into /etc/bashrc for all users.
 # =======================================
 
 set -Eeuo pipefail
@@ -34,10 +34,9 @@ help(){
     printf "$formatl" "line" "$2"
     printf "$formatl" "callstack"
     local idx=1
-    for func in ${FUNCNAME[@]:1}
+    for func in "${FUNCNAME[@]:1}"
     do  
-      printf "$formatr" "["$idx"]" $func
-      # set -e 강제 종료 방지를 위해 템플릿의 산술식에 표준 할당 적용
+      printf "$formatr" "["$idx"]" "$func"
       idx=$((idx + 1))
     done
     printf "$formatl" "cause" "$1"
@@ -47,15 +46,17 @@ help(){
   echo "사용법: ./$FILENAME [옵션] [작업디렉토리]"
   echo ""
   echo "[설명]"
-  echo "  지정된 경로 하위의 Git 연동 디렉토리를 탐색하여 브랜치 마이그레이션 또는 삭제 작업을 일괄 수행합니다."
+  echo "  지정된 경로 하위의 Git 연동 디렉토리를 탐색하여 브랜치 마이그레이션, 삭제 또는 검색 작업을 일괄 수행합니다."
   echo "  (작업 디렉토리를 생략하면 현재 경로('.')를 기준으로 탐색합니다.)"
   echo ""
   echo "[옵션 (Options)]"
   echo "  -s, --source-branch <브랜치>   마이그레이션 기준 기존 브랜치명"
   echo "  -n, --new-branch <브랜치>      마이그레이션 대상 신규 브랜치명"
   echo "      --delete-source            마이그레이션 완료 후 기준 브랜치(-s)를 삭제합니다."
-  echo "      --delete-branch <브랜치명> 지정된 브랜치를 로컬 및 원격에서 삭제합니다. (콤마(,)로 다중 지정 가능)"
+  echo "      --delete-branch <브랜치명> 지정된 브랜치를 로컬/원격에서 삭제합니다. (콤마(,)로 다중 지정 가능)"
   echo "                                 예) --delete-branch \"master, dev\""
+  echo "      --find-branch <브랜치명>   지정된 브랜치의 로컬/원격 존재 여부를 검색합니다. (콤마(,)로 다중 지정 가능)"
+  echo "                                 예) --find-branch \"master, dev\""
   echo "      --dry-run                  실제로 명령어를 실행하지 않고 실행될 명령어만 출력합니다."
   echo "  -h, --help                     이 도움말을 표시하고 종료합니다."
 }
@@ -65,6 +66,7 @@ trap 'help "스크립트 실행 중 오류가 발생했습니다." "$LINENO"' ER
 SOURCE_BRANCH=""
 NEW_BRANCH=""
 DELETE_BRANCHES_INPUT=""
+FIND_BRANCHES_INPUT=""
 TARGET_DIR=""
 DELETE_SOURCE=0
 DRY_RUN=0
@@ -72,6 +74,8 @@ DRY_RUN=0
 # 작업 결과 추적용 전역 배열 선언
 SUCCESS_REPOS=()
 FAIL_REPOS=()
+FIND_EXIST_REPOS=()
+FIND_MISSING_REPOS=()
 
 # 인자 파싱
 while [[ "$#" -gt 0 ]]; do
@@ -95,6 +99,10 @@ while [[ "$#" -gt 0 ]]; do
       shift
       DELETE_BRANCHES_INPUT="${1:-}"
       ;;
+    --find-branch)
+      shift
+      FIND_BRANCHES_INPUT="${1:-}"
+      ;;
     --dry-run)
       DRY_RUN=1
       ;;
@@ -117,8 +125,8 @@ done
 TARGET_DIR="${TARGET_DIR:-.}"
 
 # 필수 옵션 조합 검증
-if [[ -z "$SOURCE_BRANCH" && -z "$NEW_BRANCH" && -z "$DELETE_BRANCHES_INPUT" ]]; then
-  help "마이그레이션 옵션(-s, -n) 또는 브랜치 삭제 옵션(--delete-branch)을 지정해야 합니다." "$LINENO"
+if [[ -z "$SOURCE_BRANCH" && -z "$NEW_BRANCH" && -z "$DELETE_BRANCHES_INPUT" && -z "$FIND_BRANCHES_INPUT" ]]; then
+  help "마이그레이션(-s, -n), 삭제(--delete-branch) 또는 검색(--find-branch) 옵션을 지정해야 합니다." "$LINENO"
   exit 1
 fi
 if [[ (-n "$SOURCE_BRANCH" && -z "$NEW_BRANCH") || (-z "$SOURCE_BRANCH" && -n "$NEW_BRANCH") ]]; then
@@ -133,12 +141,13 @@ if [[ ! -d "$TARGET_DIR" ]]; then
 fi
 
 ##
-# 단일 Git 연동 디렉토리에 대해 마이그레이션 및 다중 브랜치 삭제 로직을 수행합니다.
+# 단일 Git 연동 디렉토리에 대해 작업을 수행합니다.
 #
 # @param $1 {string} 처리할 Git 연동 디렉토리 경로
 # @param $2 {string} 기준 브랜치명
 # @param $3 {string} 신규 브랜치명
-# @param $4 {string} 삭제할 브랜치 목록 (콤마 구분 문자열)
+# @param $4 {string} 삭제할 브랜치 목록
+# @param $5 {string} 검색할 브랜치 목록
 #
 # @return (터미널 진행 로그 출력 및 전역 배열에 결과 추가)
 ##
@@ -147,6 +156,7 @@ process_repo() {
   local src_branch="$2"
   local new_branch="$3"
   local del_branches_raw="$4"
+  local find_branches_raw="${5:-}"
   local step_failed=0
   local fail_reason=""
   
@@ -265,7 +275,6 @@ process_repo() {
     local del_branch_arr=()
     local b
     
-    # 콤마(,) 기준 분리 및 Whitespace Trim 처리
     IFS=',' read -ra ADDR <<< "$del_branches_raw"
     for b in "${ADDR[@]}"; do
       b=$(echo "$b" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
@@ -282,16 +291,14 @@ process_repo() {
           echo "      [DRY-RUN] git branch -d \"$b\""
           echo "      [DRY-RUN] git push origin --delete \"$b\""
         else
-          # 로컬 브랜치 삭제
           if ! git branch -d "$b" >/dev/null 2>&1; then
-            fail_reason="로컬 '$b' 브랜치 삭제 실패 (미존재 또는 체크아웃 상태)"
+            fail_reason="로컬 '$b' 브랜치 삭제 실패"
             echo "      ⚠️ $fail_reason"
             step_failed=1
             break
           fi
-          # 원격 브랜치 삭제
           if ! git push origin --delete "$b" >/dev/null 2>&1; then
-            fail_reason="원격 '$b' 브랜치 삭제 실패 (미존재 또는 권한 부족)"
+            fail_reason="원격 '$b' 브랜치 삭제 실패"
             echo "      ⚠️ $fail_reason"
             step_failed=1
             break
@@ -301,9 +308,59 @@ process_repo() {
     fi
   fi
 
+  # [3] 브랜치 검색 작업 블록
+  if [[ -n "$find_branches_raw" && $step_failed -eq 0 ]]; then
+    local find_branch_arr=()
+    local b
+    
+    IFS=',' read -ra ADDR <<< "$find_branches_raw"
+    for b in "${ADDR[@]}"; do
+      b=$(echo "$b" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
+      if [[ -n "$b" ]]; then
+        find_branch_arr+=("$b")
+      fi
+    done
+
+    if [[ ${#find_branch_arr[@]} -gt 0 ]]; then
+      echo "  🔍 [추가 작업] 지정된 브랜치 존재 여부 검색"
+      local repo_found_count=0
+      local repo_branch_details=()
+
+      for b in "${find_branch_arr[@]}"; do
+        local is_local="X"
+        local is_remote="X"
+        
+        if git show-ref --verify --quiet "refs/heads/$b" 2>/dev/null; then
+          is_local="O"
+        fi
+        if git ls-remote --exit-code --heads origin "$b" >/dev/null 2>&1; then
+          is_remote="O"
+        fi
+        
+        printf "    - 대상 브랜치: %-20s | 로컬: %s | 원격: %s\n" "'$b'" "$is_local" "$is_remote"
+        
+        if [[ "$is_local" == "O" || "$is_remote" == "O" ]]; then
+          repo_found_count=$((repo_found_count + 1))
+          repo_branch_details+=("${b}::::${is_local}::::${is_remote}")
+        fi
+      done
+
+      # 존재하는 브랜치가 1개라도 있으면 배열에 세부 정보 조합 저장
+      if [[ $repo_found_count -gt 0 ]]; then
+        local details_str=""
+        local d
+        for d in "${repo_branch_details[@]}"; do
+          details_str="${details_str}${d}@@"
+        done
+        FIND_EXIST_REPOS+=("${repo_path}####${details_str}")
+      else
+        FIND_MISSING_REPOS+=("$repo_path")
+      fi
+    fi
+  fi
+
   popd > /dev/null
 
-  # 결과 수집
   if [[ $step_failed -eq 0 ]]; then
     echo "  ✅ 작업 완료: $repo_path"
     SUCCESS_REPOS+=("$repo_path")
@@ -320,7 +377,8 @@ process_repo() {
 # @param $1 {string} 탐색을 시작할 현재 디렉토리 경로
 # @param $2 {string} 기준 브랜치명
 # @param $3 {string} 신규 브랜치명
-# @param $4 {string} 삭제할 콤마 구분 브랜치 목록
+# @param $4 {string} 삭제할 브랜치 목록
+# @param $5 {string} 검색할 브랜치 목록
 #
 # @return (조건 충족 시 process_repo 함수 호출)
 ##
@@ -329,19 +387,20 @@ search_git_directories() {
   local src_branch="$2"
   local new_branch="$3"
   local del_branches="$4"
+  local find_branches="${5:-}"
 
   if [[ -d "$current_dir/.git" ]]; then
-    process_repo "$current_dir" "$src_branch" "$new_branch" "$del_branches"
+    process_repo "$current_dir" "$src_branch" "$new_branch" "$del_branches" "$find_branches"
   else
     local sub_dir
     while IFS= read -r -d '' sub_dir; do
-      search_git_directories "$sub_dir" "$src_branch" "$new_branch" "$del_branches"
+      search_git_directories "$sub_dir" "$src_branch" "$new_branch" "$del_branches" "$find_branches"
     done < <(find "$current_dir" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null || true)
   fi
 }
 
 ##
-# 스크립트 실행 결과를 종합하여 동적 정렬된 보고서 형태로 출력합니다.
+# 스크립트 실행 결과를 종합하여 보고서 형태로 출력합니다.
 #
 # @param 없음
 #
@@ -352,6 +411,84 @@ print_report() {
 
   echo ""
   echo "📊 [작업 완료 보고서] - 총 $total_repos 개"
+
+  # [브랜치 검색(find-branch)] 기능 단독 처리용 보고서 출력 블록
+  if [[ -n "$FIND_BRANCHES_INPUT" ]]; then
+    local find_branch_arr=()
+    local b
+    IFS=',' read -ra ADDR <<< "$FIND_BRANCHES_INPUT"
+    for b in "${ADDR[@]}"; do
+      b=$(echo "$b" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
+      if [[ -n "$b" ]]; then
+        find_branch_arr+=("$b")
+      fi
+    done
+    
+    local display_names=""
+    for b in "${find_branch_arr[@]}"; do
+      if [[ -z "$display_names" ]]; then
+        display_names="$b"
+      else
+        display_names="$display_names, $b"
+      fi
+    done
+
+    if [[ ${#FIND_EXIST_REPOS[@]} -gt 0 ]]; then
+      echo "--------------------------------------------------------------------------------"
+      echo "✅ '${display_names}' 존재 프로젝트 목록 (${#FIND_EXIST_REPOS[@]} 개):"
+      
+      # 동적 패딩(길이 맞춤)을 위한 max_len 계산
+      local max_len=0
+      local item
+      for item in "${FIND_EXIST_REPOS[@]}"; do
+        local r_path="${item%%####*}"
+        if [[ ${#r_path} -gt $max_len ]]; then
+          max_len=${#r_path}
+        fi
+      done
+      
+      for item in "${FIND_EXIST_REPOS[@]}"; do
+        local r_path="${item%%####*}"
+        local details_str="${item##*####}"
+        local first=1
+        
+        local details_arr
+        IFS='@@' read -ra details_arr <<< "$details_str"
+        local d
+        for d in "${details_arr[@]}"; do
+          if [[ -z "$d" ]]; then continue; fi
+          local b_name="${d%%::::*}"
+          local rem="${d#*::::}"
+          local loc="${rem%%::::*}"
+          local rmt="${rem##*::::}"
+          
+          if [[ $first -eq 1 ]]; then
+            printf "  - %-${max_len}s : %-4s (로컬: %s | 원격: %s)\n" "$r_path" "$b_name" "$loc" "$rmt"
+            first=0
+          else
+            printf "    %-${max_len}s : %-4s (로컬: %s | 원격: %s)\n" "" "$b_name" "$loc" "$rmt"
+          fi
+        done
+      done
+    fi
+
+    if [[ ${#FIND_MISSING_REPOS[@]} -gt 0 ]]; then
+      echo "--------------------------------------------------------------------------------"
+      echo "❌ '${display_names}' 미존재 프로젝트 목록 (${#FIND_MISSING_REPOS[@]} 개):"
+      local r_path
+      for r_path in "${FIND_MISSING_REPOS[@]}"; do
+        echo "  - $r_path"
+      done
+    fi
+    echo "--------------------------------------------------------------------------------"
+    
+    # 검색 전용 기능인 경우 기존 성공/실패 렌더링 스킵
+    if [[ -z "$SOURCE_BRANCH" && -z "$DELETE_BRANCHES_INPUT" ]]; then
+      return 0
+    fi
+  fi
+
+  # 기존 마이그레이션 및 삭제 로직에 대한 보고서 보존 영역
   if [[ ${#SUCCESS_REPOS[@]} -gt 0 ]]; then
     echo "--------------------------------------------------------------------------------"
     echo "✅ 성공 프로젝트 목록 (${#SUCCESS_REPOS[@]} 개):"
@@ -393,13 +530,16 @@ print_report() {
 
 echo "🔍 대상 디렉토리('$TARGET_DIR') 하위의 Git 저장소 탐색을 시작합니다..."
 if [[ -n "$SOURCE_BRANCH" && -n "$NEW_BRANCH" ]]; then
-  echo "👉 마이그레이션 전략: [$SOURCE_BRANCH] -> [$NEW_BRANCH]"
+  echo "👉 마이그레이션 전략: [$SOURCE_BRANCH] &rarr; [$NEW_BRANCH]"
 fi
 if [[ -n "$DELETE_BRANCHES_INPUT" ]]; then
   echo "👉 브랜치 삭제 대상: [$DELETE_BRANCHES_INPUT]"
 fi
+if [[ -n "$FIND_BRANCHES_INPUT" ]]; then
+  echo "👉 브랜치 검색 대상: [$FIND_BRANCHES_INPUT]"
+fi
 
-search_git_directories "$TARGET_DIR" "$SOURCE_BRANCH" "$NEW_BRANCH" "$DELETE_BRANCHES_INPUT"
+search_git_directories "$TARGET_DIR" "$SOURCE_BRANCH" "$NEW_BRANCH" "$DELETE_BRANCHES_INPUT" "$FIND_BRANCHES_INPUT"
 print_report
 
 exit 0

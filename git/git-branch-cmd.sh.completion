@@ -1,0 +1,80 @@
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : search files.
+# @license : Apache License 2.0
+# @since : 2026-08-06
+# @desc : support RHEL 8+, Oracle Linux 9+, Ubuntu 20.04+, RockyOS 9+, CentOS 7
+# @installation : 
+# 1. insert 'source <path>/git-branch-cmd.sh.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/git-branch-cmd.sh.completion' into /etc/bashrc for all users.
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+#
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+# =======================================
+
+##
+# git-branch-cmd.sh 스크립트의 자동완성(Auto-completion)을 지원하는 함수입니다.
+# Auto-completion function for git-branch-cmd.sh script.
+##
+_git_branch_cmd_completion() {
+  local cur prev opts available_opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  # 스크립트 지원 기본 옵션들 / Command options list
+  opts="-h --help -s --source-branch -n --new-branch --delete-source --delete-branch --find-branch --dry-run"
+
+  # 이전 파라미터가 브랜치명을 요구할 경우 로컬/원격 브랜치 추천
+  # Suggest dynamic local/remote branches if previous parameter requires a branch
+  case "${prev}" in
+    -s|--source-branch|-n|--new-branch|--delete-branch|--find-branch)
+      local branches
+      branches=$(git branch -a 2>/dev/null | sed -e 's/*//' -e 's/remotes\/origin\///' | tr -d ' ' | sort -u || true)
+      COMPREPLY=( $(compgen -W "${branches}" -- "${cur}") )
+      return 0
+      ;;
+    *)
+      ;;
+  esac
+
+  # 이미 입력된 옵션을 필터링하여 중복 추천 방지
+  # Filter out already entered options to prevent duplicates
+  available_opts=""
+  for opt in $opts; do
+    local is_used=0
+    for word in "${COMP_WORDS[@]}"; do
+      if [ "$word" == "$opt" ]; then
+        is_used=1
+        break
+      fi
+    done
+    if [ "$is_used" -eq 0 ]; then
+      available_opts="$available_opts $opt"
+    fi
+  done
+
+  # '-' 또는 '--'를 입력하지 않고 <TAB> 만 입력해도 파라미터 제안
+  # Suggest parameters even if only <TAB> is pressed without a dash (-)
+  COMPREPLY=( $(compgen -W "${available_opts}" -- "${cur}") )
+  
+  # 인자가 파일/디렉토리인 경우를 위해 bash 내장 디렉토리 자동완성 폴백(Fallback) 추가
+  # Add directory completion fallback if parameter is a path
+  COMPREPLY+=($(compgen -d -- "${cur}"))
+}
+
+# 스크립트 파일명과 자동완성 함수 연결 / Bind completion function to the script
+complete -F _git_branch_cmd_completion git-branch-cmd.sh
