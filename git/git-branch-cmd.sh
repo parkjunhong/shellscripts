@@ -43,12 +43,13 @@ help(){
     echo "================================================================================"
   fi  
   echo  
-  echo "사용법: ./$FILENAME [옵션] [작업디렉토리]"
+  echo "사용법: ./$FILENAME [옵션] [작업디렉토리1] [작업디렉토리2] ..."
   echo ""
   echo "[설명]"
-  echo "  지정된 경로 하위의 Git 연동 디렉토리를 탐색하여 브랜치 제어 및 API 작업을 일괄 수행합니다."
+  echo "  지정된 여러 경로(절대/상대) 하위의 Git 연동 디렉토리를 탐색하여 브랜치 제어 및 API 작업을 일괄 수행합니다."
   echo "  (작업 디렉토리를 생략하면 현재 경로('.')를 기준으로 탐색합니다.)"
-  echo "  API 연동이 필요한 경우, 저장소 도메인에 따라 환경변수(예: PAT_GITHUB_COM)를 확인하며,"
+  echo "  API 연동이 필요한 경우, 저장소 도메인 및 소유자(개인/조직) 타입에 따라 독립적인"
+  echo "  환경변수(예: PAT_GITHUB_COM_USER_<소유자>, PAT_GITHUB_COM_ORG_<조직명>)를 확인하며,"
   echo "  없을 경우 실행 중 Personal Access Token을 안전하게 입력받아 적용합니다."
   echo ""
   echo "[일반 옵션 (인증 불필요)]"
@@ -80,7 +81,7 @@ UNPROTECT_BRANCHES_INPUT=""
 SHOW_PROTECTED_BRANCH=0
 SET_DEFAULT_BRANCH_INPUT=""
 SHOW_DEFAULT_BRANCH=0
-TARGET_DIR=""
+TARGET_DIRS=()
 DELETE_SOURCE=0
 DRY_RUN=0
 
@@ -99,6 +100,7 @@ REPORT_SHOW_DEFAULT=()
 
 # 서비스 도메인별 토큰 관리를 위한 Associative Array 선언
 declare -A DOMAIN_PAT_MAP=()
+RESOLVED_PAT=""
 
 # 인자 파싱
 while [[ "$#" -gt 0 ]]; do
@@ -131,18 +133,16 @@ while [[ "$#" -gt 0 ]]; do
       help "지원하지 않는 옵션입니다: $1" "$LINENO"
       exit 1 ;;
     *)
-      if [[ -z "$TARGET_DIR" ]]; then
-        TARGET_DIR="$1"
-      else
-        help "작업 디렉토리는 하나만 지정할 수 있습니다: $1" "$LINENO"
-        exit 1
-      fi
+      TARGET_DIRS+=("$1")
       ;;
   esac
   shift
 done
 
-TARGET_DIR="${TARGET_DIR:-.}"
+# 대상 디렉토리가 하나도 없으면 현재 디렉토리를 기본값으로 설정
+if [[ ${#TARGET_DIRS[@]} -eq 0 ]]; then
+  TARGET_DIRS=(".")
+fi
 
 # 필수 옵션 조합 검증
 if [[ -z "$MIGRATE_BRANCH_INPUT" && -z "$DELETE_BRANCHES_INPUT" && -z "$FIND_BRANCHES_INPUT" && -z "$PROTECT_BRANCHES_INPUT" && -z "$UNPROTECT_BRANCHES_INPUT" && $SHOW_PROTECTED_BRANCH -eq 0 && -z "$SET_DEFAULT_BRANCH_INPUT" && $SHOW_DEFAULT_BRANCH -eq 0 ]]; then
@@ -164,10 +164,13 @@ if [[ -n "$MIGRATE_BRANCH_INPUT" ]]; then
   fi
 fi
 
-if [[ ! -d "$TARGET_DIR" ]]; then
-  help "입력한 작업 대상이 유효한 디렉토리가 아닙니다: $TARGET_DIR" "$LINENO"
-  exit 1
-fi
+# 모든 입력된 디렉토리에 대한 유효성(존재 여부) 사전 검증
+for target_dir in "${TARGET_DIRS[@]}"; do
+  if [[ ! -d "$target_dir" ]]; then
+    help "입력한 작업 대상이 유효한 디렉토리가 아닙니다: $target_dir" "$LINENO"
+    exit 1
+  fi
+done
 
 ##
 # 필수 CLI 명령어(gh, glab)의 설치 여부를 확인하고, 없을 경우 패키지 관리자로 설치합니다.
@@ -238,45 +241,83 @@ ensure_api_modules() {
 # 대상 도메인별 Personal Access Token(PAT)을 동적 맵핑하고 환경을 검증합니다.
 #
 # @param $1 {string} 대상 원격 저장소 full domain (예: github.com)
+# @param $2 {string} 대상 원격 저장소 URL (파싱용)
 #
-# @return 토큰 존재 시 0 반환, 프롬프트 입력 실패 시 1 반환 후 종료
+# @return 토큰 존재 시 0 반환, 전역 변수 RESOLVED_PAT 할당
 ##
 ensure_pat_for_domain() {
   local domain="$1"
-  local env_var_name
-  env_var_name="PAT_$(echo "$domain" | tr 'a-z' 'A-Z' | sed -E 's/[^A-Z0-9]/_/g')"
+  local remote_url="$2"
+  local env_var_name=""
+  local display_target="$domain"
+  
+  local domain_upper
+  domain_upper=$(echo "$domain" | tr 'a-z' 'A-Z' | sed -E 's/[^A-Z0-9]/_/g')
+  
+  if [[ "$domain" == *"github.com"* ]]; then
+    local owner_repo=""
+    if [[ "$remote_url" == http* ]]; then
+      owner_repo=$(echo "$remote_url" | sed -E 's|^https?://[^/]+/||; s|\.git$||')
+    elif [[ "$remote_url" == git@* ]]; then
+      owner_repo=$(echo "$remote_url" | sed -E 's|^git@[^:]+:||; s|\.git$||')
+    elif [[ "$remote_url" == ssh://* ]]; then
+      owner_repo=$(echo "$remote_url" | sed -E 's|^ssh://[^/]+/||; s|\.git$||')
+    fi
+    
+    local account_name="${owner_repo%%/*}"
+    local account_type="User"
+    
+    if [[ -n "$account_name" ]]; then
+      local api_res
+      api_res=$(curl -sL "https://api.github.com/users/${account_name}" 2>/dev/null || true)
+      local extracted_type
+      extracted_type=$(echo "$api_res" | grep -o '"type": *"[^"]*"' | head -n 1 | sed -E 's/.*"type": *"([^"]*)".*/\1/' || true)
+      if [[ "$extracted_type" == "Organization" ]]; then
+        account_type="Organization"
+      fi
+    fi
+    
+    local account_upper
+    account_upper=$(echo "$account_name" | tr 'a-z' 'A-Z' | sed -E 's/[^A-Z0-9]/_/g')
+    
+    if [[ "$account_type" == "Organization" ]]; then
+      env_var_name="PAT_${domain_upper}_ORG_${account_upper}"
+      display_target="$domain - 조직: $account_name"
+    else
+      env_var_name="PAT_${domain_upper}_USER_${account_upper}"
+      display_target="$domain - 개인: $account_name"
+    fi
+  else
+    env_var_name="PAT_${domain_upper}"
+  fi
 
-  # 1, 2. associative array에 있는지 판단 (이미 값이 존재하면 반환)
-  if [[ -n "${DOMAIN_PAT_MAP[$domain]:-}" ]]; then
+  if [[ -n "${DOMAIN_PAT_MAP[$env_var_name]:-}" ]]; then
+    RESOLVED_PAT="${DOMAIN_PAT_MAP[$env_var_name]}"
     return 0
   fi
 
-  # 3. 환경변수에 존재하는지 판단 (간접 참조)
   local env_val=""
   eval env_val="\${$env_var_name:-}"
 
   if [[ -n "$env_val" ]]; then
-    DOMAIN_PAT_MAP["$domain"]="$env_val"
+    DOMAIN_PAT_MAP["$env_var_name"]="$env_val"
+    RESOLVED_PAT="$env_val"
     return 0
   fi
 
-  # 4. 사용자에게 입력받음
   local user_pat=""
   echo "🔒 [보안] 인증 정보가 필요한 API 작업이 포함되어 있습니다."
-  # 터미널로부터 직접 입력을 받아 파이프 환경에서의 문제 방지
-  read -r -s -p "👉 API 연동($domain)을 위한 Personal Access Token을 입력하세요: " user_pat </dev/tty
+  read -r -s -p "👉 API 연동($display_target)을 위한 Personal Access Token을 입력하세요: " user_pat </dev/tty
   echo ""
 
   if [[ -z "$user_pat" ]]; then
-    help "인증 토큰이 입력되지 않아 API 작업을 진행할 수 없습니다. ($domain)" "$LINENO"
+    help "인증 토큰이 입력되지 않아 API 작업을 진행할 수 없습니다. ($display_target)" "$LINENO"
     exit 1
   fi
 
-  # 입력받은 값을 shell 환경변수로 export
   export "$env_var_name"="$user_pat"
-
-  # 5. associative array 저장 (이후 로직에서 6. 해당 값을 사용)
-  DOMAIN_PAT_MAP["$domain"]="$user_pat"
+  DOMAIN_PAT_MAP["$env_var_name"]="$user_pat"
+  RESOLVED_PAT="$user_pat"
 }
 
 # API 관련 작업이 요청되었는지 사전 모듈 다운로드만 실행
@@ -333,7 +374,6 @@ process_repo() {
   local step_failed=0
   local fail_reason=""
   
-  # 프로젝트 이름 추출 및 불필요한 디렉토리 경로 제거 적용
   local abs_path
   abs_path=$(cd "$repo_path" >/dev/null 2>&1 && pwd || echo "$repo_path")
   local project_name=""
@@ -349,7 +389,11 @@ process_repo() {
   local display_path="${project_name}"
   
   echo "================================================================================"
-  echo "🚀 [Git 연동 디렉토리 발견] $display_path"
+  if [[ $DRY_RUN -eq 1 ]]; then
+    echo "🚀 [Git 연동 디렉토리 발견] $display_path (가상 실행 모드)"
+  else
+    echo "🚀 [Git 연동 디렉토리 발견] $display_path"
+  fi
   
   if ! pushd "$repo_path" > /dev/null 2>&1; then
     fail_reason="디렉토리 접근 권한이 없습니다."
@@ -364,19 +408,29 @@ process_repo() {
       step_failed=1; fail_reason="'$SOURCE_BRANCH' 로컬 미존재"
     else
       echo "  📦 1. '$SOURCE_BRANCH' 브랜치 전환"
-      git checkout "$SOURCE_BRANCH" >/dev/null 2>&1 || step_failed=1
+      if [[ $DRY_RUN -eq 1 ]]; then echo "    [DRY-RUN] git checkout \"$SOURCE_BRANCH\""; else git checkout "$SOURCE_BRANCH" >/dev/null 2>&1 || step_failed=1; fi
+      
       echo "  📥 2. 최신 변경사항 동기화"
-      git pull >/dev/null 2>&1 || step_failed=1
+      if [[ $DRY_RUN -eq 1 ]]; then echo "    [DRY-RUN] git pull"; else git pull >/dev/null 2>&1 || step_failed=1; fi
+      
       echo "  🌱 3. '$NEW_BRANCH' 브랜치 생성"
-      git rev-parse --verify "$NEW_BRANCH" >/dev/null 2>&1 || git branch "$NEW_BRANCH" >/dev/null 2>&1 || step_failed=1
+      if [[ $DRY_RUN -eq 1 ]]; then echo "    [DRY-RUN] git branch \"$NEW_BRANCH\" (존재하지 않을 경우)"; else git rev-parse --verify "$NEW_BRANCH" >/dev/null 2>&1 || git branch "$NEW_BRANCH" >/dev/null 2>&1 || step_failed=1; fi
+      
       echo "  🔄 4. '$NEW_BRANCH' 브랜치 전환"
-      git checkout "$NEW_BRANCH" >/dev/null 2>&1 || step_failed=1
+      if [[ $DRY_RUN -eq 1 ]]; then echo "    [DRY-RUN] git checkout \"$NEW_BRANCH\""; else git checkout "$NEW_BRANCH" >/dev/null 2>&1 || step_failed=1; fi
+      
       echo "  📤 5. 원격 저장소에 업로드"
-      git push --set-upstream origin "$NEW_BRANCH" >/dev/null 2>&1 || step_failed=1
+      if [[ $DRY_RUN -eq 1 ]]; then echo "    [DRY-RUN] git push --set-upstream origin \"$NEW_BRANCH\""; else git push --set-upstream origin "$NEW_BRANCH" >/dev/null 2>&1 || step_failed=1; fi
+      
       if [[ $step_failed -eq 0 && $DELETE_SOURCE -eq 1 ]]; then
         echo "  🗑️ 6. 기준 브랜치('$SOURCE_BRANCH') 삭제"
-        git branch -d "$SOURCE_BRANCH" >/dev/null 2>&1 || true
-        git push origin --delete "$SOURCE_BRANCH" >/dev/null 2>&1 || true
+        if [[ $DRY_RUN -eq 1 ]]; then
+          echo "    [DRY-RUN] git branch -d \"$SOURCE_BRANCH\""
+          echo "    [DRY-RUN] git push origin --delete \"$SOURCE_BRANCH\""
+        else
+          git branch -d "$SOURCE_BRANCH" >/dev/null 2>&1 || true
+          git push origin --delete "$SOURCE_BRANCH" >/dev/null 2>&1 || true
+        fi
       fi
     fi
   fi
@@ -393,42 +447,47 @@ process_repo() {
       echo "  🔥 [작업] 지정된 브랜치 다중 삭제"
       for b in "${del_branch_arr[@]}"; do
         echo "    - 대상: '$b'"
-        local local_status=0; local remote_status=0
-        local local_out=""; local remote_out=""
-        
-        local_out=$(git branch -d "$b" 2>&1) || local_status=$?
-        if [[ $local_status -eq 0 ]]; then echo "      ✅ 로컬 '$b' 브랜치 삭제 완료"; else echo "      ℹ️ 로컬 '$b' 브랜치 미존재/삭제 불가"; fi
-        
-        local ls_remote_err=""; local ls_remote_status=0
-        ls_remote_err=$(git ls-remote --exit-code --heads origin "$b" 2>&1 >/dev/null) || ls_remote_status=$?
-
-        if [[ $ls_remote_status -eq 0 ]]; then
-          remote_out=$(git push origin --delete "$b" 2>&1) || remote_status=$?
-          if [[ $remote_status -eq 0 ]]; then echo "      ✅ 원격 '$b' 브랜치 삭제 완료"; else echo "      ℹ️ 원격 '$b' 브랜치 삭제 실패"; fi
-        elif [[ $ls_remote_status -eq 2 ]]; then
-          remote_status=1; remote_out="not found"
-          echo "      ℹ️ 원격 '$b' 브랜치 미존재 (삭제 생략)"
+        if [[ $DRY_RUN -eq 1 ]]; then
+          echo "      [DRY-RUN] git branch -d \"$b\""
+          echo "      [DRY-RUN] git push origin --delete \"$b\""
         else
-          remote_status=$ls_remote_status; remote_out="$ls_remote_err"
-          echo "      ℹ️ 원격 저장소 접근 실패"
-        fi
-        
-        if [[ $local_status -ne 0 && $remote_status -ne 0 ]]; then
-          local loc_reason; local rem_reason
-          loc_reason=$(parse_git_delete_error "local" "$local_out")
-          rem_reason=$(parse_git_delete_error "remote" "$remote_out")
-          if [[ "$loc_reason" == "미존재" && "$rem_reason" == "미존재" ]]; then
-            fail_reason="'$b' 브랜치 미존재 (로컬 및 원격)"
+          local local_status=0; local remote_status=0
+          local local_out=""; local remote_out=""
+          
+          local_out=$(git branch -d "$b" 2>&1) || local_status=$?
+          if [[ $local_status -eq 0 ]]; then echo "      ✅ 로컬 '$b' 브랜치 삭제 완료"; else echo "      ℹ️ 로컬 '$b' 브랜치 미존재/삭제 불가"; fi
+          
+          local ls_remote_err=""; local ls_remote_status=0
+          ls_remote_err=$(git ls-remote --exit-code --heads origin "$b" 2>&1 >/dev/null) || ls_remote_status=$?
+
+          if [[ $ls_remote_status -eq 0 ]]; then
+            remote_out=$(git push origin --delete "$b" 2>&1) || remote_status=$?
+            if [[ $remote_status -eq 0 ]]; then echo "      ✅ 원격 '$b' 브랜치 삭제 완료"; else echo "      ℹ️ 원격 '$b' 브랜치 삭제 실패"; fi
+          elif [[ $ls_remote_status -eq 2 ]]; then
+            remote_status=1; remote_out="not found"
+            echo "      ℹ️ 원격 '$b' 브랜치 미존재 (삭제 생략)"
           else
-            fail_reason="'$b' 삭제 불가 (로컬: $loc_reason | 원격: $rem_reason)"
+            remote_status=$ls_remote_status; remote_out="$ls_remote_err"
+            echo "      ℹ️ 원격 저장소 접근 실패"
           fi
-          echo "      ⚠️ $fail_reason"; step_failed=1; break
+          
+          if [[ $local_status -ne 0 && $remote_status -ne 0 ]]; then
+            local loc_reason; local rem_reason
+            loc_reason=$(parse_git_delete_error "local" "$local_out")
+            rem_reason=$(parse_git_delete_error "remote" "$remote_out")
+            if [[ "$loc_reason" == "미존재" && "$rem_reason" == "미존재" ]]; then
+              fail_reason="'$b' 브랜치 미존재 (로컬 및 원격)"
+            else
+              fail_reason="'$b' 삭제 불가 (로컬: $loc_reason | 원격: $rem_reason)"
+            fi
+            echo "      ⚠️ $fail_reason"; step_failed=1; break
+          fi
         fi
       done
     fi
   fi
 
-  # --- 기존 기능: 브랜치 검색 ---
+  # --- 기존 기능: 브랜치 검색 (Read-only는 DRY_RUN 무관하게 실행) ---
   if [[ -n "$FIND_BRANCHES_INPUT" && $step_failed -eq 0 ]]; then
     local find_branch_arr=(); local b
     IFS=',' read -ra ADDR <<< "$FIND_BRANCHES_INPUT"
@@ -465,7 +524,6 @@ process_repo() {
   if [[ $GLOBAL_API_REQUIRED -eq 1 && $step_failed -eq 0 ]]; then
     local provider=""
     
-    # URL에서 프로토콜과 호스트(포트 포함)를 안전하게 추출
     local repo_host=""
     local repo_uri=""
     if [[ "$remote_url" == http* ]]; then
@@ -489,19 +547,17 @@ process_repo() {
       echo "  ⚠️ GitHub 또는 GitLab 원격 저장소를 찾을 수 없어 API 작업을 건너뜁니다."
     fi
 
-    # 식별된 도메인/URI를 통한 토큰 매핑 및 환경 변수 주입
     if [[ -n "$repo_host" ]]; then
       if [[ "$provider" == "gitlab" || "$provider" == "github" ]]; then
-        # 6. 토큰 검증 및 입력 (인증 정보가 필요한 시점)
-        ensure_pat_for_domain "$repo_host"
+        ensure_pat_for_domain "$repo_host" "$remote_url"
         
         if [[ "$provider" == "gitlab" ]]; then
           export GITLAB_HOST="$repo_host"
           export GITLAB_URI="$repo_uri"
-          export GITLAB_TOKEN="${DOMAIN_PAT_MAP[$repo_host]}"
+          export GITLAB_TOKEN="$RESOLVED_PAT"
         elif [[ "$provider" == "github" ]]; then
           export GH_HOST="$repo_host"
-          export GITHUB_TOKEN="${DOMAIN_PAT_MAP[$repo_host]}"
+          export GITHUB_TOKEN="$RESOLVED_PAT"
         fi
       fi
     fi
@@ -510,7 +566,6 @@ process_repo() {
       local script_dir
       script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
       
-      # API 모듈 로드
       if [[ -f "$script_dir/git-branch-module-${provider}-api.sh" ]]; then
         source "$script_dir/git-branch-module-${provider}-api.sh"
       else
@@ -519,7 +574,8 @@ process_repo() {
       fi
       
       if [[ $step_failed -eq 0 ]]; then
-        # 1. 보호 설정
+        
+        # 1. 보호 설정 (Write 작업: DRY_RUN 반영)
         if [[ -n "$PROTECT_BRANCHES_INPUT" ]]; then
           echo "  🔒 [API 작업] 브랜치 보호 설정"
           local protect_arr=(); local b
@@ -532,16 +588,22 @@ process_repo() {
           local p_details=""
           for b in "${protect_arr[@]}"; do
             if git ls-remote --exit-code --heads origin "$b" >/dev/null 2>&1; then
-              local api_res
-              api_res=$("api_${provider}_protect_branch" "$b" || true)
-              if [[ "$api_res" == ERROR:* ]]; then
-                local err_msg="${api_res#ERROR:}"
-                err_msg=$(echo "$err_msg" | head -n 1 | tr '\n' ' ' | sed 's/ $//')
-                echo "    ❌ 보호 설정 실패: '$b' ($err_msg)"
-                p_details+="${b}::::보호 실패 ($err_msg)@@"
+              if [[ $DRY_RUN -eq 1 ]]; then
+                echo "    [DRY-RUN] api_${provider}_protect_branch \"$b\""
+                echo "    ✅ 보호 설정 완료: '$b' (가상 실행)"
+                p_details+="${b}::::보호 설정 완료 (가상)@@"
               else
-                echo "    ✅ 보호 설정 완료: '$b'"
-                p_details+="${b}::::보호 설정 완료@@"
+                local api_res
+                api_res=$("api_${provider}_protect_branch" "$b" || true)
+                if [[ "$api_res" == ERROR:* ]]; then
+                  local err_msg="${api_res#ERROR:}"
+                  err_msg=$(echo "$err_msg" | head -n 1 | tr '\n' ' ' | sed 's/ $//')
+                  echo "    ❌ 보호 설정 실패: '$b' ($err_msg)"
+                  p_details+="${b}::::보호 실패 ($err_msg)@@"
+                else
+                  echo "    ✅ 보호 설정 완료: '$b'"
+                  p_details+="${b}::::보호 설정 완료@@"
+                fi
               fi
             else
               echo "    ⚠️ 원격 저장소에 '$b' 브랜치가 없어 보호 설정을 생략합니다."
@@ -551,7 +613,7 @@ process_repo() {
           REPORT_PROTECT+=("${display_path}####${p_details}")
         fi
         
-        # 2. 보호 해제
+        # 2. 보호 해제 (Write 작업: DRY_RUN 반영)
         if [[ -n "$UNPROTECT_BRANCHES_INPUT" ]]; then
           echo "  🔓 [API 작업] 브랜치 보호 해제"
           local unprotect_arr=(); local b
@@ -564,16 +626,22 @@ process_repo() {
           local up_details=""
           for b in "${unprotect_arr[@]}"; do
             if git ls-remote --exit-code --heads origin "$b" >/dev/null 2>&1; then
-              local api_res
-              api_res=$("api_${provider}_unprotect_branch" "$b" || true)
-              if [[ "$api_res" == ERROR:* ]]; then
-                local err_msg="${api_res#ERROR:}"
-                err_msg=$(echo "$err_msg" | head -n 1 | tr '\n' ' ' | sed 's/ $//')
-                echo "    ❌ 보호 해제 실패: '$b' ($err_msg)"
-                up_details+="${b}::::보호 해제 실패 ($err_msg)@@"
+              if [[ $DRY_RUN -eq 1 ]]; then
+                echo "    [DRY-RUN] api_${provider}_unprotect_branch \"$b\""
+                echo "    ✅ 보호 해제 완료: '$b' (가상 실행)"
+                up_details+="${b}::::보호 해제 완료 (가상)@@"
               else
-                echo "    ✅ 보호 해제 완료: '$b'"
-                up_details+="${b}::::보호 해제 완료@@"
+                local api_res
+                api_res=$("api_${provider}_unprotect_branch" "$b" || true)
+                if [[ "$api_res" == ERROR:* ]]; then
+                  local err_msg="${api_res#ERROR:}"
+                  err_msg=$(echo "$err_msg" | head -n 1 | tr '\n' ' ' | sed 's/ $//')
+                  echo "    ❌ 보호 해제 실패: '$b' ($err_msg)"
+                  up_details+="${b}::::보호 해제 실패 ($err_msg)@@"
+                else
+                  echo "    ✅ 보호 해제 완료: '$b'"
+                  up_details+="${b}::::보호 해제 완료@@"
+                fi
               fi
             else
               echo "    ⚠️ 원격 저장소에 '$b' 브랜치가 없어 해제를 생략합니다."
@@ -583,7 +651,7 @@ process_repo() {
           REPORT_UNPROTECT+=("${display_path}####${up_details}")
         fi
         
-        # 3. 보호 목록 조회
+        # 3. 보호 목록 조회 (Read-only는 DRY_RUN 무관하게 실행)
         if [[ $SHOW_PROTECTED_BRANCH -eq 1 ]]; then
           echo "  🛡️ [API 작업] 보호 브랜치 목록 조회"
           local p_list
@@ -606,22 +674,28 @@ process_repo() {
           REPORT_SHOW_PROTECT+=("${display_path}####${shp_details}")
         fi
         
-        # 4. 기본 브랜치 설정
+        # 4. 기본 브랜치 설정 (Write 작업: DRY_RUN 반영)
         if [[ -n "$SET_DEFAULT_BRANCH_INPUT" ]]; then
           echo "  ⭐ [API 작업] 기본 브랜치 설정"
           local b="$SET_DEFAULT_BRANCH_INPUT"
           local sd_details=""
           if git ls-remote --exit-code --heads origin "$b" >/dev/null 2>&1; then
-            local api_res
-            api_res=$("api_${provider}_set_default" "$b" || true)
-            if [[ "$api_res" == ERROR:* ]]; then
-              local err_msg="${api_res#ERROR:}"
-              err_msg=$(echo "$err_msg" | head -n 1 | tr '\n' ' ' | sed 's/ $//')
-              echo "    ❌ 기본 브랜치 설정 실패: '$b' ($err_msg)"
-              sd_details="${b}::::기본 브랜치 설정 실패 ($err_msg)@@"
+            if [[ $DRY_RUN -eq 1 ]]; then
+              echo "    [DRY-RUN] api_${provider}_set_default \"$b\""
+              echo "    ✅ 기본 브랜치가 '$b' 로 설정되었습니다. (가상 실행)"
+              sd_details="${b}::::기본 브랜치 설정 완료 (가상)@@"
             else
-              echo "    ✅ 기본 브랜치가 '$b' 로 설정되었습니다."
-              sd_details="${b}::::기본 브랜치 설정 완료@@"
+              local api_res
+              api_res=$("api_${provider}_set_default" "$b" || true)
+              if [[ "$api_res" == ERROR:* ]]; then
+                local err_msg="${api_res#ERROR:}"
+                err_msg=$(echo "$err_msg" | head -n 1 | tr '\n' ' ' | sed 's/ $//')
+                echo "    ❌ 기본 브랜치 설정 실패: '$b' ($err_msg)"
+                sd_details="${b}::::기본 브랜치 설정 실패 ($err_msg)@@"
+              else
+                echo "    ✅ 기본 브랜치가 '$b' 로 설정되었습니다."
+                sd_details="${b}::::기본 브랜치 설정 완료@@"
+              fi
             fi
           else
             echo "    ⚠️ 원격 저장소에 '$b' 브랜치가 없어 설정을 중단합니다."
@@ -632,7 +706,7 @@ process_repo() {
           REPORT_SET_DEFAULT+=("${display_path}####${sd_details}")
         fi
         
-        # 5. 기본 브랜치 정보 제공
+        # 5. 기본 브랜치 정보 제공 (Read-only는 DRY_RUN 무관하게 실행)
         if [[ $SHOW_DEFAULT_BRANCH -eq 1 ]]; then
           echo "  ℹ️ [API 작업] 기본 브랜치 정보 제공"
           local d_branch
@@ -659,8 +733,13 @@ process_repo() {
   popd > /dev/null
 
   if [[ $step_failed -eq 0 ]]; then
-    echo "  ✅ 작업 완료: $display_path"
-    SUCCESS_REPOS+=("$display_path")
+    if [[ $DRY_RUN -eq 1 ]]; then
+      echo "  ✅ 작업 완료: $display_path (가상 실행 완료)"
+      SUCCESS_REPOS+=("$display_path (가상 실행 완료)")
+    else
+      echo "  ✅ 작업 완료: $display_path"
+      SUCCESS_REPOS+=("$display_path")
+    fi
   else
     echo "  ❌ 작업 실패: $display_path"
     FAIL_REPOS+=("${display_path}::::${fail_reason}")
@@ -844,11 +923,7 @@ print_report() {
     echo "✅ 전체 성공 프로젝트 목록 (${#SUCCESS_REPOS[@]} 개):"
     local repo
     for repo in "${SUCCESS_REPOS[@]}"; do
-      if [[ $DRY_RUN -eq 1 ]]; then
-        echo "  - $repo (가상 실행 완료)"
-      else
-        echo "  - $repo"
-      fi
+      echo "  - $repo"
     done
     echo ""
   fi
@@ -877,8 +952,15 @@ print_report() {
   echo "--------------------------------------------------------------------------------"
 }
 
-echo "🔍 대상 디렉토리('$TARGET_DIR') 하위의 Git 저장소 탐색을 시작합니다..."
-search_git_directories "$TARGET_DIR"
+if [[ -n "$SOURCE_BRANCH" && -n "$NEW_BRANCH" ]]; then
+  echo "👉 마이그레이션 전략: [$SOURCE_BRANCH] -> [$NEW_BRANCH]"
+fi
+
+# 모든 대상 디렉토리에 대해 루프 수행 (다중 디렉토리 파싱)
+for target_dir in "${TARGET_DIRS[@]}"; do
+  echo "🔍 대상 디렉토리('$target_dir') 하위의 Git 저장소 탐색을 시작합니다..."
+  search_git_directories "$target_dir"
+done
 
 print_report
 

@@ -5,8 +5,8 @@
 # @since : 2026-08-06
 # @desc : support RHEL 8+, Oracle Linux 9+, Ubuntu 20.04+, RockyOS 9+, CentOS 7
 # @installation : 
-# 1. insert 'source <path>/git-branch-cmd.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/git-branch-cmd.completion' into /etc/bashrc for all users.
+# 1. insert 'source <path>/git-branch-cmd.sh.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/git-branch-cmd.sh.completion' into /etc/bashrc for all users.
 # =======================================
 # Global Reserved Variables
 # 1. COMP_WORDS: an array, contains all arguments
