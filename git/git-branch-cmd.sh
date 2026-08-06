@@ -49,22 +49,30 @@ help(){
   echo "  지정된 경로 하위의 Git 연동 디렉토리를 탐색하여 브랜치 제어 및 API 작업을 일괄 수행합니다."
   echo "  (작업 디렉토리를 생략하면 현재 경로('.')를 기준으로 탐색합니다.)"
   echo ""
-  echo "[옵션 (Options)]"
+  echo "[인증 옵션]"
+  echo "      --token <토큰>             API 연동 시 사용할 Personal Access Token을 지정합니다."
+  echo "                                 (미지정 시 실행 단계에서 프롬프트로 안전하게 입력받습니다.)"
+  echo ""
+  echo "[일반 옵션 (인증 불필요)]"
   echo "      --migrate-branch <기존>:<신규> 기준 브랜치와 마이그레이션 대상 신규 브랜치명 지정"
   echo "      --delete-source            마이그레이션 완료 후 기준 브랜치를 삭제합니다."
   echo "      --delete-branch <브랜치명> 지정된 브랜치를 로컬/원격에서 삭제합니다. (다중 지정 가능)"
   echo "      --find-branch <브랜치명>   지정된 브랜치의 로컬/원격 존재 여부를 검색합니다. (다중 지정 가능)"
+  echo ""
+  echo "[API 옵션 (인증 필요)]"
   echo "      --protect-branch <브랜치>  원격 저장소의 특정 브랜치를 보호 설정합니다. (다중 지정 가능)"
   echo "      --unprotect-branch <브랜치> 원격 저장소의 특정 브랜치 보호를 해제합니다. (다중 지정 가능)"
   echo "      --show-protected-branch    현재 원격 저장소에서 보호받는 브랜치 목록을 조회합니다."
   echo "      --set-default-branch <브랜치> 원격 저장소의 기본 브랜치를 설정합니다."
   echo "      --show-default-branch      원격 저장소의 기본 브랜치 정보를 조회합니다."
+  echo ""
   echo "      --dry-run                  실제로 명령어를 실행하지 않고 실행될 명령어만 출력합니다."
   echo "  -h, --help                     이 도움말을 표시하고 종료합니다."
 }
 
 trap 'help "스크립트 실행 중 오류가 발생했습니다." "$LINENO"' ERR
 
+TOKEN_INPUT=""
 MIGRATE_BRANCH_INPUT=""
 SOURCE_BRANCH=""
 NEW_BRANCH=""
@@ -85,6 +93,13 @@ FAIL_REPOS=()
 FIND_EXIST_REPOS=()
 FIND_MISSING_REPOS=()
 
+# 신규 API 보고서 배열 선언
+REPORT_PROTECT=()
+REPORT_UNPROTECT=()
+REPORT_SHOW_PROTECT=()
+REPORT_SET_DEFAULT=()
+REPORT_SHOW_DEFAULT=()
+
 # 인자 파싱
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
@@ -92,6 +107,8 @@ while [[ "$#" -gt 0 ]]; do
       help "" ""
       exit 0
       ;;
+    --token)
+      shift; TOKEN_INPUT="${1:-}" ;;
     --migrate-branch)
       shift; MIGRATE_BRANCH_INPUT="${1:-}" ;;
     --delete-source)
@@ -129,6 +146,12 @@ done
 
 TARGET_DIR="${TARGET_DIR:-.}"
 
+# 필수 옵션 조합 검증
+if [[ -z "$MIGRATE_BRANCH_INPUT" && -z "$DELETE_BRANCHES_INPUT" && -z "$FIND_BRANCHES_INPUT" && -z "$PROTECT_BRANCHES_INPUT" && -z "$UNPROTECT_BRANCHES_INPUT" && $SHOW_PROTECTED_BRANCH -eq 0 && -z "$SET_DEFAULT_BRANCH_INPUT" && $SHOW_DEFAULT_BRANCH -eq 0 ]]; then
+  help "마이그레이션, 삭제, 검색 또는 API 제어 옵션 중 하나 이상을 지정해야 합니다." "$LINENO"
+  exit 1
+fi
+
 # 마이그레이션 옵션 파싱 및 유효성 검사
 if [[ -n "$MIGRATE_BRANCH_INPUT" ]]; then
   if [[ "$MIGRATE_BRANCH_INPUT" != *":"* ]]; then
@@ -147,6 +170,32 @@ if [[ ! -d "$TARGET_DIR" ]]; then
   help "입력한 작업 대상이 유효한 디렉토리가 아닙니다: $TARGET_DIR" "$LINENO"
   exit 1
 fi
+
+##
+# 필수 CLI 명령어(gh, glab)의 설치 여부를 확인하고, 없을 경우 패키지 관리자로 설치합니다.
+#
+# @param $1 {string} 확인할 CLI 명령어 (gh 또는 glab)
+#
+# @return 설치 실패 시 1 반환 후 스크립트 종료
+##
+ensure_cli_installed() {
+  local cli_cmd="$1"
+  if ! command -v "$cli_cmd" >/dev/null 2>&1; then
+    echo "  ⚠️ '$cli_cmd' 명령어가 시스템에 설치되어 있지 않습니다."
+    echo "  ⏳ 운영체제 패키지 도구(apt, dnf 등)를 이용하여 '$cli_cmd' 자동 설치를 시도합니다..."
+    
+    if command -v apt >/dev/null 2>&1; then
+      sudo apt update -y >/dev/null 2>&1 || true
+      sudo apt install -y "$cli_cmd" || { echo "  ❌ '$cli_cmd' 설치에 실패했습니다. 수동으로 설치해 주세요."; exit 1; }
+    elif command -v dnf >/dev/null 2>&1; then
+      sudo dnf install -y "$cli_cmd" || { echo "  ❌ '$cli_cmd' 설치에 실패했습니다. 수동으로 설치해 주세요."; exit 1; }
+    else
+      echo "  ❌ 지원하는 패키지 관리자(apt, dnf)를 찾을 수 없습니다. '$cli_cmd'를 수동으로 설치해 주세요."
+      exit 1
+    fi
+    echo "  ✅ '$cli_cmd' 명령어 설치가 완료되었습니다."
+  fi
+}
 
 ##
 # GitHub / GitLab 연동을 위한 API 모듈을 동적으로 다운로드 및 권한 부여합니다.
@@ -187,10 +236,67 @@ ensure_api_modules() {
   done
 }
 
-# API 관련 작업이 요청되었는지 확인하고 모듈 준비
+# -----------------------------------------------------------------------------
+# 인증 정보(API 작업) 사전 요구사항 확인 로직
+# -----------------------------------------------------------------------------
+GLOBAL_API_REQUIRED=0
 if [[ -n "$PROTECT_BRANCHES_INPUT" || -n "$UNPROTECT_BRANCHES_INPUT" || $SHOW_PROTECTED_BRANCH -eq 1 || -n "$SET_DEFAULT_BRANCH_INPUT" || $SHOW_DEFAULT_BRANCH -eq 1 ]]; then
-  ensure_api_modules
+  GLOBAL_API_REQUIRED=1
 fi
+
+if [[ $GLOBAL_API_REQUIRED -eq 1 ]]; then
+  ensure_api_modules
+  
+  if [[ -z "$TOKEN_INPUT" ]]; then
+    echo "🔒 [보안] 인증 정보가 필요한 API 작업이 포함되어 있습니다."
+    read -r -s -p "👉 API 연동을 위한 Personal Access Token을 입력하세요: " TOKEN_INPUT
+    echo ""
+  fi
+  
+  if [[ -n "$TOKEN_INPUT" ]]; then
+    export GITHUB_TOKEN="$TOKEN_INPUT"
+    export GITLAB_TOKEN="$TOKEN_INPUT"
+  else
+    help "인증 토큰이 입력되지 않아 API 작업을 진행할 수 없습니다." "$LINENO"
+    exit 1
+  fi
+fi
+# -----------------------------------------------------------------------------
+
+##
+# Git 명령어의 에러 출력을 분석하여 실패 원인을 한국어로 반환합니다.
+#
+# @param $1 {string} "local" 또는 "remote" (분석 대상 스코프)
+# @param $2 {string} Git 에러 출력 메시지
+#
+# @return 상세 에러 원인 문자열 반환
+##
+parse_git_delete_error() {
+  local scope="$1"
+  local err_msg="$2"
+  
+  if [[ "$scope" == "local" ]]; then
+    if [[ "$err_msg" == *"checked out"* ]]; then
+      echo "현재 선택된(checked out) 상태"
+    elif [[ "$err_msg" == *"not found"* ]]; then
+      echo "미존재"
+    elif [[ "$err_msg" == *"not fully merged"* ]]; then
+      echo "병합 미완료 (강제 삭제 필요)"
+    else
+      echo "알 수 없는 시스템 권한/오류"
+    fi
+  elif [[ "$scope" == "remote" ]]; then
+    if [[ "$err_msg" == *"does not exist"* || "$err_msg" == *"not found"* ]]; then
+      echo "미존재"
+    elif [[ "$err_msg" == *"default branch"* || "$err_msg" == *"current branch prohibited"* || "$err_msg" == *"protected"* ]]; then
+      echo "기본/보호 브랜치 지정됨"
+    elif [[ "$err_msg" == *"403"* || "$err_msg" == *"Permission"* || "$err_msg" == *"denied"* || "$err_msg" == *"rights"* ]]; then
+      echo "권한 없음"
+    else
+      echo "알 수 없는 네트워크/권한 오류"
+    fi
+  fi
+}
 
 ##
 # 단일 Git 연동 디렉토리에 대해 작업을 수행합니다.
@@ -204,7 +310,7 @@ process_repo() {
   local step_failed=0
   local fail_reason=""
   
-  # 프로젝트 이름 추출
+  # 프로젝트 이름 추출 및 불필요한 디렉토리 경로 제거 적용
   local abs_path
   abs_path=$(cd "$repo_path" >/dev/null 2>&1 && pwd || echo "$repo_path")
   local project_name=""
@@ -217,7 +323,7 @@ process_repo() {
     project_name=$(basename "$abs_path")
   fi
   
-  local display_path="${project_name} (${repo_path})"
+  local display_path="${project_name}"
   
   echo "================================================================================"
   echo "🚀 [Git 연동 디렉토리 발견] $display_path"
@@ -264,11 +370,36 @@ process_repo() {
       echo "  🔥 [작업] 지정된 브랜치 다중 삭제"
       for b in "${del_branch_arr[@]}"; do
         echo "    - 대상: '$b'"
-        git branch -d "$b" >/dev/null 2>&1 || true
-        local ls_remote_status=0
-        git ls-remote --exit-code --heads origin "$b" >/dev/null 2>&1 || ls_remote_status=$?
+        local local_status=0; local remote_status=0
+        local local_out=""; local remote_out=""
+        
+        local_out=$(git branch -d "$b" 2>&1) || local_status=$?
+        if [[ $local_status -eq 0 ]]; then echo "      ✅ 로컬 '$b' 브랜치 삭제 완료"; else echo "      ℹ️ 로컬 '$b' 브랜치 미존재/삭제 불가"; fi
+        
+        local ls_remote_err=""; local ls_remote_status=0
+        ls_remote_err=$(git ls-remote --exit-code --heads origin "$b" 2>&1 >/dev/null) || ls_remote_status=$?
+
         if [[ $ls_remote_status -eq 0 ]]; then
-           git push origin --delete "$b" >/dev/null 2>&1 || true
+          remote_out=$(git push origin --delete "$b" 2>&1) || remote_status=$?
+          if [[ $remote_status -eq 0 ]]; then echo "      ✅ 원격 '$b' 브랜치 삭제 완료"; else echo "      ℹ️ 원격 '$b' 브랜치 삭제 실패"; fi
+        elif [[ $ls_remote_status -eq 2 ]]; then
+          remote_status=1; remote_out="not found"
+          echo "      ℹ️ 원격 '$b' 브랜치 미존재 (삭제 생략)"
+        else
+          remote_status=$ls_remote_status; remote_out="$ls_remote_err"
+          echo "      ℹ️ 원격 저장소 접근 실패"
+        fi
+        
+        if [[ $local_status -ne 0 && $remote_status -ne 0 ]]; then
+          local loc_reason; local rem_reason
+          loc_reason=$(parse_git_delete_error "local" "$local_out")
+          rem_reason=$(parse_git_delete_error "remote" "$remote_out")
+          if [[ "$loc_reason" == "미존재" && "$rem_reason" == "미존재" ]]; then
+            fail_reason="'$b' 브랜치 미존재 (로컬 및 원격)"
+          else
+            fail_reason="'$b' 삭제 불가 (로컬: $loc_reason | 원격: $rem_reason)"
+          fi
+          echo "      ⚠️ $fail_reason"; step_failed=1; break
         fi
       done
     fi
@@ -308,23 +439,44 @@ process_repo() {
   # ==========================================
   # 신규 기능: 원격 API 연동 블록 (보호 / 기본 브랜치)
   # ==========================================
-  local run_api=0
-  if [[ -n "$PROTECT_BRANCHES_INPUT" || -n "$UNPROTECT_BRANCHES_INPUT" || $SHOW_PROTECTED_BRANCH -eq 1 || -n "$SET_DEFAULT_BRANCH_INPUT" || $SHOW_DEFAULT_BRANCH -eq 1 ]]; then
-    run_api=1
-  fi
-
-  if [[ $run_api -eq 1 && $step_failed -eq 0 ]]; then
+  if [[ $GLOBAL_API_REQUIRED -eq 1 && $step_failed -eq 0 ]]; then
     local provider=""
+    
+    # URL에서 프로토콜과 호스트(포트 포함)를 안전하게 추출
+    local repo_host=""
+    local repo_uri=""
+    if [[ "$remote_url" == http* ]]; then
+      repo_uri=$(echo "$remote_url" | sed -E 's|^(https?://[^/]+).*|\1|')
+      repo_host=$(echo "$repo_uri" | sed -E 's|^https?://||; s|^.*@||')
+    elif [[ "$remote_url" == git@* ]]; then
+      repo_host=$(echo "$remote_url" | sed -E 's|^git@||; s|:.*$||')
+      repo_uri="https://$repo_host"
+    elif [[ "$remote_url" == ssh://* ]]; then
+      repo_host=$(echo "$remote_url" | sed -E 's|^ssh://||; s|/.*$||; s|^.*@||; s|:.*$||')
+      repo_uri="https://$repo_host"
+    fi
+    
     if [[ "$remote_url" == *"github.com"* ]]; then
       provider="github"
+      ensure_cli_installed "gh"
     elif [[ "$remote_url" == *"gitlab"* ]]; then
       provider="gitlab"
+      ensure_cli_installed "glab"
     else
       echo "  ⚠️ GitHub 또는 GitLab 원격 저장소를 찾을 수 없어 API 작업을 건너뜁니다."
-      run_api=0
     fi
 
-    if [[ $run_api -eq 1 ]]; then
+    # 식별된 도메인/URI를 환경 변수로 주입 (사내망 통신 호환 보장)
+    if [[ -n "$repo_host" ]]; then
+      if [[ "$provider" == "gitlab" ]]; then
+        export GITLAB_HOST="$repo_host"
+        export GITLAB_URI="$repo_uri"
+      elif [[ "$provider" == "github" ]]; then
+        export GH_HOST="$repo_host"
+      fi
+    fi
+
+    if [[ -n "$provider" ]]; then
       local script_dir
       script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
       
@@ -344,16 +496,29 @@ process_repo() {
           IFS=',' read -ra ADDR <<< "$PROTECT_BRANCHES_INPUT"
           for b in "${ADDR[@]}"; do
             b=$(echo "$b" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
-            [[ -z "$b" ]] && continue
-            
-            # 사전 검증 (원격 브랜치 유무)
+            [[ -n "$b" ]] && protect_arr+=("$b")
+          done
+          
+          local p_details=""
+          for b in "${protect_arr[@]}"; do
             if git ls-remote --exit-code --heads origin "$b" >/dev/null 2>&1; then
-              "api_${provider}_protect_branch" "$b"
-              echo "    ✅ 보호 설정 완료: '$b'"
+              local api_res
+              api_res=$("api_${provider}_protect_branch" "$b" || true)
+              if [[ "$api_res" == ERROR:* ]]; then
+                local err_msg="${api_res#ERROR:}"
+                err_msg=$(echo "$err_msg" | head -n 1 | tr '\n' ' ' | sed 's/ $//')
+                echo "    ❌ 보호 설정 실패: '$b' ($err_msg)"
+                p_details+="${b}::::보호 실패 ($err_msg)@@"
+              else
+                echo "    ✅ 보호 설정 완료: '$b'"
+                p_details+="${b}::::보호 설정 완료@@"
+              fi
             else
               echo "    ⚠️ 원격 저장소에 '$b' 브랜치가 없어 보호 설정을 생략합니다."
+              p_details+="${b}::::원격 브랜치 미존재 (생략)@@"
             fi
           done
+          REPORT_PROTECT+=("${display_path}####${p_details}")
         fi
         
         # 2. 보호 해제
@@ -363,15 +528,29 @@ process_repo() {
           IFS=',' read -ra ADDR <<< "$UNPROTECT_BRANCHES_INPUT"
           for b in "${ADDR[@]}"; do
             b=$(echo "$b" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
-            [[ -z "$b" ]] && continue
-            
+            [[ -n "$b" ]] && unprotect_arr+=("$b")
+          done
+          
+          local up_details=""
+          for b in "${unprotect_arr[@]}"; do
             if git ls-remote --exit-code --heads origin "$b" >/dev/null 2>&1; then
-              "api_${provider}_unprotect_branch" "$b"
-              echo "    ✅ 보호 해제 완료: '$b'"
+              local api_res
+              api_res=$("api_${provider}_unprotect_branch" "$b" || true)
+              if [[ "$api_res" == ERROR:* ]]; then
+                local err_msg="${api_res#ERROR:}"
+                err_msg=$(echo "$err_msg" | head -n 1 | tr '\n' ' ' | sed 's/ $//')
+                echo "    ❌ 보호 해제 실패: '$b' ($err_msg)"
+                up_details+="${b}::::보호 해제 실패 ($err_msg)@@"
+              else
+                echo "    ✅ 보호 해제 완료: '$b'"
+                up_details+="${b}::::보호 해제 완료@@"
+              fi
             else
               echo "    ⚠️ 원격 저장소에 '$b' 브랜치가 없어 해제를 생략합니다."
+              up_details+="${b}::::원격 브랜치 미존재 (생략)@@"
             fi
           done
+          REPORT_UNPROTECT+=("${display_path}####${up_details}")
         fi
         
         # 3. 보호 목록 조회
@@ -379,25 +558,48 @@ process_repo() {
           echo "  🛡️ [API 작업] 보호 브랜치 목록 조회"
           local p_list
           p_list=$("api_${provider}_show_protected" || true)
-          if [[ -n "$p_list" ]]; then
-            while read -r line; do echo "    - $line"; done <<< "$p_list"
+          local shp_details=""
+          if [[ "$p_list" == ERROR:* ]]; then
+            local err_msg="${p_list#ERROR:}"
+            err_msg=$(echo "$err_msg" | head -n 1 | tr '\n' ' ' | sed 's/ $//')
+            echo "    ❌ 보호 브랜치 목록 조회 실패 ($err_msg)"
+            shp_details="(정보 없음)::::조회 실패 ($err_msg)@@"
+          elif [[ -n "$p_list" ]]; then
+            while read -r line; do
+              [[ -n "$line" ]] && shp_details+="${line}::::보호 중@@"
+              echo "    - $line"
+            done <<< "$p_list"
           else
             echo "    ℹ️ 보호 설정된 브랜치가 없습니다."
+            shp_details="(정보 없음)::::보호된 브랜치 없음@@"
           fi
+          REPORT_SHOW_PROTECT+=("${display_path}####${shp_details}")
         fi
         
         # 4. 기본 브랜치 설정
         if [[ -n "$SET_DEFAULT_BRANCH_INPUT" ]]; then
           echo "  ⭐ [API 작업] 기본 브랜치 설정"
           local b="$SET_DEFAULT_BRANCH_INPUT"
+          local sd_details=""
           if git ls-remote --exit-code --heads origin "$b" >/dev/null 2>&1; then
-            "api_${provider}_set_default" "$b"
-            echo "    ✅ 기본 브랜치가 '$b' 로 설정되었습니다."
+            local api_res
+            api_res=$("api_${provider}_set_default" "$b" || true)
+            if [[ "$api_res" == ERROR:* ]]; then
+              local err_msg="${api_res#ERROR:}"
+              err_msg=$(echo "$err_msg" | head -n 1 | tr '\n' ' ' | sed 's/ $//')
+              echo "    ❌ 기본 브랜치 설정 실패: '$b' ($err_msg)"
+              sd_details="${b}::::기본 브랜치 설정 실패 ($err_msg)@@"
+            else
+              echo "    ✅ 기본 브랜치가 '$b' 로 설정되었습니다."
+              sd_details="${b}::::기본 브랜치 설정 완료@@"
+            fi
           else
             echo "    ⚠️ 원격 저장소에 '$b' 브랜치가 없어 설정을 중단합니다."
             step_failed=1
             fail_reason="기본 브랜치 설정 대상 미존재"
+            sd_details="${b}::::원격 브랜치 미존재 (설정 중단)@@"
           fi
+          REPORT_SET_DEFAULT+=("${display_path}####${sd_details}")
         fi
         
         # 5. 기본 브랜치 정보 제공
@@ -405,7 +607,20 @@ process_repo() {
           echo "  ℹ️ [API 작업] 기본 브랜치 정보 제공"
           local d_branch
           d_branch=$("api_${provider}_show_default" || true)
-          echo "    👉 현재 기본 브랜치: '$d_branch'"
+          local shd_details=""
+          if [[ "$d_branch" == ERROR:* ]]; then
+            local err_msg="${d_branch#ERROR:}"
+            err_msg=$(echo "$err_msg" | head -n 1 | tr '\n' ' ' | sed 's/ $//')
+            echo "    ❌ 현재 기본 브랜치: (조회 실패 - $err_msg)"
+            shd_details="(정보 없음)::::조회 실패 ($err_msg)@@"
+          elif [[ -z "$d_branch" ]]; then
+            echo "    👉 현재 기본 브랜치: (설정된 브랜치 없음)"
+            shd_details="(정보 없음)::::기본 브랜치 미설정@@"
+          else
+            echo "    👉 현재 기본 브랜치: '$d_branch'"
+            shd_details="${d_branch}::::기본 브랜치@@"
+          fi
+          REPORT_SHOW_DEFAULT+=("${display_path}####${shd_details}")
         fi
       fi
     fi
@@ -439,6 +654,62 @@ search_git_directories() {
     while IFS= read -r -d '' sub_dir; do
       search_git_directories "$sub_dir"
     done < <(find "$current_dir" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null || true)
+  fi
+}
+
+##
+# API 작업 결과를 동적 패딩을 적용하여 출력합니다.
+#
+# @param $1 {string} 출력할 보고서 제목
+# @param $2 {string} 참조할 결과 배열의 이름
+##
+print_api_report() {
+  local title="$1"
+  local array_name="$2"
+  local -n data_arr="$array_name"
+  
+  if [[ ${#data_arr[@]} -gt 0 ]]; then
+    echo "--------------------------------------------------------------------------------"
+    echo "✅ ${title} (${#data_arr[@]} 개):"
+    
+    local max_len=0
+    local item
+    for item in "${data_arr[@]}"; do
+      local r_path="${item%%####*}"
+      if [[ ${#r_path} -gt $max_len ]]; then
+        max_len=${#r_path}
+      fi
+    done
+    
+    for item in "${data_arr[@]}"; do
+      local r_path="${item%%####*}"
+      local details_str="${item##*####}"
+      local first=1
+      
+      local details_arr
+      IFS='@@' read -ra details_arr <<< "$details_str"
+      local d
+      for d in "${details_arr[@]}"; do
+        if [[ -z "$d" ]]; then continue; fi
+        local b_name="${d%%::::*}"
+        local b_stat="${d##*::::}"
+        
+        if [[ $first -eq 1 ]]; then
+          if [[ -z "$b_name" || "$b_name" == "(정보 없음)" ]]; then
+            printf "  - %-${max_len}s : %s\n" "$r_path" "$b_stat"
+          else
+            printf "  - %-${max_len}s : %-15s (%s)\n" "$r_path" "'$b_name'" "$b_stat"
+          fi
+          first=0
+        else
+          if [[ -z "$b_name" || "$b_name" == "(정보 없음)" ]]; then
+            printf "    %-${max_len}s : %s\n" "" "$b_stat"
+          else
+            printf "    %-${max_len}s : %-15s (%s)\n" "" "'$b_name'" "$b_stat"
+          fi
+        fi
+      done
+    done
   fi
 }
 
@@ -522,18 +793,25 @@ print_report() {
         echo "  - $r_path"
       done
     fi
+  fi
+
+  # API 신규 기능들의 결과 출력
+  print_api_report "'protect-branch' 작업 결과" REPORT_PROTECT
+  print_api_report "'unprotect-branch' 작업 결과" REPORT_UNPROTECT
+  print_api_report "'show-protected-branch' 조회 결과" REPORT_SHOW_PROTECT
+  print_api_report "'set-default-branch' 작업 결과" REPORT_SET_DEFAULT
+  print_api_report "'show-default-branch' 조회 결과" REPORT_SHOW_DEFAULT
+
+  # 순수 조회 전용 기능들만 실행된 경우 마이그레이션 성공/실패 목록은 생략
+  if [[ -z "$MIGRATE_BRANCH_INPUT" && -z "$DELETE_BRANCHES_INPUT" && -z "$PROTECT_BRANCHES_INPUT" && -z "$UNPROTECT_BRANCHES_INPUT" && -z "$SET_DEFAULT_BRANCH_INPUT" ]]; then
     echo "--------------------------------------------------------------------------------"
-    
-    # 검색 전용 기능만 실행된 경우 (나머지 옵션이 모두 비어있는 경우) 기존 성공/실패 렌더링 스킵
-    if [[ -z "$MIGRATE_BRANCH_INPUT" && -z "$DELETE_BRANCHES_INPUT" && -z "$PROTECT_BRANCHES_INPUT" && -z "$UNPROTECT_BRANCHES_INPUT" && $SHOW_PROTECTED_BRANCH -eq 0 && -z "$SET_DEFAULT_BRANCH_INPUT" && $SHOW_DEFAULT_BRANCH -eq 0 ]]; then
-      return 0
-    fi
+    return 0
   fi
 
   # 기존 마이그레이션, 삭제 및 API 작업 로직에 대한 보고서 보존 영역
   if [[ ${#SUCCESS_REPOS[@]} -gt 0 ]]; then
     echo "--------------------------------------------------------------------------------"
-    echo "✅ 성공 프로젝트 목록 (${#SUCCESS_REPOS[@]} 개):"
+    echo "✅ 전체 성공 프로젝트 목록 (${#SUCCESS_REPOS[@]} 개):"
     local repo
     for repo in "${SUCCESS_REPOS[@]}"; do
       if [[ $DRY_RUN -eq 1 ]]; then
@@ -547,7 +825,7 @@ print_report() {
 
   if [[ ${#FAIL_REPOS[@]} -gt 0 ]]; then
     echo "--------------------------------------------------------------------------------"
-    echo "❌ 실패 프로젝트 목록 (${#FAIL_REPOS[@]} 개):"
+    echo "❌ 전체 실패 프로젝트 목록 (${#FAIL_REPOS[@]} 개):"
     local max_len=0
     local item
     local path

@@ -12,7 +12,6 @@
 
 set -Eeuo pipefail
 
-# GitHub API 버전 상수화 (변동 대비)
 GITHUB_API_VERSION="2022-11-28"
 
 ##
@@ -23,12 +22,12 @@ GITHUB_API_VERSION="2022-11-28"
 api_github_protect_branch() {
   local branch="$1"
   local repo
-  repo=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+  repo=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null || true)
   
-  # PUT 요청은 덮어쓰기(Upsert)로 동작하므로 멱등성이 기본 보장됩니다.
-  gh api --method PUT -H "X-GitHub-Api-Version: ${GITHUB_API_VERSION}" \
+  local res status=0
+  res=$(gh api --method PUT -H "X-GitHub-Api-Version: ${GITHUB_API_VERSION}" \
     "repos/${repo}/branches/${branch}/protection" \
-    --input - <<EOF >/dev/null 2>&1 || true
+    --input - <<EOF 2>&1
 {
   "required_status_checks": null,
   "enforce_admins": true,
@@ -38,6 +37,9 @@ api_github_protect_branch() {
   "allow_deletions": false
 }
 EOF
+  ) || status=$?
+  
+  if [[ $status -ne 0 ]]; then echo "ERROR:${res}"; fi
 }
 
 ##
@@ -48,11 +50,13 @@ EOF
 api_github_unprotect_branch() {
   local branch="$1"
   local repo
-  repo=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
+  repo=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null || true)
   
-  # 삭제 실패 시(이미 보호가 안된 경우) 스크립트가 죽지 않도록 || true 처리
-  gh api --method DELETE -H "X-GitHub-Api-Version: ${GITHUB_API_VERSION}" \
-    "repos/${repo}/branches/${branch}/protection" >/dev/null 2>&1 || true
+  local res status=0
+  res=$(gh api --method DELETE -H "X-GitHub-Api-Version: ${GITHUB_API_VERSION}" \
+    "repos/${repo}/branches/${branch}/protection" 2>&1) || status=$?
+    
+  if [[ $status -ne 0 && "$res" != *"Not Found"* ]]; then echo "ERROR:${res}"; fi
 }
 
 ##
@@ -62,9 +66,16 @@ api_github_unprotect_branch() {
 ##
 api_github_show_protected() {
   local repo
-  repo=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
-  gh api -H "X-GitHub-Api-Version: ${GITHUB_API_VERSION}" \
-    "repos/${repo}/branches" --jq '.[] | select(.protected==true) | .name' 2>/dev/null || true
+  repo=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null || true)
+  
+  local res status=0
+  res=$(gh api -H "X-GitHub-Api-Version: ${GITHUB_API_VERSION}" "repos/${repo}/branches" 2>&1) || status=$?
+  
+  if [[ $status -eq 0 ]]; then
+    echo "$res" | gh jq '.[] | select(.protected==true) | .name' 2>/dev/null || true
+  else
+    echo "ERROR:${res}"
+  fi
 }
 
 ##
@@ -75,9 +86,13 @@ api_github_show_protected() {
 api_github_set_default() {
   local branch="$1"
   local repo
-  repo=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
-  gh api --method PATCH -H "X-GitHub-Api-Version: ${GITHUB_API_VERSION}" \
-    "repos/${repo}" -f default_branch="${branch}" >/dev/null 2>&1 || true
+  repo=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null || true)
+  
+  local res status=0
+  res=$(gh api --method PATCH -H "X-GitHub-Api-Version: ${GITHUB_API_VERSION}" \
+    "repos/${repo}" -f default_branch="${branch}" 2>&1) || status=$?
+    
+  if [[ $status -ne 0 ]]; then echo "ERROR:${res}"; fi
 }
 
 ##
@@ -87,8 +102,14 @@ api_github_set_default() {
 ##
 api_github_show_default() {
   local repo
-  repo=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)
-  gh api -H "X-GitHub-Api-Version: ${GITHUB_API_VERSION}" \
-    "repos/${repo}" --jq '.default_branch' 2>/dev/null || true
+  repo=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null || true)
+  
+  local res status=0
+  res=$(gh api -H "X-GitHub-Api-Version: ${GITHUB_API_VERSION}" "repos/${repo}" --jq '.default_branch' 2>&1) || status=$?
+  
+  if [[ $status -eq 0 ]]; then
+    echo "$res"
+  else
+    echo "ERROR:${res}"
+  fi
 }
-
