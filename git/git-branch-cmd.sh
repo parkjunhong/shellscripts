@@ -48,10 +48,8 @@ help(){
   echo "[설명]"
   echo "  지정된 경로 하위의 Git 연동 디렉토리를 탐색하여 브랜치 제어 및 API 작업을 일괄 수행합니다."
   echo "  (작업 디렉토리를 생략하면 현재 경로('.')를 기준으로 탐색합니다.)"
-  echo ""
-  echo "[인증 옵션]"
-  echo "      --token <토큰>             API 연동 시 사용할 Personal Access Token을 지정합니다."
-  echo "                                 (미지정 시 실행 단계에서 프롬프트로 안전하게 입력받습니다.)"
+  echo "  API 연동이 필요한 경우, 저장소 도메인에 따라 환경변수(예: PAT_GITHUB_COM)를 확인하며,"
+  echo "  없을 경우 실행 중 Personal Access Token을 안전하게 입력받아 적용합니다."
   echo ""
   echo "[일반 옵션 (인증 불필요)]"
   echo "      --migrate-branch <기존>:<신규> 기준 브랜치와 마이그레이션 대상 신규 브랜치명 지정"
@@ -72,7 +70,6 @@ help(){
 
 trap 'help "스크립트 실행 중 오류가 발생했습니다." "$LINENO"' ERR
 
-TOKEN_INPUT=""
 MIGRATE_BRANCH_INPUT=""
 SOURCE_BRANCH=""
 NEW_BRANCH=""
@@ -100,6 +97,9 @@ REPORT_SHOW_PROTECT=()
 REPORT_SET_DEFAULT=()
 REPORT_SHOW_DEFAULT=()
 
+# 서비스 도메인별 토큰 관리를 위한 Associative Array 선언
+declare -A DOMAIN_PAT_MAP=()
+
 # 인자 파싱
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
@@ -107,8 +107,6 @@ while [[ "$#" -gt 0 ]]; do
       help "" ""
       exit 0
       ;;
-    --token)
-      shift; TOKEN_INPUT="${1:-}" ;;
     --migrate-branch)
       shift; MIGRATE_BRANCH_INPUT="${1:-}" ;;
     --delete-source)
@@ -236,32 +234,57 @@ ensure_api_modules() {
   done
 }
 
-# -----------------------------------------------------------------------------
-# 인증 정보(API 작업) 사전 요구사항 확인 로직
-# -----------------------------------------------------------------------------
+##
+# 대상 도메인별 Personal Access Token(PAT)을 동적 맵핑하고 환경을 검증합니다.
+#
+# @param $1 {string} 대상 원격 저장소 full domain (예: github.com)
+#
+# @return 토큰 존재 시 0 반환, 프롬프트 입력 실패 시 1 반환 후 종료
+##
+ensure_pat_for_domain() {
+  local domain="$1"
+  local env_var_name
+  env_var_name="PAT_$(echo "$domain" | tr 'a-z' 'A-Z' | sed -E 's/[^A-Z0-9]/_/g')"
+
+  # 1, 2. associative array에 있는지 판단 (이미 값이 존재하면 반환)
+  if [[ -n "${DOMAIN_PAT_MAP[$domain]:-}" ]]; then
+    return 0
+  fi
+
+  # 3. 환경변수에 존재하는지 판단 (간접 참조)
+  local env_val=""
+  eval env_val="\${$env_var_name:-}"
+
+  if [[ -n "$env_val" ]]; then
+    DOMAIN_PAT_MAP["$domain"]="$env_val"
+    return 0
+  fi
+
+  # 4. 사용자에게 입력받음
+  local user_pat=""
+  echo "🔒 [보안] 인증 정보가 필요한 API 작업이 포함되어 있습니다."
+  # 터미널로부터 직접 입력을 받아 파이프 환경에서의 문제 방지
+  read -r -s -p "👉 API 연동($domain)을 위한 Personal Access Token을 입력하세요: " user_pat </dev/tty
+  echo ""
+
+  if [[ -z "$user_pat" ]]; then
+    help "인증 토큰이 입력되지 않아 API 작업을 진행할 수 없습니다. ($domain)" "$LINENO"
+    exit 1
+  fi
+
+  # 입력받은 값을 shell 환경변수로 export
+  export "$env_var_name"="$user_pat"
+
+  # 5. associative array 저장 (이후 로직에서 6. 해당 값을 사용)
+  DOMAIN_PAT_MAP["$domain"]="$user_pat"
+}
+
+# API 관련 작업이 요청되었는지 사전 모듈 다운로드만 실행
 GLOBAL_API_REQUIRED=0
 if [[ -n "$PROTECT_BRANCHES_INPUT" || -n "$UNPROTECT_BRANCHES_INPUT" || $SHOW_PROTECTED_BRANCH -eq 1 || -n "$SET_DEFAULT_BRANCH_INPUT" || $SHOW_DEFAULT_BRANCH -eq 1 ]]; then
   GLOBAL_API_REQUIRED=1
-fi
-
-if [[ $GLOBAL_API_REQUIRED -eq 1 ]]; then
   ensure_api_modules
-  
-  if [[ -z "$TOKEN_INPUT" ]]; then
-    echo "🔒 [보안] 인증 정보가 필요한 API 작업이 포함되어 있습니다."
-    read -r -s -p "👉 API 연동을 위한 Personal Access Token을 입력하세요: " TOKEN_INPUT
-    echo ""
-  fi
-  
-  if [[ -n "$TOKEN_INPUT" ]]; then
-    export GITHUB_TOKEN="$TOKEN_INPUT"
-    export GITLAB_TOKEN="$TOKEN_INPUT"
-  else
-    help "인증 토큰이 입력되지 않아 API 작업을 진행할 수 없습니다." "$LINENO"
-    exit 1
-  fi
 fi
-# -----------------------------------------------------------------------------
 
 ##
 # Git 명령어의 에러 출력을 분석하여 실패 원인을 한국어로 반환합니다.
@@ -466,13 +489,20 @@ process_repo() {
       echo "  ⚠️ GitHub 또는 GitLab 원격 저장소를 찾을 수 없어 API 작업을 건너뜁니다."
     fi
 
-    # 식별된 도메인/URI를 환경 변수로 주입 (사내망 통신 호환 보장)
+    # 식별된 도메인/URI를 통한 토큰 매핑 및 환경 변수 주입
     if [[ -n "$repo_host" ]]; then
-      if [[ "$provider" == "gitlab" ]]; then
-        export GITLAB_HOST="$repo_host"
-        export GITLAB_URI="$repo_uri"
-      elif [[ "$provider" == "github" ]]; then
-        export GH_HOST="$repo_host"
+      if [[ "$provider" == "gitlab" || "$provider" == "github" ]]; then
+        # 6. 토큰 검증 및 입력 (인증 정보가 필요한 시점)
+        ensure_pat_for_domain "$repo_host"
+        
+        if [[ "$provider" == "gitlab" ]]; then
+          export GITLAB_HOST="$repo_host"
+          export GITLAB_URI="$repo_uri"
+          export GITLAB_TOKEN="${DOMAIN_PAT_MAP[$repo_host]}"
+        elif [[ "$provider" == "github" ]]; then
+          export GH_HOST="$repo_host"
+          export GITHUB_TOKEN="${DOMAIN_PAT_MAP[$repo_host]}"
+        fi
       fi
     fi
 

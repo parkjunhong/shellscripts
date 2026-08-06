@@ -36,7 +36,7 @@ _git_branch_cmd_completion() {
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
   # 스크립트 지원 기본 옵션들 / Command options list
-  opts="-h --help --token --migrate-branch --delete-source --delete-branch --find-branch --protect-branch --unprotect-branch --show-protected-branch --set-default-branch --show-default-branch --dry-run"
+  opts="-h --help --migrate-branch --delete-source --delete-branch --find-branch --protect-branch --unprotect-branch --show-protected-branch --set-default-branch --show-default-branch --dry-run"
 
   # 이전 파라미터가 원격 브랜치명을 요구할 경우 동적 추천 
   # Suggest dynamic remote branches if previous parameter requires a branch
