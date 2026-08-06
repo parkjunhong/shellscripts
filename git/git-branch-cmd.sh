@@ -37,7 +37,7 @@ help(){
     for func in "${FUNCNAME[@]:1}"
     do  
       printf "$formatr" "["$idx"]" "$func"
-      idx=$((idx + 1))
+      ((idx++)) || true
     done
     printf "$formatl" "cause" "$1"
     echo "================================================================================"
@@ -50,9 +50,9 @@ help(){
   echo "  (작업 디렉토리를 생략하면 현재 경로('.')를 기준으로 탐색합니다.)"
   echo ""
   echo "[옵션 (Options)]"
-  echo "  -s, --source-branch <브랜치>   마이그레이션 기준 기존 브랜치명"
-  echo "  -n, --new-branch <브랜치>      마이그레이션 대상 신규 브랜치명"
-  echo "      --delete-source            마이그레이션 완료 후 기준 브랜치(-s)를 삭제합니다."
+  echo "      --migrate-branch <기존>:<신규> 기준 브랜치와 마이그레이션 대상 신규 브랜치명 지정"
+  echo "                                 예) --migrate-branch \"master:main\""
+  echo "      --delete-source            마이그레이션 완료 후 기준 브랜치를 삭제합니다."
   echo "      --delete-branch <브랜치명> 지정된 브랜치를 로컬/원격에서 삭제합니다. (콤마(,)로 다중 지정 가능)"
   echo "                                 예) --delete-branch \"master, dev\""
   echo "      --find-branch <브랜치명>   지정된 브랜치의 로컬/원격 존재 여부를 검색합니다. (콤마(,)로 다중 지정 가능)"
@@ -63,6 +63,7 @@ help(){
 
 trap 'help "스크립트 실행 중 오류가 발생했습니다." "$LINENO"' ERR
 
+MIGRATE_BRANCH_INPUT=""
 SOURCE_BRANCH=""
 NEW_BRANCH=""
 DELETE_BRANCHES_INPUT=""
@@ -84,13 +85,9 @@ while [[ "$#" -gt 0 ]]; do
       help "" ""
       exit 0
       ;;
-    -s|--source-branch)
+    --migrate-branch)
       shift
-      SOURCE_BRANCH="${1:-}"
-      ;;
-    -n|--new-branch)
-      shift
-      NEW_BRANCH="${1:-}"
+      MIGRATE_BRANCH_INPUT="${1:-}"
       ;;
     --delete-source)
       DELETE_SOURCE=1
@@ -125,13 +122,22 @@ done
 TARGET_DIR="${TARGET_DIR:-.}"
 
 # 필수 옵션 조합 검증
-if [[ -z "$SOURCE_BRANCH" && -z "$NEW_BRANCH" && -z "$DELETE_BRANCHES_INPUT" && -z "$FIND_BRANCHES_INPUT" ]]; then
-  help "마이그레이션(-s, -n), 삭제(--delete-branch) 또는 검색(--find-branch) 옵션을 지정해야 합니다." "$LINENO"
+if [[ -z "$MIGRATE_BRANCH_INPUT" && -z "$DELETE_BRANCHES_INPUT" && -z "$FIND_BRANCHES_INPUT" ]]; then
+  help "마이그레이션(--migrate-branch), 삭제(--delete-branch) 또는 검색(--find-branch) 옵션을 지정해야 합니다." "$LINENO"
   exit 1
 fi
-if [[ (-n "$SOURCE_BRANCH" && -z "$NEW_BRANCH") || (-z "$SOURCE_BRANCH" && -n "$NEW_BRANCH") ]]; then
-  help "마이그레이션을 위해서는 기준 브랜치(-s)와 신규 브랜치(-n)가 모두 지정되어야 합니다." "$LINENO"
-  exit 1
+
+if [[ -n "$MIGRATE_BRANCH_INPUT" ]]; then
+  if [[ "$MIGRATE_BRANCH_INPUT" != *":"* ]]; then
+    help "--migrate-branch 옵션의 값은 '<기존브랜치>:<신규브랜치>' 형식이어야 합니다." "$LINENO"
+    exit 1
+  fi
+  SOURCE_BRANCH="${MIGRATE_BRANCH_INPUT%%:*}"
+  NEW_BRANCH="${MIGRATE_BRANCH_INPUT#*:}"
+  if [[ -z "$SOURCE_BRANCH" || -z "$NEW_BRANCH" ]]; then
+    help "--migrate-branch 옵션의 값이 올바르지 않습니다. (<기존브랜치>:<신규브랜치>)" "$LINENO"
+    exit 1
+  fi
 fi
 
 # 디렉토리 유효성 검증
@@ -139,6 +145,41 @@ if [[ ! -d "$TARGET_DIR" ]]; then
   help "입력한 작업 대상이 유효한 디렉토리가 아닙니다: $TARGET_DIR" "$LINENO"
   exit 1
 fi
+
+##
+# Git 명령어의 에러 출력을 분석하여 실패 원인을 한국어로 반환합니다.
+#
+# @param $1 {string} "local" 또는 "remote" (분석 대상 스코프)
+# @param $2 {string} Git 에러 출력 메시지
+#
+# @return 상세 에러 원인 문자열 반환
+##
+parse_git_delete_error() {
+  local scope="$1"
+  local err_msg="$2"
+  
+  if [[ "$scope" == "local" ]]; then
+    if [[ "$err_msg" == *"checked out"* ]]; then
+      echo "현재 선택된(checked out) 상태"
+    elif [[ "$err_msg" == *"not found"* ]]; then
+      echo "미존재"
+    elif [[ "$err_msg" == *"not fully merged"* ]]; then
+      echo "병합 미완료 (강제 삭제 필요)"
+    else
+      echo "알 수 없는 시스템 권한/오류"
+    fi
+  elif [[ "$scope" == "remote" ]]; then
+    if [[ "$err_msg" == *"does not exist"* || "$err_msg" == *"not found"* ]]; then
+      echo "미존재"
+    elif [[ "$err_msg" == *"default branch"* || "$err_msg" == *"current branch prohibited"* || "$err_msg" == *"protected"* ]]; then
+      echo "기본/보호 브랜치 지정됨"
+    elif [[ "$err_msg" == *"403"* || "$err_msg" == *"Permission"* || "$err_msg" == *"denied"* || "$err_msg" == *"rights"* ]]; then
+      echo "권한 없음"
+    else
+      echo "알 수 없는 네트워크/권한 오류"
+    fi
+  fi
+}
 
 ##
 # 단일 Git 연동 디렉토리에 대해 작업을 수행합니다.
@@ -160,17 +201,32 @@ process_repo() {
   local step_failed=0
   local fail_reason=""
   
+  # 프로젝트 식별자 이름 추출 로직 (원격 URL 또는 절대경로 기반)
+  local abs_path=""
+  abs_path=$(cd "$repo_path" >/dev/null 2>&1 && pwd || echo "$repo_path")
+  local project_name=""
+  local remote_url=""
+  
+  remote_url=$(git -C "$abs_path" config --get remote.origin.url 2>/dev/null || true)
+  if [[ -n "$remote_url" ]]; then
+    project_name=$(basename "$remote_url" .git)
+  else
+    project_name=$(basename "$abs_path")
+  fi
+  
+  local display_path="${project_name} (${repo_path})"
+  
   echo "================================================================================"
   if [[ $DRY_RUN -eq 1 ]]; then
-    echo "🚀 [Git 연동 디렉토리 발견] $repo_path (가상 실행 모드)"
+    echo "🚀 [Git 연동 디렉토리 발견] $display_path (가상 실행 모드)"
   else
-    echo "🚀 [Git 연동 디렉토리 발견] $repo_path"
+    echo "🚀 [Git 연동 디렉토리 발견] $display_path"
   fi
   
   if ! pushd "$repo_path" > /dev/null 2>&1; then
     fail_reason="디렉토리 접근 권한이 없습니다."
     echo "  ⚠️ $fail_reason"
-    FAIL_REPOS+=("${repo_path}::::${fail_reason}")
+    FAIL_REPOS+=("${display_path}::::${fail_reason}")
     return 0
   fi
 
@@ -291,14 +347,56 @@ process_repo() {
           echo "      [DRY-RUN] git branch -d \"$b\""
           echo "      [DRY-RUN] git push origin --delete \"$b\""
         else
-          if ! git branch -d "$b" >/dev/null 2>&1; then
-            fail_reason="로컬 '$b' 브랜치 삭제 실패"
-            echo "      ⚠️ $fail_reason"
-            step_failed=1
-            break
+          local local_status=0
+          local remote_status=0
+          local local_out=""
+          local remote_out=""
+          
+          # 로컬 브랜치 삭제 시도
+          local_out=$(git branch -d "$b" 2>&1) || local_status=$?
+          if [[ $local_status -eq 0 ]]; then
+            echo "      ✅ 로컬 '$b' 브랜치 삭제 완료"
+          else
+            echo "      ℹ️ 로컬 '$b' 브랜치 미존재 또는 삭제 불가 (원격 검증 단계 진행)"
           fi
-          if ! git push origin --delete "$b" >/dev/null 2>&1; then
-            fail_reason="원격 '$b' 브랜치 삭제 실패"
+          
+          # 원격 브랜치 존재 여부 사전 검증 (--exit-code 활용)
+          local ls_remote_err=""
+          local ls_remote_status=0
+          
+          ls_remote_err=$(git ls-remote --exit-code --heads origin "$b" 2>&1 >/dev/null) || ls_remote_status=$?
+
+          if [[ $ls_remote_status -eq 0 ]]; then
+            remote_out=$(git push origin --delete "$b" 2>&1) || remote_status=$?
+            if [[ $remote_status -eq 0 ]]; then
+              echo "      ✅ 원격 '$b' 브랜치 삭제 완료"
+            else
+              echo "      ℹ️ 원격 '$b' 브랜치 삭제 실패"
+            fi
+          elif [[ $ls_remote_status -eq 2 ]]; then
+            remote_status=1
+            remote_out="not found"
+            echo "      ℹ️ 원격 '$b' 브랜치 미존재 (삭제 시도 생략)"
+          else
+            remote_status=$ls_remote_status
+            remote_out="$ls_remote_err"
+            echo "      ℹ️ 원격 저장소 접근 실패"
+          fi
+          
+          # 로컬과 원격 삭제가 모두 불가한 경우 최종 실패 마킹 및 사유 조합
+          if [[ $local_status -ne 0 && $remote_status -ne 0 ]]; then
+            local loc_reason
+            local rem_reason
+            
+            loc_reason=$(parse_git_delete_error "local" "$local_out")
+            rem_reason=$(parse_git_delete_error "remote" "$remote_out")
+            
+            if [[ "$loc_reason" == "미존재" && "$rem_reason" == "미존재" ]]; then
+              fail_reason="'$b' 브랜치 미존재 (로컬 및 원격)"
+            else
+              fail_reason="'$b' 브랜치 삭제 불가 (로컬: $loc_reason | 원격: $rem_reason)"
+            fi
+            
             echo "      ⚠️ $fail_reason"
             step_failed=1
             break
@@ -352,9 +450,9 @@ process_repo() {
         for d in "${repo_branch_details[@]}"; do
           details_str="${details_str}${d}@@"
         done
-        FIND_EXIST_REPOS+=("${repo_path}####${details_str}")
+        FIND_EXIST_REPOS+=("${display_path}####${details_str}")
       else
-        FIND_MISSING_REPOS+=("$repo_path")
+        FIND_MISSING_REPOS+=("$display_path")
       fi
     fi
   fi
@@ -362,11 +460,11 @@ process_repo() {
   popd > /dev/null
 
   if [[ $step_failed -eq 0 ]]; then
-    echo "  ✅ 작업 완료: $repo_path"
-    SUCCESS_REPOS+=("$repo_path")
+    echo "  ✅ 작업 완료: $display_path"
+    SUCCESS_REPOS+=("$display_path")
   else
-    echo "  ❌ 작업 실패: $repo_path"
-    FAIL_REPOS+=("${repo_path}::::${fail_reason}")
+    echo "  ❌ 작업 실패: $display_path"
+    FAIL_REPOS+=("${display_path}::::${fail_reason}")
   fi
   echo "================================================================================"
 }
@@ -437,7 +535,6 @@ print_report() {
       echo "--------------------------------------------------------------------------------"
       echo "✅ '${display_names}' 존재 프로젝트 목록 (${#FIND_EXIST_REPOS[@]} 개):"
       
-      # 동적 패딩(길이 맞춤)을 위한 max_len 계산
       local max_len=0
       local item
       for item in "${FIND_EXIST_REPOS[@]}"; do
@@ -530,7 +627,7 @@ print_report() {
 
 echo "🔍 대상 디렉토리('$TARGET_DIR') 하위의 Git 저장소 탐색을 시작합니다..."
 if [[ -n "$SOURCE_BRANCH" && -n "$NEW_BRANCH" ]]; then
-  echo "👉 마이그레이션 전략: [$SOURCE_BRANCH] &rarr; [$NEW_BRANCH]"
+  echo "👉 마이그레이션 전략: [$SOURCE_BRANCH] -> [$NEW_BRANCH]"
 fi
 if [[ -n "$DELETE_BRANCHES_INPUT" ]]; then
   echo "👉 브랜치 삭제 대상: [$DELETE_BRANCHES_INPUT]"
