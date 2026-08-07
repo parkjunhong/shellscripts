@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # =======================================
-# @author : parkjunhong77@gmail.com
-# @title : search files.
-# @license : Apache License 2.0
-# @since : 2026-08-06
-# @desc : support RHEL 8+, Oracle Linux 9+, Ubuntu 20.04+, RockyOS 9+, CentOS 7
+# @author   : parkjunhong77@gmail.com
+# @title    : search files.
+# @license  : Apache License 2.0
+# @since    : 2026-08-07
+# @desc     : support RHEL 8+, Oracle Linux 9+, Ubuntu 20.04+, RockyOS 9+, CentOS 7+
 # @installation : 
-# 1. insert 'source <path>/git-branch-cmd.sh" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/git-branch-cmd.sh' into /etc/bashrc for all users.
+#   1. insert 'source <path>/git-branch-cmd.sh" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/git-branch-cmd.sh' into /etc/bashrc for all users.
 # =======================================
 
 set -Eeuo pipefail
@@ -37,7 +37,8 @@ help(){
     for func in "${FUNCNAME[@]:1}"
     do  
       printf "$formatr" "["$idx"]" "$func"
-      ((idx++)) || true
+      # set -e 강제 종료 방지를 위해 템플릿의 산술식을 표준 할당으로 보완
+      idx=$((idx + 1))
     done
     printf "$formatl" "cause" "$1"
     echo "================================================================================"
@@ -53,8 +54,8 @@ help(){
   echo "  없을 경우 실행 중 Personal Access Token을 안전하게 입력받아 적용합니다."
   echo ""
   echo "[일반 옵션 (인증 불필요)]"
-  echo "      --migrate-branch <기존>:<신규> 기준 브랜치와 마이그레이션 대상 신규 브랜치명 지정"
-  echo "      --delete-source            마이그레이션 완료 후 기준 브랜치를 삭제합니다."
+  echo "      --clone-branch <기존>:<신규>   기준 브랜치와 클론(복제) 대상 신규 브랜치명 지정"
+  echo "      --delete-source            클론(복제) 완료 후 기준 브랜치를 삭제합니다."
   echo "      --delete-branch <브랜치명> 지정된 브랜치를 로컬/원격에서 삭제합니다. (다중 지정 가능)"
   echo "      --find-branch <브랜치명>   지정된 브랜치의 로컬/원격 존재 여부를 검색합니다. (다중 지정 가능)"
   echo ""
@@ -71,7 +72,7 @@ help(){
 
 trap 'help "스크립트 실행 중 오류가 발생했습니다." "$LINENO"' ERR
 
-MIGRATE_BRANCH_INPUT=""
+CLONE_BRANCH_INPUT=""
 SOURCE_BRANCH=""
 NEW_BRANCH=""
 DELETE_BRANCHES_INPUT=""
@@ -109,8 +110,8 @@ while [[ "$#" -gt 0 ]]; do
       help "" ""
       exit 0
       ;;
-    --migrate-branch)
-      shift; MIGRATE_BRANCH_INPUT="${1:-}" ;;
+    --clone-branch)
+      shift; CLONE_BRANCH_INPUT="${1:-}" ;;
     --delete-source)
       DELETE_SOURCE=1 ;;
     --delete-branch)
@@ -145,21 +146,21 @@ if [[ ${#TARGET_DIRS[@]} -eq 0 ]]; then
 fi
 
 # 필수 옵션 조합 검증
-if [[ -z "$MIGRATE_BRANCH_INPUT" && -z "$DELETE_BRANCHES_INPUT" && -z "$FIND_BRANCHES_INPUT" && -z "$PROTECT_BRANCHES_INPUT" && -z "$UNPROTECT_BRANCHES_INPUT" && $SHOW_PROTECTED_BRANCH -eq 0 && -z "$SET_DEFAULT_BRANCH_INPUT" && $SHOW_DEFAULT_BRANCH -eq 0 ]]; then
-  help "마이그레이션, 삭제, 검색 또는 API 제어 옵션 중 하나 이상을 지정해야 합니다." "$LINENO"
+if [[ -z "$CLONE_BRANCH_INPUT" && -z "$DELETE_BRANCHES_INPUT" && -z "$FIND_BRANCHES_INPUT" && -z "$PROTECT_BRANCHES_INPUT" && -z "$UNPROTECT_BRANCHES_INPUT" && $SHOW_PROTECTED_BRANCH -eq 0 && -z "$SET_DEFAULT_BRANCH_INPUT" && $SHOW_DEFAULT_BRANCH -eq 0 ]]; then
+  help "클론(복제), 삭제, 검색 또는 API 제어 옵션 중 하나 이상을 지정해야 합니다." "$LINENO"
   exit 1
 fi
 
-# 마이그레이션 옵션 파싱 및 유효성 검사
-if [[ -n "$MIGRATE_BRANCH_INPUT" ]]; then
-  if [[ "$MIGRATE_BRANCH_INPUT" != *":"* ]]; then
-    help "--migrate-branch 옵션의 값은 '<기존브랜치>:<신규브랜치>' 형식이어야 합니다." "$LINENO"
+# 클론 옵션 파싱 및 유효성 검사
+if [[ -n "$CLONE_BRANCH_INPUT" ]]; then
+  if [[ "$CLONE_BRANCH_INPUT" != *":"* ]]; then
+    help "--clone-branch 옵션의 값은 '<기존브랜치>:<신규브랜치>' 형식이어야 합니다." "$LINENO"
     exit 1
   fi
-  SOURCE_BRANCH="${MIGRATE_BRANCH_INPUT%%:*}"
-  NEW_BRANCH="${MIGRATE_BRANCH_INPUT#*:}"
+  SOURCE_BRANCH="${CLONE_BRANCH_INPUT%%:*}"
+  NEW_BRANCH="${CLONE_BRANCH_INPUT#*:}"
   if [[ -z "$SOURCE_BRANCH" || -z "$NEW_BRANCH" ]]; then
-    help "--migrate-branch 옵션의 값이 올바르지 않습니다." "$LINENO"
+    help "--clone-branch 옵션의 값이 올바르지 않습니다." "$LINENO"
     exit 1
   fi
 fi
@@ -173,7 +174,7 @@ for target_dir in "${TARGET_DIRS[@]}"; do
 done
 
 ##
-# 필수 CLI 명령어(gh, glab)의 설치 여부를 확인하고, 없을 경우 패키지 관리자로 설치합니다.
+# 필수 CLI 명령어(gh, glab)의 설치 여부를 확인하고, 없을 경우 자동 설치를 시도합니다.
 #
 # @param $1 {string} 확인할 CLI 명령어 (gh 또는 glab)
 #
@@ -183,7 +184,7 @@ ensure_cli_installed() {
   local cli_cmd="$1"
   if ! command -v "$cli_cmd" >/dev/null 2>&1; then
     echo "  ⚠️ '$cli_cmd' 명령어가 시스템에 설치되어 있지 않습니다."
-    echo "  ⏳ 운영체제 패키지 도구(apt, dnf 등)를 이용하여 '$cli_cmd' 자동 설치를 시도합니다..."
+    echo "  ⏳ 운영체제 패키지 도구를 이용하여 '$cli_cmd' 자동 설치를 시도합니다..."
     
     if command -v apt >/dev/null 2>&1; then
       sudo apt update -y >/dev/null 2>&1 || true
@@ -239,6 +240,7 @@ ensure_api_modules() {
 
 ##
 # 대상 도메인별 Personal Access Token(PAT)을 동적 맵핑하고 환경을 검증합니다.
+# REST API Rate Limit(한도 초과) 상황을 감지하고 인증 폴백(Auth Fallback) 및 사후 검증(Post-verification)을 수행합니다.
 #
 # @param $1 {string} 대상 원격 저장소 full domain (예: github.com)
 # @param $2 {string} 대상 원격 저장소 URL (파싱용)
@@ -265,32 +267,109 @@ ensure_pat_for_domain() {
     fi
     
     local account_name="${owner_repo%%/*}"
-    local account_type="User"
+    local account_upper
+    account_upper=$(echo "$account_name" | tr 'a-z' 'A-Z' | sed -E 's/[^A-Z0-9]/_/g')
+    local account_type="Unknown"
+    local extracted_type=""
     
+    # [1차 검증]: 비인증 REST API를 통한 계정 유형 탐색
     if [[ -n "$account_name" ]]; then
       local api_res
       api_res=$(curl -sL "https://api.github.com/users/${account_name}" 2>/dev/null || true)
-      local extracted_type
-      extracted_type=$(echo "$api_res" | grep -o '"type": *"[^"]*"' | head -n 1 | sed -E 's/.*"type": *"([^"]*)".*/\1/' || true)
-      if [[ "$extracted_type" == "Organization" ]]; then
-        account_type="Organization"
+      
+      # 한도 초과 오류 처리 알고리즘 적용
+      if [[ "$api_res" == *"API rate limit exceeded"* || "$api_res" == *"rate limit"* ]]; then
+        # 우회 전략 1: 환경변수에 캐싱된 토큰 또는 시스템 등록 PAT 탐색하여 인증 기반으로 API 재요청
+        local any_existing_token=""
+        local k
+        for k in "${!DOMAIN_PAT_MAP[@]}"; do
+          if [[ "$k" == PAT_GITHUB_COM_* ]]; then any_existing_token="${DOMAIN_PAT_MAP[$k]}"; break; fi
+        done
+        if [[ -z "$any_existing_token" ]]; then
+          local env_var
+          for env_var in $(compgen -v | grep "^PAT_GITHUB_COM_" || true); do
+            eval any_existing_token="\${$env_var:-}"
+            if [[ -n "$any_existing_token" ]]; then break; fi
+          done
+        fi
+        
+        # 찾은 토큰이 있다면 인증 헤더(Bearer)를 추가하여 재호출 (한도 5,000회로 확장)
+        if [[ -n "$any_existing_token" ]]; then
+          api_res=$(curl -sL -H "Authorization: Bearer $any_existing_token" "https://api.github.com/users/${account_name}" 2>/dev/null || true)
+        fi
+      fi
+      
+      # API 응답 결과가 한도 초과/오류가 아니라면 안전하게 파싱
+      if [[ "$api_res" != *"API rate limit"* && "$api_res" != *"Not Found"* ]]; then
+        extracted_type=$(echo "$api_res" | grep -o '"type": *"[^"]*"' | head -n 1 | sed -E 's/.*"type": *"([^"]*)".*/\1/' || true)
+        if [[ "$extracted_type" == "Organization" || "$extracted_type" == "User" ]]; then
+          account_type="$extracted_type"
+        fi
       fi
     fi
     
-    local account_upper
-    account_upper=$(echo "$account_name" | tr 'a-z' 'A-Z' | sed -E 's/[^A-Z0-9]/_/g')
-    
+    # [2차 검증]: 결정된 타입에 따라 환경 변수 맵핑
     if [[ "$account_type" == "Organization" ]]; then
       env_var_name="PAT_${domain_upper}_ORG_${account_upper}"
       display_target="$domain - 조직: $account_name"
-    else
+    elif [[ "$account_type" == "User" ]]; then
       env_var_name="PAT_${domain_upper}_USER_${account_upper}"
       display_target="$domain - 개인: $account_name"
+    else
+      # [3차 검증(Fallback)]: 모든 우회 시도에도 한도 초과 등 알 수 없는 경우
+      local check_org="PAT_${domain_upper}_ORG_${account_upper}"
+      local check_usr="PAT_${domain_upper}_USER_${account_upper}"
+      
+      local env_val_org=""
+      eval env_val_org="\${$check_org:-}"
+      local env_val_usr=""
+      eval env_val_usr="\${$check_usr:-}"
+      
+      # 사용자 시스템 환경에 이미 선언된 Organization/User 변수가 있다면 그 타입으로 자동 귀결
+      if [[ -n "${DOMAIN_PAT_MAP[$check_org]:-}" || -n "$env_val_org" ]]; then
+        env_var_name="$check_org"
+        display_target="$domain - 조직: $account_name"
+      elif [[ -n "${DOMAIN_PAT_MAP[$check_usr]:-}" || -n "$env_val_usr" ]]; then
+        env_var_name="$check_usr"
+        display_target="$domain - 개인: $account_name"
+      else
+        # [최종 방어 로직]: 토큰을 먼저 입력받고(선 입력), 인증 API를 호출하여(사후 검증) 타입을 명확히 정의함
+        display_target="$domain - 미확인(개인/조직): $account_name"
+        local temp_user_pat=""
+        echo "  ⚠️ GitHub API 호출 한도가 초과되어 계정 유형을 식별할 수 없습니다."
+        echo "🔒 [보안] 인증 정보가 필요한 API 작업이 포함되어 있습니다."
+        read -r -s -p "👉 API 연동($display_target)을 위한 Personal Access Token을 입력하세요: " temp_user_pat </dev/tty
+        echo ""
+
+        if [[ -z "$temp_user_pat" ]]; then
+          help "인증 토큰이 입력되지 않아 작업을 진행할 수 없습니다." "$LINENO"
+          exit 1
+        fi
+        
+        # 입력받은 토큰으로 다시 API 호출
+        api_res=$(curl -sL -H "Authorization: Bearer $temp_user_pat" "https://api.github.com/users/${account_name}" 2>/dev/null || true)
+        extracted_type=$(echo "$api_res" | grep -o '"type": *"[^"]*"' | head -n 1 | sed -E 's/.*"type": *"([^"]*)".*/\1/' || true)
+        
+        if [[ "$extracted_type" == "Organization" ]]; then
+          env_var_name="PAT_${domain_upper}_ORG_${account_upper}"
+          display_target="$domain - 조직: $account_name"
+        else
+          env_var_name="PAT_${domain_upper}_USER_${account_upper}"
+          display_target="$domain - 개인: $account_name"
+        fi
+        
+        echo "  ✅ 검증 완료: $display_target 식별 및 토큰 할당이 완료되었습니다."
+        export "$env_var_name"="$temp_user_pat"
+        DOMAIN_PAT_MAP["$env_var_name"]="$temp_user_pat"
+        RESOLVED_PAT="$temp_user_pat"
+        return 0
+      fi
     fi
   else
     env_var_name="PAT_${domain_upper}"
   fi
 
+  # 내부 맵 캐시 및 환경변수 확인
   if [[ -n "${DOMAIN_PAT_MAP[$env_var_name]:-}" ]]; then
     RESOLVED_PAT="${DOMAIN_PAT_MAP[$env_var_name]}"
     return 0
@@ -298,13 +377,13 @@ ensure_pat_for_domain() {
 
   local env_val=""
   eval env_val="\${$env_var_name:-}"
-
   if [[ -n "$env_val" ]]; then
     DOMAIN_PAT_MAP["$env_var_name"]="$env_val"
     RESOLVED_PAT="$env_val"
     return 0
   fi
 
+  # 정상 흐름에서의 토큰 대화형 입력 처리 (타입이 식별된 경우)
   local user_pat=""
   echo "🔒 [보안] 인증 정보가 필요한 API 작업이 포함되어 있습니다."
   read -r -s -p "👉 API 연동($display_target)을 위한 Personal Access Token을 입력하세요: " user_pat </dev/tty
@@ -402,7 +481,7 @@ process_repo() {
     return 0
   fi
 
-  # --- 기존 기능: 마이그레이션 ---
+  # --- 클론(복제) 작업 블록 ---
   if [[ -n "$SOURCE_BRANCH" && -n "$NEW_BRANCH" && $step_failed -eq 0 ]]; then
     if ! git rev-parse --verify "$SOURCE_BRANCH" >/dev/null 2>&1; then
       step_failed=1; fail_reason="'$SOURCE_BRANCH' 로컬 미존재"
@@ -435,7 +514,7 @@ process_repo() {
     fi
   fi
 
-  # --- 기존 기능: 브랜치 삭제 ---
+  # --- 브랜치 다중 삭제 작업 블록 ---
   if [[ -n "$DELETE_BRANCHES_INPUT" && $step_failed -eq 0 ]]; then
     local del_branch_arr=(); local b
     IFS=',' read -ra ADDR <<< "$DELETE_BRANCHES_INPUT"
@@ -487,7 +566,7 @@ process_repo() {
     fi
   fi
 
-  # --- 기존 기능: 브랜치 검색 (Read-only는 DRY_RUN 무관하게 실행) ---
+  # --- 브랜치 검색 (Read-only는 DRY_RUN 무관하게 실행) ---
   if [[ -n "$FIND_BRANCHES_INPUT" && $step_failed -eq 0 ]]; then
     local find_branch_arr=(); local b
     IFS=',' read -ra ADDR <<< "$FIND_BRANCHES_INPUT"
@@ -519,7 +598,7 @@ process_repo() {
   fi
 
   # ==========================================
-  # 신규 기능: 원격 API 연동 블록 (보호 / 기본 브랜치)
+  # 원격 API 연동 블록 (보호 / 기본 브랜치)
   # ==========================================
   if [[ $GLOBAL_API_REQUIRED -eq 1 && $step_failed -eq 0 ]]; then
     local provider=""
@@ -575,7 +654,6 @@ process_repo() {
       
       if [[ $step_failed -eq 0 ]]; then
         
-        # 1. 보호 설정 (Write 작업: DRY_RUN 반영)
         if [[ -n "$PROTECT_BRANCHES_INPUT" ]]; then
           echo "  🔒 [API 작업] 브랜치 보호 설정"
           local protect_arr=(); local b
@@ -613,7 +691,6 @@ process_repo() {
           REPORT_PROTECT+=("${display_path}####${p_details}")
         fi
         
-        # 2. 보호 해제 (Write 작업: DRY_RUN 반영)
         if [[ -n "$UNPROTECT_BRANCHES_INPUT" ]]; then
           echo "  🔓 [API 작업] 브랜치 보호 해제"
           local unprotect_arr=(); local b
@@ -651,7 +728,6 @@ process_repo() {
           REPORT_UNPROTECT+=("${display_path}####${up_details}")
         fi
         
-        # 3. 보호 목록 조회 (Read-only는 DRY_RUN 무관하게 실행)
         if [[ $SHOW_PROTECTED_BRANCH -eq 1 ]]; then
           echo "  🛡️ [API 작업] 보호 브랜치 목록 조회"
           local p_list
@@ -674,7 +750,6 @@ process_repo() {
           REPORT_SHOW_PROTECT+=("${display_path}####${shp_details}")
         fi
         
-        # 4. 기본 브랜치 설정 (Write 작업: DRY_RUN 반영)
         if [[ -n "$SET_DEFAULT_BRANCH_INPUT" ]]; then
           echo "  ⭐ [API 작업] 기본 브랜치 설정"
           local b="$SET_DEFAULT_BRANCH_INPUT"
@@ -706,7 +781,6 @@ process_repo() {
           REPORT_SET_DEFAULT+=("${display_path}####${sd_details}")
         fi
         
-        # 5. 기본 브랜치 정보 제공 (Read-only는 DRY_RUN 무관하게 실행)
         if [[ $SHOW_DEFAULT_BRANCH -eq 1 ]]; then
           echo "  ℹ️ [API 작업] 기본 브랜치 정보 제공"
           local d_branch
@@ -911,13 +985,13 @@ print_report() {
   print_api_report "'set-default-branch' 작업 결과" REPORT_SET_DEFAULT
   print_api_report "'show-default-branch' 조회 결과" REPORT_SHOW_DEFAULT
 
-  # 순수 조회 전용 기능들만 실행된 경우 마이그레이션 성공/실패 목록은 생략
-  if [[ -z "$MIGRATE_BRANCH_INPUT" && -z "$DELETE_BRANCHES_INPUT" && -z "$PROTECT_BRANCHES_INPUT" && -z "$UNPROTECT_BRANCHES_INPUT" && -z "$SET_DEFAULT_BRANCH_INPUT" ]]; then
+  # 순수 조회 전용 기능들만 실행된 경우 클론 성공/실패 목록은 생략
+  if [[ -z "$CLONE_BRANCH_INPUT" && -z "$DELETE_BRANCHES_INPUT" && -z "$PROTECT_BRANCHES_INPUT" && -z "$UNPROTECT_BRANCHES_INPUT" && -z "$SET_DEFAULT_BRANCH_INPUT" ]]; then
     echo "--------------------------------------------------------------------------------"
     return 0
   fi
 
-  # 기존 마이그레이션, 삭제 및 API 작업 로직에 대한 보고서 보존 영역
+  # 기존 클론, 삭제 및 API 작업 로직에 대한 보고서 보존 영역
   if [[ ${#SUCCESS_REPOS[@]} -gt 0 ]]; then
     echo "--------------------------------------------------------------------------------"
     echo "✅ 전체 성공 프로젝트 목록 (${#SUCCESS_REPOS[@]} 개):"
@@ -953,7 +1027,7 @@ print_report() {
 }
 
 if [[ -n "$SOURCE_BRANCH" && -n "$NEW_BRANCH" ]]; then
-  echo "👉 마이그레이션 전략: [$SOURCE_BRANCH] -> [$NEW_BRANCH]"
+  echo "👉 클론 전략: [$SOURCE_BRANCH] -> [$NEW_BRANCH]"
 fi
 
 # 모든 대상 디렉토리에 대해 루프 수행 (다중 디렉토리 파싱)

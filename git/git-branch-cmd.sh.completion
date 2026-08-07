@@ -1,12 +1,12 @@
 # =======================================
-# @author : parkjunhong77@gmail.com
-# @title : search files.
-# @license : Apache License 2.0
-# @since : 2026-08-06
-# @desc : support RHEL 8+, Oracle Linux 9+, Ubuntu 20.04+, RockyOS 9+, CentOS 7
+# @author   : parkjunhong77@gmail.com
+# @title    : search files.
+# @license  : Apache License 2.0
+# @since    : 2026-08-07
+# @desc     : support RHEL 8+, Oracle Linux 9+, Ubuntu 20.04+, RockyOS 9+, CentOS 7+
 # @installation : 
-# 1. insert 'source <path>/git-branch-cmd.sh.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/git-branch-cmd.sh.completion' into /etc/bashrc for all users.
+#   1. insert 'source <path>/git-branch-cmd.sh.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/git-branch-cmd.sh.completion' into /etc/bashrc for all users.
 # =======================================
 # Global Reserved Variables
 # 1. COMP_WORDS: an array, contains all arguments
@@ -36,12 +36,12 @@ _git_branch_cmd_completion() {
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
   # 스크립트 지원 기본 옵션들 / Command options list
-  opts="-h --help --migrate-branch --delete-source --delete-branch --find-branch --protect-branch --unprotect-branch --show-protected-branch --set-default-branch --show-default-branch --dry-run"
+  opts="-h --help --clone-branch --delete-source --delete-branch --find-branch --protect-branch --unprotect-branch --show-protected-branch --set-default-branch --show-default-branch --dry-run"
 
   # 이전 파라미터가 원격 브랜치명을 요구할 경우 동적 추천 
   # Suggest dynamic remote branches if previous parameter requires a branch
   case "${prev}" in
-    --migrate-branch|--delete-branch|--find-branch|--protect-branch|--unprotect-branch|--set-default-branch)
+    --clone-branch|--delete-branch|--find-branch|--protect-branch|--unprotect-branch|--set-default-branch)
       local branches
       branches=$(git branch -a 2>/dev/null | sed -e 's/*//' -e 's/remotes\/origin\///' | tr -d ' ' | sort -u || true)
       COMPREPLY=( $(compgen -W "${branches}" -- "${cur}") )
