@@ -172,10 +172,11 @@ api_github_show_protected() {
   fi
   
   local res status=0
-  res=$(gh api -H "X-GitHub-Api-Version: ${GITHUB_API_VERSION}" "repos/${repo}/branches" 2>&1) || status=$?
+  # [버그 수정] 유효하지 않은 `gh jq` 파이프라인을 제거하고, API의 네이티브 `--jq` 옵션을 통해 직접 안전하게 파싱합니다.
+  res=$(gh api -H "X-GitHub-Api-Version: ${GITHUB_API_VERSION}" "repos/${repo}/branches" --jq '.[] | select(.protected==true) | .name' 2>&1) || status=$?
   
   if [[ $status -eq 0 ]]; then
-    echo "$res" | gh jq '.[] | select(.protected==true) | .name' 2>/dev/null || true
+    echo "$res"
   else
     echo "ERROR:$(_parse_github_error "$res")"
   fi
