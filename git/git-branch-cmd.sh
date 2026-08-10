@@ -47,7 +47,7 @@ help(){
   echo "사용법: ./$FILENAME [옵션] [작업디렉토리1] [작업디렉토리2] ..."
   echo ""
   echo "[설명]"
-  echo "  지정된 여러 경로(절대/상대) 하위의 Git 연동 디렉토리를 탐색하여 브랜치 제어 및 API 작업을 일괄 수행합니다."
+  echo "  지정된 여러 경로 하위의 Git 연동 디렉토리를 탐색하여 브랜치 제어 및 API 작업을 일괄 수행합니다."
   echo "  (작업 디렉토리를 생략하면 현재 경로('.')를 기준으로 탐색합니다.)"
   echo "  API 연동이 필요한 경우, 저장소 도메인 및 소유자(개인/조직) 타입에 따라 독립적인"
   echo "  환경변수(예: PAT_GITHUB_COM_USER_<소유자>, PAT_GITHUB_COM_ORG_<조직명>)를 확인하며,"
@@ -178,7 +178,7 @@ done
 #
 # @param $1 {string} 확인할 CLI 명령어 (gh 또는 glab)
 #
-# @return 설치 실패 시 1 반환 후 스크립트 종료
+# @return (설치 실패 시 1 반환 후 스크립트 종료)
 ##
 ensure_cli_installed() {
   local cli_cmd="$1"
@@ -202,7 +202,7 @@ ensure_cli_installed() {
 ##
 # GitHub / GitLab 연동을 위한 API 모듈을 동적으로 다운로드 및 권한 부여합니다.
 #
-# @return 실패 시 1 반환 후 스크립트 종료
+# @return (실패 시 1 반환 후 스크립트 종료)
 ##
 ensure_api_modules() {
   local script_dir
@@ -245,7 +245,7 @@ ensure_api_modules() {
 # @param $1 {string} 대상 원격 저장소 full domain (예: github.com)
 # @param $2 {string} 대상 원격 저장소 URL (파싱용)
 #
-# @return 토큰 존재 시 0 반환, 전역 변수 RESOLVED_PAT 할당
+# @return (토큰 존재 시 0 반환, 전역 변수 RESOLVED_PAT 할당)
 ##
 ensure_pat_for_domain() {
   local domain="$1"
@@ -654,6 +654,7 @@ process_repo() {
       
       if [[ $step_failed -eq 0 ]]; then
         
+        # 1. 보호 설정 (Write 작업)
         if [[ -n "$PROTECT_BRANCHES_INPUT" ]]; then
           echo "  🔒 [API 작업] 브랜치 보호 설정"
           local protect_arr=(); local b
@@ -678,6 +679,9 @@ process_repo() {
                   err_msg=$(echo "$err_msg" | head -n 1 | tr '\n' ' ' | sed 's/ $//')
                   echo "    ❌ 보호 설정 실패: '$b' ($err_msg)"
                   p_details+="${b}::::보호 실패 ($err_msg)@@"
+                  # [버그 수정] API 오류 발생 시 프로젝트 작업 실패 처리 및 원인 보관
+                  step_failed=1
+                  fail_reason="브랜치('$b') 보호 설정 실패 ($err_msg)"
                 else
                   echo "    ✅ 보호 설정 완료: '$b'"
                   p_details+="${b}::::보호 설정 완료@@"
@@ -686,11 +690,15 @@ process_repo() {
             else
               echo "    ⚠️ 원격 저장소에 '$b' 브랜치가 없어 보호 설정을 생략합니다."
               p_details+="${b}::::원격 브랜치 미존재 (생략)@@"
+              # [버그 수정] 대상 브랜치가 없는 경우 실패 처리
+              step_failed=1
+              fail_reason="원격 브랜치('$b') 미존재"
             fi
           done
           REPORT_PROTECT+=("${display_path}####${p_details}")
         fi
         
+        # 2. 보호 해제 (Write 작업)
         if [[ -n "$UNPROTECT_BRANCHES_INPUT" ]]; then
           echo "  🔓 [API 작업] 브랜치 보호 해제"
           local unprotect_arr=(); local b
@@ -715,6 +723,9 @@ process_repo() {
                   err_msg=$(echo "$err_msg" | head -n 1 | tr '\n' ' ' | sed 's/ $//')
                   echo "    ❌ 보호 해제 실패: '$b' ($err_msg)"
                   up_details+="${b}::::보호 해제 실패 ($err_msg)@@"
+                  # [버그 수정] API 오류 발생 시 프로젝트 작업 실패 처리 및 원인 보관
+                  step_failed=1
+                  fail_reason="브랜치('$b') 보호 해제 실패 ($err_msg)"
                 else
                   echo "    ✅ 보호 해제 완료: '$b'"
                   up_details+="${b}::::보호 해제 완료@@"
@@ -723,11 +734,15 @@ process_repo() {
             else
               echo "    ⚠️ 원격 저장소에 '$b' 브랜치가 없어 해제를 생략합니다."
               up_details+="${b}::::원격 브랜치 미존재 (생략)@@"
+              # [버그 수정] 대상 브랜치가 없는 경우 실패 처리
+              step_failed=1
+              fail_reason="원격 브랜치('$b') 미존재"
             fi
           done
           REPORT_UNPROTECT+=("${display_path}####${up_details}")
         fi
         
+        # 3. 보호 목록 조회 (Read-only)
         if [[ $SHOW_PROTECTED_BRANCH -eq 1 ]]; then
           echo "  🛡️ [API 작업] 보호 브랜치 목록 조회"
           local p_list
@@ -750,6 +765,7 @@ process_repo() {
           REPORT_SHOW_PROTECT+=("${display_path}####${shp_details}")
         fi
         
+        # 4. 기본 브랜치 설정 (Write 작업)
         if [[ -n "$SET_DEFAULT_BRANCH_INPUT" ]]; then
           echo "  ⭐ [API 작업] 기본 브랜치 설정"
           local b="$SET_DEFAULT_BRANCH_INPUT"
@@ -767,6 +783,9 @@ process_repo() {
                 err_msg=$(echo "$err_msg" | head -n 1 | tr '\n' ' ' | sed 's/ $//')
                 echo "    ❌ 기본 브랜치 설정 실패: '$b' ($err_msg)"
                 sd_details="${b}::::기본 브랜치 설정 실패 ($err_msg)@@"
+                # [버그 수정] API 오류 발생 시 프로젝트 작업 실패 처리 및 원인 보관
+                step_failed=1
+                fail_reason="기본 브랜치('$b') 설정 실패 ($err_msg)"
               else
                 echo "    ✅ 기본 브랜치가 '$b' 로 설정되었습니다."
                 sd_details="${b}::::기본 브랜치 설정 완료@@"
@@ -781,6 +800,7 @@ process_repo() {
           REPORT_SET_DEFAULT+=("${display_path}####${sd_details}")
         fi
         
+        # 5. 기본 브랜치 정보 제공 (Read-only)
         if [[ $SHOW_DEFAULT_BRANCH -eq 1 ]]; then
           echo "  ℹ️ [API 작업] 기본 브랜치 정보 제공"
           local d_branch
