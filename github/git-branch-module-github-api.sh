@@ -40,9 +40,9 @@ help(){
     printf "$formatl" "line" "$2"
     printf "$formatl" "callstack"
     local idx=1
-    for func in ${FUNCNAME[@]:1}
+    for func in "${FUNCNAME[@]:1}"
     do  
-      printf "$formatr" "["$idx"]" $func
+      printf "$formatr" "["$idx"]" "$func"
       idx=$((idx + 1))
     done
     printf "$formatl" "cause" "$1"
@@ -75,16 +75,23 @@ _get_github_repo() {
 ##
 _parse_github_error() {
   local raw_res="$1"
-  local err_msg
-  err_msg=$(echo "$raw_res" | gh jq -r '.message' 2>/dev/null || true)
+  local err_msg=""
   
-  if [[ -z "$err_msg" || "$err_msg" == "null" ]]; then
-    err_msg="$raw_res"
+  # 403 권한 에러 (Fine-grained PAT 권한 누락 대응)
+  if [[ "$raw_res" == *"Resource not accessible by personal access token"* ]]; then
+    err_msg="토큰 권한 부족 (비공개 저장소의 경우 'Contents: Read' 권한 필수 또는 대상 접근 누락)"
+  elif [[ "$raw_res" == *"message"* ]]; then
+    # grep으로 JSON message 추출 (stdout+stderr 섞임 방지)
+    err_msg=$(echo "$raw_res" | grep -o '"message":"[^"]*"' | head -n 1 | sed -E 's/"message":"([^"]*)"/\1/' || true)
   fi
   
-  # 403 권한 에러 치환 처리 (Fine-grained PAT 권한 누락 대응)
-  if [[ "$err_msg" == *"Resource not accessible by personal access token"* ]]; then
-    err_msg="토큰 권한 부족 (해당 저장소 접근 권한 누락 또는 Fine-grained PAT 설정 오류)"
+  if [[ -z "$err_msg" || "$err_msg" == "null" ]]; then
+    # fallback: gh 에러 접두어가 있으면 그 부분만 추출
+    if [[ "$raw_res" == *"gh: "* ]]; then
+      err_msg=$(echo "$raw_res" | sed -E 's/.*(gh: .*)/\1/')
+    else
+      err_msg="$raw_res"
+    fi
   fi
   
   # 개행 문자 제거 및 연속 공백 치환을 통한 로깅 가독성 확보
