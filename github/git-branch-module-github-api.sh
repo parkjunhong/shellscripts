@@ -93,6 +93,11 @@ _parse_github_error() {
       err_msg="$raw_res"
     fi
   fi
+
+  # [신규 추가] GitHub 무료 계정의 비공개 저장소 브랜치 보호 제한 정책 에러 치환
+  if [[ "$err_msg" == *"Upgrade to GitHub Pro"* || "$raw_res" == *"Upgrade to GitHub Pro"* ]]; then
+    err_msg="GitHub 무료 계정 제한 (비공개 저장소의 브랜치 보호 기능은 GitHub Pro 계정 이상 필요)"
+  fi
   
   # 개행 문자 제거 및 연속 공백 치환을 통한 로깅 가독성 확보
   echo "$err_msg" | tr '\n' ' ' | sed -E 's/ +/ /g'
@@ -172,7 +177,6 @@ api_github_show_protected() {
   fi
   
   local res status=0
-  # [버그 수정] 유효하지 않은 `gh jq` 파이프라인을 제거하고, API의 네이티브 `--jq` 옵션을 통해 직접 안전하게 파싱합니다.
   res=$(gh api -H "X-GitHub-Api-Version: ${GITHUB_API_VERSION}" "repos/${repo}/branches" --jq '.[] | select(.protected==true) | .name' 2>&1) || status=$?
   
   if [[ $status -eq 0 ]]; then
