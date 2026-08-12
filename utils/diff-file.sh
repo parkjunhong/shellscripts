@@ -53,6 +53,7 @@ help(){
   echo "  -s, --source <파일>         비교 기준이 되는 파일 경로 (필수)"
   echo "  -f, --file <패턴>           검색 대상 파일명 또는 패턴 (예: \"*.yml\", \"application-*\") (필수)"
   echo "      --copy-content          내용이 다른 대상 파일의 내용을 기준 파일 내용으로 복사/변경합니다."
+  echo "      --no-ne-files           동일하지 않은 파일 목록 정보는 보고서에서 제외합니다."
   echo "      --dry-run               실제 비교 및 복사 수행 과정을 가상으로 출력합니다."
   echo "  -h, --help                  이 도움말을 출력하고 종료합니다."
 }
@@ -62,6 +63,7 @@ TARGET_DIR="."
 SOURCE_FILE=""
 FILE_PATTERN=""
 COPY_CONTENT=0
+NO_NE_FILES=0
 DRY_RUN=0
 
 TMP_DIR=""
@@ -365,8 +367,8 @@ get_display_width() {
 }
 
 ##
-# 비교 작업 결과를 터미널 넓이에 맞추어 동적 2분할(Side-by-Side) 보고서로 출력합니다.
-# 각 열(Column)의 너비를 엄격히 준수하여 터미널 경계로 인한 줄바꿈 침범을 원천 차단합니다.
+# 비교 작업 결과를 터미널 넓이에 맞추어 동적 보고서로 출력합니다.
+# --no-ne-files 설정 여부에 따라 단일 열 또는 2분할(Side-by-Side) 서식으로 출력합니다.
 #
 # @return (보고서 콘솔 출력)
 ##
@@ -377,118 +379,148 @@ print_report() {
     term_w=120
   fi
 
-  # 구분선 " | " (3자)를 제외한 실효 가용 가로폭 분할
-  local avail_w=$(( term_w - 3 ))
-  local col1_w=$(( avail_w / 2 ))
-  local col2_w=$(( avail_w - col1_w ))
-
   local ident_count=${#IDENTICAL_FILES[@]}
   local diff_count=${#DIFFERENT_FILES[@]}
 
-  local left_lines=()
-  local right_lines=()
-  local f=""
-  local rem=""
-  
-  # 각 열 내에서의 실효 가용 텍스트 너비 (들여쓰기 4자 고려)
-  local chunk_sz_1=$(( col1_w - 4 ))
-  local chunk_sz_2=$(( col2_w - 4 ))
-
-  if [[ $chunk_sz_1 -lt 10 ]]; then chunk_sz_1=10; fi
-  if [[ $chunk_sz_2 -lt 10 ]]; then chunk_sz_2=10; fi
-
-  # 1. 좌측 열 (동일한 파일 목록) - 열 너비 내 엄격 청크 분할(Wrapping)
-  if [[ $ident_count -gt 0 ]]; then
-    for f in "${IDENTICAL_FILES[@]}"; do
-      if [[ $(( ${#f} + 4 )) -le $col1_w ]]; then
-        left_lines+=("  - $f")
-      else
-        rem="$f"
-        left_lines+=("  - ${rem:0:$chunk_sz_1}")
-        rem="${rem:$chunk_sz_1}"
-        while [[ -n "$rem" ]]; do
-          left_lines+=("    ${rem:0:$chunk_sz_1}")
-          rem="${rem:$chunk_sz_1}"
-        done
-      fi
-    done
-  else
-    left_lines+=("  (No identical files found.)")
-  fi
-
-  # 2. 우측 열 (동일하지 않은 파일 목록) - 열 너비 내 엄격 청크 분할(Wrapping)
-  if [[ $diff_count -gt 0 ]]; then
-    for f in "${DIFFERENT_FILES[@]}"; do
-      if [[ $(( ${#f} + 4 )) -le $col2_w ]]; then
-        right_lines+=("  - $f")
-      else
-        rem="$f"
-        right_lines+=("  - ${rem:0:$chunk_sz_2}")
-        rem="${rem:$chunk_sz_2}"
-        while [[ -n "$rem" ]]; do
-          right_lines+=("    ${rem:0:$chunk_sz_2}")
-          rem="${rem:$chunk_sz_2}"
-        done
-      fi
-    done
-  else
-    right_lines+=("  (No differing files found.)")
-  fi
-
-  # 3. 헤더 및 구분선 동적 생성
   local left_header="✅ 동일한 파일 목록 (${ident_count} 개):"
-  local left_hdr_disp_w
-  left_hdr_disp_w=$(get_display_width "$left_header")
-  local left_hdr_pad=$(( col1_w - left_hdr_disp_w ))
-  if [[ $left_hdr_pad -lt 0 ]]; then left_hdr_pad=0; fi
-
   local right_header="❌ 동일하지 않은 파일 목록 (${diff_count} 개):"
 
-  local top_divider_left=""
-  local top_divider_right=""
   local bot_divider=""
-
-  printf -v top_divider_left '%*s' "$col1_w" ''
-  top_divider_left="${top_divider_left// /-}"
-  printf -v top_divider_right '%*s' "$col2_w" ''
-  top_divider_right="${top_divider_right// /-}"
-
   printf -v bot_divider '%*s' "$term_w" ''
   bot_divider="${bot_divider// /-}"
 
-  echo ""
-  echo "📊 [비교 작업 완료 보고서]"
-  echo "${top_divider_left}-|-${top_divider_right}"
-  printf "%s%*s | %s\n" "$left_header" "$left_hdr_pad" "" "$right_header"
+  # --no-ne-files 옵션이 설정된 경우: 단일 열 보고서 출력
+  if [[ $NO_NE_FILES -eq 1 ]]; then
+    local left_lines=()
+    local f=""
+    local rem=""
+    local chunk_sz=$(( term_w - 4 ))
+    if [[ $chunk_sz -lt 10 ]]; then chunk_sz=10; fi
 
-  # 4. 좌/우 열 라인 동시 출력 및 열 경계 내부 패딩 정렬
-  local max_idx=${#left_lines[@]}
-  if [[ ${#right_lines[@]} -gt $max_idx ]]; then
-    max_idx=${#right_lines[@]}
+    if [[ $ident_count -gt 0 ]]; then
+      for f in "${IDENTICAL_FILES[@]}"; do
+        if [[ $(( ${#f} + 4 )) -le $term_w ]]; then
+          left_lines+=("  - $f")
+        else
+          rem="$f"
+          left_lines+=("  - ${rem:0:$chunk_sz}")
+          rem="${rem:$chunk_sz}"
+          while [[ -n "$rem" ]]; do
+            left_lines+=("    ${rem:0:$chunk_sz}")
+            rem="${rem:$chunk_sz}"
+          done
+        fi
+      done
+    else
+      left_lines+=("  (No identical files found.)")
+    fi
+
+    echo ""
+    echo "📊 [비교 작업 완료 보고서]"
+    echo "$bot_divider"
+    echo "$left_header"
+    for f in "${left_lines[@]}"; do
+      echo "$f"
+    done
+    echo "$bot_divider"
+  else
+    # 기존 2분할(Side-by-Side) 보고서 출력
+    local avail_w=$(( term_w - 3 ))
+    local col1_w=$(( avail_w / 2 ))
+    local col2_w=$(( avail_w - col1_w ))
+
+    local left_lines=()
+    local right_lines=()
+    local f=""
+    local rem=""
+    
+    local chunk_sz_1=$(( col1_w - 4 ))
+    local chunk_sz_2=$(( col2_w - 4 ))
+
+    if [[ $chunk_sz_1 -lt 10 ]]; then chunk_sz_1=10; fi
+    if [[ $chunk_sz_2 -lt 10 ]]; then chunk_sz_2=10; fi
+
+    if [[ $ident_count -gt 0 ]]; then
+      for f in "${IDENTICAL_FILES[@]}"; do
+        if [[ $(( ${#f} + 4 )) -le $col1_w ]]; then
+          left_lines+=("  - $f")
+        else
+          rem="$f"
+          left_lines+=("  - ${rem:0:$chunk_sz_1}")
+          rem="${rem:$chunk_sz_1}"
+          while [[ -n "$rem" ]]; do
+            left_lines+=("    ${rem:0:$chunk_sz_1}")
+            rem="${rem:$chunk_sz_1}"
+          done
+        fi
+      done
+    else
+      left_lines+=("  (No identical files found.)")
+    fi
+
+    if [[ $diff_count -gt 0 ]]; then
+      for f in "${DIFFERENT_FILES[@]}"; do
+        if [[ $(( ${#f} + 4 )) -le $col2_w ]]; then
+          right_lines+=("  - $f")
+        else
+          rem="$f"
+          right_lines+=("  - ${rem:0:$chunk_sz_2}")
+          rem="${rem:$chunk_sz_2}"
+          while [[ -n "$rem" ]]; do
+            right_lines+=("    ${rem:0:$chunk_sz_2}")
+            rem="${rem:$chunk_sz_2}"
+          done
+        fi
+      done
+    else
+      right_lines+=("  (No differing files found.)")
+    fi
+
+    local left_hdr_disp_w
+    left_hdr_disp_w=$(get_display_width "$left_header")
+    local left_hdr_pad=$(( col1_w - left_hdr_disp_w ))
+    if [[ $left_hdr_pad -lt 0 ]]; then left_hdr_pad=0; fi
+
+    local top_divider_left=""
+    local top_divider_right=""
+
+    printf -v top_divider_left '%*s' "$col1_w" ''
+    top_divider_left="${top_divider_left// /-}"
+    printf -v top_divider_right '%*s' "$col2_w" ''
+    top_divider_right="${top_divider_right// /-}"
+
+    echo ""
+    echo "📊 [비교 작업 완료 보고서]"
+    echo "${top_divider_left}-|-${top_divider_right}"
+    printf "%s%*s | %s\n" "$left_header" "$left_hdr_pad" "" "$right_header"
+
+    local max_idx=${#left_lines[@]}
+    if [[ ${#right_lines[@]} -gt $max_idx ]]; then
+      max_idx=${#right_lines[@]}
+    fi
+
+    local i=0
+    local l_text=""
+    local r_text=""
+    local l_disp_w=0
+    local l_pad=0
+
+    while [[ $i -lt $max_idx ]]; do
+      l_text="${left_lines[$i]:-}"
+      r_text="${right_lines[$i]:-}"
+
+      l_disp_w=$(get_display_width "$l_text")
+      l_pad=$(( col1_w - l_disp_w ))
+      if [[ $l_pad -lt 0 ]]; then l_pad=0; fi
+
+      printf "%s%*s | %s\n" "$l_text" "$l_pad" "" "$r_text"
+      ((i++)) || true
+    done
+
+    echo "$bot_divider"
   fi
 
-  local i=0
-  local l_text=""
-  local r_text=""
-  local l_disp_w=0
-  local l_pad=0
-
-  while [[ $i -lt $max_idx ]]; do
-    l_text="${left_lines[$i]:-}"
-    r_text="${right_lines[$i]:-}"
-
-    l_disp_w=$(get_display_width "$l_text")
-    l_pad=$(( col1_w - l_disp_w ))
-    if [[ $l_pad -lt 0 ]]; then l_pad=0; fi
-
-    # 좌측열(col1_w) + 구분선(" | ", 3자) + 우측열(r_text, 최대 col2_w) = 총합 term_w 이하 엄격 보장
-    printf "%s%*s | %s\n" "$l_text" "$l_pad" "" "$r_text"
-    ((i++)) || true
-  done
-
-  echo "$bot_divider"
-
-  # 5. --copy-content 옵션 실행 결과 보고서 출력
+  # --copy-content 옵션 실행 결과 보고서 출력
   if [[ $COPY_CONTENT -eq 1 ]]; then
     echo ""
     echo "--------------------------------------------------------------------------------"
@@ -524,6 +556,8 @@ while [[ "$#" -gt 0 ]]; do
       shift; FILE_PATTERN="${1:-}" ;;
     --copy-content)
       COPY_CONTENT=1 ;;
+    --no-ne-files)
+      NO_NE_FILES=1 ;;
     --dry-run)
       DRY_RUN=1 ;;
     -*)
@@ -582,6 +616,9 @@ echo "  - 대상 디렉토리 : $ABS_TARGET_DIR"
 echo "  - 검색 패턴     : $FILE_PATTERN"
 if [[ $COPY_CONTENT -eq 1 ]]; then
   echo "  - 내용 복사     : 활성화 (--copy-content)"
+fi
+if [[ $NO_NE_FILES -eq 1 ]]; then
+  echo "  - 보고서 필터   : 동일하지 않은 파일 목록 제외 (--no-ne-files)"
 fi
 if [[ $DRY_RUN -eq 1 ]]; then
   echo "  - 모드           : 가상 실행 모드 (DRY-RUN)"

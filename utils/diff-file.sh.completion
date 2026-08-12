@@ -36,7 +36,7 @@ _diff_file_completion() {
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
   # 스크립트 지원 기본 옵션들 / Command options list
-  opts="-h --help -d --directory -s --source -f --file --copy-content --dry-run"
+  opts="-h --help -d --directory -s --source -f --file --copy-content --no-ne-files --dry-run"
 
   # 이전 파라미터에 따른 동적 컨텍스트 분기 / Branching dynamic context based on previous parameter
   case "${prev}" in
