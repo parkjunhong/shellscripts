@@ -1,0 +1,97 @@
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : search files.
+# @license : Apache License 2.0
+# @since : 2026-08-13
+# @desc : support RHEL 9 or higher, Oracle Linux 9 or higher, Ubuntu 24.04 or higher, RockyOS 10 or higher, CentOS Stream 9 or higher
+# @installation : 
+# 1. insert 'source <path>/nexus-installer.sh.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/nexus-installer.sh.completion' into /etc/bashrc for all users.
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+
+_nexus_installer_completion() {
+  local cur prev opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  local is_uninstall_mode=0
+  local word
+  for word in "${COMP_WORDS[@]}"; do
+    if [[ "$word" == "--uninstall" ]]; then
+      is_uninstall_mode=1
+      break
+    fi
+  done
+
+  if [ $is_uninstall_mode -eq 1 ]; then
+    opts="--uninstall --dry-run --help"
+  else
+    opts="--install --uninstall --dry-run --download-url --file --install-dir --version --user --port --help"
+  fi
+
+  case "$prev" in
+    --file)
+      COMPREPLY=( $(compgen -f -- "$cur") )
+      return 0
+      ;;
+    --install-dir)
+      COMPREPLY=( $(compgen -d -- "$cur") )
+      return 0
+      ;;
+    --user)
+      COMPREPLY=( $(compgen -u -- "$cur") )
+      return 0
+      ;;
+    --download-url|--version|--port)
+      return 0
+      ;;
+  esac
+
+  local unused_opts=""
+  local opt
+  for opt in $opts; do
+    local used=0
+    for word in "${COMP_WORDS[@]}"; do
+      if [[ "$word" == "$opt" ]]; then
+        used=1
+        break
+      fi
+    done
+    if [ $used -eq 0 ]; then
+      if [[ "$opt" == "--uninstall" ]] && [[ " ${COMP_WORDS[*]} " =~ " --install " ]]; then
+        continue
+      fi
+      if [[ "$opt" == "--install" ]] && [[ " ${COMP_WORDS[*]} " =~ " --uninstall " ]]; then
+        continue
+      fi
+      if [[ "$opt" == "--file" ]] && [[ " ${COMP_WORDS[*]} " =~ " --download-url " ]]; then
+        continue
+      fi
+      if [[ "$opt" == "--download-url" ]] && [[ " ${COMP_WORDS[*]} " =~ " --file " ]]; then
+        continue
+      fi
+      unused_opts="$unused_opts $opt"
+    fi
+  done
+
+  COMPREPLY=( $(compgen -W "$unused_opts" -- "$cur") )
+  return 0
+}
+
+complete -F _nexus_installer_completion nexus-installer.sh

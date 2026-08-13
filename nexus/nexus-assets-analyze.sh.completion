@@ -1,0 +1,79 @@
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : search files.
+# @license : Apache License 2.0
+# @since : 2026-08-12
+# @desc : support RHEL 8/9, Oracle Linux 8/9, Ubuntu 20.04/22.04/24.04, RockyOS 8/9, CentOS 7/8
+# @installation : 
+# 1. insert 'source <path>/<파일명>' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/<파일명>' into /etc/bashrc for all users.
+# =======================================
+
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+
+_nexus_assets_analyzer_completion() {
+  local cur prev opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  # 지원 가능한 전체 옵션 목록
+  opts="--url --user --pass --repo --output --help"
+
+  # 반복 사용 가능한 옵션을 제외하고, 이미 입력된 옵션 제거
+  local repeatable_opts="-r --repo"
+  local unused_opts=""
+
+  for opt in $opts; do
+    local used=0
+    if [[ " $repeatable_opts " != *"$opt"* ]]; then
+      for word in "${COMP_WORDS[@]:1:$COMP_CWORD-1}"; do
+        if [[ "$word" == "$opt" ]]; then
+          used=1
+          break
+        fi
+      done
+    fi
+    if [[ $used -eq 0 ]]; then
+      unused_opts="$unused_opts $opt"
+    fi
+  done
+
+  # 이전 인자값에 따른 자동완성 처리
+  case "$prev" in
+    -o|--output)
+      # 디렉터리 경로 자동완성 추천
+      local dirs
+      dirs="$(compgen -d -- "$cur")"
+      COMPREPLY=($dirs)
+      return 0
+      ;;
+    -u|--url|-U|--user|-p|--pass|-r|--repo)
+      # 일반 문자열 입력 항목은 기본 파일 생성 안함
+      return 0
+      ;;
+    *)
+      ;;
+  esac
+
+  # '-' 또는 '--' 입력 여부와 무관하게 TAB 키 입력 시 옵션 추천 지원
+  COMPREPLY=( $(compgen -W "$unused_opts" -- "$cur") )
+  return 0
+}
+
+complete -F _nexus_assets_analyzer_completion nexus-assets-analyze.sh
