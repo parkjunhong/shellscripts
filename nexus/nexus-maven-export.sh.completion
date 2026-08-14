@@ -1,0 +1,80 @@
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : search files.
+# @license : Apache License 2.0
+# @since : 2026-08-14
+# @desc : support RHEL 7/8/9, Oracle Linux 7/8/9, Ubuntu 18.04/20.04/22.04/24.04, RockyOS 8/9, CentOS 7/8
+# @installation : 
+# 1. insert 'source <path>/<파일명>' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/<파일명>' into /etc/bashrc for all users.
+# =======================================
+
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+
+_nexus_maven_export_completion() {
+  local cur prev opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  # 지원 가능한 전체 옵션 목록 (숏 옵션 완전히 제외)
+  opts="--url --user --output --repository --insecure --verbose --help"
+
+  # 반복 가능 옵션 목록
+  local repeatable_opts="--repository"
+  local unused_opts=""
+
+  # 이미 사용된 옵션 제외 처리 (단, 반복 가능 옵션은 유지)
+  for opt in $opts; do
+    local used=0
+    if [[ " $repeatable_opts " != *"$opt"* ]]; then
+      for word in "${COMP_WORDS[@]:1:$COMP_CWORD-1}"; do
+        if [[ "$word" == "$opt" ]]; then
+          used=1
+          break
+        fi
+      done
+    fi
+    if [[ $used -eq 0 ]]; then
+      unused_opts="$unused_opts $opt"
+    fi
+  done
+
+  # 이전 파라미터($prev)에 따른 자동완성 지원
+  case "$prev" in
+    --output)
+      # 디렉터리 경로 자동완성 추천 -> compgen -d 사용
+      local dirs
+      dirs="$(compgen -d -- "$cur")"
+      COMPREPLY=($dirs)
+      return 0
+      ;;
+    --url|--user|--repository)
+      # 사용자 직접 입력 항목은 기본 처리
+      return 0
+      ;;
+    *)
+      ;;
+  esac
+
+  # '--'를 입력하지 않고 <TAB>만 입력해도 남아있는 옵션 전체가 추천되도록 처리
+  COMPREPLY=( $(compgen -W "$unused_opts" -- "$cur") )
+  return 0
+}
+
+complete -F _nexus_maven_export_completion nexus-maven-export.sh
