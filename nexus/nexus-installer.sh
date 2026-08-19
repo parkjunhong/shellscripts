@@ -4,10 +4,10 @@
 # @author : parkjunhong77@gmail.com
 # @title : search files.
 # @license : Apache License 2.0
-# @since : 2026-08-13
+# @since : 2026-08-19
 # @desc : support RHEL 9 or higher, Oracle Linux 9 or higher, Ubuntu 24.04 or higher, RockyOS 10 or higher, CentOS Stream 9 or higher
 # @installation : 
-# 1. insert 'source <path>/nexus-installer.sh" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 1. insert 'source <path>/nexus-installer.sh' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
 # 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/nexus-installer.sh' into /etc/bashrc for all users.
 # =======================================
 
@@ -25,6 +25,7 @@ BASE_INSTALL_DIR="/opt/sonatype"
 NEXUS_VERSION_OPT=""
 NEXUS_USER="nexus"
 NEXUS_PORT="8081"
+DATA_DIR=""
 
 HAS_INVALID_UNINSTALL_OPTIONS=false
 IS_DRY_RUN=false
@@ -212,54 +213,6 @@ check_prerequisites() {
 }
 
 ##
-# 기존 설치된 인스턴스와의 버전 및 포트 충돌 여부를 점검하는 함수
-#
-# @param $1 {string} Nexus 버전 (INSTANCE_ID)
-# @param $2 {string} 포트 번호
-#
-# @return 0(이상없음) / exit 0 또는 1(충돌시)
-##
-check_instance_conflicts() {
-  local instance_id="$1"
-  local target_port="$2"
-
-  if [ ! -d "$INSTANCES_DIR" ]; then
-    return 0
-  fi
-
-  local meta_file="$INSTANCES_DIR/${instance_id}.info"
-  if [ -f "$meta_file" ]; then
-    local exist_dir exist_port exist_ver
-    exist_dir=$(grep '^INSTALL_DIR=' "$meta_file" | cut -d'=' -f2- | tr -d '"')
-    exist_port=$(grep '^NEXUS_PORT=' "$meta_file" | cut -d'=' -f2- | tr -d '"')
-    exist_ver=$(grep '^NEXUS_VERSION=' "$meta_file" | cut -d'=' -f2- | tr -d '"')
-
-    echo "[ℹ️] 동일한 버전($instance_id)으로 등록된 기존 인스턴스가 존재합니다."
-    echo "================================================================================"
-    echo " - 버전      : $exist_ver"
-    echo " - 설치 경로 : $exist_dir"
-    echo " - 서비스 포트: $exist_port"
-    echo "================================================================================"
-    echo "[⚠️] 이미 해당 버전의 Nexus가 설치되어 있습니다. 재설치하려면 먼저 '--uninstall' 명령을 실행하여 해당 인스턴스를 삭제하세요."
-    exit 0
-  fi
-
-  local file
-  for file in "$INSTANCES_DIR"/*.info; do
-    if [ -f "$file" ]; then
-      local exist_port exist_dir
-      exist_port=$(grep '^NEXUS_PORT=' "$file" | cut -d'=' -f2- | tr -d '"')
-      exist_dir=$(grep '^INSTALL_DIR=' "$file" | cut -d'=' -f2- | tr -d '"')
-
-      if [ "$exist_port" == "$target_port" ]; then
-        help "입력한 포트($target_port)는 기존 인스턴스($exist_dir)에서 이미 등록되어 사용 중입니다." "$LINENO"
-        exit 1
-      fi
-    fi
-  done
-}
-
-##
 # Nexus 실행 전용 시스템 계정을 생성하는 함수 (드라이 런 가상화 분기 처리)
 #
 # @param $1 {string} 계정명
@@ -397,7 +350,7 @@ configure_nexus() {
   if [ "$dry_run" = true ]; then
     echo "[DRY-RUN] [⚙️] Nexus 실행 계정 설정 예정 -> $inst_dir/bin/nexus.rc (run_as_user=\"$username\")"
     echo "[DRY-RUN] [⚙️] Nexus HTTP 포트 설정 예정 -> $inst_dir/etc/nexus-default.properties (application-port=$port)"
-    echo "[DRY-RUN] [⚙️] JVM 옵션 데이터 경로 설정 예정 -> $inst_dir/bin/nexus.vmoptions (-Dkaraf.data=$data_dir/nexus3)"
+    echo "[DRY-RUN] [⚙️] JVM 옵션 데이터 경로 설정 분리 적용 예정 -> $inst_dir/bin/nexus.vmoptions (-Dkaraf.data=$data_dir/nexus3)"
     echo "[DRY-RUN] [🔒] 파일 소유권 변경 예정 -> $inst_dir, $data_dir (sudo chown -R $username:$username)"
     return 0
   fi
@@ -416,8 +369,8 @@ configure_nexus() {
   if [ -f "$vmoptions_file" ]; then
     local escaped_data_dir
     escaped_data_dir=$(echo "$data_dir/nexus3" | sed 's/\//\\\//g')
-    sed -i "s/-Dkaraf.data=.*/-Dkaraf.data=$escaped_data_dir/g" "$vmoptions_file"
-    sed -i "s/-Djava.io.tmpdir=.*/-Djava.io.tmpdir=$escaped_data_dir\/tmp/g" "$vmoptions_file"
+    sudo sed -i "s/-Dkaraf.data=.*/-Dkaraf.data=$escaped_data_dir/g" "$vmoptions_file"
+    sudo sed -i "s/-Djava.io.tmpdir=.*/-Djava.io.tmpdir=$escaped_data_dir\/tmp/g" "$vmoptions_file"
   fi
 
   sudo mkdir -p "$data_dir/nexus3/tmp"
@@ -551,6 +504,335 @@ EOF
 }
 
 ##
+# 특정 Nexus 인스턴스 및 서비스, 계정, 디렉토리, 메타데이터를 삭제하는 함수 (데이터 디렉토리 선택적 삭제 지원)
+#
+# @param $1 {string} 인스턴스 ID
+# @param $2 {string} 바이너리 설치 디렉토리
+# @param $3 {string} 데이터 디렉토리
+# @param $4 {string} 실행 계정명
+# @param $5 {string} Systemd 서비스명
+# @param $6 {string} 메타데이터 파일 경로
+# @param $7 {boolean} 드라이 런 플래그 (true/false)
+# @param $8 {string} 신규 설치 대상 버전 (선택 사항, 업그레이드 연계 시)
+#
+# @return stdout
+##
+uninstall_nexus_instance() {
+  local inst_id="$1"
+  local inst_dir="$2"
+  local data_dir="$3"
+  local username="$4"
+  local service_name="$5"
+  local meta_file="$6"
+  local dry_run="${7:-false}"
+  local new_version="${8:-}"
+
+  if ! sudo -v &>/dev/null; then
+    help "언인스톨 작업을 진행하기 위해 sudo 권한이 필요합니다." "$LINENO"
+    exit 1
+  fi
+
+  if [ "$inst_dir" == "/" ] || [ "$data_dir" == "/" ] || [ -z "$inst_dir" ] || [ -z "$data_dir" ]; then
+    help "삭제 대상 경로가 유효하지 않거나 루트(/) 디렉토리입니다." "$LINENO"
+    exit 1
+  fi
+
+  echo
+  echo "================================================================================"
+  echo "📌 Nexus 인스턴스 언인스톨 작업을 시작합니다."
+  echo "================================================================================"
+  echo " - 인스턴스 ID   : $inst_id"
+  echo " - 바이너리 경로 : $inst_dir"
+  echo " - 데이터 경로   : $data_dir"
+  echo " - Systemd 서비스: $service_name"
+  echo " - 실행 계정     : $username"
+  if [ -n "$new_version" ]; then
+    echo " - 신규 설치 버전: $new_version (업그레이드 파이프라인 연계)"
+  fi
+  echo "================================================================================"
+
+  local delete_data=false
+
+  if [ "$dry_run" = true ]; then
+    echo "[DRY-RUN] [⚙️] Systemd 서비스 중지 및 비활성화 예정 (sudo systemctl stop $service_name && sudo systemctl disable $service_name)"
+    echo "[DRY-RUN] [⚙️] Systemd 서비스 파일 삭제 및 데몬 리로드 예정 (/etc/systemd/system/${service_name}.service)"
+    echo "[DRY-RUN] [📂] 바이너리 디렉토리 삭제 예정 (sudo rm -rf \"$inst_dir\")"
+    echo "[DRY-RUN] [ℹ️] 데이터 디렉토리($data_dir) 삭제 여부 대화형 확인 예정 (기본값: 보존 N)"
+
+    local user_shared=false
+    local file
+    for file in "$INSTANCES_DIR"/*.info; do
+      if [ -f "$file" ] && [ "$file" != "$meta_file" ]; then
+        local other_user
+        other_user=$(grep '^NEXUS_USER=' "$file" | cut -d'=' -f2- | tr -d '"')
+        if [ "$other_user" == "$username" ]; then
+          user_shared=true
+          break
+        fi
+      fi
+    done
+
+    if [ "$user_shared" = false ]; then
+      echo "[DRY-RUN] [👤] 미공유 전용 시스템 계정 삭제 예정 (sudo userdel \"$username\")"
+    else
+      echo "[DRY-RUN] [ℹ️] 타 인스턴스 공유 계정이므로 삭제하지 않고 유지 예정 ($username)"
+    fi
+
+    echo "[DRY-RUN] [🗑️] 인스턴스 메타데이터 파일 삭제 예정 (sudo rm -f \"$meta_file\")"
+    echo "================================================================================"
+    echo "[✅] Nexus 언인스톨 드라이 런(Dry-Run) 시뮬레이션 완료! (실제 시스템 변경 사항 없음)"
+    echo "================================================================================"
+    return 0
+  fi
+
+  # 대화형 데이터 디렉토리 삭제 여부 확인
+  echo
+  echo "================================================================================"
+  echo "⚠️  [데이터 디렉토리 처리 안내]"
+  echo " - 대상 데이터 경로 : $data_dir"
+  echo " - 삭제 대상 버전   : $inst_id"
+  if [ -n "$new_version" ]; then
+    echo " - 신규 설치 버전   : $new_version"
+  fi
+  echo " - 기술적 공유 안내 : Nexus 3.x 버전 간(마이너/패치) 업그레이드 시 데이터 디렉토리를 그대로 공유(재사용)할 수 있습니다."
+  echo "================================================================================"
+
+  if [ -t 0 ]; then
+    local delete_ans=""
+    read -r -p "데이터 디렉토리($data_dir) 내의 모든 아티팩트/설정을 완전히 삭제하시겠습니까? (y/N): " delete_ans || { echo -e "\n[ℹ️] 기본값(N)을 적용합니다."; delete_ans="N"; }
+    if [[ "$delete_ans" =~ ^[yY]$ ]]; then
+      delete_data=true
+    fi
+  else
+    echo "[ℹ️] 비대화형 환경이므로 데이터 보존을 위해 기본값(N)을 적용합니다."
+  fi
+
+  local service_file="/etc/systemd/system/${service_name}.service"
+  if [ -f "$service_file" ] || systemctl is-active --quiet "$service_name" 2>/dev/null; then
+    echo "[⚙️] Systemd 서비스($service_name) 중지 및 비활성화 중..."
+    sudo systemctl stop "$service_name" 2>/dev/null || true
+    sudo systemctl disable "$service_name" 2>/dev/null || true
+    if [ -f "$service_file" ]; then
+      sudo rm -f "$service_file"
+      sudo systemctl daemon-reload
+    fi
+    echo "[✅] Systemd 서비스 제거 완료."
+  fi
+
+  if [ -d "$inst_dir" ]; then
+    echo "[📂] 바이너리 디렉토리 삭제 중 -> $inst_dir"
+    sudo rm -rf "$inst_dir"
+  fi
+
+  if [ "$delete_data" = true ]; then
+    if [ -d "$data_dir" ]; then
+      echo "[🗑️] 사용자의 요청에 따라 데이터 디렉토리를 완전히 삭제합니다 -> $data_dir"
+      sudo rm -rf "$data_dir"
+    fi
+  else
+    echo "[ℹ️] 데이터 디렉토리를 삭제하지 않고 안전하게 보존합니다 -> $data_dir"
+  fi
+
+  local user_shared=false
+  local file
+  for file in "$INSTANCES_DIR"/*.info; do
+    if [ -f "$file" ] && [ "$file" != "$meta_file" ]; then
+      local other_user
+      other_user=$(grep '^NEXUS_USER=' "$file" | cut -d'=' -f2- | tr -d '"')
+      if [ "$other_user" == "$username" ]; then
+        user_shared=true
+        break
+      fi
+    fi
+  done
+
+  if [ "$user_shared" = false ] && id "$username" &>/dev/null; then
+    echo "[👤] 다른 인스턴스에서 사용하지 않는 시스템 계정이므로 삭제합니다 -> $username"
+    sudo userdel "$username" 2>/dev/null || true
+  else
+    echo "[ℹ️] 시스템 계정 '$username'은(는) 다른 Nexus 인스턴스에서 사용 중이거나 유지됩니다."
+  fi
+
+  if [ -f "$meta_file" ]; then
+    echo "[🗑️] 인스턴스 메타데이터 파기 중 -> $meta_file"
+    sudo rm -f "$meta_file"
+  fi
+
+  echo "[✅] 기존 Nexus 인스턴스($inst_id) 정리가 완료되었습니다."
+}
+
+##
+# 기존 설치된 인스턴스와의 버전, 포트 및 데이터 디렉토리 충돌 여부를 종합 점검하고 대화형 해결을 수행하는 함수
+#
+# @param $1 {string} 신규 Nexus 버전 (INSTANCE_ID)
+# @param $2 {string} 포트 번호
+# @param $3 {boolean} 드라이 런 플래그 (true/false)
+#
+# @return 0(이상없음 또는 해결 완료) / exit 0(취소 또는 중단시)
+##
+check_instance_conflicts() {
+  local new_instance_id="$1"
+  local target_port="$2"
+  local dry_run="${3:-false}"
+
+  if [ ! -d "$INSTANCES_DIR" ]; then
+    return 0
+  fi
+
+  # 1. 동일 버전 중복 검사
+  local meta_file="$INSTANCES_DIR/${new_instance_id}.info"
+  if [ -f "$meta_file" ]; then
+    local exist_dir exist_port exist_ver
+    exist_dir=$(grep '^INSTALL_DIR=' "$meta_file" | cut -d'=' -f2- | tr -d '"')
+    exist_port=$(grep '^NEXUS_PORT=' "$meta_file" | cut -d'=' -f2- | tr -d '"')
+    exist_ver=$(grep '^NEXUS_VERSION=' "$meta_file" | cut -d'=' -f2- | tr -d '"')
+
+    echo "[ℹ️] 동일한 버전($new_instance_id)으로 등록된 기존 인스턴스가 이미 존재합니다."
+    echo "================================================================================"
+    echo " - 버전       : $exist_ver"
+    echo " - 설치 경로  : $exist_dir"
+    echo " - 서비스 포트: $exist_port"
+    echo "================================================================================"
+    echo "[⚠️] 이미 해당 버전의 Nexus가 설치되어 있습니다. 재설치하려면 먼저 '--uninstall' 명령을 실행하여 해당 인스턴스를 삭제하세요."
+    exit 0
+  fi
+
+  # 2. 동일 포트 점유 인스턴스 검사 및 대화형 언인스톨 연계
+  local file
+  for file in "$INSTANCES_DIR"/*.info; do
+    if [ -f "$file" ]; then
+      local exist_port exist_dir exist_service exist_ver exist_data exist_user
+      exist_port=$(grep '^NEXUS_PORT=' "$file" | cut -d'=' -f2- | tr -d '"')
+      exist_dir=$(grep '^INSTALL_DIR=' "$file" | cut -d'=' -f2- | tr -d '"')
+      exist_service=$(grep '^SERVICE_NAME=' "$file" | cut -d'=' -f2- | tr -d '"')
+      exist_ver=$(grep '^NEXUS_VERSION=' "$file" | cut -d'=' -f2- | tr -d '"')
+      exist_data=$(grep '^DATA_DIR=' "$file" | cut -d'=' -f2- | tr -d '"')
+      exist_user=$(grep '^NEXUS_USER=' "$file" | cut -d'=' -f2- | tr -d '"')
+
+      if [ -z "$exist_service" ]; then
+        exist_service="nexus-${exist_ver:-$(basename "$file" .info)}"
+      fi
+
+      if [ "$exist_port" == "$target_port" ]; then
+        echo
+        echo "================================================================================"
+        echo "⚠️  [동일 서비스 포트 점유 감지]"
+        echo " - 포트 번호        : $target_port"
+        echo " - 기존 설치 버전   : $exist_ver"
+        echo " - 기존 설치 경로   : $exist_dir"
+        echo " - 기존 서비스명    : $exist_service"
+        echo " - 신규 설치 버전   : $new_instance_id"
+        echo "================================================================================"
+
+        if [ "$dry_run" = true ]; then
+          echo "[DRY-RUN] 포트 충돌 감지 -> 기존 인스턴스($exist_ver) 삭제 후 신규 버전($new_instance_id) 설치 시뮬레이션을 진행합니다."
+          uninstall_nexus_instance "$exist_ver" "$exist_dir" "$exist_data" "$exist_user" "$exist_service" "$file" true "$new_instance_id"
+          return 0
+        fi
+
+        if [ ! -t 0 ]; then
+          help "포트($target_port)를 사용하는 기존 인스턴스($exist_ver)가 존재합니다. 비대화형 환경에서는 자동 삭제가 불가하므로 먼저 기존 인스턴스를 언인스톨하세요." "$LINENO"
+          exit 1
+        fi
+
+        local confirm_uninstall=""
+        read -r -p "기존 서비스($exist_ver)를 삭제(언인스톨)하고 신규 버전($new_instance_id) 설치를 계속 진행하시겠습니까? (y/N): " confirm_uninstall || { echo -e "\n[ℹ️] 설치 작업이 취소되었습니다."; exit 0; }
+
+        if [[ "$confirm_uninstall" =~ ^[yY]$ ]]; then
+          echo "[ℹ️] 기존 인스턴스($exist_ver) 삭제 후 설치를 계속 진행합니다."
+          uninstall_nexus_instance "$exist_ver" "$exist_dir" "$exist_data" "$exist_user" "$exist_service" "$file" false "$new_instance_id"
+        else
+          echo "[ℹ️] 사용자의 요청에 의해 신규 버전 설치 작업이 안전하게 취소되었습니다."
+          exit 0
+        fi
+      fi
+    fi
+  done
+
+  # 3. 동일 데이터 디렉토리($DATA_DIR) 점유 및 실행 상태 검사 (3대 분기 처리)
+  for file in "$INSTANCES_DIR"/*.info; do
+    if [ -f "$file" ]; then
+      local exist_dir exist_port exist_service exist_ver exist_data exist_user
+      exist_port=$(grep '^NEXUS_PORT=' "$file" | cut -d'=' -f2- | tr -d '"')
+      exist_dir=$(grep '^INSTALL_DIR=' "$file" | cut -d'=' -f2- | tr -d '"')
+      exist_service=$(grep '^SERVICE_NAME=' "$file" | cut -d'=' -f2- | tr -d '"')
+      exist_ver=$(grep '^NEXUS_VERSION=' "$file" | cut -d'=' -f2- | tr -d '"')
+      exist_data=$(grep '^DATA_DIR=' "$file" | cut -d'=' -f2- | tr -d '"')
+      exist_user=$(grep '^NEXUS_USER=' "$file" | cut -d'=' -f2- | tr -d '"')
+
+      if [ -z "$exist_service" ]; then
+        exist_service="nexus-${exist_ver:-$(basename "$file" .info)}"
+      fi
+
+      local is_running=false
+      if systemctl is-active --quiet "$exist_service" 2>/dev/null; then
+        is_running=true
+      fi
+
+      if [ "$exist_data" == "$DATA_DIR" ] && [ "$is_running" = true ]; then
+        echo
+        echo "================================================================================"
+        echo "⚠️  [동일 데이터 디렉토리 실행 충돌 감지]"
+        echo " - 데이터 경로        : $DATA_DIR"
+        echo " - 실행 중인 인스턴스 : $exist_ver (서비스명: $exist_service, 포트: $exist_port)"
+        echo " - 신규 설치 버전     : $new_instance_id"
+        echo "--------------------------------------------------------------------------------"
+        echo "[ℹ️] Nexus는 동일 데이터 디렉토리에 대한 다중 프로세스 동시 실행을 지원하지 않습니다."
+        echo "    아래에서 원하는 설치방법을 선택해 주세요."
+        echo
+        echo " 1) 기존 인스턴스를 삭제하고 새 버전 설치 및 기동을 진행합니다."
+        echo " 2) 데이터 디렉토리를 변경하고 설치를 진행합니다. (단, 이전 데이터의 이관은 진행되지 않습니다.)"
+        echo " 3) 설치를 중단합니다."
+        echo "================================================================================"
+
+        if [ "$dry_run" = true ]; then
+          echo "[DRY-RUN] 데이터 디렉토리 충돌 감지 -> Option 1(기존 삭제 후 신규 설치) 기준으로 시뮬레이션을 계속 진행합니다."
+          uninstall_nexus_instance "$exist_ver" "$exist_dir" "$exist_data" "$exist_user" "$exist_service" "$file" true "$new_instance_id"
+          return 0
+        fi
+
+        if [ ! -t 0 ]; then
+          help "데이터 디렉토리($DATA_DIR)가 기존 인스턴스($exist_ver)에 의해 실행 중입니다. 비대화형 환경에서는 자동 선택이 불가하므로 인스턴스를 중지하거나 디렉토리를 변경하세요." "$LINENO"
+          exit 1
+        fi
+
+        local user_choice=""
+        read -r -p "원하는 번호를 선택하세요 [1-3]: " user_choice || { echo -e "\n[ℹ️] 설치 작업이 중단되었습니다."; exit 0; }
+
+        case "$user_choice" in
+          1)
+            echo "[ℹ️] 기존 인스턴스($exist_ver)를 삭제하고 신규 버전($new_instance_id) 설치를 진행합니다."
+            uninstall_nexus_instance "$exist_ver" "$exist_dir" "$exist_data" "$exist_user" "$exist_service" "$file" false "$new_instance_id"
+            ;;
+          2)
+            echo
+            local new_dir_name=""
+            read -r -p "새로운 데이터 디렉토리 이름을 입력하세요 (기본 경로: ${BASE_INSTALL_DIR}/<입력값>): " new_dir_name || { echo -e "\n[ℹ️] 설치 작업이 중단되었습니다."; exit 0; }
+            new_dir_name=$(echo "$new_dir_name" | sed 's/[^a-zA-Z0-9._-]//g')
+
+            if [ -z "$new_dir_name" ]; then
+              new_dir_name="sonatype-work-${new_instance_id}"
+              echo "[ℹ️] 입력값이 없으므로 기본값('${new_dir_name}')을 적용합니다."
+            fi
+
+            DATA_DIR="${BASE_INSTALL_DIR}/${new_dir_name}"
+            echo "[✅] 데이터 디렉토리가 '${DATA_DIR}'(으)로 변경되었습니다."
+
+            # 변경된 데이터 디렉토리에 대해 재검증 호출
+            check_instance_conflicts "$new_instance_id" "$target_port" "$dry_run"
+            return 0
+            ;;
+          3|*)
+            echo "[ℹ️] 사용자의 요청에 의해 설치 작업이 안전하게 중단되었습니다."
+            exit 0
+            ;;
+        esac
+      fi
+    fi
+  done
+}
+
+##
 # 언인스톨 대상을 저장된 메타데이터 모음에서 탐색하여 로드하는 함수
 #
 # @return 0(성공시) / exit 1(실패시)
@@ -587,10 +869,10 @@ resolve_uninstall_target() {
 
     echo "[ℹ️] 단일 Nexus 인스턴스가 감지되었습니다."
     echo "================================================================================"
-    echo " - 버전      : $v"
-    echo " - 설치 경로 : $d"
+    echo " - 버전       : $v"
+    echo " - 설치 경로  : $d"
     echo " - 서비스 포트: $p"
-    echo " - 실행 계정 : $u"
+    echo " - 실행 계정  : $u"
     echo "================================================================================"
 
     if [ -t 0 ]; then
@@ -651,137 +933,6 @@ resolve_uninstall_target() {
   TARGET_META_FILE="$selected_file"
 
   return 0
-}
-
-##
-# 특정 Nexus 인스턴스 및 서비스, 계정, 디렉토리, 메타데이터를 완전 삭제하는 함수 (드라이 런 가상화 처리)
-#
-# @param $1 {string} 인스턴스 ID
-# @param $2 {string} 바이너리 설치 디렉토리
-# @param $3 {string} 데이터 디렉토리
-# @param $4 {string} 실행 계정명
-# @param $5 {string} Systemd 서비스명
-# @param $6 {string} 메타데이터 파일 경로
-# @param $7 {boolean} 드라이 런 플래그 (true/false)
-#
-# @return stdout
-##
-uninstall_nexus_instance() {
-  local inst_id="$1"
-  local inst_dir="$2"
-  local data_dir="$3"
-  local username="$4"
-  local service_name="$5"
-  local meta_file="$6"
-  local dry_run="${7:-false}"
-
-  if ! sudo -v &>/dev/null; then
-    help "언인스톨 작업을 진행하기 위해 sudo 권한이 필요합니다." "$LINENO"
-    exit 1
-  fi
-
-  if [ "$inst_dir" == "/" ] || [ "$data_dir" == "/" ] || [ -z "$inst_dir" ] || [ -z "$data_dir" ]; then
-    help "삭제 대상 경로가 유효하지 않거나 루트(/) 디렉토리입니다." "$LINENO"
-    exit 1
-  fi
-
-  if [ "$dry_run" = true ]; then
-    echo
-    echo "================================================================================"
-    echo "📌 Nexus 인스턴스 언인스톨 드라이 런(Dry-Run) 시뮬레이션을 시작합니다."
-    echo "================================================================================"
-    echo " - 인스턴스 ID : $inst_id"
-    echo " - 바이너리 경로 : $inst_dir"
-    echo " - 데이터 경로   : $data_dir"
-    echo " - Systemd 서비스: $service_name"
-    echo " - 실행 계정     : $username"
-    echo "================================================================================"
-    echo "[DRY-RUN] [⚙️] Systemd 서비스 중지 및 비활성화 예정 (sudo systemctl stop $service_name && sudo systemctl disable $service_name)"
-    echo "[DRY-RUN] [⚙️] Systemd 서비스 파일 삭제 및 데몬 리로드 예정 (/etc/systemd/system/${service_name}.service)"
-    echo "[DRY-RUN] [📂] 바이너리 디렉토리 삭제 예정 (sudo rm -rf \"$inst_dir\")"
-    echo "[DRY-RUN] [📂] 데이터 디렉토리 삭제 예정 (sudo rm -rf \"$data_dir\")"
-
-    local user_shared=false
-    local file
-    for file in "$INSTANCES_DIR"/*.info; do
-      if [ -f "$file" ] && [ "$file" != "$meta_file" ]; then
-        local other_user
-        other_user=$(grep '^NEXUS_USER=' "$file" | cut -d'=' -f2- | tr -d '"')
-        if [ "$other_user" == "$username" ]; then
-          user_shared=true
-          break
-        fi
-      fi
-    done
-
-    if [ "$user_shared" = false ]; then
-      echo "[DRY-RUN] [👤] 미공유 전용 시스템 계정 삭제 예정 (sudo userdel \"$username\")"
-    else
-      echo "[DRY-RUN] [ℹ️] 타 인스턴스 공유 계정이므로 삭제하지 않고 유지 예정 ($username)"
-    fi
-
-    echo "[DRY-RUN] [🗑️] 인스턴스 메타데이터 파일 삭제 예정 (sudo rm -f \"$meta_file\")"
-    echo "================================================================================"
-    echo "[✅] Nexus 언인스톨 드라이 런(Dry-Run) 시뮬레이션 완료! (실제 시스템 변경 사항 없음)"
-    echo "================================================================================"
-    return 0
-  fi
-
-  echo "[🗑️] Nexus 인스턴스 언인스톨 작업을 시작합니다..."
-  echo " - 인스턴스 ID : $inst_id"
-  echo " - 바이너리 경로 : $inst_dir"
-  echo " - 데이터 경로   : $data_dir"
-  echo " - Systemd 서비스: $service_name"
-  echo " - 실행 계정     : $username"
-
-  local service_file="/etc/systemd/system/${service_name}.service"
-  if [ -f "$service_file" ] || systemctl is-active --quiet "$service_name" 2>/dev/null; then
-    echo "[⚙️] Systemd 서비스($service_name) 중지 및 비활성화 중..."
-    sudo systemctl stop "$service_name" 2>/dev/null || true
-    sudo systemctl disable "$service_name" 2>/dev/null || true
-    if [ -f "$service_file" ]; then
-      sudo rm -f "$service_file"
-      sudo systemctl daemon-reload
-    fi
-    echo "[✅] Systemd 서비스 제거 완료."
-  fi
-
-  if [ -d "$inst_dir" ]; then
-    echo "[📂] 바이너리 디렉토리 삭제 중 -> $inst_dir"
-    sudo rm -rf "$inst_dir"
-  fi
-
-  if [ -d "$data_dir" ]; then
-    echo "[📂] 데이터 디렉토리 삭제 중 -> $data_dir"
-    sudo rm -rf "$data_dir"
-  fi
-
-  local user_shared=false
-  local file
-  for file in "$INSTANCES_DIR"/*.info; do
-    if [ -f "$file" ] && [ "$file" != "$meta_file" ]; then
-      local other_user
-      other_user=$(grep '^NEXUS_USER=' "$file" | cut -d'=' -f2- | tr -d '"')
-      if [ "$other_user" == "$username" ]; then
-        user_shared=true
-        break
-      fi
-    fi
-  done
-
-  if [ "$user_shared" = false ] && id "$username" &>/dev/null; then
-    echo "[👤] 다른 인스턴스에서 사용하지 않는 시스템 계정이므로 삭제합니다 -> $username"
-    sudo userdel "$username" 2>/dev/null || true
-  else
-    echo "[ℹ️] 시스템 계정 '$username'은(는) 다른 Nexus 인스턴스에서 사용 중이므로 유지합니다."
-  fi
-
-  if [ -f "$meta_file" ]; then
-    echo "[🗑️] 인스턴스 메타데이터 파기 중 -> $meta_file"
-    sudo rm -f "$meta_file"
-  fi
-
-  echo "[✅] Nexus 인스턴스($inst_id)가 성공적으로 완벽 제거되었습니다."
 }
 
 # 파라미터 파싱
@@ -914,7 +1065,8 @@ elif [ "$ACTION" = "install" ]; then
   INSTANCE_ID="${NEXUS_VERSION}"
   SERVICE_NAME="nexus-${INSTANCE_ID}"
 
-  check_instance_conflicts "$INSTANCE_ID" "$NEXUS_PORT"
+  # 버전 중복, 포트 충돌 및 데이터 디렉토리 동시 실행 충돌 검사 (3대 분기 처리 포함)
+  check_instance_conflicts "$INSTANCE_ID" "$NEXUS_PORT" "$IS_DRY_RUN"
   check_prerequisites "$NEXUS_PORT" "$BASE_INSTALL_DIR"
 
   if [ "$IS_DRY_RUN" = true ]; then
