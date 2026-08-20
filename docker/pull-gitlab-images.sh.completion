@@ -1,0 +1,75 @@
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : pull gitlab images.
+# @license : Apache License 2.0
+# @since : 2026-08-20
+# @desc : support Ubuntu 18.04 or higher, RHEL 7 or higher, Oracle Linux 7 or higher, RockyOS 8 or higher, CentOS 7 or higher
+# @installation : 
+# 1. insert 'source <path>/<파일명>" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/<파일명>' into /etc/bashrc for all users.
+# =======================================
+#
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+# 
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+# 
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+# =======================================
+
+_pull_gitlab_images_completion() {
+  local cur prev opts remaining_opts found
+  
+  cur="${2:-}"
+  prev="${3:-}"
+  opts="-f --file -o --output -h --help"
+  
+  # 파일 파라미터에 대한 텍스트 파일 자동 추천 (Suggest files)
+  if [[ "$prev" == "-f" || "$prev" == "--file" ]]; then
+    COMPREPLY=( $(compgen -f -- "$cur") )
+    return 0
+  fi
+
+  # 출력 디렉토리에 대한 경로 자동 추천 (Suggest directories)
+  if [[ "$prev" == "-o" || "$prev" == "--output" ]]; then
+    COMPREPLY=( $(compgen -d -- "$cur") )
+    return 0
+  fi
+
+  # 이미 사용된 옵션을 배열에서 필터링하여 중복 제안 방지
+  remaining_opts=""
+  for opt in $opts; do
+    found=0
+    for word in "${COMP_WORDS[@]}"; do
+      if [[ "$opt" == "$word" ]]; then
+        found=1
+        break
+      fi
+    done
+    if [[ $found -eq 0 ]]; then
+      remaining_opts="$remaining_opts $opt "
+    fi
+  done
+
+  # 경로 탐색 시 탭 키를 이용한 디렉토리/파일 추천 연동
+  if [[ "$cur" == /* || "$cur" == ./* || "$cur" == ../* ]]; then
+    COMPREPLY=( $(compgen -f -- "$cur") )
+    return 0
+  fi
+
+  # 대시(-) 없이 탭 입력 시 남은 파라미터 자동 추천 적용
+  COMPREPLY=( $(compgen -W "$remaining_opts" -- "$cur") )
+  return 0
+}
+
+complete -o default -F _pull_gitlab_images_completion pull-gitlab-images.sh
