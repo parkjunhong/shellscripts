@@ -5,7 +5,7 @@ set -Eeuo pipefail
 # @author   : parkjunhong77@gmail.com
 # @title    : firewall-cmd zone info wrapper.
 # @license  : Apache License 2.0
-# @since    : 2026-08-20
+# @since    : 2026-08-21
 # @desc     : support RHEL 7+, Oracle Linux 7+, Ubuntu 18.04+, RockyOS 8+, CentOS 7+
 # @installation : 
 #   1. insert 'source <path>/fwc-cli.sh" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
@@ -58,6 +58,29 @@ help(){
   echo "                               지원항목: sources, services, ports, protocols, forward-ports, source-ports,"
   echo "                                         icmp-blocks, rich-rules, interfaces"
   echo "  -h, --help                   도움말 출력"
+}
+
+##
+# 터미널 창의 너비에 맞춰 최대 70자까지 등호(=) 구분선을 동적으로 출력합니다.
+#
+# @return 등호(=) 구분선 문자열 출력
+##
+print_separator() {
+  local cols=70
+  if [ -t 1 ]; then
+    cols=$(tput cols 2>/dev/null || echo "${COLUMNS:-70}")
+  else
+    cols="${COLUMNS:-70}"
+  fi
+
+  if ! [[ "$cols" =~ ^[0-9]+$ ]] || [ "$cols" -le 0 ]; then
+    cols=70
+  fi
+
+  local sep_len=$(( cols < 70 ? cols : 70 ))
+  local line
+  printf -v line '%*s' "$sep_len" ''
+  echo "${line// /=}"
 }
 
 ##
@@ -122,9 +145,9 @@ print_zone_info() {
   local zone_name="${1:-}"
   if [ -z "$zone_name" ]; then return 0; fi
 
-  echo "============================================================"
+  print_separator
   echo "🛡️  Zone: $zone_name"
-  echo "============================================================"
+  print_separator
   
   if ! sudo firewall-cmd --zone="$zone_name" --list-all 2>/dev/null; then
     echo ""
@@ -290,9 +313,9 @@ fi
 
 # 0. 규칙 추가/삭제 처리
 if [ "$has_modification" == "true" ]; then
-  echo "================================================================================"
+  print_separator
   echo "🛡️  방화벽 규칙 변경 적용 중..."
-  echo "================================================================================"
+  print_separator
   
   local_cmd=(sudo firewall-cmd)
   if [ "$PERMANENT_FLAG" == "true" ]; then
@@ -351,7 +374,7 @@ if [ "$RELOAD_FLAG" == "true" ]; then
   ACTIVE_ZONE_ALL="true"
 fi
 
-# 2. Zone 수집 (연관 배열 첨자 오류 방지 로직 적용)
+# 2. Zone 수집
 declare -A UNIQUE_ZONES=()
 
 if [ "$ACTIVE_ZONE_ALL" == "true" ] || [ ${#ACTIVE_ZONE_TARGETS[@]} -gt 0 ]; then
