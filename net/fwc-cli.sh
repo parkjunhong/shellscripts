@@ -3,9 +3,9 @@ set -Eeuo pipefail
 
 # =======================================
 # @author   : parkjunhong77@gmail.com
-# @title    : firewall-cmd zone info wrapper.
+# @title    : search files.
 # @license  : Apache License 2.0
-# @since    : 2026-08-21
+# @since    : 2026-09-01
 # @desc     : support RHEL 7+, Oracle Linux 7+, Ubuntu 18.04+, RockyOS 8+, CentOS 7+
 # @installation : 
 #   1. insert 'source <path>/fwc-cli.sh" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
@@ -17,8 +17,8 @@ readonly FILENAME=$(basename "$0")
 ##
 # 스크립트의 사용법을 출력하거나 오류 발생 시 콜스택을 출력합니다.
 #
-# @param $1 {string}
-# @param $2 {string}
+# @param $1 {string} 오류 원인 메시지
+# @param $2 {string} 오류 발생 라인 번호
 #
 # @return 사용법 문구 및 콜스택 출력
 ##
@@ -50,8 +50,7 @@ help(){
   echo "  --active-zone=<zone>[,<zone>] 지정한 zone이 활성화되어 있는지 확인 및 정보 조회 (콤마 구분)"
   echo "  --reload                     방화벽 설정 리로드 및 활성화된 zone 정보 조회"
   echo "  --permanent                  설정을 영구적(permanent)으로 적용"
-  echo "  --clear-all                  지정된 zone의 모든 규칙 항목을 일괄 삭제. 단, interface는 유지됨."
-  echo "                               (가장 먼저 수행되며 개별 remove 무시)"
+  echo "  --clear-all                  지정된 zone의 모든 규칙 항목을 일괄 삭제 (가장 먼저 수행되며 개별 remove 무시)"
   echo "  --add-<항목>=<값>            지정된 zone에 규칙 추가 (콤마 구분)."
   echo "                               지원항목: sources, services, ports, protocols, forward-ports, source-ports,"
   echo "                                         icmp-blocks, rich-rules, interfaces"
@@ -62,23 +61,23 @@ help(){
 }
 
 ##
-# 터미널 창의 너비에 맞춰 최대 70자까지 등호(=) 구분선을 동적으로 출력합니다.
+# 터미널 창의 너비에 맞춰 최대 50자까지 등호(=) 구분선을 동적으로 출력합니다.
 #
 # @return 등호(=) 구분선 문자열 출력
 ##
 print_separator() {
-  local cols=70
+  local cols=50
   if [ -t 1 ]; then
-    cols=$(tput cols 2>/dev/null || echo "${COLUMNS:-70}")
+    cols=$(tput cols 2>/dev/null || echo "${COLUMNS:-50}")
   else
-    cols="${COLUMNS:-70}"
+    cols="${COLUMNS:-50}"
   fi
 
   if ! [[ "$cols" =~ ^[0-9]+$ ]] || [ "$cols" -le 0 ]; then
-    cols=70
+    cols=50
   fi
 
-  local sep_len=$(( cols < 70 ? cols : 70 ))
+  local sep_len=$(( cols < 50 ? cols : 50 ))
   local line
   printf -v line '%*s' "$sep_len" ''
   echo "${line// /=}"
@@ -179,13 +178,14 @@ apply_items() {
   for item in "$@"; do
     if [ -n "$item" ]; then
       echo " - [$target_zone] $action: $item"
-      "${local_cmd[@]}" --zone="$target_zone" "$action=$item" >/dev/null
+      "${local_cmd[@]}" --zone="$target_zone" "$action=$item" >/dev/null 2>&1 || true
     fi
   done
 }
 
 ##
 # 대상 zone의 특정 카테고리에 속한 모든 방화벽 규칙을 일괄 삭제합니다.
+# 기본 존(Default Zone) 여부를 확인하여 분리 불가능한 제약사항을 안내합니다.
 #
 # @param $1 {string} 타겟 zone 이름
 # @param $2 {string} 조회할 액션 리스트 옵션 (예: --list-sources)
@@ -197,28 +197,51 @@ remove_all_items() {
   local target_zone="${1:-}"
   local action_list="${2:-}"
   local action_remove="${3:-}"
-  
-  local list_cmd=(sudo firewall-cmd --zone="$target_zone")
-  [ "$PERMANENT_FLAG" == "true" ] && list_cmd+=("--permanent")
+  if [ -z "$target_zone" ] || [ -z "$action_list" ] || [ -z "$action_remove" ]; then return 0; fi
+
+  local default_zone=""
+  default_zone=$(sudo firewall-cmd --get-default-zone 2>/dev/null || echo "")
+
+  if [ "$action_remove" == "--remove-interface" ] && [ "$target_zone" == "$default_zone" ]; then
+    echo " ⚠️  [$target_zone] 기본 존(Default Zone)의 활성 인터페이스는 firewalld 정책상 완전히 분리(Zoneless)할 수 없습니다."
+  fi
+
+  local items_to_remove=()
 
   if [ "$action_list" == "--list-rich-rules" ]; then
+    local list_cmd=(sudo firewall-cmd --zone="$target_zone")
+    [ "$PERMANENT_FLAG" == "true" ] && list_cmd+=("--permanent")
     while IFS= read -r rule; do
       rule="${rule#"${rule%%[![:space:]]*}"}"
       rule="${rule%"${rule##*[![:space:]]}"}"
-      if [ -n "$rule" ]; then
-        echo " - [$target_zone] $action_remove (전체): $rule"
-        "${local_cmd[@]}" --zone="$target_zone" "$action_remove=$rule" >/dev/null
-      fi
-    done < <("${list_cmd[@]}" "$action_list" 2>/dev/null)
+      [ -n "$rule" ] && items_to_remove+=("$rule")
+    done < <("${list_cmd[@]}" "$action_list" 2>/dev/null || true)
   else
-    local raw_output
-    raw_output=$("${list_cmd[@]}" "$action_list" 2>/dev/null || true)
+    local runtime_out permanent_out
+    runtime_out=$(sudo firewall-cmd --zone="$target_zone" "$action_list" 2>/dev/null || true)
+    permanent_out=$(sudo firewall-cmd --zone="$target_zone" --permanent "$action_list" 2>/dev/null || true)
+
+    local combined="$runtime_out $permanent_out"
     local item
-    for item in $raw_output; do
-      if [ -n "$item" ]; then
-        echo " - [$target_zone] $action_remove (전체): $item"
-        "${local_cmd[@]}" --zone="$target_zone" "$action_remove=$item" >/dev/null
-      fi
+    for item in $combined; do
+      [ -z "$item" ] && continue
+      local exists="false"
+      local existing
+      for existing in "${items_to_remove[@]:-}"; do
+        if [ "$existing" == "$item" ]; then
+          exists="true"
+          break
+        fi
+      done
+      [ "$exists" == "false" ] && items_to_remove+=("$item")
+    done
+  fi
+
+  if [ ${#items_to_remove[@]} -gt 0 ]; then
+    local target_item
+    for target_item in "${items_to_remove[@]}"; do
+      echo " - [$target_zone] $action_remove (전체): $target_item"
+      "${local_cmd[@]}" --zone="$target_zone" "$action_remove=$target_item" >/dev/null 2>&1 || true
     done
   fi
 }
