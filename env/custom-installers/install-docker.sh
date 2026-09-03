@@ -3,7 +3,7 @@
 # @author   : parkjunhong77@gmail.com
 # @title    : install docker.
 # @license  : Apache License 2.0
-# @since    : 2026-07-13
+# @since    : 2026-09-03
 # @desc     : support Ubuntu 20.04+, Rocky Linux 9+
 # @installation : 
 #   1. insert 'source <path>/install-docker.sh" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
@@ -34,10 +34,10 @@ help(){
     printf "$formatl" "line" "${2:-}"
     printf "$formatl" "callstack"
     local idx=1
-    for func in ${FUNCNAME[@]:1}
+    for func in "${FUNCNAME[@]:1}"
     do  
-      printf "$formatr" "["$idx"]" $func
-      ((idx++))
+      printf "$formatr" "["$idx"]" "$func"
+      ((idx++)) || true
     done
     printf "$formatl" "cause" "$1"
     echo "================================================================================"
@@ -56,7 +56,7 @@ help(){
 # @return (표준 출력으로 로그 출력)
 ##
 log() {
-  printf '[INFO] %s\n' "$*"
+  printf 'ℹ️  [INFO] %s\n' "$*"
 }
 
 ##
@@ -84,7 +84,7 @@ trap 'help "스크립트 실행 중 오류가 발생했습니다." "$LINENO"' ER
 execute() {
   local desc="$1"
   shift
-  printf '[INFO] %s\n' "${desc}"
+  printf '⚙️  [INFO] %s\n' "${desc}"
   printf '  > %s\n' "$*"
   "$@"
 }
@@ -92,7 +92,7 @@ execute() {
 while [[ "$#" -gt 0 ]]; do
   case $1 in
     -h|--help)
-      help
+      help "" ""
       exit 0
       ;;
     *)
@@ -128,12 +128,12 @@ install_ubuntu() {
 
   execute "Docker 공식 GPG 키를 저장할 디렉토리를 생성합니다." sudo install -m 0755 -d /etc/apt/keyrings
 
-  printf '[INFO] %s\n' "Docker 공식 GPG 키를 다운로드하여 등록합니다."
+  printf '🔑 [INFO] %s\n' "Docker 공식 GPG 키를 다운로드하여 등록합니다."
   printf '  > %s\n' "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --yes --dearmor -o /etc/apt/keyrings/docker.gpg"
   curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --yes --dearmor -o /etc/apt/keyrings/docker.gpg
   execute "GPG 키 파일의 권한을 변경합니다." sudo chmod a+r /etc/apt/keyrings/docker.gpg
 
-  printf '[INFO] %s\n' "Docker 공식 저장소를 APT 소스 목록에 추가합니다."
+  printf '📦 [INFO] %s\n' "Docker 공식 저장소를 APT 소스 목록에 추가합니다."
   printf '  > %s\n' "echo \"deb ...\" | sudo tee /etc/apt/sources.list.d/docker.list"
   echo \
     "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
@@ -165,6 +165,47 @@ install_rocky() {
   execute "Docker 엔진 및 관련 플러그인을 설치합니다." sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 }
 
+##
+# 사용자를 docker 그룹에 추가하여 sudo 없이 Docker 명령어를 사용할 수 있도록 구성합니다.
+#
+# @param 없음
+#
+# @return (docker 그룹 등록 및 세션 반영 안내 출력)
+##
+configure_docker_user_group() {
+  local target_user="${SUDO_USER:-$(id -un)}"
+
+  if [[ -z "$target_user" || "$target_user" == "root" ]]; then
+    log "루트(root) 계정은 기본적으로 권한을 보유하므로 docker 그룹 등록을 건너뜁니다."
+    return 0
+  fi
+
+  echo ""
+  log "비-루트 사용자 '${target_user}'의 docker 그룹 권한 설정을 진행합니다."
+
+  # docker 그룹 존재 여부 확인 및 생성
+  if ! getent group docker >/dev/null 2>&1; then
+    execute "docker 시스템 그룹을 생성합니다." sudo groupadd docker
+  fi
+
+  # 이미 그룹에 등록되어 있는지 검사
+  if id -nG "$target_user" 2>/dev/null | grep -qw "docker"; then
+    echo "ℹ️  [INFO] 사용자 '${target_user}'는 이미 docker 그룹에 등록되어 있습니다."
+  else
+    execute "사용자 '${target_user}'를 docker 그룹에 추가합니다." sudo usermod -a -G docker "$target_user"
+    echo "✅ [SUCCESS] 사용자 '${target_user}'가 docker 그룹에 등록되었습니다."
+  fi
+
+  echo ""
+  echo "================================================================================"
+  echo "💡 [사용 권한 안내]"
+  echo "   기본적으로 docker 명령어는 root 권한이 필요합니다."
+  echo "   sudo를 매번 붙이지 않고 '${target_user}' 사용자로 실행하려면 아래 중 하나를 적용하십시오:"
+  echo "   1) 터미널 세션 로그아웃 후 다시 로그인"
+  echo "   2) 현재 터미널 세션에 즉시 반영: newgrp docker"
+  echo "================================================================================"
+}
+
 # OS에 따른 설치 함수 분기
 case "${ID}" in
   ubuntu)
@@ -186,5 +227,8 @@ if command -v docker >/dev/null 2>&1; then
 else
   die "설치 후 docker 실행 파일을 찾지 못했습니다."
 fi
+
+# 비-루트 사용자 docker 그룹 권한 구성
+configure_docker_user_group
 
 exit 0
