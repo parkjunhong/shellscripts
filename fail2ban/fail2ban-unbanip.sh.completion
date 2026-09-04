@@ -1,0 +1,102 @@
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : search files.
+# @license : Apache License 2.0
+# @since : 2026-09-03
+# @desc : support RHEL 7 or higher, Oracle Linux 7 or higher, Ubuntu 18.04 or higher, RockyOS 8 or higher, CentOS 7 or higher
+# @installation : 
+# 1. insert 'source <path>/fail2ban-unbanip.sh.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/fail2ban-unbanip.sh.completion' into /etc/bashrc for all users.
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+#
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+# =======================================
+
+##
+# fail2ban-unbanip.sh 스크립트의 자동완성(Auto-completion)을 지원하는 함수입니다.
+# Auto-completion function for fail2ban-unbanip.sh script.
+##
+_fail2ban_unbanip_completion() {
+  local cur prev opts available_opts opt is_used word
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  # 스크립트 지원 옵션 목록 정의 / Define supported options list
+  opts="--jail --ip --help"
+
+  # 이전 파라미터 컨텍스트에 따른 동적 자동완성 제어 / Dynamic completion based on previous context
+  case "${prev}" in
+    -j|--jail)
+      # Fail2ban 활성 감옥 목록 동적 조회 및 추천
+      # Dynamically query and suggest active Fail2ban jail list
+      local jail_list=""
+      if command -v fail2ban-client >/dev/null 2>&1; then
+        jail_list="$(fail2ban-client status 2>/dev/null | grep -E 'Jail list:' | sed -E 's/.*Jail list:[[:space:]]*//' | tr -d ',' || true)"
+        if [[ -z "$jail_list" ]] && sudo -n true 2>/dev/null; then
+          jail_list="$(sudo -n fail2ban-client status 2>/dev/null | grep -E 'Jail list:' | sed -E 's/.*Jail list:[[:space:]]*//' | tr -d ',' || true)"
+        fi
+      fi
+
+      if [ -n "$jail_list" ]; then
+        COMPREPLY=( $(compgen -W "${jail_list}" -- "${cur}") )
+      fi
+      return 0
+      ;;
+
+    -i|--ip)
+      # firewalld public zone의 rich rules에서 reject/drop 대상 소스 IP 목록 동적 추천
+      # Dynamically suggest source IPs rejected or dropped in firewalld public zone rich rules
+      local rejected_ips=""
+      if command -v firewall-cmd >/dev/null 2>&1; then
+        rejected_ips="$(firewall-cmd --zone=public --list-rich-rules 2>/dev/null | grep -E 'reject|drop' | grep -oE 'source address="[^"]+"' | sed -E 's/source address="([^"]+)"/\1/' || true)"
+        if [[ -z "$rejected_ips" ]] && sudo -n true 2>/dev/null; then
+          rejected_ips="$(sudo -n firewall-cmd --zone=public --list-rich-rules 2>/dev/null | grep -E 'reject|drop' | grep -oE 'source address="[^"]+"' | sed -E 's/source address="([^"]+)"/\1/' || true)"
+        fi
+      fi
+
+      if [ -n "$rejected_ips" ]; then
+        COMPREPLY=( $(compgen -W "${rejected_ips}" -- "${cur}") )
+      fi
+      return 0
+      ;;
+
+    *)
+      ;;
+  esac
+
+  # 이미 입력된 단일 사용 옵션 필터링하여 중복 추천 방지 / Filter out already entered options
+  available_opts=""
+  for opt in $opts; do
+    is_used=0
+    for word in "${COMP_WORDS[@]}"; do
+      if [[ "$word" == "$opt" ]]; then
+        is_used=1
+        break
+      fi
+    done
+    if [[ $is_used -eq 0 ]]; then
+      available_opts="$available_opts $opt"
+    fi
+  done
+
+  # 커서에 '-' 또는 '--' 입력 여부와 무관하게 TAB 입력 시 사용 가능한 옵션 즉시 추천
+  # Suggest available options immediately on TAB even if '-' or '--' is not yet typed
+  COMPREPLY=( $(compgen -W "${available_opts}" -- "${cur}") )
+}
+
+# 스크립트 파일명과 자동완성 함수 연결 / Bind completion function to the script
+complete -F _fail2ban_unbanip_completion fail2ban-unbanip.sh
