@@ -338,7 +338,7 @@ fi
 # 0. 규칙 추가/삭제 처리
 if [ "$has_modification" == "true" ]; then
   print_separator
-  echo "🛡️  방화벽 규칙 변경 적용 중..."
+  echo "🛡️  [${TARGET_ZONES[@]}] 방화벽 규칙 변경 적용 중..."
   print_separator
   
   local_cmd=(sudo firewall-cmd)
