@@ -1,21 +1,30 @@
 #!/usr/bin/env bash
 # =======================================
 # @author : parkjunhong77@gmail.com
-# @title : pull gitlab images.
+# @title : search files.
 # @license : Apache License 2.0
-# @since : 2026-08-20
+# @since : 2026-08-25
 # @desc : support Ubuntu 18.04 or higher, RHEL 7 or higher, Oracle Linux 7 or higher, RockyOS 8 or higher, CentOS 7 or higher
 # @installation : 
-# 1. insert 'source <path>/<파일명>" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/<파일명>' into /etc/bashrc for all users.
+# 1. insert 'source <path>/pull-gitlab-images.sh" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/pull-gitlab-images.sh' into /etc/bashrc for all users.
 # =======================================
 
 set -Eeuo pipefail
 
 FILENAME=$(basename "$0")
 
+##
+# 스크립트 사용 방법 및 오류 원인을 출력합니다.
+#
+# @param $1 {string} (오류 발생 시 원인 메시지)
+# @param $2 {string} (오류 발생 라인)
+#
+# @return (도움말 내용 출력)
+##
 help(){
-  if [ ! -z "${1:-}" ]; then
+  if [ ! -z "${1:-}" ];
+  then
     local indent=10
     local formatl=" - %-"$indent"s: %s\n"
     local formatr=" - %"$indent"s: %s\n"
@@ -23,23 +32,23 @@ help(){
     echo "================================================================================"
     printf "$formatl" "filename" "$FILENAME"
     printf "$formatl" "line" "${2:-}"
-    printf "$formatl" "callstack" ""
+    printf "$formatl" "callstack"
     local idx=1
-    if [ ${#FUNCNAME[@]} -gt 1 ]; then
-      for func in "${FUNCNAME[@]:1}"; do 
-        printf "$formatr" "["$idx"]" "$func"
-        ((idx++))
-      done
-    fi
+    for func in "${FUNCNAME[@]:1}"
+    do
+      printf "$formatr" "["$idx"]" "$func"
+      ((idx++)) || true
+    done
     printf "$formatl" "cause" "$1"
     echo "================================================================================"
-  fi 
-  echo 
+  fi
+  echo
   echo "사용법 (Usage): $FILENAME [옵션]"
   echo "옵션 (Options):"
-  echo "  -f, --file <파일 경로>    GitLab 버전 목록이 작성된 텍스트 파일 경로 지정"
-  echo "  -o, --output <경로>       다운로드 후 tar 아카이브로 저장할 디렉토리 경로 (생략 시 다운로드만 수행)"
-  echo "  -h, --help                도움말 출력"
+  echo "  --version <버전>[,<버전>...] GitLab 버전 직접 지정 (쉼표로 구분)"
+  echo "  --file <파일 경로>           GitLab 버전 목록이 작성된 텍스트 파일 경로 지정"
+  echo "  --output <경로>              다운로드 후 tar 아카이브로 저장할 디렉토리 경로 (생략 시 다운로드만 수행)"
+  echo "  --help                       도움말 출력"
 }
 
 trap 'help "스크립트 실행 중 예기치 않은 오류가 발생했습니다." "$LINENO"' ERR
@@ -58,6 +67,82 @@ check_sudo_privilege() {
       exit 1
     }
   fi
+}
+
+##
+# 시스템에 Docker가 설치되어 있는지 확인하고, 미설치 시 사용자 동의를 얻어 설치를 지원합니다.
+#
+# @param 없음
+#
+# @return (설치 거부 시 정상 종료, 설치 실패 시 exit 1)
+##
+ensure_docker_installed() {
+  if command -v docker >/dev/null 2>&1; then
+    return 0
+  fi
+
+  echo "⚠️  [WARN] 시스템에 Docker가 설치되어 있지 않습니다."
+
+  # 표준 입력(TTY)이 연결되어 있지 않은 비대화형 환경 방어
+  if [ ! -t 0 ] && [ ! -e /dev/tty ]; then
+    echo "❌ [ERROR] 비대화형 환경에서는 Docker 자동 설치 프롬프트를 실행할 수 없습니다. Docker를 먼저 설치하십시오."
+    exit 1
+  fi
+
+  local install_answer=""
+  if [ -e /dev/tty ]; then
+    read -r -p "👉 Docker를 지금 시스템에 설치하시겠습니까? (y/N): " install_answer < /dev/tty
+  else
+    read -r -p "👉 Docker를 지금 시스템에 설치하시겠습니까? (y/N): " install_answer
+  fi
+
+  case "$install_answer" in
+    [yY]|[yY][eE][sS])
+      echo "⏳ [INFO] Docker 설치를 시작합니다. 잠시만 기다려주세요..."
+      check_sudo_privilege
+
+      if command -v apt >/dev/null 2>&1; then
+        echo "📦 [APT] 패키지 목록을 갱신하고 Docker를 설치합니다..."
+        sudo apt update -y || true
+        sudo apt install -y docker.io || {
+          help "APT 패키지 관리자를 통한 Docker 설치에 실패했습니다." "$LINENO"
+          exit 1
+        }
+      elif command -v dnf >/dev/null 2>&1; then
+        echo "📦 [DNF] Docker 패키지를 설치합니다..."
+        sudo dnf install -y docker || sudo dnf install -y docker-ce || {
+          help "DNF 패키지 관리자를 통한 Docker 설치에 실패했습니다." "$LINENO"
+          exit 1
+        }
+      elif command -v yum >/dev/null 2>&1; then
+        echo "📦 [YUM] Docker 패키지를 설치합니다..."
+        sudo yum install -y docker || sudo yum install -y docker-ce || {
+          help "YUM 패키지 관리자를 통한 Docker 설치에 실패했습니다." "$LINENO"
+          exit 1
+        }
+      else
+        help "지원하는 패키지 관리자(apt, dnf, yum)를 찾을 수 없어 자동 설치를 진행할 수 없습니다." "$LINENO"
+        exit 1
+      fi
+
+      # 서비스 시작 및 활성화
+      echo "🚀 [INFO] Docker 서비스를 시작하고 활성화합니다..."
+      sudo systemctl start docker 2>/dev/null || sudo service docker start 2>/dev/null || true
+      sudo systemctl enable docker 2>/dev/null || true
+
+      if ! command -v docker >/dev/null 2>&1; then
+        help "Docker 설치 후 바이너리를 확인할 수 없습니다." "$LINENO"
+        exit 1
+      fi
+
+      echo "✅ [SUCCESS] Docker 설치 및 서비스 기동이 완료되었습니다."
+      echo ""
+      ;;
+    *)
+      echo "🛑 [INFO] Docker 설치를 취소했습니다. 작업을 진행하지 않고 종료합니다."
+      exit 0
+      ;;
+  esac
 }
 
 ##
@@ -104,12 +189,47 @@ check_local_image_exists() {
   local image_name="$1"
   local image_id
   image_id=$(sudo docker images -q "$image_name" 2>/dev/null)
-  
+
   if [ -n "$image_id" ]; then
     return 0
   else
     return 1
   fi
+}
+
+##
+# 순수 숫자 버전 입력 시 사용자에게 대화형으로 EE 또는 CE 에디션을 질의합니다.
+#
+# @param $1 {string} 순수 숫자 버전 문자열 (예: 19.3.0)
+#
+# @return {string} 결정된 에디션 문자열 ('ee' 또는 'ce')
+##
+prompt_edition_selection() {
+  local num_version="$1"
+  local choice=""
+
+  while true; do
+    echo "❓ [SELECT] 버전 '$num_version' 의 GitLab 에디션을 선택해 주십시오."
+    if [ -e /dev/tty ]; then
+      read -r -p "👉 에디션 선택 (1: EE [Enterprise] / 2: CE [Community]) [기본값: EE]: " choice < /dev/tty
+    else
+      read -r -p "👉 에디션 선택 (1: EE [Enterprise] / 2: CE [Community]) [기본값: EE]: " choice
+    fi
+
+    case "$choice" in
+      ""|1|[eE][eE]|[gG][iI][tT][lL][aA][bB]-[eE][eE])
+        echo "ee"
+        return 0
+        ;;
+      2|[cC][eE]|[gG][iI][tT][lL][aA][bB]-[cC][eE])
+        echo "ce"
+        return 0
+        ;;
+      *)
+        echo "⚠️  [WARN] 잘못된 입력입니다. '1'(EE) 또는 '2'(CE)를 입력하십시오." >&2
+        ;;
+    esac
+  done
 }
 
 ##
@@ -123,12 +243,12 @@ check_local_image_exists() {
 pull_and_register_image() {
   local raw_version="$1"
   local output_dir="$2"
-  
-  # 데이터 정제 (공백 및 윈도우 줄바꿈 제거)
+
+  # 데이터 정제 (공백 및 윈도우 개행문자 제거)
   local clean_version
   clean_version=$(echo "$raw_version" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-  
-  # 주석 및 빈 줄 스킵 (로그 구분선이 출력되기 전에 조기 종료)
+
+  # 주석 및 빈 줄 스킵
   if [[ -z "$clean_version" || "$clean_version" == \#* ]]; then
     return 0
   fi
@@ -137,12 +257,23 @@ pull_and_register_image() {
   echo "==================== [ 버전: $clean_version ] ===================="
 
   local version="$clean_version"
-  
-  # 버전 포맷 유효성 검사 및 스마트 교정
-  if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-(ee|ce)$ ]]; then
+  local edition="ee"
+
+  # 버전 포맷 유효성 검사, 에디션 질의 및 스마트 교정
+  if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    edition=$(prompt_edition_selection "$version")
+    version="${version}-${edition}.0"
+    echo "ℹ️  [INFO] 선택된 에디션을 반영하여 태그를 구성합니다 -> $version"
+  elif [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-(ee|ce)$ ]]; then
+    if [[ "$version" =~ -(ee|ce)$ ]]; then
+      edition="${BASH_REMATCH[1]}"
+    fi
     version="${version}.0"
     echo "⚠️  [WARN] 빌드 번호가 누락되어 태그를 교정합니다 -> $version"
   elif [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-(ee|ce)\.0$ ]]; then
+    if [[ "$version" =~ -(ee|ce)\.0$ ]]; then
+      edition="${BASH_REMATCH[1]}"
+    fi
     echo "✅ [INFO] 유효한 버전 포맷입니다 -> $version"
   else
     echo "❌ [ERROR] 지원하지 않는 버전 포맷입니다 (스킵 처리) -> $version"
@@ -150,12 +281,12 @@ pull_and_register_image() {
     return 1
   fi
 
-  local image_name="gitlab/gitlab-ee:$version"
+  local image_name="gitlab/gitlab-${edition}:$version"
   echo "🚀 [START] 대상 이미지 제어 -> $image_name"
 
   # 1. 로컬 존재 여부 분기
   if check_local_image_exists "$image_name"; then
-    echo "⏭️  [SKIP] 로컬 환경에 이미 존재하는 이미지입니다 -> $image_name"
+    echo "⏭️   [SKIP] 로컬 환경에 이미 존재하는 이미지입니다 -> $image_name"
   else
     echo "⏳ [PULL] 이미지를 다운로드 중입니다. 잠시만 기다려주세요..."
     if ! sudo docker pull "$image_name"; then
@@ -167,10 +298,10 @@ pull_and_register_image() {
 
   # 2. 아카이빙(Save) 분기
   if [ -n "$output_dir" ]; then
-    local tar_file="$output_dir/gitlab-ee-${version}.tar"
-    
+    local tar_file="$output_dir/gitlab-${edition}-${version}.tar"
+
     if [ -f "$tar_file" ]; then
-      echo "⏭️  [SKIP] 대상 경로에 아카이브 파일이 이미 존재합니다 -> $tar_file"
+      echo "⏭️   [SKIP] 대상 경로에 아카이브 파일이 이미 존재합니다 -> $tar_file"
     else
       echo "⏳ [SAVE] 이미지를 파일로 아카이빙 중입니다 -> $tar_file"
       if ! sudo docker save -o "$tar_file" "$image_name"; then
@@ -181,7 +312,7 @@ pull_and_register_image() {
       sudo chown "$(id -u):$(id -g)" "$tar_file"
     fi
   fi
-  
+
   echo "🎉 [SUCCESS] 이미지 처리를 성공적으로 완료했습니다 -> $image_name"
   echo "==============================================================="
   return 0
@@ -195,65 +326,113 @@ pull_and_register_image() {
 # @return (없음)
 ##
 main() {
+  local version_arg=""
   local input_file=""
   local output_dir=""
-  
+
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      -f|--file)
-        if [[ -z "${2:-}" || "$2" == -* ]]; then
+      --version)
+        if [[ -z "${2:-}" || "$2" == --* ]]; then
+          help "--version 파라미터는 최소 하나 이상의 버전을 입력해야 합니다." "$LINENO"
+          exit 1
+        fi
+        version_arg="$2"
+        shift 2
+        ;;
+      --file)
+        if [[ -z "${2:-}" || "$2" == --* ]]; then
           help "--file 파라미터는 대상 파일 경로를 입력해야 합니다." "$LINENO"
           exit 1
         fi
         input_file="$2"
         shift 2
         ;;
-      -o|--output)
-        if [[ -z "${2:-}" || "$2" == -* ]]; then
+      --output)
+        if [[ -z "${2:-}" || "$2" == --* ]]; then
           help "--output 파라미터는 디렉토리 경로를 입력해야 합니다." "$LINENO"
           exit 1
         fi
         output_dir="$2"
         shift 2
         ;;
-      -h|--help)
+      --help)
         help "" ""
         exit 0
         ;;
+      -*)
+        help "지원하지 않는 옵션입니다 (단축 옵션은 지원하지 않습니다) -> $1" "$LINENO"
+        exit 1
+        ;;
       *)
-        help "알 수 없는 파라미터입니다 -> $1" "$LINENO"
+        help "잘못된 파라미터 형식입니다 -> $1" "$LINENO"
         exit 1
         ;;
     esac
   done
 
-  if [ -z "$input_file" ]; then
-    help "--file 파라미터를 통해 버전을 담은 텍스트 파일을 전달해야 합니다." "$LINENO"
+  local target_versions=()
+
+  # 1. --version 인자 처리 (콤마 구분 분리 및 Trim)
+  if [ -n "$version_arg" ]; then
+    local raw_v_list=()
+    local v=""
+    local trimmed_v=""
+    IFS=',' read -ra raw_v_list <<< "$version_arg"
+    for v in "${raw_v_list[@]}"; do
+      trimmed_v=$(echo "$v" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+      if [ -n "$trimmed_v" ]; then
+        target_versions+=("$trimmed_v")
+      fi
+    done
+  fi
+
+  # 2. --file 인자 처리 (파일에서 라인별 수집)
+  if [ -n "$input_file" ]; then
+    validate_input_file "$input_file"
+    local line=""
+    local trimmed_line=""
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      trimmed_line=$(echo "$line" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+      if [[ -n "$trimmed_line" && "$trimmed_line" != \#* ]]; then
+        target_versions+=("$trimmed_line")
+      fi
+    done < "$input_file"
+  fi
+
+  # 3. 버전 입력 여부 통합 검증
+  if [ ${#target_versions[@]} -eq 0 ]; then
+    help "--version 또는 --file 옵션을 통해 최소 하나 이상의 GitLab 버전을 지정해야 합니다." "$LINENO"
     exit 1
   fi
 
+  # Docker 설치 여부 확인 및 대화형 설치 지원
+  ensure_docker_installed
+
+  # sudo 권한 검증
   check_sudo_privilege
-  validate_input_file "$input_file"
 
   if [ -n "$output_dir" ]; then
     ensure_output_directory "$output_dir"
   fi
 
-  echo "📄 [INFO] 지정된 파일($input_file)에서 데이터 읽기를 시작합니다."
-  
+  echo "📦 [INFO] 총 ${#target_versions[@]}개 버전에 대한 이미지 처리를 시작합니다."
+
   local failed_images=()
-  
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    if ! pull_and_register_image "$line" "$output_dir"; then
-      failed_images+=("$line")
+  local ver_item=""
+
+  for ver_item in "${target_versions[@]}"; do
+    if ! pull_and_register_image "$ver_item" "$output_dir"; then
+      failed_images+=("$ver_item")
     fi
-  done < "$input_file"
+  done
 
   echo ""
   if [ ${#failed_images[@]} -eq 0 ]; then
     echo "🏁 [FINISH] 모든 프로세스가 오류 없이 정상적으로 종료되었습니다."
   else
     echo "⚠️  [FINISH-WITH-WARNINGS] 프로세스가 종료되었으나, 다음 버전의 처리가 실패했습니다:"
+    local fail_ver=""
     for fail_ver in "${failed_images[@]}"; do
       echo "   - $fail_ver"
     done

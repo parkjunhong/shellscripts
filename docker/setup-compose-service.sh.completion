@@ -1,0 +1,81 @@
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : search files.
+# @license : Apache License 2.0
+# @since : 2026-09-08
+# @desc : support RHEL, Oracle Linux, Ubuntu, RockyOS
+# @installation : 
+# 1. insert 'source <path>/setup-compose-service.sh.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/<파일명>' into '/etc/bashrc' or '/usr/share/bash-completion/completions/' for all users.
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+#
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+# =======================================
+
+##
+# setup-compose-service.sh 스크립트의 자동완성(Auto-completion)을 지원하는 함수입니다.
+# Auto-completion function for setup-compose-service.sh script.
+##
+_setup_compose_service_completion() {
+  local cur prev opts available_opts opt is_used word i
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  # 지원 Long 옵션 목록 정의 (단축 옵션 배제) / Define supported long options list
+  opts="--docker-compose-dir --service --version --output-dir --help"
+
+  # 이전 파라미터 컨텍스트에 따른 동적 제어 / Dynamic control based on previous context
+  case "${prev}" in
+    --docker-compose-dir|--output-dir)
+      # 디렉터리 경로 자동완성 위임 / Delegate to native directory completion
+      compopt -o dirnames 2>/dev/null || true
+      COMPREPLY=()
+      return 0
+      ;;
+    --service|--version)
+      # 서비스명 및 버전은 파일명 추천 방지 / Suppress file completion for service and version
+      COMPREPLY=()
+      return 0
+      ;;
+    *)
+      ;;
+  esac
+
+  # 이미 입력된 단일 사용 옵션 필터링 / Filter out already entered options
+  available_opts=""
+  for opt in $opts; do
+    is_used=0
+    for (( i=1; i<COMP_CWORD; i++ )); do
+      word="${COMP_WORDS[i]}"
+      if [[ "$word" == "$opt" ]]; then
+        is_used=1
+        break
+      fi
+    done
+    if [[ $is_used -eq 0 ]]; then
+      available_opts="$available_opts $opt"
+    fi
+  done
+
+  # 커서에 '-' 또는 '--' 입력 여부와 무관하게 TAB 입력 시 옵션 즉시 추천
+  # Suggest available options immediately on TAB even if '-' or '--' is not yet typed
+  COMPREPLY=( $(compgen -W "${available_opts}" -- "${cur}") )
+}
+
+# 스크립트 파일명(확장자 포함)과 자동완성 함수 연결 바인딩
+# Bind completion function to the script command (including extension)
+complete -F _setup_compose_service_completion setup-compose-service.sh
