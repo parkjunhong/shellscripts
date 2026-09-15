@@ -3,12 +3,12 @@ set -Eeuo pipefail
 
 # =======================================
 # @author   : parkjunhong77@gmail.com
-# @title    : search files.
+# @title    : firewall-cmd zone info wrapper.
 # @license  : Apache License 2.0
-# @since    : 2026-09-01
+# @since    : 2026-09-15
 # @desc     : support RHEL 7+, Oracle Linux 7+, Ubuntu 18.04+, RockyOS 8+, CentOS 7+
 # @installation : 
-#   1. insert 'source <path>/fwc-cli.sh" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   1. insert 'source <path>/fwc-cli.sh' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
 #   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/fwc-cli.sh' into /etc/bashrc for all users.
 # =======================================
 
@@ -136,10 +136,11 @@ get_active_zones() {
 
 ##
 # 지정된 zone의 상세 정보를 방화벽 데몬에 질의하여 출력합니다.
+# 설정된 항목만 본문에 출력하고, 값이 비어있는 항목은 하단에 * UNASSIGNED 로 일괄 출력합니다.
 #
 # @param $1 {string} 조회할 대상 zone 이름
 #
-# @return zone 상세 정보 문자열 출력
+# @return zone 상세 정보 및 미할당 항목 목록 출력
 ##
 print_zone_info() {
   local zone_name="${1:-}"
@@ -149,9 +150,105 @@ print_zone_info() {
   echo "🛡️  Zone: $zone_name"
   print_separator
   
-  if ! sudo firewall-cmd --zone="$zone_name" --list-all 2>/dev/null; then
+  local raw_info
+  if ! raw_info=$(sudo firewall-cmd --zone="$zone_name" --list-all 2>/dev/null); then
     echo ""
     echo "⚠️  '$zone_name' zone을 찾을 수 없거나 정보를 조회할 수 없습니다."
+    return 0
+  fi
+
+  local pending_key=""
+  local has_value="false"
+  declare -a pending_lines=()
+  declare -a assigned_output=()
+  declare -a unassigned_keys=()
+
+  while IFS= read -r line || [ -n "$line" ]; do
+    # 1. 최상위 존 헤더 라인 (들여쓰기 없음, 예: 'public (default, active)')
+    if [[ "$line" =~ ^[^[:space:]] ]]; then
+      if [ -n "$pending_key" ]; then
+        if [ "$has_value" == "true" ]; then
+          assigned_output+=("${pending_lines[@]}")
+        else
+          unassigned_keys+=("$pending_key")
+        fi
+        pending_key=""
+        has_value="false"
+        pending_lines=()
+      fi
+      assigned_output+=("$line")
+
+    # 2. 2칸 들여쓰기된 최상위 속성 라인 (예: '  target: default', '  interfaces:', '  rich rules:')
+    elif [[ "$line" =~ ^[[:space:]]{2}([^:]+):[[:space:]]*(.*)$ ]]; then
+      if [ -n "$pending_key" ]; then
+        if [ "$has_value" == "true" ]; then
+          assigned_output+=("${pending_lines[@]}")
+        else
+          unassigned_keys+=("$pending_key")
+        fi
+        pending_key=""
+        has_value="false"
+        pending_lines=()
+      fi
+
+      pending_key="${BASH_REMATCH[1]}"
+      local inline_val="${BASH_REMATCH[2]}"
+      inline_val="${inline_val#"${inline_val%%[![:space:]]*}"}"
+      inline_val="${inline_val%"${inline_val##*[![:space:]]}"}"
+
+      pending_lines+=("$line")
+      if [ -n "$inline_val" ]; then
+        has_value="true"
+      fi
+
+    # 3. 2칸을 초과하는 추가 들여쓰기 라인 (예: rich rules 등의 하위 멀티라인 데이터)
+    elif [[ "$line" =~ ^[[:space:]]{3,} ]] || [[ "$line" =~ ^$'\t' ]]; then
+      if [ -n "$pending_key" ]; then
+        local sub_val="${line#"${line%%[![:space:]]*}"}"
+        sub_val="${sub_val%"${sub_val##*[![:space:]]}"}"
+        if [ -n "$sub_val" ]; then
+          has_value="true"
+        fi
+        pending_lines+=("$line")
+      else
+        assigned_output+=("$line")
+      fi
+
+    # 4. 기타 라인
+    else
+      if [ -n "$line" ]; then
+        assigned_output+=("$line")
+      fi
+    fi
+  done <<< "$raw_info"
+
+  # 루프 종료 후 마지막 대기 중인 속성 플러시
+  if [ -n "$pending_key" ]; then
+    if [ "$has_value" == "true" ]; then
+      assigned_output+=("${pending_lines[@]}")
+    else
+      unassigned_keys+=("$pending_key")
+    fi
+  fi
+
+  # 본문 출력 (값이 할당된 속성 목록)
+  local out_line
+  for out_line in "${assigned_output[@]}"; do
+    echo "$out_line"
+  done
+
+  # 미할당(UNASSIGNED) 속성 포맷팅 및 출력
+  if [ ${#unassigned_keys[@]} -gt 0 ]; then
+    local formatted_keys=()
+    local k
+    for k in "${unassigned_keys[@]}"; do
+      if [[ "$k" == *" "* ]]; then
+        formatted_keys+=("'$k'")
+      else
+        formatted_keys+=("$k")
+      fi
+    done
+    echo "* UNASSIGNED: ${formatted_keys[*]}"
   fi
 }
 

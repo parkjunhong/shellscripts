@@ -3,11 +3,11 @@
 # @author : parkjunhong77@gmail.com
 # @title : search files.
 # @license : Apache License 2.0
-# @since : 2026-09-08
+# @since : 2026-09-10
 # @desc : support RHEL 8+, Oracle Linux 8+, Ubuntu 20.04+, RockyOS 8+, CentOS 8+
 # @installation : 
 # 1. insert 'source <path>/setup-compose-service.sh.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/<파일명>' into '/etc/bashrc' or '/usr/share/bash-completion/completions/' for all users.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/setup-compose-service.sh' into '/etc/bashrc' or '/usr/share/bash-completion/completions/' for all users.
 # =======================================
 
 set -Eeuo pipefail
@@ -49,13 +49,14 @@ help(){
   echo "  임의의 Docker Compose 기반 서비스를 Systemd O/S 서비스로 등록하고"
   echo "  사용자 실행 경로(\$HOME/bin) 심볼릭 링크 및 시스템 Bash Completion 등록/해제를 지원하는"
   echo "  제어 스크립트(ctl.sh)를 생성합니다."
+  echo "  결과물은 지정 디렉터리 하위의 bin/(제어스크립트) 및 system/(서비스파일)으로 자동 분할 저장됩니다."
   echo "  SELinux 활성화 환경(Rocky Linux, RHEL 등)에 대응하여 파일 소유권을 root:root 로 잠그고 보안 컨텍스트를 부여합니다."
   echo ""
   echo "[옵션 (Options)]"
   echo "  --docker-compose-dir <경로>    docker-compose.yml 파일이 위치한 디렉터리 경로 (필수)"
   echo "  --service <서비스명>           등록할 서비스 이름 (영문, 숫자, 하이픈, 언더바, 필수)"
   echo "  --version <버전>               서비스 버전 (선택 사항, 지정 시 파일명에 결합)"
-  echo "  --output-dir <경로>            결과물 파일들을 저장할 디렉터리 (기본값: --docker-compose-dir)"
+  echo "  --output-dir <경로>            결과물 파일들을 저장할 기본 디렉터리 (기본값: --docker-compose-dir)"
   echo "  --help                         도움말을 출력하고 종료합니다."
 }
 
@@ -68,10 +69,11 @@ SERVICE_VERSION=""
 OUTPUT_DIR=""
 
 ABS_COMPOSE_DIR=""
-ABS_OUTPUT_DIR=""
+OUTPUT_BIN_DIR=""
+OUTPUT_SYSTEM_DIR=""
 COMPOSE_FILE_NAME="docker-compose.yml"
 SERVICE_FULL_NAME=""
-CURRENT_DATE="2026-09-08"
+CURRENT_DATE="2026-09-10"
 
 ##
 # 입력받은 Docker Compose 디렉터리의 유효성 및 설정 파일 존재 여부를 검증합니다.
@@ -159,42 +161,65 @@ verify_service_collision() {
 }
 
 ##
-# 출력 디렉터리의 존재 여부를 확인하고 미존재 시 생성하며 쓰기 권한을 확인합니다.
+# 결과물 저장 경로에 bin 및 system 서브디렉터리를 생성하고 쓰기 권한을 확인합니다.
 #
 # @param 없음
 #
 # @return (검증 실패 시 에러 출력 후 exit 1)
 ##
-resolve_output_dir() {
-  local target="${OUTPUT_DIR:-$ABS_COMPOSE_DIR}"
+resolve_output_subdirs() {
+  local base_target="${OUTPUT_DIR:-$ABS_COMPOSE_DIR}"
+  local abs_base=""
 
-  if [ ! -d "$target" ]; then
-    echo "📁 [INFO] 출력 디렉터리를 생성합니다 -> $target" >&2
-    if ! mkdir -p "$target" 2>/dev/null; then
+  if [ ! -d "$base_target" ]; then
+    echo "📁 [INFO] 기본 출력 디렉터리를 생성합니다 -> $base_target" >&2
+    if ! mkdir -p "$base_target" 2>/dev/null; then
       if command -v sudo >/dev/null 2>&1; then
-        echo "🔐 [AUTH] 출력 디렉터리 생성을 위해 sudo 권한을 요청합니다 -> $target" >&2
-        sudo mkdir -p "$target" || {
-          help "출력 디렉터리 생성에 실패했습니다 -> '$target'" "$LINENO"
+        echo "🔐 [AUTH] 기본 출력 디렉터리 생성을 위해 sudo 권한을 요청합니다 -> $base_target" >&2
+        sudo mkdir -p "$base_target" || {
+          help "출력 디렉터리 생성에 실패했습니다 -> '$base_target'" "$LINENO"
           exit 1
         }
       else
-        help "출력 디렉터리 생성 권한이 없으며 sudo 명령어를 찾을 수 없습니다 -> '$target'" "$LINENO"
+        help "출력 디렉터리 생성 권한이 없으며 sudo 명령어를 찾을 수 없습니다 -> '$base_target'" "$LINENO"
         exit 1
       fi
     fi
   fi
 
-  ABS_OUTPUT_DIR="$(readlink -f "$target")"
+  abs_base="$(readlink -f "$base_target")"
 
-  if [ ! -w "$ABS_OUTPUT_DIR" ]; then
-    if ! sudo -n true 2>/dev/null && command -v sudo >/dev/null 2>&1; then
-      echo "🔐 [AUTH] 출력 디렉터리 파일 작성을 위해 sudo 인증이 필요합니다 -> $ABS_OUTPUT_DIR" >&2
-      sudo -v || {
-        help "출력 디렉터리에 쓰기 권한이 없으며 sudo 인증에 실패했습니다 -> '$ABS_OUTPUT_DIR'" "$LINENO"
-        exit 1
-      }
+  OUTPUT_BIN_DIR="${abs_base}/bin"
+  OUTPUT_SYSTEM_DIR="${abs_base}/system"
+
+  # bin 및 system 서브디렉터리 생성
+  local dir_item=""
+  for dir_item in "$OUTPUT_BIN_DIR" "$OUTPUT_SYSTEM_DIR"; do
+    if [ ! -d "$dir_item" ]; then
+      echo "📁 [INFO] 결과물 저장 서브디렉터리를 생성합니다 -> $dir_item" >&2
+      if ! mkdir -p "$dir_item" 2>/dev/null; then
+        if command -v sudo >/dev/null 2>&1; then
+          sudo mkdir -p "$dir_item" || {
+            help "서브디렉터리 생성에 실패했습니다 -> '$dir_item'" "$LINENO"
+            exit 1
+          }
+        else
+          help "서브디렉터리 생성 권한이 없습니다 -> '$dir_item'" "$LINENO"
+          exit 1
+        fi
+      fi
     fi
-  fi
+
+    if [ ! -w "$dir_item" ]; then
+      if ! sudo -n true 2>/dev/null && command -v sudo >/dev/null 2>&1; then
+        echo "🔐 [AUTH] 서브디렉터리 파일 작성을 위해 sudo 인증이 필요합니다 -> $dir_item" >&2
+        sudo -v || {
+          help "서브디렉터리에 쓰기 권한이 없으며 sudo 인증에 실패했습니다 -> '$dir_item'" "$LINENO"
+          exit 1
+        }
+      fi
+    fi
+  done
 }
 
 ##
@@ -236,12 +261,12 @@ atomic_install_file() {
 ##
 # 서비스 제어 스크립트(${service_full_name}-ctl.sh)를 생성합니다.
 #
-# @param $1 {string} 생성 대상 파일 경로
+# @param $1 {string} 생성 대상 파일 경로 (bin/ 디렉터리 내)
 # @param $2 {string} Compose 디렉터리 절대 경로
 # @param $3 {string} Compose 파일명
 # @param $4 {string} 서비스 풀네임
-# @param $5 {string} Service 유닛 파일 절대 경로
-# @param $6 {string} Completion 파일 절대 경로
+# @param $5 {string} Service 유닛 파일 절대 경로 (system/ 디렉터리 내)
+# @param $6 {string} Completion 파일 절대 경로 (bin/ 디렉터리 내)
 # @param $7 {string} 생성될 제어 스크립트 파일명
 #
 # @return (제어 스크립트 생성 완료)
@@ -258,7 +283,7 @@ generate_ctl_script() {
   local tmp_ctl=""
   tmp_ctl="$(mktemp "${TMPDIR:-/tmp}/${full_name}-ctl.XXXXXX")"
 
-  # 갱신된 지식 파일의 @installation 규격을 동적으로 치환하여 헤더 생성
+  # 지식 파일의 @installation 규격을 동적으로 치환하여 헤더 생성
   cat << HEADER_EOF > "$tmp_ctl"
 #!/usr/bin/env bash
 # =======================================
@@ -268,8 +293,8 @@ generate_ctl_script() {
 # @since : ${CURRENT_DATE}
 # @desc : support RHEL 8+, Oracle Linux 8+, Ubuntu 20.04+, RockyOS 8+, CentOS 8+
 # @installation : 
-# 1. insert 'source <path>/${ctl_filename}" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/${ctl_filename}' into /etc/bashrc for all users.
+# 1. insert 'source <path>/${ctl_filename}.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/${ctl_filename}' into '/etc/bashrc' or '/usr/share/bash-completion/completions/' for all users.
 # =======================================
 
 set -Eeuo pipefail
@@ -304,7 +329,8 @@ help(){
   echo "  stop [서비스]     : Compose 전체(down) 또는 지정한 개별 서비스(stop)를 중지합니다."
   echo "  restart [서비스]  : Compose 전체 또는 지정한 서비스를 재시작합니다 (stop 후 start)."
   echo "  status [서비스]   : Compose 컨테이너 상태 및 Systemd 서비스 상태를 조회합니다."
-  echo "  enable            : Systemd 서비스 등록, \$HOME/bin 심볼릭 링크 생성, Bash Completion 시스템 등록을 수행합니다."
+  echo "  enable            : Systemd 서비스 등록, \$HOME/bin 디렉터리 검증/생성 및 \$PATH 영구 등록,"
+  echo "                      \$HOME/bin 심볼릭 링크 생성, Bash Completion 시스템 등록을 일괄 수행합니다."
   echo "  disable           : Systemd 서비스 비활성화, \$HOME/bin 심볼릭 링크 삭제, Bash Completion 시스템 등록 해제를 수행합니다."
   echo ""
   echo "[옵션]"
@@ -323,6 +349,7 @@ fi
 
 HEADER_EOF
 
+  # 갱신된 system/ 및 bin/ 경로 바인딩 주입
   cat << VARS_EOF >> "$tmp_ctl"
 COMPOSE_DIR="${compose_dir}"
 COMPOSE_FILE="${compose_file}"
@@ -578,7 +605,8 @@ resolve_target_user_env() {
 }
 
 ##
-# Systemd 서비스를 시스템에 등록하고, $HOME/bin 심볼릭 링크 생성 및 시스템 Bash Completion 등록을 수행합니다.
+# Systemd 서비스를 시스템에 등록하고, $HOME/bin 검증/생성 및 $PATH 영구 등록,
+# $HOME/bin 심볼릭 링크 생성 및 시스템 Bash Completion 등록을 일괄 수행합니다.
 #
 # @param 없음
 #
@@ -611,9 +639,9 @@ service_enable() {
 
   "${sudo_cmd[@]}" systemctl daemon-reload
   "${sudo_cmd[@]}" systemctl enable "$SYSTEMD_SERVICE_NAME"
-  echo "✅ [1/3] Systemd 서비스($SYSTEMD_SERVICE_NAME)가 등록 및 활성화되었습니다."
+  echo "✅ [1/4] Systemd 서비스($SYSTEMD_SERVICE_NAME)가 등록 및 활성화되었습니다."
 
-  # 2. 사용자 실행 경로 ($HOME/bin) 심볼릭 링크 생성
+  # 2. 사용자 실행 경로 ($HOME/bin) 디렉토리 검증 및 생성, 소유권 지정
   local user_env=""
   user_env="$(resolve_target_user_env)"
   local target_user target_home target_group
@@ -627,15 +655,43 @@ service_enable() {
     if (( EUID == 0 )) && [ "$target_user" != "root" ]; then
       chown "${target_user}:${target_group}" "$user_bin_dir"
     fi
+    echo "📁 [INFO] 사용자 실행 경로가 없어 새로 생성했습니다 -> $user_bin_dir"
   fi
 
+  # 3. $HOME/bin 경로를 ~/.bashrc 또는 그에 준하는 파일에 영구 등록 (중복 방지 적용)
+  local rc_target=""
+  if [ -f "${target_home}/.bashrc" ]; then
+    rc_target="${target_home}/.bashrc"
+  elif [ -f "${target_home}/.bash_profile" ]; then
+    rc_target="${target_home}/.bash_profile"
+  else
+    rc_target="${target_home}/.bashrc"
+    touch "$rc_target"
+    if (( EUID == 0 )) && [ "$target_user" != "root" ]; then
+      chown "${target_user}:${target_group}" "$rc_target"
+    fi
+  fi
+
+  if ! grep -qE '(\$HOME|~|'"${target_home}"')/bin' "$rc_target" 2>/dev/null; then
+    echo '' >> "$rc_target"
+    echo '# User bin path added by '"$SERVICE_FULL_NAME" >> "$rc_target"
+    echo 'export PATH="$HOME/bin:$PATH"' >> "$rc_target"
+    if (( EUID == 0 )) && [ "$target_user" != "root" ]; then
+      chown "${target_user}:${target_group}" "$rc_target"
+    fi
+    echo "✅ [2/4] \$HOME/bin 경로가 $rc_target 파일에 영구적으로 등록되었습니다."
+  else
+    echo "ℹ️  [2/4] \$HOME/bin 경로가 $rc_target 에 이미 등록되어 있습니다."
+  fi
+
+  # 4. 사용자 실행 경로 ($HOME/bin) 심볼릭 링크 원자적 생성
   ln -sfn "$CTL_SCRIPT_PATH" "$target_symlink"
   if (( EUID == 0 )) && [ "$target_user" != "root" ]; then
     chown -h "${target_user}:${target_group}" "$target_symlink" 2>/dev/null || true
   fi
-  echo "✅ [2/3] 사용자 명령어 경로에 심볼릭 링크가 생성되었습니다 -> $target_symlink"
+  echo "✅ [3/4] 사용자 명령어 경로에 심볼릭 링크가 생성되었습니다 -> $target_symlink"
 
-  # 3. 제어 스크립트 Bash Completion 시스템 등록 (현대 표준: /usr/share/bash-completion/completions/)
+  # 5. 제어 스크립트 Bash Completion 시스템 등록 (현대 표준 /usr/share/... 우선, 부재 시 /etc/... 폴백)
   if [ -f "$COMPLETION_SOURCE_PATH" ]; then
     local modern_comp_dir="/usr/share/bash-completion/completions"
     local legacy_comp_dir="/etc/bash_completion.d"
@@ -655,7 +711,7 @@ service_enable() {
       if command -v restorecon >/dev/null 2>&1; then
         "${sudo_cmd[@]}" restorecon -vF "$installed_comp_path" >/dev/null 2>&1 || true
       fi
-      echo "✅ [3/3] 시스템 Bash Completion 이 등록되었습니다 -> $installed_comp_path"
+      echo "✅ [4/4] 시스템 Bash Completion 이 등록되었습니다 -> $installed_comp_path"
     fi
   else
     echo "⚠️  [WARN] Bash Completion 소스 파일이 없어 시스템 등록을 건너뜁니다 -> $COMPLETION_SOURCE_PATH"
@@ -781,7 +837,7 @@ BODY_EOF
 ##
 # 제어 스크립트 전용 Bash Completion 파일(${service_full_name}-ctl.sh.completion)을 생성합니다.
 #
-# @param $1 {string} 생성 대상 completion 파일 경로
+# @param $1 {string} 생성 대상 completion 파일 경로 (bin/ 디렉터리 내)
 # @param $2 {string} 제어 스크립트 파일명
 # @param $3 {string} Compose 디렉터리 경로
 # @param $4 {string} Compose 파일명
@@ -799,17 +855,17 @@ generate_ctl_completion() {
   local tmp_comp=""
   tmp_comp="$(mktemp "${TMPDIR:-/tmp}/${ctl_filename}.comp.XXXXXX")"
 
-  # 갱신된 지식 파일의 @installation 규격을 동적으로 치환하여 헤더 생성
+  # 지식 파일의 @installation 규격을 동적으로 치환하여 헤더 생성
   cat << HEADER_EOF > "$tmp_comp"
 # =======================================
-# @author : parkjunhong77@gmail.com
+# @author : parkjun홍77@gmail.com
 # @title : search files.
 # @license : Apache License 2.0
 # @since : ${CURRENT_DATE}
 # @desc : support RHEL, Oracle Linux, Ubuntu, RockyOS
 # @installation : 
 # 1. insert 'source <path>/${comp_filename}" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/${comp_filename}' into /etc/bashrc for all users.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/${comp_filename}' into '/etc/bashrc' or '/usr/share/bash-completion/completions/' for all users.
 # =======================================
 # Global Reserved Variables
 # 1. COMP_WORDS: an array, contains all arguments
@@ -884,8 +940,8 @@ VARS_EOF
 ##
 # Systemd 유닛 파일(${service_full_name}.service)을 생성합니다.
 #
-# @param $1 {string} 생성 대상 서비스 파일 경로
-# @param $2 {string} ctl 스크립트 절대 경로
+# @param $1 {string} 생성 대상 서비스 파일 경로 (system/ 디렉터리 내)
+# @param $2 {string} ctl 스크립트 절대 경로 (bin/ 디렉터리 내)
 # @param $3 {string} Compose 디렉터리 절대 경로
 # @param $4 {string} 서비스 풀네임
 #
@@ -987,26 +1043,28 @@ main() {
   # 필수 파라미터 및 경로 유효성 검증
   validate_compose_dir
   validate_service_identifiers
-  resolve_output_dir
+  resolve_output_subdirs
 
   local ctl_script_name="${SERVICE_FULL_NAME}-ctl.sh"
   local ctl_comp_name="${SERVICE_FULL_NAME}-ctl.sh.completion"
   local service_file_name="${SERVICE_FULL_NAME}.service"
 
-  local target_ctl_path="$ABS_OUTPUT_DIR/$ctl_script_name"
-  local target_comp_path="$ABS_OUTPUT_DIR/$ctl_comp_name"
-  local target_service_path="$ABS_OUTPUT_DIR/$service_file_name"
+  # 피드백 반영: bin/ 및 system/ 분할 경로 확정
+  local target_ctl_path="$OUTPUT_BIN_DIR/$ctl_script_name"
+  local target_comp_path="$OUTPUT_BIN_DIR/$ctl_comp_name"
+  local target_service_path="$OUTPUT_SYSTEM_DIR/$service_file_name"
 
   # 중복 서비스 사전 검증
   verify_service_collision "$service_file_name"
 
   echo "================================================================================"
   echo "🚀 [START] Docker Compose 서비스 등록 및 제어 스크립트 생성을 시작합니다..."
-  echo "  - Compose 디렉터리 : $ABS_COMPOSE_DIR"
-  echo "  - 서비스 이름      : $SERVICE_NAME"
-  echo "  - 서비스 버전      : ${SERVICE_VERSION:-[버전 미지정]}"
-  echo "  - 최종 식별자      : $SERVICE_FULL_NAME"
-  echo "  - 결과물 출력 경로 : $ABS_OUTPUT_DIR"
+  echo "  - Compose 디렉터리    : $ABS_COMPOSE_DIR"
+  echo "  - 서비스 이름         : $SERVICE_NAME"
+  echo "  - 서비스 버전         : ${SERVICE_VERSION:-[버전 미지정]}"
+  echo "  - 최종 서비스 식별자  : $SERVICE_FULL_NAME"
+  echo "  - 제어 스크립트 출력  : $OUTPUT_BIN_DIR"
+  echo "  - 서비스 유닛 출력    : $OUTPUT_SYSTEM_DIR"
   echo "================================================================================"
 
   echo "⚙️  [1/3] 제어 스크립트 생성 중 -> $target_ctl_path"
@@ -1024,11 +1082,11 @@ main() {
   echo ""
   echo "📦 [생성된 파일 목록]"
   echo "  1) 제어 스크립트     : $target_ctl_path (소유자: root:root, 모드: 755, SELinux: bin_t)"
-  echo "  2) 서비스 유닛       : $target_service_path (소유자: root:root, 모드: 644, SELinux: systemd_unit_file_t)"
-  echo "  3) 자동완성 스크립트 : $target_comp_path"
+  echo "  2) 자동완성 스크립트 : $target_comp_path (소유자: root:root, 모드: 644)"
+  echo "  3) 서비스 유닛       : $target_service_path (소유자: root:root, 모드: 644, SELinux: systemd_unit_file_t)"
   echo ""
   echo "💡 [원클릭 서비스 등록 및 환경 설정 안내]"
-  echo "  - O/S 서비스 등록, 심볼릭 링크(\$HOME/bin) 생성, 시스템 Bash Completion 등록을 한 번에 실행하려면:"
+  echo "  - O/S 서비스 등록, \$HOME/bin 디렉토리 생성 및 \$PATH 영구 등록, 심볼릭 링크 생성, Bash Completion 등록 일괄 실행:"
   echo "    $ sudo $target_ctl_path enable"
   echo ""
   echo "  - O/S 서비스 등록 해제, 심볼릭 링크 삭제, 시스템 Bash Completion 등록 해제:"
