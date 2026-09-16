@@ -486,15 +486,14 @@ while IFS='=' read -r key value || [ -n "$key" ]; do
   key=$(echo "$key" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')  
   value=$(printf '%s' "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
 
+  # [패치] 공백 제거 후 키값이 비어있다면 무시 (declare '=' 에러 방지)
+  if [[ -z "$key" ]]; then
+    continue
+  fi
+
   # 일반 변수만 처리 (배열 식별용 점(.)이 포함된 키는 제외)
   if [[ ! "$key" =~ \. ]]; then    
-    # [보안 처리] 허용된 변수명 패턴만 등록 (URL_로 시작하거나 특정 키워드인 경우)
-    #if [[ "$key" =~ ^(URL_[A-Z0-9_]+|NO_PASSWORD_COMMANDS|INSTALL_PACKAGES|REMOVE_PACKAGES)$ ]]; then      
-      # export 대신 declare -g 를 사용하여 현재 스크립트 실행 범위 내에서만 변수 등록
     declare -g "$key"="$value"      
-    #else
-      #echo " - [보안 경고] 허용되지 않은 키명($key)은 시스템 보호를 위해 무시됩니다."
-    #fi
   fi
 done < "$CONFIG_FILE"
 
@@ -1256,8 +1255,7 @@ setup_custom_commands(){
 
 ##
 # 사용자를 sudoers 그룹에 등록하고 특정 관리 명령어들의 비밀번호 입력을 면제합니다.
-# 외부설정된 NO_PASSWORD_COMMANDS 값을 활용하며, 사용자 입력을 통해 대상을 지정합니다.
-# 문법 오류로 인한 sudo 불능 상태를 방지하기 위해 visudo를 통한 사전 검증을 수행합니다.
+# 기존에 설정된 파일이 있다면 내용(명령어)을 병합, 중복 제거, 알파벳 정렬하여 하나의 파일로 유지합니다.
 #
 # @param 없음
 #
@@ -1286,45 +1284,35 @@ setup_sudoers() {
   local target_user=""
   local interrupted=0
 
-  # 2. Ctrl+C (SIGINT) 입력 시 전체 종료를 막고 플래그만 변경하도록 트랩 설정
   trap 'interrupted=1' SIGINT
 
-  # 3. 유효한 사용자 계정이 입력될 때까지 반복
+  # 2. 사용자 계정 입력
   while true; do
-
-    # 3-1. 사용자 입력 대기
     read -r -p "> [⌨  ] sudoers에 등록할 사용자 계정을 입력하세요 (기본값: $current_user) [취소: Ctrl+C 후 'Enter']: " target_user
 
-    # 3-2. Ctrl+C가 눌렸을 경우 (interrupted 플래그 확인)
     if (( interrupted == 1 )); then
       echo -e "\n - [❌] sudoers 설정을 취소합니다."
       trap - SIGINT
       return 0
     fi
 
-    # 3-3. 입력값이 비어있으면 기본값(현재 사용자)으로 설정
     if [ -z "$target_user" ]; then
       target_user="$current_user"
     fi
 
-    # 3-4. 시스템에 존재하는 사용자인지 검증
-    #        존재하지 않으면 경고 메시지 출력 후 재입력 요청
     if ! id "$target_user" &>/dev/null; then
       echo_w " - '$target_user' 사용자가 시스템에 존재하지 않습니다. 다시 입력해 주세요."
-      target_user=""   # 초기화 후 루프 재시작
+      target_user=""
       continue
     fi
-
-    # 3-5. 유효한 사용자 확인 → 루프 종료
     break
   done
 
-  # 4. 입력 종료 후 트랩 해제 (기본 동작으로 복구)
   trap - SIGINT
 
   local sudoers_file="/etc/sudoers.d/user-$target_user"
 
-  # 5. OS에 따라 패키지 매니저 경로를 추가
+  # 3. OS에 따라 패키지 매니저 경로 추가
   local os_pkg_cmd=""
   if [ "$PKG_MANAGER" == "apt" ]; then
     os_pkg_cmd="/usr/bin/apt, /usr/bin/apt-get, "
@@ -1332,35 +1320,83 @@ setup_sudoers() {
     os_pkg_cmd="/usr/bin/dnf, "
   fi
 
-  local full_no_pw_cmds="${os_pkg_cmd}${NO_PASSWORD_COMMANDS}"
+  local new_cmds="${os_pkg_cmd}${NO_PASSWORD_COMMANDS}"
 
-  # 6. 임시 파일을 생성하여 설정 작성
+  # ==============================================================================
+  # 기존 파일 파싱 및 병합 (Merge & Sort) 로직
+  # ==============================================================================
+  declare -a all_cmds=()
+
+  # [핵심 패치] 일반 사용자는 /etc/sudoers.d/ 내부 파일 확인이 불가하므로 sudo test를 사용해야 합니다.
+  if sudo test -f "$sudoers_file"; then
+    local existing_cmds_str
+    # sudo 권한을 통해 기존 파일의 내용을 읽어옵니다.
+    existing_cmds_str=$(sudo grep "NOPASSWD:" "$sudoers_file" | sed 's/.*NOPASSWD:[[:space:]]*//')
+    
+    IFS=',' read -ra existing_arr <<< "$existing_cmds_str"
+    for cmd in "${existing_arr[@]}"; do
+      cmd=$(echo "$cmd" | xargs) # 양옆 공백 제거
+      [[ -n "$cmd" ]] && all_cmds+=("$cmd")
+    done
+  fi
+
+  # 신규 명령어 배열에 추가
+  IFS=',' read -ra new_arr <<< "$new_cmds"
+  for cmd in "${new_arr[@]}"; do
+    cmd=$(echo "$cmd" | xargs)
+    [[ -n "$cmd" ]] && all_cmds+=("$cmd")
+  done
+
+  # 중복 제거
+  declare -a unique_cmds=()
+  declare -A seen_cmds=()
+  for cmd in "${all_cmds[@]}"; do
+    if [[ -z "${seen_cmds[$cmd]}" ]]; then
+      unique_cmds+=("$cmd")
+      seen_cmds[$cmd]=1
+    fi
+  done
+
+  # 오름차순(Natural Ordering) 정렬
+  IFS=$'\n' sorted_cmds=($(sort <<<"${unique_cmds[*]}"))
+  unset IFS
+
+  # 콤마(,) 문자열로 다시 묶기
+  local final_cmds_str=""
+  for cmd in "${sorted_cmds[@]}"; do
+    if [ -z "$final_cmds_str" ]; then
+      final_cmds_str="$cmd"
+    else
+      final_cmds_str="$final_cmds_str, $cmd"
+    fi
+  done
+  # ==============================================================================
+
+  # 4. 임시 파일을 생성하여 최종 설정 작성
   local tmp_sudoers
   tmp_sudoers=$(mktemp /tmp/sudoers.XXXXXX)
 
+  # ALL=(ALL) ALL 은 무조건 1개만 상단에 작성
   echo "$target_user ALL=(ALL) ALL" > "$tmp_sudoers"
-  echo "$target_user ALL=(ALL) NOPASSWD: $full_no_pw_cmds" >> "$tmp_sudoers"
+  # 수집된 패스워드 면제 명령어가 있다면 포맷에 맞춰 추가
+  if [ -n "$final_cmds_str" ]; then
+    echo "$target_user ALL=(ALL) NOPASSWD: $final_cmds_str" >> "$tmp_sudoers"
+  fi
 
-  # 7. visudo를 이용해 임시 파일 문법 사전 검증 (-c: 검사, -f: 지정 파일)
+  # 5. visudo를 이용해 임시 파일 문법 사전 검증
   if sudo visudo -c -f "$tmp_sudoers" &>/dev/null; then
-  
-    # [핵심 수정 부분] 읽기 전용(440) 파일에도 안전하고 확실하게 내용을 덮어쓰도록 tee 명령어 사용
     cat "$tmp_sudoers" | sudo tee "$sudoers_file" > /dev/null
-    
     sudo chmod 440 "$sudoers_file"
-    echo_i " - [🛠 ] $target_user sudoers 설정이 안전하게 업데이트(반영) 되었습니다."
+    echo_i " - [🛠 ] $target_user sudoers 설정이 안전하게 업데이트(병합) 되었습니다."
     EXECUTED_JOB_FLAGS["$func_name"]=1
     
-    # 작업 완료 후 임시 파일 안전하게 정리
     rm -f -- "$tmp_sudoers"    
   else
-    # 검증 실패 시 임시 파일 삭제 후 스크립트 오류 처리
     rm -f -- "$tmp_sudoers"
-    
-    echo_e " - [❌] 'sudoers' 문법 검증에 실패하여 설정을 취소합니다. (명령어 목록 오타나 콤마 누락 확인 필요)"
+    echo_e " - [❌] 'sudoers' 문법 검증에 실패하여 설정을 취소합니다."
     
     _add_notice " - [$func_name] [❌] 'sudoers' 추가 작업 실패"
-    _add_notice " - [$func_name] [❌] 'sudoers' 문법 검증에 실패하여 설정을 취소합니다. (명령어 목록 오타나 콤마 누락 확인 필요)"
+    _add_notice " - [$func_name] [❌] 'sudoers' 문법 검증에 실패하여 설정을 취소합니다."
     return 1
   fi
 }
