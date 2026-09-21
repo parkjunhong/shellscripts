@@ -274,7 +274,7 @@ apply_items() {
   local item
   for item in "$@"; do
     if [ -n "$item" ]; then
-      echo " - [$target_zone] $action: $item"
+      echo "  - [$target_zone] $action: $item"
       "${local_cmd[@]}" --zone="$target_zone" "$action=$item" >/dev/null 2>&1 || true
     fi
   done
@@ -337,7 +337,7 @@ remove_all_items() {
   if [ ${#items_to_remove[@]} -gt 0 ]; then
     local target_item
     for target_item in "${items_to_remove[@]}"; do
-      echo " - [$target_zone] $action_remove (전체): $target_item"
+      echo "  - [$target_zone] $action_remove (전체): $target_item"
       "${local_cmd[@]}" --zone="$target_zone" "$action_remove=$target_item" >/dev/null 2>&1 || true
     done
   fi
