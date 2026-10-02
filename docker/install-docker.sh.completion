@@ -1,0 +1,76 @@
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : search files.
+# @license : Apache License 2.0
+# @since : 2026-10-02
+# @desc : support RHEL, Oracle Linux, Ubuntu, RockyOS
+# @installation : 
+# 1. insert 'source <path>/install-docker.sh.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/install-docker.sh.completion' into '/etc/bashrc' or '/usr/share/bash-completion/completions/' for all users.
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+#
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+# =======================================
+
+##
+# install-docker.sh 명령어에 대한 자동완성(Auto-completion) 지원 함수입니다.
+# Auto-completion support function for install-docker.sh command.
+##
+_install_docker_completion() {
+  local cur prev opts available_opts opt is_used word i
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  # 지원하는 Long 옵션 목록 정의 / Define supported long options list
+  opts="--pkg-mgr -h --help"
+
+  # 이전 인자 컨텍스트에 따른 동적 자동완성 제어 / Dynamic completion based on previous context
+  case "${prev}" in
+    --pkg-mgr)
+      # 지원 패키지 관리자 목록 추천 / Suggest supported package manager list
+      local managers="apt dnf yum"
+      COMPREPLY=( $(compgen -W "${managers}" -- "${cur}") )
+      return 0
+      ;;
+    *)
+      ;;
+  esac
+
+  # 이미 입력된 단일 사용 옵션을 필터링하여 중복 추천 방지 / Filter out already entered options
+  available_opts=""
+  for opt in $opts; do
+    is_used=0
+    for (( i=1; i<COMP_CWORD; i++ )); do
+      word="${COMP_WORDS[i]}"
+      if [[ "$word" == "$opt" ]]; then
+        is_used=1
+        break
+      fi
+    done
+    if [[ $is_used -eq 0 ]]; then
+      available_opts="$available_opts $opt"
+    fi
+  done
+
+  # 커서에 '-' 또는 '--' 입력 여부와 무관하게 TAB 입력 시 사용 가능한 옵션 즉시 제안
+  # Suggest available options immediately on TAB even if '-' or '--' is not yet typed
+  COMPREPLY=( $(compgen -W "${available_opts}" -- "${cur}") )
+}
+
+# 스크립트 실행파일명(확장자 포함)과 자동완성 함수 연결 바인딩
+# Bind completion function to the script executable name (including extension)
+complete -F _install_docker_completion install-docker.sh

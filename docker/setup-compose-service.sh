@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =======================================
 # @author : parkjunhong77@gmail.com
-# @title : search files.
+# @title : Register Container Service As a OS Service.
 # @license : Apache License 2.0
 # @since : 2026-09-10
 # @desc : support RHEL 8+, Oracle Linux 8+, Ubuntu 20.04+, RockyOS 8+, CentOS 8+

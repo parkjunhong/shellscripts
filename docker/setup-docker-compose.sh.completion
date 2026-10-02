@@ -1,0 +1,98 @@
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : setup 'docker-compose' working directory.
+# @license : Apache License 2.0
+# @since : 2026-10-02
+# @desc : support RHEL 7+, Oracle Linux 7+, Ubuntu 18.04+, RockyOS 8+, CentOS 7+
+# @installation : 
+# 1. insert 'source <path>/setup-docker-compose.sh.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/setup-docker-compose.sh' into '/etc/bashrc' or '/usr/share/bash-completion/completions/' for all users.
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+# =======================================
+
+_setup_docker_compose_sh_complete(){
+  local cur prev cmd
+  cmd="$1"
+  cur="$2"
+  prev="$3"
+
+  COMPREPLY=()
+
+  # 정의된 전체 옵션 목록 (단축 옵션 배제) / List of all available long options
+  local all_options="--directory --service --dry-run --help"
+
+  # 이전 인자($prev)에 따른 컨텍스트 처리 / Context-sensitive handling based on previous option ($prev)
+  case "$prev" in
+    --directory)
+      # 디렉토리 경로 자동완성 지원 / Directory path completion support
+      local IFS=$'\n'
+      COMPREPLY=( $(compgen -d -- "$cur") )
+      return 0
+      ;;
+    --service)
+      # 서비스명은 사용자 지정 문자열이므로 추천 생략 / Service name is user-defined; skip suggestions
+      return 0
+      ;;
+  esac
+
+  # 이미 사용된 옵션 탐색 및 제외 목록 구성 / Detect already used options to avoid recommending them again
+  local used_options=()
+  local i
+  for (( i=1; i < COMP_CWORD; i++ )); do
+    local word="${COMP_WORDS[i]}"
+    case "$word" in
+      --directory)
+        used_options+=("--directory")
+        ;;
+      --service)
+        used_options+=("--service")
+        ;;
+      --dry-run)
+        used_options+=("--dry-run")
+        ;;
+      --help)
+        used_options+=("--help")
+        ;;
+    esac
+  done
+
+  # 미사용 옵션 목록 필터링 / Filter out already utilized options
+  local available_options=""
+  for opt in $all_options; do
+    local is_used=false
+    for used in "${used_options[@]}"; do
+      if [ "$opt" = "$used" ]; then
+        is_used=true
+        break
+      fi
+    done
+    if [ "$is_used" = false ]; then
+      available_options="$available_options $opt"
+    fi
+  done
+
+  # '-' 또는 '--' 접두어 입력 여부와 무관하게 <TAB> 입력 시 옵션 추천 지원
+  # Suggest available options regardless of whether '-' or '--' is typed yet
+  if [[ "$cur" == -* ]] || [[ -z "$cur" ]]; then
+    COMPREPLY=( $(compgen -W "$available_options" -- "$cur") )
+    return 0
+  fi
+}
+
+# 자동완성 함수 등록 / Register completion function
+complete -F _setup_docker_compose_sh_complete setup-docker-compose.sh

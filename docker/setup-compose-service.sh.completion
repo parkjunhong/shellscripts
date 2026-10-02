@@ -1,6 +1,6 @@
 # =======================================
 # @author : parkjunhong77@gmail.com
-# @title : search files.
+# @title : Register Container Service As a OS Service.
 # @license : Apache License 2.0
 # @since : 2026-09-08
 # @desc : support RHEL, Oracle Linux, Ubuntu, RockyOS

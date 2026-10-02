@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # =======================================
-# @author   : parkjunhong77@gmail.com
-# @title    : install docker.
-# @license  : Apache License 2.0
-# @since    : 2026-09-03
-# @desc     : support Ubuntu 20.04+, Rocky Linux 9+
+# @author : parkjunhong77@gmail.com
+# @title : search files.
+# @license : Apache License 2.0
+# @since : 2026-10-02
+# @desc : support RHEL 7+, Oracle Linux 7+, Ubuntu 20.04+, RockyOS 8+, CentOS 7+, Debian 11+
 # @installation : 
-#   1. insert 'source <path>/install-docker.sh" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/install-docker.sh' into /etc/bashrc for all users.
+# 1. insert 'source <path>/install-docker.sh.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/install-docker.sh' into '/etc/bashrc' or '/usr/share/bash-completion/completions/' for all users.
 # =======================================
 
 set -Eeuo pipefail
@@ -35,200 +35,378 @@ help(){
     printf "$formatl" "callstack"
     local idx=1
     for func in "${FUNCNAME[@]:1}"
-    do  
+    do 
       printf "$formatr" "["$idx"]" "$func"
       ((idx++)) || true
     done
     printf "$formatl" "cause" "$1"
     echo "================================================================================"
-  fi  
-  echo  
-  echo "사용법: ./$FILENAME [옵션]"
-  echo "옵션:"
-  echo "  -h, --help    이 도움말을 표시하고 종료합니다."
+  fi 
+  echo 
+  echo "사용법 (Usage): ./$FILENAME [옵션]"
+  echo ""
+  echo "[설명]"
+  echo "  패키지 관리 도구(APT, DNF, YUM)를 기반으로 Docker CE 및 관련 플러그인을 자동 감지하여 설치합니다."
+  echo "  Ubuntu, Debian, Rocky Linux, RHEL, CentOS, AlmaLinux, Oracle Linux 등 다양한 배포판을 지원합니다."
+  echo ""
+  echo "[옵션 (Options)]"
+  echo "  --pkg-mgr <도구>   패키지 관리 도구 강제 지정 (선택 사항: 'apt', 'dnf', 'yum')"
+  echo "  -h, --help         도움말을 출력하고 종료합니다."
 }
 
+trap 'help "스크립트 실행 중 예기치 않은 오류가 발생했습니다." "$LINENO"' ERR
+
+# 전역 상태 변수 선언 (메인 스코프에서는 local 키워드를 일절 사용하지 않음)
+MANual_PKG_MGR=""
+DETECTED_PKG_MGR=""
+SUDO_CMD=()
+
+OS_ID=""
+OS_ID_LIKE=""
+OS_VERSION_ID=""
+OS_CODENAME=""
+
 ##
-# 정보성 로그를 출력합니다.
+# 정보성 로그 메시지를 출력합니다.
 #
-# @param $1 {string} (출력할 메시지)
+# @param $1 {string} 출력할 메시지
 #
-# @return (표준 출력으로 로그 출력)
+# @return (표준 출력 로그)
 ##
-log() {
+log_info() {
   printf 'ℹ️  [INFO] %s\n' "$*"
 }
 
 ##
-# 에러 메시지를 출력하고 스크립트를 종료합니다.
+# 작업 내용과 실행할 명령어를 표준 출력에 기록한 뒤 원자적으로 실행합니다.
 #
-# @param $1 {string} (출력할 메시지)
+# @param $1 {string} 작업 설명
+# @param $@ {array} 실행할 명령어 및 인자
 #
-# @return (표준 에러로 출력 후 exit 1)
+# @return (명령어 실행 결과 반환)
 ##
-die() {
-  help "[ERROR] $*" "$LINENO"
-  exit 1
-}
-
-trap 'help "스크립트 실행 중 오류가 발생했습니다." "$LINENO"' ERR
-
-##
-# 작업 내용과 실행할 명령어를 로그로 출력한 뒤 실행합니다.
-#
-# @param $1 {string} 작업 내용
-# @param $@ {any} 실행할 명령어 및 인자 배열 (2번째 파라미터부터)
-#
-# @return (명령어 실행 결과)
-##
-execute() {
+execute_cmd() {
   local desc="$1"
   shift
-  printf '⚙️  [INFO] %s\n' "${desc}"
-  printf '  > %s\n' "$*"
+  printf '⚙️  [EXEC] %s\n' "$desc"
+  printf '   -> %s\n' "$*"
   "$@"
 }
 
-while [[ "$#" -gt 0 ]]; do
-  case $1 in
-    -h|--help)
-      help "" ""
-      exit 0
-      ;;
-    *)
-      die "알 수 없는 옵션입니다: $1"
-      ;;
-  esac
-  shift
-done
-
-if [[ ! -r /etc/os-release ]]; then
-  die "/etc/os-release 파일을 찾을 수 없습니다."
-fi
-
-source /etc/os-release
-
 ##
-# Ubuntu OS 환경에서 Docker 엔진을 설치합니다.
+# 스크립트 실행에 필요한 루트 권한 가용성을 사전 점검하고 sudo 자격 증명을 초기화합니다.
 #
 # @param 없음
 #
-# @return (apt-get 패키지 설치 및 서비스 구동)
+# @return (전역 배열 SUDO_CMD 초기화)
 ##
-install_ubuntu() {
-  local major_ver="${VERSION_ID%%.*}"
-  if (( major_ver < 20 )); then
-    die "Ubuntu 20.04 이상만 지원합니다. 현재 버전: ${VERSION_ID}"
+ensure_privileges() {
+  if (( EUID == 0 )); then
+    SUDO_CMD=()
+  else
+    if ! command -v sudo >/dev/null 2>&1; then
+      help "루트가 아닌 사용자 환경에서 실행하려면 sudo 명령어가 시스템에 설치되어 있어야 합니다." "$LINENO"
+      exit 1
+    fi
+
+    if ! sudo -n true 2>/dev/null; then
+      echo "🔐 [AUTH] 시스템 패키지 설치 및 Docker 서비스 구성을 위해 sudo 인증이 필요합니다."
+      sudo -v || {
+        help "sudo 권한 획득에 실패했습니다." "$LINENO"
+        exit 1
+      }
+    fi
+    SUDO_CMD=(sudo)
   fi
-
-  log "Ubuntu ${VERSION_ID} 환경에 Docker 설치를 시작합니다."
-  
-  execute "패키지 목록을 업데이트합니다." sudo apt-get update -y
-  execute "필수 의존성 패키지를 설치합니다." sudo apt-get install -y ca-certificates curl gnupg
-
-  execute "Docker 공식 GPG 키를 저장할 디렉토리를 생성합니다." sudo install -m 0755 -d /etc/apt/keyrings
-
-  printf '🔑 [INFO] %s\n' "Docker 공식 GPG 키를 다운로드하여 등록합니다."
-  printf '  > %s\n' "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --yes --dearmor -o /etc/apt/keyrings/docker.gpg"
-  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --yes --dearmor -o /etc/apt/keyrings/docker.gpg
-  execute "GPG 키 파일의 권한을 변경합니다." sudo chmod a+r /etc/apt/keyrings/docker.gpg
-
-  printf '📦 [INFO] %s\n' "Docker 공식 저장소를 APT 소스 목록에 추가합니다."
-  printf '  > %s\n' "echo \"deb ...\" | sudo tee /etc/apt/sources.list.d/docker.list"
-  echo \
-    "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-    ${VERSION_CODENAME} stable" | \
-    sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-  execute "저장소 추가 후 패키지 목록을 다시 업데이트합니다." sudo apt-get update -y
-  execute "Docker 엔진 및 관련 플러그인을 설치합니다." sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 }
 
 ##
-# Rocky Linux 환경에서 Docker 엔진을 설치합니다.
+# /etc/os-release 파일로부터 OS 식별자 및 메타데이터를 정규화하여 파싱합니다.
 #
 # @param 없음
 #
-# @return (dnf 패키지 설치 및 서비스 구동)
+# @return (전역 OS 메타데이터 변수 초기화)
 ##
-install_rocky() {
-  local major_ver="${VERSION_ID%%.*}"
-  if (( major_ver < 9 )); then
-    die "Rocky Linux 9 이상만 지원합니다. 현재 버전: ${VERSION_ID}"
+load_os_metadata() {
+  if [ ! -r /etc/os-release ]; then
+    help "/etc/os-release 파일을 읽을 수 없습니다. 지원되지 않는 리눅스 환경입니다." "$LINENO"
+    exit 1
   fi
 
-  log "Rocky Linux ${VERSION_ID} 환경에 Docker 설치를 시작합니다."
+  # 서브셸을 통한 안전한 변수 추출
+  OS_ID="$(grep -E '^ID=' /etc/os-release | cut -d= -f2- | tr -d '"'"'" || true)"
+  OS_ID_LIKE="$(grep -E '^ID_LIKE=' /etc/os-release | cut -d= -f2- | tr -d '"'"'" || true)"
+  OS_VERSION_ID="$(grep -E '^VERSION_ID=' /etc/os-release | cut -d= -f2- | tr -d '"'"'" || true)"
+  OS_CODENAME="$(grep -E '^VERSION_CODENAME=' /etc/os-release | cut -d= -f2- | tr -d '"'"'" || true)"
 
-  execute "dnf-plugins-core 패키지를 설치합니다." sudo dnf -y install dnf-plugins-core
-  execute "Docker CE 공식 저장소를 추가합니다." sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-  
-  execute "Docker 엔진 및 관련 플러그인을 설치합니다." sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  # Linux Mint 등 파생 배포판 대응을 위한 UBUNTU_CODENAME 확인
+  local ubuntu_codename=""
+  ubuntu_codename="$(grep -E '^UBUNTU_CODENAME=' /etc/os-release | cut -d= -f2- | tr -d '"'"'" || true)"
+  if [ -n "$ubuntu_codename" ]; then
+    OS_CODENAME="$ubuntu_codename"
+  fi
+
+  log_info "운영체제 메타데이터 탐지: ID=${OS_ID}, ID_LIKE=${OS_ID_LIKE:-none}, VERSION_ID=${OS_VERSION_ID}"
 }
 
 ##
-# 사용자를 docker 그룹에 추가하여 sudo 없이 Docker 명령어를 사용할 수 있도록 구성합니다.
+# 시스템에 존재하는 패키지 관리 도구를 우선순위에 따라 자동 감지합니다.
 #
 # @param 없음
 #
-# @return (docker 그룹 등록 및 세션 반영 안내 출력)
+# @return {string} 감지된 패키지 관리자 이름 (apt, dnf, yum)
 ##
-configure_docker_user_group() {
-  local target_user="${SUDO_USER:-$(id -un)}"
-
-  if [[ -z "$target_user" || "$target_user" == "root" ]]; then
-    log "루트(root) 계정은 기본적으로 권한을 보유하므로 docker 그룹 등록을 건너뜁니다."
+detect_package_manager() {
+  # 1. 수동 지정된 관리자가 있는 경우 최우선 검증
+  if [ -n "$MANUAL_PKG_MGR" ]; then
+    if ! command -v "$MANUAL_PKG_MGR" >/dev/null 2>&1; then
+      help "수동 지정된 패키지 관리자('$MANUAL_PKG_MGR')를 시스템에서 찾을 수 없습니다." "$LINENO"
+      exit 1
+    fi
+    echo "$MANUAL_PKG_MGR"
     return 0
   fi
 
-  echo ""
-  log "비-루트 사용자 '${target_user}'의 docker 그룹 권한 설정을 진행합니다."
-
-  # docker 그룹 존재 여부 확인 및 생성
-  if ! getent group docker >/dev/null 2>&1; then
-    execute "docker 시스템 그룹을 생성합니다." sudo groupadd docker
+  # 2. OS 패밀리 및 명령어 가용성 교차 분석
+  if [[ "$OS_ID" == "ubuntu" || "$OS_ID" == "debian" || "$OS_ID_LIKE" == *"debian"* || "$OS_ID_LIKE" == *"ubuntu"* ]]; then
+    if command -v apt-get >/dev/null 2>&1; then
+      echo "apt"
+      return 0
+    fi
   fi
 
-  # 이미 그룹에 등록되어 있는지 검사
-  if id -nG "$target_user" 2>/dev/null | grep -qw "docker"; then
-    echo "ℹ️  [INFO] 사용자 '${target_user}'는 이미 docker 그룹에 등록되어 있습니다."
+  if command -v dnf >/dev/null 2>&1; then
+    echo "dnf"
+    return 0
+  elif command -v yum >/dev/null 2>&1; then
+    echo "yum"
+    return 0
+  elif command -v apt-get >/dev/null 2>&1; then
+    echo "apt"
+    return 0
+  fi
+
+  help "지원 가능한 패키지 관리 도구(apt, dnf, yum)를 감지하지 못했습니다." "$LINENO"
+  exit 1
+}
+
+##
+# APT 패키지 관리 도구를 기반으로 Docker CE를 설치합니다 (Debian/Ubuntu 계열).
+#
+# @param 없음
+#
+# @return (Docker 패키지 설치 완료)
+##
+install_via_apt() {
+  log_info "APT 패키지 관리 도구 기반 Docker 엔진 설치를 시작합니다."
+
+  # 저장소 OS 타입 결정 (ubuntu 또는 debian)
+  local repo_os="ubuntu"
+  if [[ "$OS_ID" == "debian" || ( "$OS_ID_LIKE" == *"debian"* && "$OS_ID" != "ubuntu" ) ]]; then
+    repo_os="debian"
+  fi
+
+  # 코드명이 없는 경우 lsb_release 확인 후 기본 폴백
+  local codename="${OS_CODENAME}"
+  if [ -z "$codename" ] && command -v lsb_release >/dev/null 2>&1; then
+    codename="$(lsb_release -cs 2>/dev/null || true)"
+  fi
+  if [ -z "$codename" ]; then
+    help "APT 저장소 등록에 필요한 배포판 코드명(Codename)을 감지할 수 없습니다." "$LINENO"
+    exit 1
+  fi
+
+  # 패키지 인덱스 갱신 및 필수 의존성 설치
+  execute_cmd "패키지 목록을 업데이트합니다." "${SUDO_CMD[@]}" apt-get update -y
+  execute_cmd "필수 보안 및 네트워크 유틸리티를 설치합니다." \
+    "${SUDO_CMD[@]}" apt-get install -y ca-certificates curl gnupg
+
+  # Docker 공식 GPG 키링 등록
+  execute_cmd "GPG 키링 디렉터리를 생성합니다." \
+    "${SUDO_CMD[@]}" install -m 0755 -d /etc/apt/keyrings
+
+  printf '🔑 [INFO] Docker 공식 GPG 키를 다운로드하여 등록합니다 (OS: %s)...\n' "$repo_os"
+  curl -fsSL "https://download.docker.com/linux/${repo_os}/gpg" | \
+    "${SUDO_CMD[@]}" gpg --yes --dearmor -o /etc/apt/keyrings/docker.gpg
+  "${SUDO_CMD[@]}" chmod a+r /etc/apt/keyrings/docker.gpg
+
+  # Docker 공식 저장소 등록
+  local arch=""
+  arch="$(dpkg --print-architecture)"
+  printf '📦 [INFO] Docker 공식 APT 저장소를 구성합니다 (Arch: %s, Codename: %s)...\n' "$arch" "$codename"
+
+  echo "deb [arch=${arch} signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/${repo_os} ${codename} stable" | \
+    "${SUDO_CMD[@]}" tee /etc/apt/sources.list.d/docker.list >/dev/null
+
+  # 패키지 목록 재업데이트 및 엔진 설치
+  execute_cmd "저장소 등록 후 패키지 목록을 갱신합니다." "${SUDO_CMD[@]}" apt-get update -y
+  execute_cmd "Docker CE 엔진 및 핵심 플러그인을 설치합니다." \
+    "${SUDO_CMD[@]}" apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+}
+
+##
+# DNF 또는 YUM 패키지 관리 도구를 기반으로 Docker CE를 설치합니다 (RHEL/Rocky/CentOS/Fedora 계열).
+#
+# @param $1 {string} 실행할 패키지 관리자 명령어 ('dnf' 또는 'yum')
+#
+# @return (Docker 패키지 설치 완료)
+##
+install_via_rpm_manager() {
+  local mgr="$1"
+  log_info "${mgr^^} 패키지 관리 도구 기반 Docker 엔진 설치를 시작합니다."
+
+  # Fedora 배포판 여부 분기
+  local repo_url="https://download.docker.com/linux/centos/docker-ce.repo"
+  if [ "$OS_ID" == "fedora" ]; then
+    repo_url="https://download.docker.com/linux/fedora/docker-ce.repo"
+  fi
+
+  # 리포지토리 관리 플러그인 설치
+  if [ "$mgr" == "dnf" ]; then
+    execute_cmd "dnf-plugins-core 패키지를 설치합니다." "${SUDO_CMD[@]}" dnf install -y dnf-plugins-core
+    execute_cmd "Docker CE 공식 저장소를 추가합니다." "${SUDO_CMD[@]}" dnf config-manager --add-repo "$repo_url"
+    execute_cmd "Docker CE 패키지를 설치합니다." \
+      "${SUDO_CMD[@]}" dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   else
-    execute "사용자 '${target_user}'를 docker 그룹에 추가합니다." sudo usermod -a -G docker "$target_user"
-    echo "✅ [SUCCESS] 사용자 '${target_user}'가 docker 그룹에 등록되었습니다."
+    execute_cmd "yum-utils 패키지를 설치합니다." "${SUDO_CMD[@]}" yum install -y yum-utils
+    execute_cmd "Docker CE 공식 저장소를 추가합니다." "${SUDO_CMD[@]}" yum-config-manager --add-repo "$repo_url"
+    execute_cmd "Docker CE 패키지를 설치합니다." \
+      "${SUDO_CMD[@]}" yum install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  fi
+}
+
+##
+# 실행 사용자를 docker 시스템 그룹에 등록하여 비-루트 권한 실행 환경을 구성합니다.
+#
+# @param 없음
+#
+# @return (그룹 구성 완료 상태 콘솔 출력)
+##
+configure_docker_group() {
+  local target_user="${SUDO_USER:-$(id -un)}"
+
+  if [ -z "$target_user" ] || [ "$target_user" == "root" ]; then
+    log_info "현재 실행 계정이 루트(root)이므로 docker 그룹 추가 단계를 건너뜁니다."
+    return 0
+  fi
+
+  log_info "사용자 '${target_user}'의 docker 그룹 권한 설정을 진행합니다."
+
+  if ! getent group docker >/dev/null 2>&1; then
+    execute_cmd "docker 시스템 그룹을 생성합니다." "${SUDO_CMD[@]}" groupadd docker
+  fi
+
+  if id -nG "$target_user" 2>/dev/null | grep -qw "docker"; then
+    echo "ℹ️  [INFO] 사용자 '${target_user}'는 이미 docker 그룹에 속해 있습니다."
+  else
+    execute_cmd "사용자 '${target_user}'를 docker 그룹에 등록합니다." \
+      "${SUDO_CMD[@]}" usermod -aG docker "$target_user"
+    echo "✅ [SUCCESS] 사용자 '${target_user}'가 docker 그룹에 정상 등록되었습니다."
   fi
 
   echo ""
   echo "================================================================================"
-  echo "💡 [사용 권한 안내]"
-  echo "   기본적으로 docker 명령어는 root 권한이 필요합니다."
-  echo "   sudo를 매번 붙이지 않고 '${target_user}' 사용자로 실행하려면 아래 중 하나를 적용하십시오:"
-  echo "   1) 터미널 세션 로그아웃 후 다시 로그인"
-  echo "   2) 현재 터미널 세션에 즉시 반영: newgrp docker"
+  echo "💡 [사용자 권한 안내]"
+  echo "   sudo 없이 docker 명령어를 바로 실행하려면 아래 방법 중 하나를 적용하십시오:"
+  echo "   1) 현재 터미널 세션에 즉시 적용: newgrp docker"
+  echo "   2) 현재 세션을 로그아웃한 후 다시 로그인"
   echo "================================================================================"
 }
 
-# OS에 따른 설치 함수 분기
-case "${ID}" in
-  ubuntu)
-    install_ubuntu
-    ;;
-  rocky)
-    install_rocky
-    ;;
-  *)
-    die "지원하지 않는 OS입니다: ${PRETTY_NAME:-${ID}}"
-    ;;
-esac
+##
+# 설치 완료 후 Docker 데몬을 활성화하고 바이너리 동작 무결성을 검증합니다.
+#
+# @param 없음
+#
+# @return (검증 실패 시 에러 출력 후 exit 1)
+##
+verify_installation() {
+  execute_cmd "Docker 서비스를 부팅 시 자동 시작하도록 활성화하고 구동합니다." \
+    "${SUDO_CMD[@]}" systemctl enable --now docker
 
-# Docker 서비스 활성화 및 상태 확인
-execute "Docker 서비스를 부팅 시 자동 시작하도록 활성화하고 시작합니다." sudo systemctl enable --now docker
+  if command -v docker >/dev/null 2>&1; then
+    local docker_ver=""
+    docker_ver="$(docker --version 2>/dev/null || true)"
+    echo "================================================================================"
+    echo "🎉 [SUCCESS] Docker 엔진이 성공적으로 설치 및 구동되었습니다!"
+    echo "   - 바이너리 버전: $docker_ver"
+    echo "   - 실행 패키지 도구: ${DETECTED_PKG_MGR}"
+    echo "================================================================================"
+  else
+    help "Docker 설치 후 시스템에서 'docker' 바이너리를 찾을 수 없습니다." "$LINENO"
+    exit 1
+  fi
+}
 
-if command -v docker >/dev/null 2>&1; then
-  log "Docker 설치 및 구동 완료: $(docker --version)"
-else
-  die "설치 후 docker 실행 파일을 찾지 못했습니다."
-fi
+##
+# 스크립트 실행의 메인 진입점입니다.
+#
+# @param $@ {array} 명령줄 인자 배열
+#
+# @return (없음)
+##
+main() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --pkg-mgr)
+        if [[ -z "${2:-}" || "$2" == --* ]]; then
+          help "--pkg-mgr 옵션에는 사용할 도구 이름('apt', 'dnf', 'yum')을 지정해야 합니다." "$LINENO"
+          exit 1
+        fi
+        case "$2" in
+          apt|dnf|yum)
+            MANUAL_PKG_MGR="$2"
+            ;;
+          *)
+            help "지원하지 않는 패키지 관리자입니다 -> '$2' ('apt', 'dnf', 'yum' 중 선택)" "$LINENO"
+            exit 1
+            ;;
+        esac
+        shift 2
+        ;;
+      -h|--help)
+        help "" ""
+        exit 0
+        ;;
+      -*)
+        help "지원하지 않는 옵션입니다 -> $1" "$LINENO"
+        exit 1
+        ;;
+      *)
+        help "잘못된 파라미터가 입력되었습니다 -> $1" "$LINENO"
+        exit 1
+        ;;
+    esac
+  done
 
-# 비-루트 사용자 docker 그룹 권한 구성
-configure_docker_user_group
+  # 1. 권한 확인 및 OS 메타데이터 로드
+  ensure_privileges
+  load_os_metadata
 
+  # 2. 패키지 관리 도구 판별
+  DETECTED_PKG_MGR="$(detect_package_manager)"
+  log_info "선택된 패키지 관리 도구: ${DETECTED_PKG_MGR}"
+
+  # 3. 패키지 관리자 엔진별 설치 파이프라인 수행
+  case "$DETECTED_PKG_MGR" in
+    apt)
+      install_via_apt
+      ;;
+    dnf|yum)
+      install_via_rpm_manager "$DETECTED_PKG_MGR"
+      ;;
+    *)
+      help "처리할 수 없는 패키지 관리자 분기입니다 -> '$DETECTED_PKG_MGR'" "$LINENO"
+      exit 1
+      ;;
+  esac
+
+  # 4. 서비스 기동 및 설치 검증
+  verify_installation
+
+  # 5. 사용자 docker 그룹 바인딩
+  configure_docker_group
+}
+
+main "$@"
 exit 0
