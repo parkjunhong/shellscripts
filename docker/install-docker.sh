@@ -4,7 +4,7 @@
 # @title : search files.
 # @license : Apache License 2.0
 # @since : 2026-10-02
-# @desc : support RHEL 7+, Oracle Linux 7+, Ubuntu 20.04+, RockyOS 8+, CentOS 7+, Debian 11+
+# @desc : support RHEL 7 or higher, Oracle Linux 7 or higher, Ubuntu 20.04 or higher, RockyOS 8 or higher, CentOS 7 or higher, Debian 11 or higher
 # @installation : 
 # 1. insert 'source <path>/install-docker.sh.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
 # 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/install-docker.sh' into '/etc/bashrc' or '/usr/share/bash-completion/completions/' for all users.
@@ -47,7 +47,7 @@ help(){
   echo ""
   echo "[설명]"
   echo "  패키지 관리 도구(APT, DNF, YUM)를 기반으로 Docker CE 및 관련 플러그인을 자동 감지하여 설치합니다."
-  echo "  Ubuntu, Debian, Rocky Linux, RHEL, CentOS, AlmaLinux, Oracle Linux 등 다양한 배포판을 지원합니다."
+  echo "  타사 저장소(PPA) 오류 격리, 패키지 락 대기 및 서비스 자동 등록을 지원합니다."
   echo ""
   echo "[옵션 (Options)]"
   echo "  --pkg-mgr <도구>   패키지 관리 도구 강제 지정 (선택 사항: 'apt', 'dnf', 'yum')"
@@ -57,7 +57,7 @@ help(){
 trap 'help "스크립트 실행 중 예기치 않은 오류가 발생했습니다." "$LINENO"' ERR
 
 # 전역 상태 변수 선언 (메인 스코프에서는 local 키워드를 일절 사용하지 않음)
-MANual_PKG_MGR=""
+MANUAL_PKG_MGR=""
 DETECTED_PKG_MGR=""
 SUDO_CMD=()
 
@@ -75,6 +75,17 @@ OS_CODENAME=""
 ##
 log_info() {
   printf 'ℹ️  [INFO] %s\n' "$*"
+}
+
+##
+# 경고성 로그 메시지를 출력합니다.
+#
+# @param $1 {string} 출력할 경고 메시지
+#
+# @return (표준 출력 로그)
+##
+log_warn() {
+  printf '⚠️  [WARN] %s\n' "$*"
 }
 
 ##
@@ -133,13 +144,11 @@ load_os_metadata() {
     exit 1
   fi
 
-  # 서브셸을 통한 안전한 변수 추출
   OS_ID="$(grep -E '^ID=' /etc/os-release | cut -d= -f2- | tr -d '"'"'" || true)"
   OS_ID_LIKE="$(grep -E '^ID_LIKE=' /etc/os-release | cut -d= -f2- | tr -d '"'"'" || true)"
   OS_VERSION_ID="$(grep -E '^VERSION_ID=' /etc/os-release | cut -d= -f2- | tr -d '"'"'" || true)"
   OS_CODENAME="$(grep -E '^VERSION_CODENAME=' /etc/os-release | cut -d= -f2- | tr -d '"'"'" || true)"
 
-  # Linux Mint 등 파생 배포판 대응을 위한 UBUNTU_CODENAME 확인
   local ubuntu_codename=""
   ubuntu_codename="$(grep -E '^UBUNTU_CODENAME=' /etc/os-release | cut -d= -f2- | tr -d '"'"'" || true)"
   if [ -n "$ubuntu_codename" ]; then
@@ -157,7 +166,6 @@ load_os_metadata() {
 # @return {string} 감지된 패키지 관리자 이름 (apt, dnf, yum)
 ##
 detect_package_manager() {
-  # 1. 수동 지정된 관리자가 있는 경우 최우선 검증
   if [ -n "$MANUAL_PKG_MGR" ]; then
     if ! command -v "$MANUAL_PKG_MGR" >/dev/null 2>&1; then
       help "수동 지정된 패키지 관리자('$MANUAL_PKG_MGR')를 시스템에서 찾을 수 없습니다." "$LINENO"
@@ -167,7 +175,6 @@ detect_package_manager() {
     return 0
   fi
 
-  # 2. OS 패밀리 및 명령어 가용성 교차 분석
   if [[ "$OS_ID" == "ubuntu" || "$OS_ID" == "debian" || "$OS_ID_LIKE" == *"debian"* || "$OS_ID_LIKE" == *"ubuntu"* ]]; then
     if command -v apt-get >/dev/null 2>&1; then
       echo "apt"
@@ -191,6 +198,78 @@ detect_package_manager() {
 }
 
 ##
+# APT 패키지 관리자의 잠금(Lock)이 해제될 때까지 안전하게 대기합니다.
+#
+# @param 없음
+#
+# @return (잠금 해제 완료)
+##
+wait_for_apt_locks() {
+  local max_retries=30
+  local retry_count=0
+
+  while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || \
+        fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do
+    if (( retry_count >= max_retries )); then
+      help "다른 프로세스가 APT/DPKG 잠금을 장시간 점유하고 있어 작업을 진행할 수 없습니다." "$LINENO"
+      exit 1
+    fi
+    log_info "다른 패키지 관리 프로세스가 실행 중입니다. 잠금 해제를 대기합니다 ($((retry_count + 1))/${max_retries})..."
+    sleep 2
+    ((retry_count++)) || true
+  done
+}
+
+##
+# 타사 저장소 오류가 발생해도 중단되지 않도록 복원력을 갖춘 전체 APT 인덱스 업데이트를 실행합니다.
+#
+# @param 없음
+#
+# @return (업데이트 수행 완료)
+##
+resilient_apt_update() {
+  wait_for_apt_locks
+  printf '⚙️️  [EXEC] 패키지 목록을 업데이트합니다 (타사 저장소 장애 격리 적용)...\n'
+  printf '   -> sudo apt-get update -y\n'
+
+  local exit_code=0
+  "${SUDO_CMD[@]}" apt-get update -y || exit_code=$?
+
+  if (( exit_code != 0 )); then
+    log_warn "일부 외부 PPA/타사 저장소에서 갱신 오류가 발생했습니다 (종료 코드: ${exit_code})."
+    log_warn "무관한 타사 저장소 오류를 무시하고 필수 패키지 설치 파이프라인을 계속 진행합니다."
+  else
+    log_info "패키지 목록 업데이트가 정상적으로 완료되었습니다."
+  fi
+}
+
+##
+# Docker 전용 sources.list.d 파일만 지정하여 타사 저장소 에러와 완전히 격리된 인덱스 갱신을 수행합니다.
+#
+# @param 없음
+#
+# @return (Docker 전용 인덱스 갱신 완료)
+##
+isolated_docker_apt_update() {
+  wait_for_apt_locks
+  printf '⚙️  [EXEC] Docker 공식 저장소 전용 인덱스를 독립 갱신합니다 (타사 PPA 완전 격리)...\n'
+  printf '   -> sudo apt-get update -o Dir::Etc::sourcelist="sources.list.d/docker.list" -o Dir::Etc::sourceparts="-" -o APT::Get::List-Cleanup="0"\n'
+
+  local exit_code=0
+  "${SUDO_CMD[@]}" apt-get update \
+    -o Dir::Etc::sourcelist="sources.list.d/docker.list" \
+    -o Dir::Etc::sourceparts="-" \
+    -o APT::Get::List-Cleanup="0" || exit_code=$?
+
+  if (( exit_code != 0 )); then
+    log_warn "Docker 전용 인덱스 단독 갱신에 실패하여 전체 복원 업데이트로 재시도합니다."
+    resilient_apt_update
+  else
+    log_info "Docker 공식 저장소 인덱스 갱신이 완료되었습니다."
+  fi
+}
+
+##
 # APT 패키지 관리 도구를 기반으로 Docker CE를 설치합니다 (Debian/Ubuntu 계열).
 #
 # @param 없음
@@ -200,13 +279,11 @@ detect_package_manager() {
 install_via_apt() {
   log_info "APT 패키지 관리 도구 기반 Docker 엔진 설치를 시작합니다."
 
-  # 저장소 OS 타입 결정 (ubuntu 또는 debian)
   local repo_os="ubuntu"
   if [[ "$OS_ID" == "debian" || ( "$OS_ID_LIKE" == *"debian"* && "$OS_ID" != "ubuntu" ) ]]; then
     repo_os="debian"
   fi
 
-  # 코드명이 없는 경우 lsb_release 확인 후 기본 폴백
   local codename="${OS_CODENAME}"
   if [ -z "$codename" ] && command -v lsb_release >/dev/null 2>&1; then
     codename="$(lsb_release -cs 2>/dev/null || true)"
@@ -216,12 +293,15 @@ install_via_apt() {
     exit 1
   fi
 
-  # 패키지 인덱스 갱신 및 필수 의존성 설치
-  execute_cmd "패키지 목록을 업데이트합니다." "${SUDO_CMD[@]}" apt-get update -y
+  # 1. 초기 시스템 패키지 목록 갱신 (타사 PPA 오류 격리)
+  resilient_apt_update
+
+  # 2. 필수 의존성 패키지 설치
+  wait_for_apt_locks
   execute_cmd "필수 보안 및 네트워크 유틸리티를 설치합니다." \
     "${SUDO_CMD[@]}" apt-get install -y ca-certificates curl gnupg
 
-  # Docker 공식 GPG 키링 등록
+  # 3. Docker 공식 GPG 키링 등록
   execute_cmd "GPG 키링 디렉터리를 생성합니다." \
     "${SUDO_CMD[@]}" install -m 0755 -d /etc/apt/keyrings
 
@@ -230,7 +310,7 @@ install_via_apt() {
     "${SUDO_CMD[@]}" gpg --yes --dearmor -o /etc/apt/keyrings/docker.gpg
   "${SUDO_CMD[@]}" chmod a+r /etc/apt/keyrings/docker.gpg
 
-  # Docker 공식 저장소 등록
+  # 4. Docker 공식 저장소 등록
   local arch=""
   arch="$(dpkg --print-architecture)"
   printf '📦 [INFO] Docker 공식 APT 저장소를 구성합니다 (Arch: %s, Codename: %s)...\n' "$arch" "$codename"
@@ -238,8 +318,11 @@ install_via_apt() {
   echo "deb [arch=${arch} signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/${repo_os} ${codename} stable" | \
     "${SUDO_CMD[@]}" tee /etc/apt/sources.list.d/docker.list >/dev/null
 
-  # 패키지 목록 재업데이트 및 엔진 설치
-  execute_cmd "저장소 등록 후 패키지 목록을 갱신합니다." "${SUDO_CMD[@]}" apt-get update -y
+  # 5. Docker 저장소 전용 독립 갱신 (외부 PPA 404 장애 완전 격리)
+  isolated_docker_apt_update
+
+  # 6. Docker 엔진 패키지 설치
+  wait_for_apt_locks
   execute_cmd "Docker CE 엔진 및 핵심 플러그인을 설치합니다." \
     "${SUDO_CMD[@]}" apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 }
@@ -255,13 +338,11 @@ install_via_rpm_manager() {
   local mgr="$1"
   log_info "${mgr^^} 패키지 관리 도구 기반 Docker 엔진 설치를 시작합니다."
 
-  # Fedora 배포판 여부 분기
   local repo_url="https://download.docker.com/linux/centos/docker-ce.repo"
   if [ "$OS_ID" == "fedora" ]; then
     repo_url="https://download.docker.com/linux/fedora/docker-ce.repo"
   fi
 
-  # 리포지토리 관리 플러그인 설치
   if [ "$mgr" == "dnf" ]; then
     execute_cmd "dnf-plugins-core 패키지를 설치합니다." "${SUDO_CMD[@]}" dnf install -y dnf-plugins-core
     execute_cmd "Docker CE 공식 저장소를 추가합니다." "${SUDO_CMD[@]}" dnf config-manager --add-repo "$repo_url"
@@ -369,7 +450,7 @@ main() {
         exit 0
         ;;
       -*)
-        help "지원하지 않는 옵션입니다 -> $1" "$LINENO"
+        help "지원하지 않는 옵션입니다 (단축 옵션은 지원하지 않습니다) -> $1" "$LINENO"
         exit 1
         ;;
       *)
