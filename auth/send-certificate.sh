@@ -1,93 +1,29 @@
 #!/usr/bin/env bash
-
 # =======================================
-# @auther : parkjunhong77@gmail.com
-# @title  : wildcard 인증서 변환 및 다중 서비스 배포 스크립트
-# @license: Apache License 2.0
-# @since  : 2025/11/27
-# @desc   : support RHEL 7/8/9, Oracle Linux 7/8/9, Ubuntu 18.04/20.04/22.04 LTS,
-#           macOS 11+ (with bash >= 4, OpenSSL, wget, OpenSSH, JDK/keytool installed),
-#           CentOS 7
-# @completion: send-certificate.completion
-#            1. insert "source <path>/send-certificate.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#            2. copy the above file to /etc/bash_completion.d/ for all users.
+# @author : parkjunhong77@gmail.com
+# @title : wildcard 인증서 변환 및 다중 서비스 배포 스크립트
+# @license : Apache License 2.0
+# @since : 2026-10-13
+# @desc : support RHEL 7 or higher, Oracle Linux 7 or higher, Ubuntu 18.04 or higher, RockyOS 8 or higher, CentOS 7 or higher, macOS 11 or higher
+# @installation : 
+# 1. insert 'source <path>/send-certificate.sh.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/send-certificate.sh' into '/etc/bashrc' or '/usr/share/bash-completion/completions/' for all users.
 # =======================================
 
+set -Eeuo pipefail
+
+FILENAME=$(basename "$0")
+
 ##
-# LETSENC_INSTDIR: Let's Encrypt가 설치된 디렉토리 환경변수 검증 및 LETSENC_ROOT 설정
-# Validate LETSENC_INSTDIR environment variable and set LETSENC_ROOT
+# 스크립트 사용 방법 및 오류 원인을 출력합니다.
 #
-# @param (none)
+# @param $1 {string} (오류 발생 시 원인 메시지)
+# @param $2 {string} (오류 발생 라인)
 #
-# @return 정상인 경우 0, 잘못된 경우 help() 호출 후 종료 / 0 on success, exit on error
+# @return (도움말 내용 출력)
 ##
-validate_env() {
-  LETSENC_ROOT="${LETSENC_INSTDIR:-}"
-
-  if [[ -z "${LETSENC_ROOT}" || ! -d "${LETSENC_ROOT}" ]];
-  then
-    echo
-    echo "Let's Encrypt 도구가 설치된 경로가 존재하지 않습니다."
-    echo "Let's Encrypt tools directory does not exist."
-    echo "echo \"\$LETSENC_INSTDIR\"=${LETSENC_ROOT}"
-    help "invalid LETSENC_INSTDIR: directory not found" "$LINENO"
-    exit 1
-  fi
-}
-
-# 안 보내기 
-NO_SEND=0
-# 유형별 인증서 삭제하지 않기
-NO_DELETE=0
-# 인증서 유형
-TYPE=( "pem" "sslca" "pkcs12" "jks")
-# WILDCARD 도메인 (예: mycom.co.kr)
-WILDCARD_DOMAIN=""
-# 전송할 인증서 유형 리스트 (미지정 시 TYPE 전체 사용)
-TARGET_CA_LIST=()
-# 서비스 목록 파일 경로
-SERVICES_LIST=""
-# SSH 개인키 경로 (옵션으로 입력)
-SSH_PRI_KEY=""
-# PKCS12/JKS 비밀번호 (옵션으로 입력)
-P12_PWD=""
-# 전송 대상 설정 (service-list.txt 내용)
-DEST_CONFS=()
-
-# ----------------------------------------------------------------------
-# path normalization helpers
-#   - ~ 확장
-#   - 상대경로 → 절대경로 변환
-# ----------------------------------------------------------------------
-normalize_path(){
-  local p="$1"
-
-  # 빈 값이면 그대로 반환
-  if [ -z "$p" ]; then
-    echo ""
-    return 0
-  fi
-
-  # ~, ~/ 로 시작하는 경우 쉘 확장을 이용
-  if [[ "$p" == ~* ]]; then
-    eval echo "$p"
-    return 0
-  fi
-
-  # 절대경로 그대로 사용
-  if [[ "$p" = /* ]]; then
-    echo "$p"
-    return 0
-  fi
-
-  # 상대경로는 현재 작업 디렉터리 기준으로 절대경로 변환
-  echo "$PWD/$p"
-}
-
-FILENAME="$0"
-
 help(){
-  if [ ! -z "$1" ];
+  if [ ! -z "${1:-}" ];
   then
     local indent=10
     local formatl=" - %-"$indent"s: %s\n"
@@ -95,44 +31,411 @@ help(){
     echo
     echo "================================================================================"
     printf "$formatl" "filename" "$FILENAME"
-    printf "$formatl" "line" "$2"
+    printf "$formatl" "line" "${2:-}"
     printf "$formatl" "callstack"
     local idx=1
-    for func in ${FUNCNAME[@]:1}
-    do  
-      printf "$formatr" "["$idx"]" $func
-      ((idx++))
+    for func in "${FUNCNAME[@]:1}"
+    do 
+      printf "$formatr" "["$idx"]" "$func"
+      ((idx++)) || true
     done
     printf "$formatl" "cause" "$1"
     echo "================================================================================"
-  fi  
-  echo
-  echo
-  echo "Usage:"
-  echo "./script_name <options>" # 스크립트 이름을 적절하게 수정하세요.
-  echo
-  echo "Options:"
-  echo " --no-send: DO NOT send file to destination."
-  echo " --no-delete: DO NOT delete converted files, e.g. ssl, pkcs12, etc."
-  echo " -sf | --service-files <file>: Specify service list file."
-  echo "  데이터 포맷: <type>;<user>@<host>:/absolute/path[;<cli>]"
-  echo "   + type: pem|sslca|pkcs12|jks"
-  echo "   + user: 사용자 ID"
-  echo "   + host: 서버 접속 정보. IP or Domain"
-  echo "   + path: 인증서를 복사할 디렉토리 절대 경로"
-  echo "   + cli : 인증서를 복사한 후 실행할 명령어. (optional)"
-  echo " -sk | --ssh-key <file>: Specify ssh private key file."
-  echo " -tc | --target-ca <types>: Specify target certificate types. (comma separated: pem,sslca,pkcs12,jks)"
-  echo " -wd | --wildcard-domain <domain>: Specify wildcard base domain. (e.g. mycom.co.kr)"
-  echo " -p12 | --p12-pwd <password>: Specify password for pkcs12/jks."
-  echo
+  fi 
+  echo 
+  echo "사용법 (Usage): ./$FILENAME [옵션]"
+  echo ""
+  echo "[옵션 (Options)]"
+  echo "  --no-send                            실제로 파일을 원격 서버에 전송하지 않습니다."
+  echo "  --no-delete                          변환된 인증서 파일들을 삭제하지 않고 보존합니다."
+  echo "  --dry-run                            --no-send 및 --no-delete를 동시에 활성화합니다."
+  echo "  -sf, --service-files <파일경로>       서비스 목록 파일 경로를 지정합니다. (필수)"
+  echo "                                       형식: <type>;<user>@<host>:/absolute/path[;<cli>]"
+  echo "  -sk, --ssh-key <파일경로>             SSH 접속에 사용할 개인키 파일 경로를 지정합니다. (필수)"
+  echo "  -p12, --p12-pwd <비밀번호>            PKCS12 및 JKS 생성에 사용할 비밀번호를 지정합니다. (필수)"
+  echo "  -tc, --target-ca <유형목록>           전송할 인증서 유형을 쉼표로 구분하여 지정합니다. (기본값: 전체)"
+  echo "                                       허용 값: pem,sslca,pkcs12,jks"
+  echo "  -wd, --wildcard-domain <도메인>       Wildcard 기준 도메인을 지정합니다. (예: ymtech.co.kr, 필수)"
+  echo "  -h, --help                           이 도움말을 출력하고 종료합니다."
+}
+
+trap 'help "스크립트 실행 중 예기치 않은 오류가 발생했습니다." "$LINENO"' ERR
+
+# 전역 설정 플래그 및 기본 변수 선언
+NO_SEND=0
+NO_DELETE=0
+TYPE=("pem" "sslca" "pkcs12" "jks")
+WILDCARD_DOMAIN=""
+TARGET_CA_LIST=()
+SERVICES_LIST=""
+SSH_PRI_KEY=""
+P12_PWD=""
+DEST_CONFS=()
+LETSENC_ROOT=""
+
+##
+# Let's Encrypt 도구 설치 경로 환경변수(LETSENC_INSTDIR)를 검증하고 설정합니다.
+#
+# @param 없음
+#
+# @return (검증 성공 시 LETSENC_ROOT 설정, 실패 시 exit 1)
+##
+validate_env() {
+  LETSENC_ROOT="${LETSENC_INSTDIR:-}"
+
+  if [[ -z "${LETSENC_ROOT}" || ! -d "${LETSENC_ROOT}" ]]; then
+    echo "❌ Let's Encrypt 도구가 설치된 디렉터리 경로를 찾을 수 없습니다." >&2
+    echo "   echo \"\$LETSENC_INSTDIR\"=${LETSENC_ROOT}" >&2
+    help "유효하지 않은 LETSENC_INSTDIR 환경변수입니다." "$LINENO"
+    exit 1
+  fi
+}
+
+##
+# 경로 문자열을 정규화하여 절대 경로로 변환합니다.
+#
+# @param $1 {string} 변환할 경로
+#
+# @return {string} 정규화된 절대 경로 (stdout)
+##
+normalize_path(){
+  local p="$1"
+
+  if [ -z "$p" ]; then
+    echo ""
+    return 0
+  fi
+
+  if [[ "$p" == ~* ]]; then
+    eval echo "$p"
+    return 0
+  fi
+
+  if [[ "$p" = /* ]]; then
+    echo "$p"
+    return 0
+  fi
+
+  echo "$PWD/$p"
+}
+
+##
+# 원격 대상 문자열(user@host:path 또는 user@host)에서 순수 호스트명/IP를 안전하게 추출합니다.
+#
+# @param $1 {string} 대상 원격 접속 문자열
+#
+# @return {string} 추출된 순수 호스트명 (stdout)
+##
+extract_pure_host() {
+  local raw_target="$1"
+  local host_part="${raw_target%%:*}"
+  host_part="${host_part#*@}"
+  echo "$host_part"
+}
+
+##
+# 원격 서버 접속 실패 시 SSH Host Key 변경 오류 여부를 감지하고 known_hosts 캐시를 자동 삭제합니다.
+#
+# @param $1 {string} 대상 호스트명
+# @param $2 {string} 실행 로그 파일 경로
+#
+# @return 0 (호스트키 삭제 성공 및 재시도 필요), 1 (호스트키 오류 아님)
+##
+handle_host_key_changed() {
+  local host="$1"
+  local log_file="$2"
+
+  if grep -Eq 'WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED|Host key verification failed' "$log_file" 2>/dev/null; then
+    echo ""
+    echo "================================================================================"
+    echo "⚠️  [주의] 원격 서버($host)의 SSH 호스트 키 변경(Host Key Changed)이 감지되었습니다."
+    echo "   기존 /root/.ssh/known_hosts (또는 ~/.ssh/known_hosts)의 불일치 키를 자동 삭제합니다."
+    echo "   실행 명령 -> ssh-keygen -R '$host'"
+    echo "================================================================================"
+    
+    ssh-keygen -R "$host" >/dev/null 2>&1 || true
+
+    # 해시 처리된 known_hosts 백업 파일(.old)도 정리
+    local known_hosts_file="${HOME}/.ssh/known_hosts"
+    if [ -f "${known_hosts_file}.old" ]; then
+      rm -f "${known_hosts_file}.old" 2>/dev/null || true
+    fi
+
+    return 0
+  fi
+
+  return 1
+}
+
+##
+# 파일 유효성을 검증합니다.
+#
+# @param $1 {string} 검증할 파일 경로
+#
+# @return 0 (성공), 실패 시 exit 1
+##
+validate_file(){
+  local f="$1"
+  if [ ! -f "$f" ]; then
+    help "인증서 파일이 존재하지 않습니다 -> '$f'" "$LINENO"
+    exit 1
+  else
+    echo " * * * 검증 완료된 파일: $f"
+  fi
+}
+
+##
+# PEM 인증서를 Nginx용 CRT 및 KEY 형식으로 변환합니다.
+#
+# @param 없음
+#
+# @return 변환 디렉터리 생성 및 파일 복사 완료
+##
+convert_pem_to_sslca(){
+  echo ""
+  echo " ✅  >>> 시작: Nginx용 SSL & CA 파일 변환"
+
+  rm -rf "$SSL_CA_DIR"
+  mkdir -p "$SSL_CA_DIR"
+
+  cp -f "$FILE_FULLCHAIN" "$SSL_CA_DIR/${CERT_NAME}.crt"
+
+  printf " * * * "
+  openssl pkey -in "$FILE_PRIVKEY" -out "$SSL_CA_DIR/${CERT_NAME}.key"
+
+  echo ""
+  ls -al "$SSL_CA_DIR/"
+  echo " <<< 종료"
+}
+
+##
+# PEM 인증서를 PKCS12 (.p12) 형식으로 변환합니다.
+#
+# @param 없음
+#
+# @return .p12 파일 생성 완료
+##
+convert_pem_to_p12(){
+  echo ""
+  echo " ✅  >>> 시작: PKCS12(.p12) 파일 변환"
+
+  rm -rf "$PKCS12_DIR"
+  mkdir -p "$PKCS12_DIR"
+
+  openssl pkcs12 -export \
+    -out "${PKCS12_DIR}/${CERT_NAME}.p12" \
+    -passout pass:"$P12_PWD" \
+    -in "$FILE_FULLCHAIN" \
+    -inkey "$FILE_PRIVKEY" \
+    -CAfile "$FILE_CHAIN" \
+    -caname "$INTER_CERTS_ALIAS_OR_CNAME" \
+    -name "$NAME_OR_ALIAS"
+
+  ls -al "${PKCS12_DIR}/${CERT_NAME}.p12"
+  echo " <<< 종료"
+}
+
+##
+# PKCS12 파일을 Java KeyStore (.jks) 형식으로 변환합니다.
+#
+# @param 없음
+#
+# @return .jks 파일 생성 완료
+##
+convert_p12_to_jks(){
+  echo ""
+  echo " ✅  >>> 시작: Java KeyStore(.jks) 파일 변환"
+
+  if [ ! -f "${PKCS12_DIR}/${CERT_NAME}.p12" ]; then
+    echo " ❌❌❌ PKCS12 파일이 존재하지 않습니다. 경로=${PKCS12_DIR}/${CERT_NAME}.p12" >&2
+    return 1
+  fi
+
+  rm -rf "$JKS_DIR"
+  mkdir -p "$JKS_DIR"
+
+  echo " + ✅  'p12' -> 'jks'"
+  keytool -importkeystore \
+    -deststorepass "$P12_PWD" \
+    -destkeypass "$P12_PWD" \
+    -destkeystore "${JKS_DIR}/${CERT_NAME}.jks" \
+    -srckeystore "${PKCS12_DIR}/${CERT_NAME}.p12" \
+    -srcstoretype PKCS12 \
+    -srcstorepass "$P12_PWD" \
+    -alias "$NAME_OR_ALIAS"
+
+  echo " + ✅  중계(Intermediate) CA 주입"
+  keytool -import -trustcacerts \
+    -file "$FILE_CHAIN" \
+    -keystore "${JKS_DIR}/${CERT_NAME}.jks" \
+    -storepass "$P12_PWD" \
+    -alias "$INTER_CERTS_ALIAS_OR_CNAME" \
+    -noprompt
+
+  echo " + ✅  루트(ROOT) CA 주입"
+  keytool -import -trustcacerts \
+    -file "$FILE_ROOT" \
+    -keystore "${JKS_DIR}/${CERT_NAME}.jks" \
+    -storepass "$P12_PWD" \
+    -alias "$ROOT_CERTS_ALIAS" \
+    -noprompt
+
+  ls -al "${JKS_DIR}/${CERT_NAME}.jks"
+  echo " <<< 종료"
+}
+
+##
+# SCP를 통해 변환된 인증서 파일들을 대상 서버로 전송합니다 (Host Key 변경 시 자동 복구 및 재시도).
+#
+# @param $1 {string} 소스 디렉터리 경로
+# @param $2 {string} 대상 서버 접속 및 목적지 경로 (<user>@<host>:<path>)
+#
+# @return {number} SCP 실행 종료 코드 (0: 성공)
+##
+send_files(){
+  if [ $# -ne 2 ]; then
+    echo " ❌❌❌ 인자가 올바르지 않습니다." >&2
+    return 1
+  fi
+
+  local src_dir="$1"
+  local dst_target="$2"
+  local host_only=""
+  host_only="$(extract_pure_host "$dst_target")"
+
+  echo "scp -i $SSH_PRI_KEY $src_dir/*.* $dst_target"
+
+  if [ "$NO_SEND" -eq 1 ]; then
+    echo " ❗❗❗ '--no-send' 옵션이 활성화되어 실제 전송을 건너뜁니다."
+    return 0
+  fi
+
+  local temp_log=""
+  temp_log="$(mktemp "${TMPDIR:-/tmp}/scp_err_XXXXXX.log")"
+  local status=0
+
+  # 1차 전송 시도
+  set +e
+  scp -i "$SSH_PRI_KEY" "$src_dir"/*.* "$dst_target" 2>&1 | tee "$temp_log"
+  status=${PIPESTATUS[0]}
+  set -e
+
+  # 호스트 키 변경 오류 발생 시 자동 복구 및 2차 재시도
+  if [ "$status" -ne 0 ] && handle_host_key_changed "$host_only" "$temp_log"; then
+    echo " 🔄 [재시도] 갱신된 호스트 키를 적용하여 SCP 재전송을 진행합니다..."
+    set +e
+    scp -i "$SSH_PRI_KEY" \
+        -o StrictHostKeyChecking=accept-new \
+        "$src_dir"/*.* "$dst_target" 2>&1 | tee "$temp_log"
+    status=${PIPESTATUS[0]}
+    set -e
+
+    if [ "$status" -eq 0 ]; then
+      echo " ✅ [성공] 호스트 키 갱신 후 SCP 재전송이 정상 완료되었습니다."
+    fi
+  fi
+
+  rm -f "$temp_log"
+  return "$status"
+}
+
+##
+# SSH를 통해 원격 서버에 사후 명령어를 실행합니다 (Host Key 변경 시 자동 복구 및 재시도).
+#
+# @param $1 {string} 대상 서버 접속 문자열 (<user>@<host>)
+# @param $2 {string} 원격 실행할 CLI 명령어
+# @param $3 {number} 이전 파일 전송 단계 상태 코드
+#
+# @return {number} SSH 실행 종료 코드 (0: 성공)
+##
+exe_cli(){
+  local server="$1"
+  local cli="$2"
+  local prev_status="${3:-0}"
+
+  if [ -z "$cli" ]; then
+    return 0
+  fi
+
+  if [ "$prev_status" -ne 0 ]; then
+    echo " ❗❗❗ 이전 단계가 실패(status=$prev_status)이므로 CLI 실행을 건너뜁니다. server=$server, cli=$cli"
+    return "$prev_status"
+  fi
+
+  local host_only=""
+  host_only="$(extract_pure_host "$server")"
+
+  echo "ssh -i $SSH_PRI_KEY $server \"$cli\""
+
+  if [ "$NO_SEND" -eq 1 ]; then
+    echo " ❗❗❗ '--no-send' 옵션이 활성화되어 CLI 실행을 건너뜁니다."
+    return 0
+  fi
+
+  local temp_log=""
+  temp_log="$(mktemp "${TMPDIR:-/tmp}/ssh_err_XXXXXX.log")"
+  local status=0
+
+  # 1차 SSH 실행 시도
+  set +e
+  ssh -i "$SSH_PRI_KEY" "$server" "$cli" 2>&1 | tee "$temp_log"
+  status=${PIPESTATUS[0]}
+  set -e
+
+  # 호스트 키 변경 오류 발생 시 자동 복구 및 2차 재시도
+  if [ "$status" -ne 0 ] && handle_host_key_changed "$host_only" "$temp_log"; then
+    echo " 🔄 [재시도] 갱신된 호스트 키를 적용하여 SSH CLI 명령을 재실행합니다..."
+    set +e
+    ssh -i "$SSH_PRI_KEY" \
+        -o StrictHostKeyChecking=accept-new \
+        "$server" "$cli" 2>&1 | tee "$temp_log"
+    status=${PIPESTATUS[0]}
+    set -e
+
+    if [ "$status" -eq 0 ]; then
+      echo " ✅ [성공] 호스트 키 갱신 후 SSH 명령 재실행이 정상 완료되었습니다."
+    fi
+  fi
+
+  rm -f "$temp_log"
+  return "$status"
+}
+
+##
+# 지정한 디렉터리를 재귀적으로 삭제합니다.
+#
+# @param $1 {string} 삭제할 디렉터리 경로
+#
+# @return 디렉터리 삭제 완료
+##
+delete_dir(){
+  local d="$1"
+  echo "rm -rfv $d"
+  if [ "$NO_DELETE" -eq 1 ]; then
+    echo " ❗❗❗ '--no-delete' 옵션이 활성화되어 디렉터리 삭제를 건너뜁니다."
+  else
+    rm -rf "$d"
+  fi
+}
+
+##
+# 생성되었던 임시 변환 파일 디렉터리들을 일괄 정리합니다.
+#
+# @param 없음
+#
+# @return 정리 완료
+##
+delete_converted_files(){
+  echo ""
+  delete_dir "$SSL_CA_DIR"
+  delete_dir "$PKCS12_DIR"
+  delete_dir "$JKS_DIR"
 }
 
 # ----------------------------------------------------------------------
-# 옵션 파싱
+# 명령줄 옵션 파싱
 # ----------------------------------------------------------------------
-while [ ! -z "$1" ];
-do
+while [ ! -z "${1:-}" ]; do
   case "$1" in
     --no-send)
       NO_SEND=1
@@ -146,100 +449,69 @@ do
       ;;
     --service-files|-sf)
       shift
-      if [ -z "$1" ]; then
-        echo
-        echo " ❌❌❌ '--service-files|-sf' 옵션에 대한 파일 경로가 없습니다."
-        echo "     사용 예) $0 --service-files service-list.txt"
-        echo
-        help "비어 있는 서비스 파일 경로" $FILENO
+      if [ -z "${1:-}" ]; then
+        help "'--service-files|-sf' 옵션에 대한 파일 경로가 전달되지 않았습니다." "$LINENO"
         exit 1
       fi
       SERVICES_LIST="$(normalize_path "$1")"
       ;;
     --ssh-key|-sk)
       shift
-      if [ -z "$1" ]; then
-        echo
-        echo " ❌❌❌ '--ssh-key|-sk' 옵션에 SSH 개인키 파일 경로가 제공되지 않았습니다."
-        echo "     사용 예) $0 --ssh-key ~/.ssh/id_rsa.pem"
-        echo
-        help "비어 있는 SSH 개인키 파일 경로" $FILENO
+      if [ -z "${1:-}" ]; then
+        help "'--ssh-key|-sk' 옵션에 SSH 개인키 경로가 전달되지 않았습니다." "$LINENO"
         exit 1
       fi
       SSH_PRI_KEY="$(normalize_path "$1")"
       ;;
     --p12-pwd|-p12)
       shift
-      if [ -z "$1" ]; then
-        echo
-        echo " ❌❌❌ '--p12-pwd|-p12' 옵션에 PKCS12(JKS) 비밀번호가 제공되지 않았습니다."
-        echo "     사용 예) $0 --p12-pwd mySecretPwd123"
-        echo
-        help "비어있는 PKCS12(JKS) 비밀번호" $FILENO
+      if [ -z "${1:-}" ]; then
+        help "'--p12-pwd|-p12' 옵션에 비밀번호가 전달되지 않았습니다." "$LINENO"
         exit 1
       fi
       P12_PWD="$1"
       ;;
     --target-ca|-tc)
-      # 입력받은 문자열은 comma(,)로 분리하여 배열로 설정
       shift
-      if [ -z "$1" ]; then
-        echo
-        echo " ❌❌❌ '--target-ca|-tc' 옵션에 대한 값이 없습니다."
-        echo "     사용 예) $0 --target-ca pem,sslca,pkcs12,jks"
-        echo
-        help "비어 있는 인증서 유형" $FILENO
+      if [ -z "${1:-}" ]; then
+        help "'--target-ca|-tc' 옵션에 대한 값이 전달되지 않았습니다." "$LINENO"
         exit 1
       fi
       IFS=',' read -r -a TARGET_CA_LIST <<< "$1"
       ;;
     --wildcard-domain|-wd)
-      # 예: mycom.co.kr
       shift
-      if [ -z "$1" ]; then
-        echo
-        echo " ❌❌❌ '--wildcard-domain|-wd' 옵션에 대한 값이 없습니다."
-        echo "     사용 예) $0 --wildcard-domain mycom.co.kr"
-        echo
-        help "비어있는 않은 wildcard 도메인" $FILENO
+      if [ -z "${1:-}" ]; then
+        help "'--wildcard-domain|-wd' 옵션에 도메인 값이 전달되지 않았습니다." "$LINENO"
         exit 1
       fi
       WILDCARD_DOMAIN="$1"
       ;;
     -h|--help)
-      help
+      help "" ""
       exit 0
       ;;
     *)
+      help "지원하지 않는 옵션입니다 -> '$1'" "$LINENO"
+      exit 1
       ;;
   esac
   shift
 done
 
 # ----------------------------------------------------------------------
-# '$WILDCARD_DOMAIN' 값 검증
+# 입력값 유효성 검증
 # ----------------------------------------------------------------------
 if [ -z "$WILDCARD_DOMAIN" ]; then
-  echo
-  echo " ❌❌❌ WILDCARD 도메인이 지정되지 않았습니다."
-  echo "     '--wildcard-domain <domain>' 또는 '-wd <domain>' 옵션을 사용하세요."
-  echo
-  help "비어 있는 wildcard 도메인" $FILENO
+  help "Wildcard 도메인이 지정되지 않았습니다 (--wildcard-domain|-wd 옵션 필수)." "$LINENO"
   exit 1
 fi
 
 if ! echo "$WILDCARD_DOMAIN" | grep -Eq '^[A-Za-z0-9.-]+\.[A-Za-z0-9.-]+$'; then
-  echo
-  echo " ❌❌❌ 올바르지 않은 도메인 형식입니다. value=${WILDCARD_DOMAIN}"
-  echo "     예) mycom.co.kr"
-  echo
-  help "올바리지 않은 형식의 wildcard 도메인" $FILENO
+  help "올바르지 않은 형식의 Wildcard 도메인입니다 -> '$WILDCARD_DOMAIN'" "$LINENO"
   exit 1
 fi
 
-# ----------------------------------------------------------------------
-# '$TARGET_CA_LIST' 값 검증
-# ----------------------------------------------------------------------
 if [ ${#TARGET_CA_LIST[@]} -eq 0 ]; then
   TARGET_CA_LIST=("${TYPE[@]}")
 fi
@@ -253,310 +525,91 @@ for tgt in "${TARGET_CA_LIST[@]}"; do
     fi
   done
   if [ $valid -eq 0 ]; then
-    echo
-    echo " ❌❌❌ 지원하지 않는 인증서 유형이 '--target-ca|-tc' 옵션에 지정되었습니다: $tgt"
-    echo "     허용 값: ${TYPE[*]}"
-    echo
-    help "올바르지 않은 CA 유형" $FILENO
+    help "지원하지 않는 인증서 유형입니다 -> '$tgt' (허용 값: ${TYPE[*]})" "$LINENO"
     exit 1
   fi
 done
 
-# ----------------------------------------------------------------------
-# P12_PWD 검증
-# ----------------------------------------------------------------------
 if [ -z "$P12_PWD" ]; then
-  echo
-  echo " ❌❌❌ PKCS12(JKS) 비밀번호가 지정되지 않았습니다."
-  echo "     '--p12-pwd <password>' 또는 '-p12 <password>' 옵션을 사용하세요."
-  echo
-  help "비어 있는 PKCS12(JKS) 비밀번호" $FILENO
+  help "PKCS12(JKS) 비밀번호가 지정되지 않았습니다 (--p12-pwd|-p12 옵션 필수)." "$LINENO"
   exit 1
 fi
 
-# 공백 문자 포함 여부(줄바꿈/탭/스페이스 등) 검사
 if echo "$P12_PWD" | grep -q "[[:space:]]"; then
-  echo
-  echo " ❌❌❌ PKCS12(JKS) 비밀번호에는 공백 문자를 사용할 수 없습니다."
-  echo "     공백 없이 다시 지정해 주세요."
-  echo
-  help "올바르지 않은 PKCS12(JKS) 비밀번호" $FILENO
+  help "PKCS12(JKS) 비밀번호에는 공백 문자를 포함할 수 없습니다." "$LINENO"
   exit 1
 fi
 
-# 최소 길이 제한 (예: 4자 이상)
 if [ ${#P12_PWD} -lt 4 ]; then
-  echo
-  echo " ❌❌❌ PKCS12(JKS) 비밀번호는 최소 4자 이상이어야 합니다."
-  echo
-  help "올바르지 않은 PKCS12(JKS) 비밀번호" $FILENO
+  help "PKCS12(JKS) 비밀번호는 최소 4자 이상이어야 합니다." "$LINENO"
   exit 1
 fi
 
-# ----------------------------------------------------------------------
-# SSH PRI KEY 검증
-# ----------------------------------------------------------------------
 if [ -z "$SSH_PRI_KEY" ]; then
-  echo
-  echo " ❌❌❌ SSH 개인키 파일이 지정되지 않았습니다."
-  echo "     '--ssh-key <file>' 또는 '-sk <file>' 옵션을 사용하세요."
-  echo
-  help "비어있는 PKCS12(JKS) 비밀번호" $FILENO
+  help "SSH 개인키 파일 경로가 지정되지 않았습니다 (--ssh-key|-sk 옵션 필수)." "$LINENO"
   exit 1
 fi
 
 if [ ! -f "$SSH_PRI_KEY" ] || [ ! -r "$SSH_PRI_KEY" ]; then
-  echo
-  echo " ❌❌❌ SSH 개인키 파일에 접근할 수 없습니다. path=${SSH_PRI_KEY}"
-  echo "     파일이 존재하는지, 읽기 권한이 있는지 확인하세요."
-  echo
-  help "올바르지 않은 SSH 개인키 파일" $FILENO
+  help "SSH 개인키 파일에 접근할 수 없습니다 -> '$SSH_PRI_KEY'" "$LINENO"
   exit 1
 fi
 
-# ----------------------------------------------------------------------
-# 서비스 목록 파일 로딩
-# ----------------------------------------------------------------------
 if [ -z "$SERVICES_LIST" ]; then
-  echo
-  echo " ❌❌❌ 서비스 목록 파일이 지정되지 않았습니다."
-  echo "     '--service-files <file>' 또는 '-sf <file>' 옵션을 사용하세요."
-  echo
-  help "비어 있는 서비스 목록 파일" $FILENO
+  help "서비스 목록 파일이 지정되지 않았습니다 (--service-files|-sf 옵션 필수)." "$LINENO"
   exit 1
 fi
 
 if [ ! -f "$SERVICES_LIST" ] || [ ! -r "$SERVICES_LIST" ]; then
-  echo
-  echo " ❌❌❌ 서비스 목록 파일에 접근할 수 없습니다. path=${SERVICES_LIST}"
-  echo "     파일이 존재하는지, 읽기 권한이 있는지 확인하세요."
-  echo
-  help "올바르지 않은 서비스 목록 파일" $FILENO
+  help "서비스 목록 파일에 접근할 수 없습니다 -> '$SERVICES_LIST'" "$LINENO"
   exit 1
 fi
 
-while IFS= read -r line; do
-  # 공백/주석/빈줄 무시
-  if [ -z "$line" ]; then
+# 서비스 목록 파일 라인별 검증 및 메모리 로드
+while IFS= read -r line || [ -n "$line" ]; do
+  line="$(echo "$line" | tr -d '\r' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
+  
+  if [ -z "$line" ] || [[ "$line" =~ ^# ]]; then
     continue
   fi
-  case "$line" in
-    \#*) continue ;;
-  esac
 
-  # service-list.txt 형식 검증
-  # 기대 형식: <type>;<user>@<host>:/absolute/path[;<cli>]
-  #   - type : pem | sslca | pkcs12 | jks
-  #   - user : [A-Za-z0-9._-]+
-  #   - host : [A-Za-z0-9._-]+
-  #   - path : '/' 로 시작, 세미콜론(;) 포함 불가
-  #   - cli  : 선택 값, 세미콜론으로 구분된 나머지 전체 문자열
   if ! echo "$line" | grep -Eq '^(pem|sslca|pkcs12|jks);[A-Za-z0-9._-]+@[A-Za-z0-9._-]+:/[^;]+(;.*)?$'; then
-    echo
-    echo " ❌❌❌ service-list.txt 형식 오류: '$line'"
-    echo "     기대 형식: <type>;<user>@<host>:/absolute/path[;<cli>]"
-    echo "     예시     : pem;admin@gitlab.mycom.co.kr:/etc/gitlab/ssl/;sudo systemctl reload nginx"
-    echo
-    help "올바르지 않은 서비스 설정: $line" $FILENO
+    help "service-list.txt 설정 라인 포맷 오류 -> '$line'" "$LINENO"
     exit 1
   fi
 
   DEST_CONFS+=("$line")
 done < "$SERVICES_LIST"
 
-# 환경 변수 검증
+# 환경변수 검증 및 작업 디렉터리 이동
 validate_env
-# 현재 경로 지정
-pushd .
-# Let's Encrypt 설치된 디렉토리로 이동
-cd ${LETSENC_ROOT}
+pushd . >/dev/null
+cd "${LETSENC_ROOT}"
 
-# ----------------------------------------------------------------------
-# 전송을 위한 디렉터리 설정
-# ----------------------------------------------------------------------
 CERT_DIR="./archive/${WILDCARD_DOMAIN}"
 SSL_CA_DIR="./archive/${WILDCARD_DOMAIN}/ssl_ca"
 PKCS12_DIR="./archive/${WILDCARD_DOMAIN}/pkcs12"
 JKS_DIR="./archive/${WILDCARD_DOMAIN}/jks"
 
 CERT_NAME="R3-wildcard.${WILDCARD_DOMAIN}"
-# ${WILDCARD_DOMAIN}을 dot(.)으로 분리했을 때 첫번째 토큰을 alias 로 사용
-# 예) mycom.co.kr -> ymtech
 NAME_OR_ALIAS="$(echo "$WILDCARD_DOMAIN" | awk -F'.' '{print $1}')"
 
 INTER_CERTS_ALIAS_OR_CNAME="intermediate"
 ROOT_CERTS_ALIAS="isrg-root-x1"
 
-validate-file(){
-  if [ ! -f "$1" ];then
-    echo " ❌❌❌ Invalid certificated file: $1" $LINENO
-    exit 1
-  else
-    echo " * * * Validated file: $1"
-  fi
-}
-
-## pem to '.crt' & '.key'
-convert-pem-to-sslca(){
-  echo
-  echo " ✅  > > > begin: convert to nginx ssl & ca  "
-
-  rm -rfv "$SSL_CA_DIR"
-  mkdir -p "$SSL_CA_DIR"
-
-  cp -f "$FILE_FULLCHAIN" "$SSL_CA_DIR/${CERT_NAME}.crt"
-
-  printf " * * * "
-  openssl pkey -in "$FILE_PRIVKEY" -out "$SSL_CA_DIR/${CERT_NAME}.key"
-
-  echo
-  ls -al "$SSL_CA_DIR/"
-
-  echo " < < < end:"
-}
-
-## pem to '.p12'
-convert-pem-to-p12(){
-  echo
-  echo " ✅> > > > begin: convert to pkcs12"
-
-  rm -rfv "$PKCS12_DIR"
-  mkdir -p "$PKCS12_DIR"
-
-  openssl pkcs12 -export \
-    -out "${PKCS12_DIR}/${CERT_NAME}.p12" \
-    -passout pass:$P12_PWD \
-    -in "$FILE_FULLCHAIN" \
-    -inkey "$FILE_PRIVKEY" \
-    -CAfile "$FILE_CHAIN" \
-    -caname "$INTER_CERTS_ALIAS_OR_CNAME" \
-    -name "$NAME_OR_ALIAS"
-
-  ls -al "${PKCS12_DIR}/${CERT_NAME}.p12"
-
-  echo " < < < end:"
-}
-
-## pem to '.p12' to '.jks'. (Java KeyStore)
-convert-p12-to-jks(){
-  echo
-  echo " ✅ > > > begin: convert to jks"
-
-  if [ ! -f "${PKCS12_DIR}/${CERT_NAME}.p12" ]; then
-    echo
-    echo " ❌❌❌ No file for PKCS12. Path=${PKCS12_DIR}/${CERT_NAME}.p12"
-  else
-    rm -rfv "$JKS_DIR"
-    mkdir -p "$JKS_DIR"
-
-    echo " + ✅  'p12' -> 'jks'"
-    keytool -importkeystore \
-      -deststorepass "$P12_PWD" \
-      -destkeypass "$P12_PWD" \
-      -destkeystore "${JKS_DIR}/${CERT_NAME}.jks" \
-      -srckeystore "${PKCS12_DIR}/${CERT_NAME}.p12" \
-      -srcstoretype PKCS12 \
-      -srcstorepass "$P12_PWD" \
-      -alias "$NAME_OR_ALIAS"
-
-    echo " + ✅ inject 'intermediate CA'"
-    keytool -import -trustcacerts \
-      -file "$FILE_CHAIN" \
-      -keystore "${JKS_DIR}/${CERT_NAME}.jks" \
-      -storepass "$P12_PWD" \
-      -alias "$INTER_CERTS_ALIAS_OR_CNAME" \
-      -noprompt
-
-    echo " + ✅ inject 'iROOT CA'"
-    keytool -import -trustcacerts \
-      -file "$FILE_ROOT" \
-      -keystore "${JKS_DIR}/${CERT_NAME}.jks" \
-      -storepass "$P12_PWD" \
-      -alias "$ROOT_CERTS_ALIAS" \
-      -noprompt
-  fi
-
-  ls -al "${JKS_DIR}/${CERT_NAME}.jks"
-
-  echo " < < < end:"
-}
-
-## send file to destination
-send-files(){
-  if [ $# -ne 2 ];then
-    echo
-    echo " ❌❌❌ Illegal arguments."
-    return 1
-  else
-    local srcDir="$1"
-    local dstDir="$2"
-    echo "scp -i $SSH_PRI_KEY $srcDir/*.* $dstDir"
-    if [ $NO_SEND -eq 1 ]; then
-      echo " ❗❗❗ DO NOT send files because enables 'NO_SEND'."
-      return 0
-    else
-      scp -i "$SSH_PRI_KEY" "$srcDir"/*.* "$dstDir"
-      return $?
-    fi
-  fi
-}
-
-## execute remote cli
-exe-cli(){
-  local server="$1"
-  local cli="$2"
-  local prev_status="$3"
-
-  if [ -z "$cli" ]; then
-    return 0
-  fi
-
-  if [ -n "$prev_status" ] && [ "$prev_status" -ne 0 ]; then
-    echo " ❗❗❗ 이전 단계가 실패(status=$prev_status)이므로 CLI 실행을 건너뜁니다. server=$server, cli=$cli"
-    return "$prev_status"
-  fi
-
-  echo "ssh -i $SSH_PRI_KEY $server \"$cli\""
-  if [ $NO_SEND -eq 1 ]; then
-    echo " ❗❗❗ DO NOT execute cli because enables 'NO_SEND'."
-    return 0
-  else
-    ssh -i "$SSH_PRI_KEY" "$server" "$cli"
-    return $?
-  fi
-}
-
-## remove directory recursively.
-delete-dir(){
-  echo "rm -rfv $1"
-  if [ $NO_DELETE -eq 1 ]; then
-    echo " ❗❗❗ DO NOT delete converted files because enables 'NO_DELETE'."
-  else
-    rm -rfv "$1"
-  fi
-}
-
-delete-converted-files(){
-  echo
-  delete-dir "$SSL_CA_DIR"
-  delete-dir "$PKCS12_DIR"
-  delete-dir "$JKS_DIR"
-}
-
-# ----------------------------------------------------------------------
-# 메인 처리
-# ----------------------------------------------------------------------
+# 인증서 원본 파일 무결성 검증
 if [ ! -d "$CERT_DIR" ]; then
-  echo " ❌❌❌ Invalid certificated files directory. path=$CERT_DIR"
+  help "인증서 원본 디렉터리가 존재하지 않습니다 -> '$CERT_DIR'" "$LINENO"
+  exit 1
 fi
 
-echo
-validate-file "$CERT_DIR/cert1.pem"
-validate-file "$CERT_DIR/chain1.pem"
-validate-file "$CERT_DIR/fullchain1.pem"
-validate-file "$CERT_DIR/privkey1.pem"
+echo ""
+validate_file "$CERT_DIR/cert1.pem"
+validate_file "$CERT_DIR/chain1.pem"
+validate_file "$CERT_DIR/fullchain1.pem"
+validate_file "$CERT_DIR/privkey1.pem"
 
-delete-converted-files
+delete_converted_files
 
 FILE_CERT="$CERT_DIR/cert1.pem"
 FILE_CHAIN="$CERT_DIR/chain1.pem"
@@ -564,32 +617,26 @@ FILE_FULLCHAIN="$CERT_DIR/fullchain1.pem"
 FILE_PRIVKEY="$CERT_DIR/privkey1.pem"
 FILE_ROOT="$CERT_DIR/${ROOT_CERTS_ALIAS}.pem"
 
-echo
-echo " ✅ > > > download 'ISRG ROOT CACERTS file"
+echo ""
+echo " ✅  >>> ISRG ROOT CA 인증서 다운로드 중..."
 wget -q https://letsencrypt.org/certs/isrgrootx1.pem -O "$FILE_ROOT"
 
-echo
-convert-pem-to-sslca
+convert_pem_to_sslca
+convert_pem_to_p12
+convert_p12_to_jks
 
-echo
-convert-pem-to-p12
-
-echo
-convert-p12-to-jks
-
-echo
-echo " ✅ > > > begin: send certificates"
+echo ""
+echo " ✅  >>> 인증서 다중 원격 배포 시작"
 
 declare -A SEND_MAP=()
 
 for dst_conf in "${DEST_CONFS[@]}"; do
-  # 형식: <유형>;<사용자ID>@<서버정보>:<경로>[;<CLI>]
   IFS=';' read -r type dst cli <<< "$dst_conf"
 
   map_key="${type}__cached"
   send_this=0
 
-  if [[ -n "${SEND_MAP[$map_key]}" ]]; then
+  if [[ -n "${SEND_MAP[$map_key]:-}" ]]; then
     send_this=${SEND_MAP[$map_key]}
   else
     for tgt in "${TARGET_CA_LIST[@]}"; do
@@ -601,8 +648,8 @@ for dst_conf in "${DEST_CONFS[@]}"; do
     SEND_MAP[$map_key]=$send_this
   fi
 
-  if [ $send_this -eq 0 ]; then
-    echo " - skip (not in target-ca): $dst_conf"
+  if [ "$send_this" -eq 0 ]; then
+    echo " - 건너뜀 (전송 대상 CA 유형 아님): $dst_conf"
     echo "---"
     continue
   fi
@@ -612,42 +659,40 @@ for dst_conf in "${DEST_CONFS[@]}"; do
 
   case "$type" in
     pem)
-      send-files "$CERT_DIR" "$dst"
+      send_files "$CERT_DIR" "$dst"
       status=$?
       ;;
     sslca)
-      send-files "$SSL_CA_DIR" "$dst"
+      send_files "$SSL_CA_DIR" "$dst"
       status=$?
       ;;
     pkcs12)
-      send-files "$PKCS12_DIR" "$dst"
+      send_files "$PKCS12_DIR" "$dst"
       status=$?
       ;;
     jks)
-      send-files "$JKS_DIR" "$dst"
+      send_files "$JKS_DIR" "$dst"
       status=$?
       ;;
     *)
-      echo " ❌❌❌ 올바르지 않은 인증서 유형입니다 :=> ${dst_conf}"
+      echo " ❌❌❌ 올바르지 않은 인증서 유형입니다 -> ${dst_conf}" >&2
       status=1
       ;;
   esac
 
   if [ -n "$cli" ]; then
-    exe-cli "$server" "$cli" "$status"
+    exe_cli "$server" "$cli" "$status"
   fi
 
   echo "---"
 done
 
-echo " < < < end:"
+echo " <<< 모든 인증서 배포 작업 완료"
 
-echo
-echo "'delete' isrg-root-x1"
-rm -rfv "$FILE_ROOT"
+echo ""
+echo " 임시 ISRG ROOT CA 파일 정리"
+rm -f "$FILE_ROOT"
 
-popd
+popd >/dev/null
 
-echo
 exit 0
-
