@@ -208,6 +208,37 @@ validate_gateway_in_subnet() {
 }
 
 ##
+# 두 개의 IPv4 CIDR 대역이 서로 겹치거나 포함(Overlap)되는지 비트 연산으로 판별합니다.
+#
+# @param $1 {string} 서브넷 CIDR 1 (예: 172.31.255.0/24)
+# @param $2 {string} 서브넷 CIDR 2 (예: 172.31.0.0/16)
+#
+# @return 대역이 중첩되는 경우 0 반환, 독립적인 경우 1 반환
+##
+check_subnet_overlap() {
+  local net1="$1"
+  local net2="$2"
+
+  local ip1="${net1%/*}"
+  local p1="${net1#*/}"
+  local ip2="${net2%/*}"
+  local p2="${net2#*/}"
+
+  local min_p=$(( p1 < p2 ? p1 : p2 ))
+  local mask=$(( (0xFFFFFFFF << (32 - min_p)) & 0xFFFFFFFF ))
+
+  local ip1_int ip2_int
+  ip1_int=$(ip_to_int "$ip1")
+  ip2_int=$(ip_to_int "$ip2")
+
+  if (( (ip1_int & mask) == (ip2_int & mask) )); then
+    return 0
+  fi
+
+  return 1
+}
+
+##
 # CLI 파라미터를 파싱하고 무결성을 전수 검사합니다.
 #
 # @param $@ {array} 실행 인자 목록
@@ -436,6 +467,113 @@ ensure_privileges_early() {
 }
 
 ##
+# 네트워크 생성 전 중복 자원 및 충돌 요소를 전수 검사합니다 (Pre-flight Validation).
+#
+# @param 없음
+#
+# @return 충돌 발견 시 help() 호출 후 종료, 충돌 없을 시 0 반환
+##
+preflight_check_create_conflicts() {
+  echo "🔍 [진단] 네트워크 생성 전 리소스 충돌 사전 점검 중..."
+
+  # 1. Docker 네트워크 이름 중복 검사 (Silent Skip 방지)
+  if "${DOCKER_CMD[@]}" network inspect "${NET_NAME}" >/dev/null 2>&1; then
+    help "Docker 네트워크 '${NET_NAME}'(이)가 이미 시스템에 존재합니다. 중복 생성을 방지하기 위해 작업을 중단합니다." "$LINENO"
+    exit 1
+  fi
+
+  # 2. 호스트 커널 상 브릿지 인터페이스 존재 검사
+  if ip link show dev "${NET_BRIDGE}" >/dev/null 2>&1; then
+    help "호스트 커널에 브릿지 인터페이스('${NET_BRIDGE}')를 사용하는 디바이스가 이미 존재합니다." "$LINENO"
+    exit 1
+  fi
+
+  # 3. 기존 Docker 네트워크들의 옵션 중 브릿지명 중복 검사
+  local existing_net_ids
+  existing_net_ids=$("${DOCKER_CMD[@]}" network ls -q 2>/dev/null || true)
+  if [[ -n "${existing_net_ids// /}" ]]; then
+    local occupied_bridges
+    occupied_bridges=$("${DOCKER_CMD[@]}" network inspect $existing_net_ids --format '{{.Name}}: {{index .Options "com.docker.network.bridge.name"}}' 2>/dev/null || true)
+    while read -r line; do
+      if [[ -n "$line" && "$line" =~ :\ ${NET_BRIDGE}$ ]]; then
+        local conflict_net="${line%%:*}"
+        help "브릿지 인터페이스 이름('${NET_BRIDGE}')은 이미 다른 Docker 네트워크('${conflict_net}')에서 사용 중입니다." "$LINENO"
+        exit 1
+      fi
+    done <<< "$occupied_bridges"
+  fi
+
+  # 4. 호스트 OS 물리 인터페이스 IP와 게이트웨이 IP 충돌 검사
+  if ip -4 addr show | grep -qw "inet ${NET_GATEWAY}/"; then
+    help "게이트웨이 IP('${NET_GATEWAY}')는 이미 호스트 머신의 네트워크 인터페이스에 할당되어 있어 충돌합니다." "$LINENO"
+    exit 1
+  fi
+
+  # 5. 기존 Docker 네트워크들과의 Subnet Overlap(대역 중첩) 비트 연산 검사
+  if [[ -n "${existing_net_ids// /}" ]]; then
+    local existing_subnets
+    existing_subnets=$("${DOCKER_CMD[@]}" network inspect $existing_net_ids --format '{{.Name}}|{{range .IPAM.Config}}{{.Subnet}} {{end}}' 2>/dev/null || true)
+    while IFS='|' read -r net_name subnets; do
+      if [[ -n "$subnets" ]]; then
+        for sub in $subnets; do
+          if [[ -n "$sub" && "$sub" =~ ^[0-9] ]] && validate_cidr "$sub"; then
+            if check_subnet_overlap "${NET_SUBNET}" "$sub"; then
+              help "요청한 서브넷('${NET_SUBNET}')은 기존 Docker 네트워크('${net_name}')의 서브넷('${sub}')과 대역이 중첩(Overlap)됩니다." "$LINENO"
+              exit 1
+            fi
+          fi
+        done
+      fi
+    done <<< "$existing_subnets"
+  fi
+
+  echo "  ✅ [통과] 리소스 충돌 없음 확인 완료."
+}
+
+##
+# Docker bridge network를 생성하고 호스트 커널 인터페이스 바인딩 및 상태를 정밀 진단합니다.
+#
+# @param 없음
+#
+# @return Docker 네트워크 생성 결과 화면 출력
+##
+setup_docker_network() {
+  # 사전 충돌 전수 검사 실행
+  preflight_check_create_conflicts
+
+  echo "🌐 [네트워크] Docker 브릿지 네트워크 생성 시작..."
+  echo "  🚀 [생성] Docker 네트워크 '${NET_NAME}' 생성 중..."
+  "${DOCKER_CMD[@]}" network create \
+    --driver bridge \
+    --subnet "${NET_SUBNET}" \
+    --gateway "${NET_GATEWAY}" \
+    --opt "com.docker.network.bridge.name=${NET_BRIDGE}" \
+    "${NET_NAME}"
+
+  echo "  🔍 [검증] 커널 인터페이스 바인딩 확인 중..."
+  local retry=0
+  local max_retries=10
+  while (( retry < max_retries )); do
+    if ip link show dev "${NET_BRIDGE}" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 0.5
+    ((retry++)) || true
+  done
+
+  if ! ip link show dev "${NET_BRIDGE}" >/dev/null 2>&1; then
+    help "Docker 브릿지 인터페이스('${NET_BRIDGE}')가 커널에 등록되지 않았습니다." "$LINENO"
+    exit 1
+  fi
+
+  if ip link show dev "${NET_BRIDGE}" | grep -q "NO-CARRIER"; then
+    echo "  ℹ️  [상태] 인터페이스 상태: NO-CARRIER (연결된 활성 컨테이너가 없으므로 라우트의 'linkdown' 표시는 정상입니다)"
+  fi
+
+  echo "  ✅ [완료] Docker 네트워크 '${NET_NAME}' (${NET_BRIDGE}) 가 정상 생성되었습니다."
+}
+
+##
 # 단일 Docker bridge network 정보 및 연결된 컨테이너 정보를 출력합니다.
 #
 # @param $1 {string} Docker 네트워크 식별자 (Name 또는 ID)
@@ -497,7 +635,6 @@ inspect_single_network() {
 ##
 inspect_docker_networks() {
   if [[ -n "$NET_NAME" ]]; then
-    # 특정 네트워크 조회
     if ! "${DOCKER_CMD[@]}" network inspect "$NET_NAME" >/dev/null 2>&1; then
       help "조회할 Docker 네트워크 '$NET_NAME'가 존재하지 않습니다." "$LINENO"
       exit 1
@@ -512,7 +649,6 @@ inspect_docker_networks() {
 
     inspect_single_network "$NET_NAME" "$OPT_CONTAINERS"
   else
-    # 전체 bridge 네트워크 조회
     local bridge_networks
     bridge_networks=$("${DOCKER_CMD[@]}" network ls --filter "driver=bridge" --format '{{.Name}}' 2>/dev/null || true)
 
@@ -528,57 +664,6 @@ inspect_docker_networks() {
       fi
     done <<< "$bridge_networks"
   fi
-}
-
-##
-# Docker bridge network를 생성하고 호스트 커널 인터페이스 바인딩 및 상태를 정밀 진단합니다.
-#
-# @param 없음
-#
-# @return Docker 네트워크 생성 결과 화면 출력
-##
-setup_docker_network() {
-  echo "🌐 [네트워크] Docker 브릿지 네트워크 점검 및 생성 시작..."
-
-  if "${DOCKER_CMD[@]}" network inspect "${NET_NAME}" >/dev/null 2>&1; then
-    echo "  ℹ️  [정보] Docker 네트워크 '${NET_NAME}' 가 이미 존재하므로 생성을 건너뜁니다."
-    return 0
-  fi
-
-  if ip link show dev "${NET_BRIDGE}" >/dev/null 2>&1; then
-    help "호스트 커널에 브릿지 인터페이스 이름('${NET_BRIDGE}')을 가진 디바이스가 이미 존재합니다." "$LINENO"
-    exit 1
-  fi
-
-  echo "  🚀 [생성] Docker 네트워크 '${NET_NAME}' 생성 중..."
-  "${DOCKER_CMD[@]}" network create \
-    --driver bridge \
-    --subnet "${NET_SUBNET}" \
-    --gateway "${NET_GATEWAY}" \
-    --opt "com.docker.network.bridge.name=${NET_BRIDGE}" \
-    "${NET_NAME}"
-
-  echo "  🔍 [검증] 커널 인터페이스 바인딩 확인 중..."
-  local retry=0
-  local max_retries=10
-  while (( retry < max_retries )); do
-    if ip link show dev "${NET_BRIDGE}" >/dev/null 2>&1; then
-      break
-    fi
-    sleep 0.5
-    ((retry++)) || true
-  done
-
-  if ! ip link show dev "${NET_BRIDGE}" >/dev/null 2>&1; then
-    help "Docker 브릿지 인터페이스('${NET_BRIDGE}')가 커널에 등록되지 않았습니다." "$LINENO"
-    exit 1
-  fi
-
-  if ip link show dev "${NET_BRIDGE}" | grep -q "NO-CARRIER"; then
-    echo "  ℹ️  [상태] 인터페이스 상태: NO-CARRIER (연결된 활성 컨테이너가 없으므로 라우트의 'linkdown' 표시는 정상입니다)"
-  fi
-
-  echo "  ✅ [완료] Docker 네트워크 '${NET_NAME}' (${NET_BRIDGE}) 가 정상 생성되었습니다."
 }
 
 ##
