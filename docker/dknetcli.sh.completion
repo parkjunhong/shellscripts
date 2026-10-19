@@ -1,0 +1,100 @@
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : Docker network management CLI.
+# @license : Apache License 2.0
+# @since : 2026-10-19
+# @desc : support RHEL 7+, Oracle Linux 7+, Ubuntu 18.04+, RockyOS 8+
+# @installation : 
+# 1. insert 'source <path>/dknetcli.sh.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/dknetcli.sh.completion' into '/etc/bashrc' or '/usr/share/bash-completion/completions/' for all users.
+# =======================================
+
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+
+##
+# dknetcli.sh 명령어에 대한 Bash 자동완성 처리 함수
+# Bash completion function for dknetcli.sh command
+#
+# @param $1 {string} 명령어 이름 (Command name)
+# @param $2 {string} 현재 완성 중인 단어 (Current word)
+# @param $3 {string} 직전 입력된 단어 (Previous word)
+#
+# @return COMPREPLY 배열 설정 (Set COMPREPLY array)
+##
+_dknetcli_completions() {
+  local cur prev
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  # 이전 인자가 파라미터 옵션 플래그인 경우 값 입력을 대기 (옵션 재제안 방지)
+  # If the previous word is an option flag, wait for user value input (do not suggest options)
+  case "$prev" in
+    --name|--bridge|--gateway|--subnet)
+      COMPREPLY=()
+      return 0
+      ;;
+  esac
+
+  # 1번째 인자 위치: 기본 서브커맨드 및 도움말 플래그 제안 (단축 옵션 배제)
+  # Position 1: Suggest root subcommand or help options (short options excluded)
+  if (( COMP_CWORD == 1 )); then
+    COMPREPLY=( $(compgen -W "network --help" -- "$cur") )
+    return 0
+  fi
+
+  # 2번째 인자 위치: network 하위 액션 서브커맨드 제안
+  # Position 2: Suggest action subcommand under 'network'
+  if (( COMP_CWORD == 2 )); then
+    if [[ "${COMP_WORDS[1]}" == "network" ]]; then
+      COMPREPLY=( $(compgen -W "create" -- "$cur") )
+      return 0
+    fi
+  fi
+
+  # 3번째 이후 인자 위치: network create에 사용되는 옵션 플래그 제안 (단축 옵션 일체 배제)
+  # Position 3+: Suggest long options for 'network create' (short options excluded)
+  if [[ "${COMP_WORDS[1]}" == "network" && "${COMP_WORDS[2]}" == "create" ]]; then
+    local all_options="--name --bridge --gateway --subnet --help"
+    local available_options=""
+
+    # 이미 커맨드라인에 입력된 옵션은 제안 목록에서 배제 (중복 제안 방지)
+    # Exclude options that are already specified in the command line
+    for opt in $all_options; do
+      local exists=0
+      for (( i=3; i < COMP_CWORD; i++ )); do
+        if [[ "${COMP_WORDS[i]}" == "$opt" ]]; then
+          exists=1
+          break
+        fi
+      done
+      if (( exists == 0 )); then
+        available_options+="$opt "
+      fi
+    done
+
+    # '-' 또는 '--'를 입력하지 않고 TAB만 입력해도 전체 유효 옵션 목록을 추천
+    # Suggest available options even when TAB is pressed without typing '-' or '--'
+    COMPREPLY=( $(compgen -W "$available_options" -- "$cur") )
+    return 0
+  fi
+
+  COMPREPLY=()
+  return 0
+}
+
+complete -F _dknetcli_completions dknetcli.sh
