@@ -41,10 +41,25 @@ _dknetcli_completions() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  # 이전 인자가 파라미터 옵션 플래그인 경우 값 입력을 대기 (옵션 재제안 방지)
-  # If the previous word is an option flag, wait for user value input (do not suggest options)
+  # 이전 인자가 파라미터 옵션 플래그인 경우 값 입력 처리
+  # If the previous word is an option flag, handle value completion or wait
   case "$prev" in
-    --name|--bridge|--gateway|--subnet)
+    --bridge|--gateway|--subnet)
+      COMPREPLY=()
+      return 0
+      ;;
+    --name)
+      # network delete 또는 network inspect 인 경우, 기존 docker bridge 네트워크 목록을 동적 추천
+      # Suggest existing docker bridge networks if subcommand is 'network delete' or 'network inspect'
+      local action="${COMP_WORDS[2]:-}"
+      if [[ "${COMP_WORDS[1]:-}" == "network" && ( "$action" == "delete" || "$action" == "inspect" ) ]]; then
+        if command -v docker >/dev/null 2>&1; then
+          local net_list
+          net_list=$(docker network ls --filter "driver=bridge" --format '{{.Name}}' 2>/dev/null || true)
+          COMPREPLY=( $(compgen -W "$net_list" -- "$cur") )
+          return 0
+        fi
+      fi
       COMPREPLY=()
       return 0
       ;;
@@ -57,19 +72,37 @@ _dknetcli_completions() {
     return 0
   fi
 
-  # 2번째 인자 위치: network 하위 액션 서브커맨드 제안
-  # Position 2: Suggest action subcommand under 'network'
+  # 2번째 인자 위치: network 하위 액션 서브커맨드 제안 ('create', 'delete', 'inspect')
+  # Position 2: Suggest action subcommand under 'network' ('create', 'delete', 'inspect')
   if (( COMP_CWORD == 2 )); then
     if [[ "${COMP_WORDS[1]}" == "network" ]]; then
-      COMPREPLY=( $(compgen -W "create" -- "$cur") )
+      COMPREPLY=( $(compgen -W "create delete inspect" -- "$cur") )
       return 0
     fi
   fi
 
-  # 3번째 이후 인자 위치: network create에 사용되는 옵션 플래그 제안 (단축 옵션 일체 배제)
-  # Position 3+: Suggest long options for 'network create' (short options excluded)
-  if [[ "${COMP_WORDS[1]}" == "network" && "${COMP_WORDS[2]}" == "create" ]]; then
-    local all_options="--name --bridge --gateway --subnet --help"
+  # 3번째 이후 인자 위치: 액션별 전용 옵션 플래그 제안
+  # Position 3+: Suggest action-specific options
+  if [[ "${COMP_WORDS[1]:-}" == "network" ]]; then
+    local action="${COMP_WORDS[2]:-}"
+    local all_options=""
+
+    case "$action" in
+      create)
+        all_options="--name --bridge --gateway --subnet --help"
+        ;;
+      delete)
+        all_options="--name --help"
+        ;;
+      inspect)
+        all_options="--name --containers --help"
+        ;;
+      *)
+        COMPREPLY=()
+        return 0
+        ;;
+    esac
+
     local available_options=""
 
     # 이미 커맨드라인에 입력된 옵션은 제안 목록에서 배제 (중복 제안 방지)
