@@ -1,13 +1,29 @@
 #!/usr/bin/env bash
 # =======================================
 # @author : parkjunhong77@gmail.com
-# @title : search files.
+# @title : Fail2ban Interactive Unban IP Manager
 # @license : Apache License 2.0
 # @since : 2026-09-03
 # @desc : support RHEL 7 or higher, Oracle Linux 7 or higher, Ubuntu 18.04 or higher, RockyOS 8 or higher, CentOS 7 or higher
 # @installation : 
 # 1. insert 'source <path>/fail2ban-unbanip.sh" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
 # 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/fail2ban-unbanip.sh' into /etc/bashrc for all users.
+# =======================================
+# Global Reserved Variables (Bash Completion Parameter Description)
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+#
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
 # =======================================
 
 set -Eeuo pipefail
@@ -23,7 +39,7 @@ FILENAME=$(basename "$0")
 # @return (도움말 내용 출력)
 ##
 help(){
-  if [ ! -z "${1:-}" ];
+  if [ -n "${1:-}" ];
   then
     local indent=10
     local formatl=" - %-"$indent"s: %s\n"
@@ -46,21 +62,28 @@ help(){
   echo "사용법 (Usage): ./$FILENAME [옵션]"
   echo ""
   echo "[설명]"
-  echo "  Fail2ban 감옥(Jail)에 차단된 특정 IP를 안전하게 해제(unbanip)합니다."
+  echo "  Fail2ban 감옥(Jail) 목록과 차단된 IP 목록을 대화형(Interactive)으로 조회하고,"
+  echo "  사용자가 선택한 감옥의 차단 IP들을 손쉽게 해제(unbanip)합니다."
+  echo ""
+  echo "[진행 순서]"
+  echo "  1. 활성화된 모든 Jail 목록과 각 Jail에서 차단 중인 IP 목록을 출력합니다."
+  echo "  2. 차단 해제 작업을 수행할 Jail의 번호(#)를 선택합니다."
+  echo "  3. 선택한 Jail의 상세 정보와 차단 중인 IP 목록(번호 포함)을 다시 출력합니다."
+  echo "  4. 해제할 IP의 번호를 입력합니다. (콤마(,)로 구분하여 다중 선택 가능)"
+  echo "  5. IP 차단 해제 후 해당 Jail의 최신 상태 정보를 출력합니다."
   echo ""
   echo "[옵션 (Options)]"
-  echo "  --jail <감옥명>   Fail2ban 감옥(Jail) 이름 (필수)"
-  echo "  --ip <IP주소>     차단 해제할 대상 IP 주소 (IPv4 또는 IPv6, 필수)"
-  echo "  --help            도움말을 출력하고 종료합니다."
+  echo "  -h, --help        도움말을 출력하고 종료합니다."
 }
 
 trap 'help "스크립트 실행 중 예기치 않은 오류가 발생했습니다." "$LINENO"' ERR
 
-# 전역 변수 선언 (메인 스코프에서는 local 키워드를 일절 사용하지 않음)
-JAIL_NAME=""
-TARGET_IP=""
-
+# 전역 변수 선언
 FAIL2BAN_CMD=()
+JAIL_LIST=()
+SELECTED_JAIL=""
+BANNED_IP_LIST=()
+SELECTED_IPS=()
 
 ##
 # 시스템의 Fail2ban 바이너리 존재 및 데몬 소켓 통신 상태를 검증합니다.
@@ -70,6 +93,8 @@ FAIL2BAN_CMD=()
 # @return (전역 배열 FAIL2BAN_CMD 초기화)
 ##
 ensure_fail2ban_engine() {
+  echo "🔍 [CHECK] Fail2ban 실행 환경 및 데몬 상태를 점검합니다..."
+
   if ! command -v fail2ban-client >/dev/null 2>&1; then
     help "Fail2ban 바이너리(fail2ban-client)가 시스템에 설치되어 있지 않습니다." "$LINENO"
     exit 1
@@ -99,115 +124,297 @@ ensure_fail2ban_engine() {
     help "Fail2ban 데몬이 실행 중이지 않거나 소켓에 접근할 수 없습니다 -> $ping_response" "$LINENO"
     exit 1
   fi
+
+  echo "✅ [OK] Fail2ban 데몬 연결이 정상적으로 확인되었습니다."
+  echo
 }
 
 ##
-# 지정된 Jail이 Fail2ban에 실제로 활성화되어 있는지 검증합니다.
+# 특정 Jail의 상태 문자열에서 항목 값을 추출합니다.
 #
-# @param $1 {string} 검증할 Jail 이름
+# @param $1 {string} fail2ban-client status <jail> 출력 문자열
+# @param $2 {string} 추출할 키 이름 (예: "Currently banned:", "Total banned:", "Banned IP list:")
 #
-# @return (유효하지 않을 경우 exit 1)
+# @return {string} 추출된 값 출력
 ##
-validate_jail_exists() {
-  local target_jail="$1"
-  local status_output=""
-
-  status_output="$("${FAIL2BAN_CMD[@]}" status "$target_jail" 2>&1 || true)"
-  if [[ "$status_output" == *"Sorry, but the jail"* ]] || [[ "$status_output" == *"does not exist"* ]]; then
-    help "지정한 Jail이 존재하지 않거나 활성화되어 있지 않습니다 -> '$target_jail'" "$LINENO"
-    exit 1
-  fi
+extract_jail_field() {
+  local status_text="$1"
+  local field_key="$2"
+  printf '%s\n' "$status_text" | grep -E "${field_key}" | sed -E "s/.*${field_key}[[:space:]]*//" || true
 }
 
 ##
-# 입력받은 IP 주소가 올바른 IPv4 또는 IPv6 형식인지 정규식으로 검증합니다.
+# 활성화된 전체 Jail 목록을 조회하여 JAIL_LIST 배열에 저장합니다.
 #
-# @param $1 {string} 검증할 IP 주소 문자열
+# @param 없음
 #
-# @return (유효하지 않을 경우 exit 1)
+# @return (전역 배열 JAIL_LIST 업데이트)
 ##
-validate_ip_address() {
-  local ip="$1"
+load_jail_list() {
+  echo "📡 [FETCH] 활성화된 Fail2ban Jail 목록을 조회하고 있습니다..."
+  local raw_jails=""
+  raw_jails="$("${FAIL2BAN_CMD[@]}" status 2>/dev/null | grep -E 'Jail list:' | sed -E 's/.*Jail list:[[:space:]]*//' | tr ',' ' ' || true)"
 
-  # IPv4 표준 정규식 (각 옥텟 0~255)
-  local ipv4_regex='^((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])$'
-  # IPv6 표준 및 축약형 정규식
-  local ipv6_regex='^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$|^([0-9a-fA-F]{1,4}:){1,7}:$|^([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}$|^::$|^([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}$|^([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}$|^([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}$|^([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}$|^[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})$'
-
-  if [[ "$ip" =~ $ipv4_regex ]] || [[ "$ip" =~ $ipv6_regex ]]; then
-    return 0
-  fi
-
-  help "유효한 IPv4 또는 IPv6 주소 형식이 아닙니다 -> '$ip'" "$LINENO"
-  exit 1
-}
-
-##
-# 대상 IP가 해당 Jail에 현재 차단되어 있는지 확인합니다.
-#
-# @param $1 {string} Jail 이름
-# @param $2 {string} 대상 IP
-#
-# @return {integer} 차단 중이면 0, 아니면 1
-##
-is_ip_banned() {
-  local jail="$1"
-  local ip="$2"
-  local banned_ips=""
-
-  banned_ips="$("${FAIL2BAN_CMD[@]}" status "$jail" 2>/dev/null | grep -E 'Banned IP list:' | sed -E 's/.*Banned IP list:[[:space:]]*//' || true)"
-
-  local b_ip=""
-  for b_ip in $banned_ips; do
-    if [[ "$b_ip" == "$ip" ]]; then
-      return 0
+  JAIL_LIST=()
+  local jail=""
+  for jail in $raw_jails; do
+    if [[ -n "$jail" ]]; then
+      JAIL_LIST+=("$jail")
     fi
   done
 
-  return 1
+  if (( ${#JAIL_LIST[@]} == 0 )); then
+    echo "ℹ️  [NOTICE] 현재 활성화된 Fail2ban Jail이 없습니다."
+    exit 0
+  fi
 }
 
 ##
-# Fail2ban 명령을 호출하여 차단 해제를 수행합니다.
+# 전체 Jail 목록과 각 Jail에서 차단하고 있는 IP 목록을 표 형태로 출력하고,
+# 사용자로부터 대상 Jail 번호를 입력받습니다.
+#
+# @param 없음
+#
+# @return (전역 변수 SELECTED_JAIL 설정)
+##
+select_jail_interactively() {
+  echo "================================================================================"
+  echo "📋 [JAIL LIST] 현재 활성화된 Jail 목록 및 차단된 IP 현황"
+  echo "================================================================================"
+
+  local total_jails=${#JAIL_LIST[@]}
+  local idx=0
+  local jail=""
+  local status_out=""
+  local cur_banned=""
+  local banned_ips=""
+  local display_ips=""
+  local display_idx=""
+
+  if command -v column >/dev/null 2>&1; then
+    local temp_buffer="#\tJail 이름\t현재 차단 수\t차단된 IP 목록 (Banned IPs)\n"
+    for jail in "${JAIL_LIST[@]}"; do
+      idx=$((idx + 1))
+      printf -v display_idx "%02d" "$idx"
+      status_out="$("${FAIL2BAN_CMD[@]}" status "$jail" 2>/dev/null || true)"
+      cur_banned="$(extract_jail_field "$status_out" "Currently banned:")"
+      banned_ips="$(extract_jail_field "$status_out" "Banned IP list:")"
+      cur_banned="${cur_banned:-0}"
+      if [[ -z "${banned_ips//[[:space:]]/}" ]]; then
+        display_ips="(차단된 IP 없음)"
+      else
+        display_ips="$banned_ips"
+      fi
+      temp_buffer+="${display_idx}\t${jail}\t${cur_banned}\t${display_ips}\n"
+    done
+
+    local rendered header_line data_lines header_len dash_line
+    rendered="$(printf "%b" "$temp_buffer" | column -t -s $'\t')"
+    header_line="$(printf '%s\n' "$rendered" | head -n 1)"
+    data_lines="$(printf '%s\n' "$rendered" | tail -n +2)"
+    header_len=${#header_line}
+    (( header_len < 80 )) && header_len=80
+    printf -v dash_line '%*s' "$header_len" ''
+    dash_line="${dash_line// /-}"
+
+    printf '%s\n' "$header_line"
+    printf '%s\n' "$dash_line"
+    printf '%s\n' "$data_lines"
+  else
+    printf "%-4s %-20s %-14s %s\n" "#" "Jail 이름" "현재 차단 수" "차단된 IP 목록 (Banned IPs)"
+    echo "--------------------------------------------------------------------------------"
+    for jail in "${JAIL_LIST[@]}"; do
+      idx=$((idx + 1))
+      printf -v display_idx "%02d" "$idx"
+      status_out="$("${FAIL2BAN_CMD[@]}" status "$jail" 2>/dev/null || true)"
+      cur_banned="$(extract_jail_field "$status_out" "Currently banned:")"
+      banned_ips="$(extract_jail_field "$status_out" "Banned IP list:")"
+      cur_banned="${cur_banned:-0}"
+      if [[ -z "${banned_ips//[[:space:]]/}" ]]; then
+        display_ips="(차단된 IP 없음)"
+      else
+        display_ips="$banned_ips"
+      fi
+      printf "%-4s %-20s %-14s %s\n" "$display_idx" "$jail" "$cur_banned" "$display_ips"
+    done
+  fi
+  echo "================================================================================"
+  echo
+
+  local sel=""
+  local prompt_msg="❓ 조회 및 차단 해제할 Jail 번호(#)를 선택하세요 [1 ~ ${total_jails}] (종료: Enter): "
+  while true; do
+    read -r -p "$prompt_msg" sel
+    sel="${sel//[[:space:]]/}"
+    if [[ -z "$sel" ]]; then
+      echo "👋 [EXIT] 선택이 취소되어 프로그램을 종료합니다."
+      exit 0
+    fi
+    if ! [[ "$sel" =~ ^[0-9]+$ ]] || (( 10#$sel < 1 || 10#$sel > total_jails )); then
+      prompt_msg="⚠️  [WARN] 잘못된 입력입니다. 올바른 Jail 번호(#)를 선택하세요 [1 ~ ${total_jails}] (종료: Enter): "
+      continue
+    fi
+    break
+  done
+
+  local chosen_idx=$((10#$sel - 1))
+  SELECTED_JAIL="${JAIL_LIST[$chosen_idx]}"
+  echo "✅ [SELECTED] 선택된 Jail: '${SELECTED_JAIL}'"
+  echo
+}
+
+##
+# 선택된 Jail의 상세 정보와 차단 중인 IP 목록을 출력하고,
+# 해제할 IP 번호들을(콤마 구분 지원) 사용자로부터 입력받습니다.
+#
+# @param $1 {string} 선택된 Jail 이름
+#
+# @return (전역 배열 SELECTED_IPS 설정)
+##
+select_ips_interactively() {
+  local jail="$1"
+
+  echo "🔍 [INFO] 선택한 Jail('${jail}')의 상세 정보 및 차단 IP 목록을 불러옵니다..."
+  local status_out=""
+  status_out="$("${FAIL2BAN_CMD[@]}" status "$jail" 2>&1 || true)"
+
+  echo "================================================================================"
+  echo "🛡️  [JAIL STATUS] '${jail}' 상세 정보"
+  echo "--------------------------------------------------------------------------------"
+  printf '%s\n' "$status_out"
+  echo "================================================================================"
+
+  local raw_ips=""
+  raw_ips="$(extract_jail_field "$status_out" "Banned IP list:")"
+
+  BANNED_IP_LIST=()
+  local ip=""
+  for ip in $raw_ips; do
+    if [[ -n "$ip" ]]; then
+      BANNED_IP_LIST+=("$ip")
+    fi
+  done
+
+  local total_ips=${#BANNED_IP_LIST[@]}
+  if (( total_ips == 0 )); then
+    echo
+    echo "ℹ️  [NOTICE] 현재 '${jail}' 감옥에 차단되어 있는 IP가 없습니다."
+    echo "✅ [DONE] 추가 조치 없이 안전하게 종료합니다."
+    exit 0
+  fi
+
+  echo
+  echo "🚫 [BANNED IP LIST] '${jail}' 감옥에서 차단 중인 IP 목록 (총 ${total_ips}개)"
+  echo "--------------------------------------------------------------------------------"
+  local idx=0
+  local display_idx=""
+  for ip in "${BANNED_IP_LIST[@]}"; do
+    idx=$((idx + 1))
+    printf -v display_idx "%02d" "$idx"
+    printf "  [%s] %s\n" "$display_idx" "$ip"
+  done
+  echo "--------------------------------------------------------------------------------"
+  echo
+
+  local sel=""
+  local prompt_msg="❓ 차단 해제할 IP 번호(#)를 입력하세요 (콤마(,)로 구분하여 복수 선택 가능) [1 ~ ${total_ips}] (종료: Enter): "
+  while true; do
+    read -r -p "$prompt_msg" sel
+    sel="${sel//[[:space:]]/}"
+
+    if [[ -z "$sel" ]]; then
+      echo "👋 [EXIT] 선택이 취소되어 프로그램을 종료합니다."
+      exit 0
+    fi
+
+    if ! [[ "$sel" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
+      prompt_msg="⚠️  [WARN] 숫자와 콤마(,)만 입력 가능합니다. 다시 입력하세요 [1 ~ ${total_ips}] (예: 1,3): "
+      continue
+    fi
+
+    local -a nums=()
+    IFS=',' read -r -a nums <<< "$sel"
+
+    local ok=true
+    local v=""
+    for v in "${nums[@]}"; do
+      if (( 10#$v < 1 || 10#$v > total_ips )); then
+        echo "⚠️  [WARN] 입력 번호 범위를 벗어났습니다 -> $v (허용 범위: 1 ~ ${total_ips})"
+        ok=false
+      fi
+    done
+
+    if $ok; then
+      local -A seen=()
+      SELECTED_IPS=()
+      for v in "${nums[@]}"; do
+        local num_val=$((10#$v))
+        if [[ -n "${seen[$num_val]:-}" ]]; then
+          continue
+        fi
+        seen[$num_val]=1
+        SELECTED_IPS+=("${BANNED_IP_LIST[$((num_val - 1))]}")
+      done
+      break
+    fi
+  done
+
+  echo "✅ [SELECTED] 해제 대상 IP (${#SELECTED_IPS[@]}개): ${SELECTED_IPS[*]}"
+  echo
+}
+
+##
+# 선택된 IP들에 대해 Fail2ban 차단 해제(unbanip)를 수행하고,
+# 완료 후 해당 Jail의 최신 상세 정보를 출력합니다.
 #
 # @param $1 {string} 대상 Jail 명칭
-# @param $2 {string} 차단 해제할 IP
 #
-# @return (해제 결과 콘솔 출력)
+# @return (해제 결과 및 최신 Jail 상태 콘솔 출력)
 ##
-execute_unbanip() {
+execute_unban_ips() {
   local jail="$1"
-  local ip="$2"
 
   echo "================================================================================"
   echo "🚀 [START] Fail2ban 차단 IP 해제(unbanip) 작업을 시작합니다..."
-  echo "  - 대상 Jail : $jail"
-  echo "  - 대상 IP   : $ip"
+  echo "  - 대상 Jail      : $jail"
+  echo "  - 해제 대상 IP 수 : ${#SELECTED_IPS[@]}개 (${SELECTED_IPS[*]})"
   echo "================================================================================"
 
-  echo "🔍 [CHECK] 현재 감옥 내 차단 상태를 조회 중입니다..."
-  if ! is_ip_banned "$jail" "$ip"; then
-    echo ""
-    echo "ℹ️  [NOTICE] 대상 IP '$ip' 는 현재 '$jail' 감옥에 차단되어 있지 않습니다."
-    echo "✅ [SUCCESS] 추가 조치 없이 안전하게 종료합니다."
-    echo "================================================================================"
-    return 0
-  fi
-
-  echo "⏳ [PROCESSING] 차단 해제 명령을 전송합니다 (fail2ban-client set $jail unbanip $ip) ..."
+  local ip=""
   local result=""
-  result="$("${FAIL2BAN_CMD[@]}" set "$jail" unbanip "$ip" 2>&1)"
+  local success_count=0
+  local fail_count=0
 
-  echo ""
-  if [[ "$result" == "1" ]] || [[ "$result" == "$ip" ]]; then
-    echo "🎉 [SUCCESS] IP 차단이 성공적으로 해제되었습니다!"
-    echo "  - 결과: $ip (Jail: $jail)"
-  elif [[ "$result" == "0" ]]; then
-    echo "ℹ️  [NOTICE] 차단 해제 대상이 없거나 이미 해제되었습니다 (결과: 0)."
-  else
-    echo "⚠️  [RESULT] 실행 결과: $result"
-  fi
+  for ip in "${SELECTED_IPS[@]}"; do
+    echo "⏳ [PROCESSING] '$ip' 차단 해제 명령을 전송합니다 (fail2ban-client set $jail unbanip $ip) ..."
+    result="$("${FAIL2BAN_CMD[@]}" set "$jail" unbanip "$ip" 2>&1 || true)"
+
+    if [[ "$result" == "1" ]] || [[ "$result" == "$ip" ]]; then
+      echo "  🎉 [SUCCESS] '$ip' 차단이 성공적으로 해제되었습니다!"
+      success_count=$((success_count + 1))
+    elif [[ "$result" == "0" ]]; then
+      echo "  ℹ️  [NOTICE] '$ip' 는 이미 해제되었거나 차단 목록에 없습니다 (결과: 0)."
+    else
+      echo "  ⚠️  [WARNING] '$ip' 해제 중 예상치 못한 응답이 발생했습니다 -> $result"
+      fail_count=$((fail_count + 1))
+    fi
+  done
+
+  echo "--------------------------------------------------------------------------------"
+  echo "📊 [SUMMARY] 총 ${#SELECTED_IPS[@]}개 중 성공: ${success_count}개, 실패/경고: ${fail_count}개"
   echo "================================================================================"
+  echo
+
+  echo "🔄 [REFRESH] 차단 해제 이후 '${jail}' 감옥의 최신 상태를 조회합니다..."
+  local updated_status=""
+  updated_status="$("${FAIL2BAN_CMD[@]}" status "$jail" 2>&1 || true)"
+
+  echo "================================================================================"
+  echo "🛡️  [UPDATED JAIL INFO] '${jail}' 최신 상태 정보"
+  echo "--------------------------------------------------------------------------------"
+  printf '%s\n' "$updated_status"
+  echo "================================================================================"
+  echo "✨ [COMPLETE] 모든 차단 해제 작업이 완료되었습니다."
 }
 
 ##
@@ -220,22 +427,6 @@ execute_unbanip() {
 main() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      -j|--jail)
-        if [[ -z "${2:-}" || "$2" == -* ]]; then
-          help "--jail 파라미터는 대상 Jail 이름을 지정해야 합니다." "$LINENO"
-          exit 1
-        fi
-        JAIL_NAME="$2"
-        shift 2
-        ;;
-      -i|--ip)
-        if [[ -z "${2:-}" || "$2" == -* ]]; then
-          help "--ip 파라미터는 대상 IP 주소를 지정해야 합니다." "$LINENO"
-          exit 1
-        fi
-        TARGET_IP="$2"
-        shift 2
-        ;;
       -h|--help)
         help "" ""
         exit 0
@@ -251,21 +442,11 @@ main() {
     esac
   done
 
-  if [ -z "$JAIL_NAME" ]; then
-    help "--jail 옵션을 통해 대상 Jail 이름을 반드시 지정해야 합니다." "$LINENO"
-    exit 1
-  fi
-
-  if [ -z "$TARGET_IP" ]; then
-    help "--ip 옵션을 통해 해제할 대상 IP 주소를 반드시 지정해야 합니다." "$LINENO"
-    exit 1
-  fi
-
-  validate_ip_address "$TARGET_IP"
   ensure_fail2ban_engine
-  validate_jail_exists "$JAIL_NAME"
-
-  execute_unbanip "$JAIL_NAME" "$TARGET_IP"
+  load_jail_list
+  select_jail_interactively
+  select_ips_interactively "$SELECTED_JAIL"
+  execute_unban_ips "$SELECTED_JAIL"
 }
 
 main "$@"

@@ -1,6 +1,6 @@
 # =======================================
 # @author : parkjunhong77@gmail.com
-# @title : search files.
+# @title : Fail2ban Interactive Unban IP Manager bash completion.
 # @license : Apache License 2.0
 # @since : 2026-09-03
 # @desc : support RHEL 7 or higher, Oracle Linux 7 or higher, Ubuntu 18.04 or higher, RockyOS 8 or higher, CentOS 7 or higher
@@ -35,55 +35,16 @@ _fail2ban_unbanip_completion() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  # 스크립트 지원 옵션 목록 정의 / Define supported options list
-  opts="--jail --ip --help"
-
-  # 이전 파라미터 컨텍스트에 따른 동적 자동완성 제어 / Dynamic completion based on previous context
-  case "${prev}" in
-    -j|--jail)
-      # Fail2ban 활성 감옥 목록 동적 조회 및 추천
-      # Dynamically query and suggest active Fail2ban jail list
-      local jail_list=""
-      if command -v fail2ban-client >/dev/null 2>&1; then
-        jail_list="$(fail2ban-client status 2>/dev/null | grep -E 'Jail list:' | sed -E 's/.*Jail list:[[:space:]]*//' | tr -d ',' || true)"
-        if [[ -z "$jail_list" ]] && sudo -n true 2>/dev/null; then
-          jail_list="$(sudo -n fail2ban-client status 2>/dev/null | grep -E 'Jail list:' | sed -E 's/.*Jail list:[[:space:]]*//' | tr -d ',' || true)"
-        fi
-      fi
-
-      if [ -n "$jail_list" ]; then
-        COMPREPLY=( $(compgen -W "${jail_list}" -- "${cur}") )
-      fi
-      return 0
-      ;;
-
-    -i|--ip)
-      # firewalld public zone의 rich rules에서 reject/drop 대상 소스 IP 목록 동적 추천
-      # Dynamically suggest source IPs rejected or dropped in firewalld public zone rich rules
-      local rejected_ips=""
-      if command -v firewall-cmd >/dev/null 2>&1; then
-        rejected_ips="$(firewall-cmd --zone=public --list-rich-rules 2>/dev/null | grep -E 'reject|drop' | grep -oE 'source address="[^"]+"' | sed -E 's/source address="([^"]+)"/\1/' || true)"
-        if [[ -z "$rejected_ips" ]] && sudo -n true 2>/dev/null; then
-          rejected_ips="$(sudo -n firewall-cmd --zone=public --list-rich-rules 2>/dev/null | grep -E 'reject|drop' | grep -oE 'source address="[^"]+"' | sed -E 's/source address="([^"]+)"/\1/' || true)"
-        fi
-      fi
-
-      if [ -n "$rejected_ips" ]; then
-        COMPREPLY=( $(compgen -W "${rejected_ips}" -- "${cur}") )
-      fi
-      return 0
-      ;;
-
-    *)
-      ;;
-  esac
+  # 스크립트 지원 옵션 목록 정의 (대화형 전환으로 --jail, --ip 제거)
+  # Define supported options list
+  opts="-h --help"
 
   # 이미 입력된 단일 사용 옵션 필터링하여 중복 추천 방지 / Filter out already entered options
   available_opts=""
   for opt in $opts; do
     is_used=0
-    for word in "${COMP_WORDS[@]}"; do
-      if [[ "$word" == "$opt" ]]; then
+    for word in "${COMP_WORDS[@]:1}"; do
+      if [[ "$word" == "-h" || "$word" == "--help" ]]; then
         is_used=1
         break
       fi
