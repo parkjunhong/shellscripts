@@ -1,13 +1,26 @@
 #!/usr/bin/env bash
 # =======================================
 # @author : parkjunhong77@gmail.com
-# @title : search files.
+# @title : Manage permanent VLAN static routes across Linux & macOS.
 # @license : Apache License 2.0
 # @since : 2026-09-08
-# @desc : support macOS 11.2.3 or higher, Ubuntu 18.04 or higher, RHEL 7 or higher, Oracle Linux 7 or higher, RockyOS 8 or higher, CentOS 7 or higher
+# @desc : support macOS 11.2.3 or higher, Ubuntu 18.04+, Debian, RHEL 7+ (Rocky, CentOS, Oracle, AlmaLinux, Fedora), Arch Linux (Manjaro, EndeavourOS), SUSE, Alpine, and universal Linux (nmcli / netplan / systemd-networkd / systemd service fallback)
 # @installation : 
-# 1. insert 'source <path>/add-vlan-routes.sh" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/add-vlan-routes.sh' into etc/bashrc for all users.
+# 1. insert 'source <path>/add-vlan-routes.sh.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the completion file to /etc/bash_completion.d/ or insert 'source <path>/add-vlan-routes.sh.completion' into /etc/bashrc for all users.
+# =======================================
+
+# =======================================
+# [Bash Completion Parameter Description]
+# 1. COMP_WORDS: an array containing all individual words in the current command line
+# 2. COMP_CWORD: an index of the word containing the current cursor position
+# 3. COMP_LINE: the current command line string
+# 4. COMPREPLY: an array variable from which Bash reads the possible completions
+#
+# Arguments of completion function:
+# - $1: name of the command whose arguments are being completed
+# - $2: word being completed (current token)
+# - $3: word preceding the word being completed (previous token)
 # =======================================
 
 set -Eeuo pipefail
@@ -54,7 +67,7 @@ help(){
   echo "[설명]"
   echo "  본 스크립트는 서버가 속한 물리 인터페이스를 자동 식별하고,"
   echo "  목적지 VLAN 대역으로 향하는 영구(Permanent) 정적 라우팅을 제어합니다."
-  echo "  지원 OS: Ubuntu, RHEL 계열(Rocky, CentOS, Oracle Linux), macOS (Apple Silicon M1-M4 포함)"
+  echo "  지원 OS: 모든 주요 Linux 배포판 (Arch/Manjaro, Ubuntu/Debian, RHEL/Rocky/CentOS/Oracle/Fedora, SUSE 등) 및 macOS"
 }
 
 trap 'help "스크립트 실행 중 예기치 않은 오류가 발생했습니다." "$LINENO"' ERR
@@ -119,7 +132,7 @@ check_sudo() {
 }
 
 ##
-# 운영체제 종류를 식별합니다 (ubuntu, rhel, macos).
+# 운영체제 종류를 식별합니다 (macos, ubuntu, rhel, arch, suse, alpine, linux).
 #
 # @param 없음
 #
@@ -137,16 +150,30 @@ detect_os() {
   if [ -f /etc/os-release ]; then
     local id=""
     local id_like=""
-    id="$(grep -E '^ID=' /etc/os-release | cut -d= -f2 | tr -d '"' || true)"
-    id_like="$(grep -E '^ID_LIKE=' /etc/os-release | cut -d= -f2 | tr -d '"' || true)"
+    id="$(grep -E '^ID=' /etc/os-release | cut -d= -f2 | tr -d '"' | tr -d "'" || true)"
+    id_like="$(grep -E '^ID_LIKE=' /etc/os-release | cut -d= -f2 | tr -d '"' | tr -d "'" || true)"
 
-    if [[ "$id" == "ubuntu" || "$id_like" == *"ubuntu"* || "$id" == "debian" ]]; then
+    if [[ "$id" =~ ^(ubuntu|debian|linuxmint|pop|kali|raspbian|elementary|zorin)$ || "$id_like" == *"ubuntu"* || "$id_like" == *"debian"* ]]; then
       echo "ubuntu"
       return 0
-    elif [[ "$id" =~ ^(rhel|rocky|ol|centos|almalinux|fedora)$ || "$id_like" == *"rhel"* || "$id_like" == *"fedora"* ]]; then
+    elif [[ "$id" =~ ^(rhel|rocky|ol|centos|almalinux|fedora|amzn)$ || "$id_like" == *"rhel"* || "$id_like" == *"fedora"* || "$id_like" == *"centos"* ]]; then
       echo "rhel"
       return 0
+    elif [[ "$id" =~ ^(arch|manjaro|endeavouros|garuda|artix|arcolinux|cachyos)$ || "$id_like" == *"arch"* ]]; then
+      echo "arch"
+      return 0
+    elif [[ "$id" =~ ^(opensuse.*|sles|suse)$ || "$id_like" == *"suse"* ]]; then
+      echo "suse"
+      return 0
+    elif [[ "$id" == "alpine" || "$id_like" == *"alpine"* ]]; then
+      echo "alpine"
+      return 0
     fi
+  fi
+
+  if [ "$uname_str" == "Linux" ]; then
+    echo "linux"
+    return 0
   fi
 
   echo "unknown"
@@ -641,6 +668,268 @@ EOF
   fi
 }
 
+##
+# systemd-networkd 환경을 대상으로 단일 라우팅 제거 로직을 수행합니다.
+#
+# @param $1 {string} 물리 인터페이스 이름
+# @param $2 {string} 삭제할 대상 VLAN 대역
+# @param $3 {string} 계산된 Gateway IP
+#
+# @return (systemd-networkd drop-in 제거 및 즉시 라우트 해제)
+##
+configure_networkd_remove() {
+  local iface="$1"
+  local target_subnet="$2"
+  local gateway="$3"
+
+  local cmd_sudo cmd_ip cmd_rm
+  cmd_sudo="$(resolve_command "sudo")"
+  cmd_ip="$(resolve_command "ip")"
+  cmd_rm="$(resolve_command "rm")"
+
+  local net_file=""
+  if command -v networkctl >/dev/null 2>&1; then
+    net_file="$(LC_ALL=C networkctl status "$iface" 2>/dev/null | awk -F': ' '/Network File:/ {print $2}' | tr -d '[:space:]' || true)"
+  fi
+  if [ -z "$net_file" ]; then
+    net_file="$(grep -lE "^[[:space:]]*Name=${iface}\b" /etc/systemd/network/*.network /run/systemd/network/*.network /usr/lib/systemd/network/*.network 2>/dev/null | head -n1 || true)"
+  fi
+
+  local base_net_name=""
+  if [ -n "$net_file" ]; then
+    base_net_name="$(basename "$net_file")"
+  else
+    base_net_name="50-${iface}.network"
+  fi
+
+  local subnet_safe=""
+  subnet_safe="$(echo "$target_subnet" | tr '/' '_')"
+  local dropin_dir="/etc/systemd/network/${base_net_name}.d"
+  local dropin_file="${dropin_dir}/route-${subnet_safe}.conf"
+
+  if [ "$DRY_RUN" = true ]; then
+    echo "   🧪 [DRY-RUN] 커널 라우트 삭제: $cmd_sudo $cmd_ip -4 route del $target_subnet via $gateway dev $iface"
+    echo "   🧪 [DRY-RUN] networkd drop-in 삭제: $dropin_file"
+  else
+    "$cmd_sudo" "$cmd_ip" -4 route del "$target_subnet" via "$gateway" dev "$iface" 2>/dev/null || true
+    if [ -f "$dropin_file" ]; then
+      "$cmd_sudo" "$cmd_rm" -f "$dropin_file"
+      echo "   ✅ [삭제 완료] $target_subnet ($dropin_file 제거됨)"
+    else
+      echo "   ✅ [삭제 완료] $target_subnet (커널 라우트 해제됨)"
+    fi
+  fi
+}
+
+##
+# systemd-networkd 환경을 대상으로 단일 라우팅 추가 로직을 수행합니다.
+#
+# @param $1 {string} 물리 인터페이스 이름
+# @param $2 {string} 추가할 대상 VLAN 대역
+# @param $3 {string} 계산된 Gateway IP
+#
+# @return (systemd-networkd drop-in 생성 및 즉시 라우트 추가)
+##
+configure_networkd_add() {
+  local iface="$1"
+  local target_subnet="$2"
+  local gateway="$3"
+
+  local cmd_sudo cmd_ip cmd_mktemp cmd_mv cmd_chmod cmd_mkdir
+  cmd_sudo="$(resolve_command "sudo")"
+  cmd_ip="$(resolve_command "ip")"
+  cmd_mktemp="$(resolve_command "mktemp")"
+  cmd_mv="$(resolve_command "mv")"
+  cmd_chmod="$(resolve_command "chmod")"
+  cmd_mkdir="$(resolve_command "mkdir")"
+
+  local net_file=""
+  if command -v networkctl >/dev/null 2>&1; then
+    net_file="$(LC_ALL=C networkctl status "$iface" 2>/dev/null | awk -F': ' '/Network File:/ {print $2}' | tr -d '[:space:]' || true)"
+  fi
+  if [ -z "$net_file" ]; then
+    net_file="$(grep -lE "^[[:space:]]*Name=${iface}\b" /etc/systemd/network/*.network /run/systemd/network/*.network /usr/lib/systemd/network/*.network 2>/dev/null | head -n1 || true)"
+  fi
+
+  local base_net_name=""
+  if [ -n "$net_file" ]; then
+    base_net_name="$(basename "$net_file")"
+  else
+    base_net_name="50-${iface}.network"
+    if [ "$DRY_RUN" = false ] && [ ! -f "/etc/systemd/network/${base_net_name}" ]; then
+      local tmp_base=""
+      tmp_base="$("$cmd_mktemp" "${TMPDIR:-/tmp}/networkd_base_XXXXXX.network")"
+      cat << EOF > "$tmp_base"
+[Match]
+Name=$iface
+
+[Network]
+DHCP=yes
+EOF
+      "$cmd_sudo" "$cmd_mkdir" -p "/etc/systemd/network"
+      "$cmd_sudo" "$cmd_mv" "$tmp_base" "/etc/systemd/network/${base_net_name}"
+      "$cmd_sudo" "$cmd_chmod" 644 "/etc/systemd/network/${base_net_name}"
+    fi
+  fi
+
+  local subnet_safe=""
+  subnet_safe="$(echo "$target_subnet" | tr '/' '_')"
+  local dropin_dir="/etc/systemd/network/${base_net_name}.d"
+  local dropin_file="${dropin_dir}/route-${subnet_safe}.conf"
+
+  if [ "$DRY_RUN" = true ]; then
+    echo "   🧪 [DRY-RUN] 커널 라우트 추가: $cmd_sudo $cmd_ip -4 route replace $target_subnet via $gateway dev $iface"
+    echo "   🧪 [DRY-RUN] networkd drop-in 생성: $dropin_file"
+  else
+    "$cmd_sudo" "$cmd_ip" -4 route replace "$target_subnet" via "$gateway" dev "$iface"
+    "$cmd_sudo" "$cmd_mkdir" -p "$dropin_dir"
+
+    local tmp_file=""
+    tmp_file="$("$cmd_mktemp" "${TMPDIR:-/tmp}/networkd_route_XXXXXX.conf")"
+    cat << EOF > "$tmp_file"
+[Route]
+Destination=$target_subnet
+Gateway=$gateway
+EOF
+    "$cmd_sudo" "$cmd_mv" "$tmp_file" "$dropin_file"
+    "$cmd_sudo" "$cmd_chmod" 644 "$dropin_file"
+    echo "   ✅ [추가 완료] $target_subnet ($dropin_file 생성됨)"
+  fi
+}
+
+##
+# systemd-networkd 구성을 리로드합니다.
+#
+# @param 없음
+#
+# @return (networkctl reload 실행)
+##
+apply_networkd() {
+  if [ "$DRY_RUN" = false ]; then
+    local cmd_sudo
+    cmd_sudo="$(resolve_command "sudo")"
+    if command -v networkctl >/dev/null 2>&1; then
+      local cmd_networkctl
+      cmd_networkctl="$(resolve_command "networkctl")"
+      echo ""
+      echo "🔄 [시스템 반영 중] networkctl reload 커맨드를 호출합니다..."
+      "$cmd_sudo" "$cmd_networkctl" reload 2>/dev/null || true
+      echo "✨ systemd-networkd 변경 사항이 시스템에 안전하게 반영되었습니다."
+    fi
+  fi
+}
+
+##
+# 범용 Linux (iproute2 + systemd unit) 환경을 대상으로 단일 라우팅 제거 로직을 수행합니다.
+#
+# @param $1 {string} 물리 인터페이스 이름
+# @param $2 {string} 삭제할 대상 VLAN 대역
+# @param $3 {string} 계산된 Gateway IP
+#
+# @return (커널 라우트 삭제 및 systemd 서비스 제거)
+##
+configure_iproute_systemd_remove() {
+  local iface="$1"
+  local target_subnet="$2"
+  local gateway="$3"
+
+  local subnet_safe=""
+  subnet_safe="$(echo "$target_subnet" | tr './' '__')"
+  local service_name="vlan-route-${subnet_safe}.service"
+  local service_file="/etc/systemd/system/${service_name}"
+
+  local cmd_sudo cmd_ip cmd_rm
+  cmd_sudo="$(resolve_command "sudo")"
+  cmd_ip="$(resolve_command "ip")"
+  cmd_rm="$(resolve_command "rm")"
+
+  if [ "$DRY_RUN" = true ]; then
+    echo "   🧪 [DRY-RUN] 커널 라우트 삭제: $cmd_sudo $cmd_ip -4 route del $target_subnet via $gateway dev $iface"
+    echo "   🧪 [DRY-RUN] 영구 systemd 유닛 제거: $service_file"
+  else
+    "$cmd_sudo" "$cmd_ip" -4 route del "$target_subnet" via "$gateway" dev "$iface" 2>/dev/null || true
+    if [ -f "$service_file" ]; then
+      if command -v systemctl >/dev/null 2>&1; then
+        local cmd_systemctl
+        cmd_systemctl="$(resolve_command "systemctl")"
+        "$cmd_sudo" "$cmd_systemctl" disable --now "$service_name" 2>/dev/null || true
+        "$cmd_sudo" "$cmd_rm" -f "$service_file"
+        "$cmd_sudo" "$cmd_systemctl" daemon-reload 2>/dev/null || true
+      else
+        "$cmd_sudo" "$cmd_rm" -f "$service_file"
+      fi
+      echo "   ✅ [삭제 완료] $target_subnet (커널 라우트 및 systemd 유닛 해제됨)"
+    else
+      echo "   ✅ [삭제 완료] $target_subnet (커널 라우트 해제됨)"
+    fi
+  fi
+}
+
+##
+# 범용 Linux (iproute2 + systemd unit) 환경을 대상으로 단일 라우팅 추가 로직을 수행합니다.
+#
+# @param $1 {string} 물리 인터페이스 이름
+# @param $2 {string} 추가할 대상 VLAN 대역
+# @param $3 {string} 계산된 Gateway IP
+#
+# @return (커널 라우트 추가 및 systemd 서비스 등록)
+##
+configure_iproute_systemd_add() {
+  local iface="$1"
+  local target_subnet="$2"
+  local gateway="$3"
+
+  local subnet_safe=""
+  subnet_safe="$(echo "$target_subnet" | tr './' '__')"
+  local service_name="vlan-route-${subnet_safe}.service"
+  local service_file="/etc/systemd/system/${service_name}"
+
+  local cmd_sudo cmd_ip cmd_mktemp cmd_mv cmd_chmod
+  cmd_sudo="$(resolve_command "sudo")"
+  cmd_ip="$(resolve_command "ip")"
+  cmd_mktemp="$(resolve_command "mktemp")"
+  cmd_mv="$(resolve_command "mv")"
+  cmd_chmod="$(resolve_command "chmod")"
+
+  if [ "$DRY_RUN" = true ]; then
+    echo "   🧪 [DRY-RUN] 커널 라우트 추가: $cmd_sudo $cmd_ip -4 route replace $target_subnet via $gateway dev $iface"
+    echo "   🧪 [DRY-RUN] 영구 systemd 유닛 생성: $service_file"
+  else
+    "$cmd_sudo" "$cmd_ip" -4 route replace "$target_subnet" via "$gateway" dev "$iface"
+
+    if command -v systemctl >/dev/null 2>&1 && [ -d /etc/systemd/system ]; then
+      local cmd_systemctl
+      cmd_systemctl="$(resolve_command "systemctl")"
+      local tmp_unit=""
+      tmp_unit="$("$cmd_mktemp" "${TMPDIR:-/tmp}/vlan_route_XXXXXX.service")"
+
+      cat << EOF > "$tmp_unit"
+[Unit]
+Description=Persistent Static Route for VLAN $target_subnet via $gateway ($iface)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=$cmd_ip -4 route replace $target_subnet via $gateway dev $iface
+ExecStop=$cmd_ip -4 route del $target_subnet via $gateway dev $iface
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+      "$cmd_sudo" "$cmd_mv" "$tmp_unit" "$service_file"
+      "$cmd_sudo" "$cmd_chmod" 644 "$service_file"
+      "$cmd_sudo" "$cmd_systemctl" daemon-reload 2>/dev/null || true
+      "$cmd_sudo" "$cmd_systemctl" enable "$service_name" 2>/dev/null || true
+      echo "   ✅ [추가 완료] $target_subnet (커널 라우트 반영 및 systemd 유닛 영구화 완료)"
+    else
+      echo "   ✅ [추가 완료] $target_subnet (커널 라우트 즉시 반영됨)"
+    fi
+  fi
+}
+
 # --- 파라미터 파싱 파이프라인 ---
 
 while [[ $# -gt 0 ]]; do
@@ -837,14 +1126,17 @@ echo "   - 서버 자동 식별 대역  : $CUR_SUBNET"
 echo "   - 목적지 넥스트 홉(GW) : $TRUNK_GW"
 echo "--------------------------------------------------------------------------------"
 
-# NetworkManager (nmcli) 활성화 여부 식별 (Linux 계열 전용)
-USE_NMCLI=false
+# Linux 네트워크 백엔드 식별 (nmcli -> netplan -> systemd-networkd -> iproute-systemd)
+NET_BACKEND=""
 CONN_TARGET=""
 
-if [ "$OS_TYPE" != "macos" ]; then
+if [ "$OS_TYPE" == "macos" ]; then
+  NET_BACKEND="macos"
+else
+  # 1순위: NetworkManager (nmcli) 활성화 및 해당 인터페이스 관리 여부
   if command -v nmcli >/dev/null 2>&1; then
     if nmcli device status 2>/dev/null | awk '{print $1, $3}' | grep -iq "^${IFACE} connected"; then
-      USE_NMCLI=true
+      NET_BACKEND="nmcli"
       CMD_NMCLI="$(resolve_command "nmcli")"
 
       CONN_TARGET="$(LC_ALL=C "$CMD_NMCLI" -g GENERAL.CON-UUID device show "$IFACE" 2>/dev/null | head -n1 || true)"
@@ -858,12 +1150,15 @@ if [ "$OS_TYPE" != "macos" ]; then
 
       if [ "$OS_TYPE" == "ubuntu" ]; then
         echo "   💡 [감지] 우분투 환경이나 NetworkManager가 활성화되어 있습니다. nmcli 제어로 우회합니다."
+      else
+        echo "   💡 [감지] NetworkManager(nmcli) 백엔드를 사용하여 라우팅을 제어합니다."
       fi
     fi
   fi
 
-  if [ "$OS_TYPE" == "rhel" ] && [ "$USE_NMCLI" = false ]; then
-    USE_NMCLI=true
+  # RHEL 계열에서 아직 백엔드가 결정되지 않았고 nmcli가 존재하면 기본 nmcli 사용
+  if [ -z "$NET_BACKEND" ] && [ "$OS_TYPE" == "rhel" ] && command -v nmcli >/dev/null 2>&1; then
+    NET_BACKEND="nmcli"
     CMD_NMCLI="$(resolve_command "nmcli")"
 
     CONN_TARGET="$(LC_ALL=C "$CMD_NMCLI" -g GENERAL.CON-UUID device show "$IFACE" 2>/dev/null | head -n1 || true)"
@@ -875,6 +1170,26 @@ if [ "$OS_TYPE" != "macos" ]; then
     fi
     [ -z "$CONN_TARGET" ] && CONN_TARGET="$IFACE"
   fi
+
+  # 2순위: Netplan (Ubuntu/Debian 등 netplan 사용 환경)
+  if [ -z "$NET_BACKEND" ] && command -v netplan >/dev/null 2>&1 && [ -d /etc/netplan ]; then
+    NET_BACKEND="netplan"
+    echo "   💡 [감지] Netplan 백엔드를 사용하여 라우팅을 제어합니다."
+  fi
+
+  # 3순위: systemd-networkd 활성화 여부 (Arch Linux, systemd 기반 배포판)
+  if [ -z "$NET_BACKEND" ] && command -v systemctl >/dev/null 2>&1; then
+    if systemctl is-active --quiet systemd-networkd 2>/dev/null; then
+      NET_BACKEND="networkd"
+      echo "   💡 [감지] systemd-networkd 백엔드를 사용하여 라우팅을 제어합니다."
+    fi
+  fi
+
+  # 4순위: 범용 Linux Fallback (iproute2 + systemd unit 영구화)
+  if [ -z "$NET_BACKEND" ]; then
+    NET_BACKEND="iproute-systemd"
+    echo "   💡 [감지] 범용 iproute2 + systemd 서비스 백엔드를 사용하여 라우팅을 제어합니다."
+  fi
 fi
 
 # [단계 5] 삭제(Remove) 파이프라인 진행
@@ -882,13 +1197,23 @@ if [ ${#REMOVE_NETWORKS[@]} -gt 0 ]; then
   echo " 🗑️  [1단계] 라우팅 제거 작업 진행"
   for subnet in "${REMOVE_NETWORKS[@]}"; do
     if [ "$subnet" != "$CUR_SUBNET" ]; then
-      if [ "$OS_TYPE" == "macos" ]; then
-        configure_macos_remove "$subnet" "$TRUNK_GW"
-      elif [ "$USE_NMCLI" = true ]; then
-        configure_rhel_remove "$CONN_TARGET" "$subnet" "$TRUNK_GW"
-      elif [ "$OS_TYPE" == "ubuntu" ]; then
-        configure_ubuntu_remove "$subnet"
-      fi
+      case "$NET_BACKEND" in
+        macos)
+          configure_macos_remove "$subnet" "$TRUNK_GW"
+          ;;
+        nmcli)
+          configure_rhel_remove "$CONN_TARGET" "$subnet" "$TRUNK_GW"
+          ;;
+        netplan)
+          configure_ubuntu_remove "$subnet"
+          ;;
+        networkd)
+          configure_networkd_remove "$IFACE" "$subnet" "$TRUNK_GW"
+          ;;
+        iproute-systemd)
+          configure_iproute_systemd_remove "$IFACE" "$subnet" "$TRUNK_GW"
+          ;;
+      esac
     else
       echo "   ⏭️  [건너뜀] 현재 서버의 소속 대역과 동일한 입력 정보는 작업 대상에서 제외됩니다: $subnet"
     fi
@@ -901,13 +1226,23 @@ if [ ${#ADD_NETWORKS[@]} -gt 0 ]; then
   echo " ➕ [2단계] 라우팅 추가 작업 진행"
   for subnet in "${ADD_NETWORKS[@]}"; do
     if [ "$subnet" != "$CUR_SUBNET" ]; then
-      if [ "$OS_TYPE" == "macos" ]; then
-        configure_macos_add "$subnet" "$TRUNK_GW"
-      elif [ "$USE_NMCLI" = true ]; then
-        configure_rhel_add "$CONN_TARGET" "$subnet" "$TRUNK_GW"
-      elif [ "$OS_TYPE" == "ubuntu" ]; then
-        configure_ubuntu_add "$IFACE" "$subnet" "$TRUNK_GW"
-      fi
+      case "$NET_BACKEND" in
+        macos)
+          configure_macos_add "$subnet" "$TRUNK_GW"
+          ;;
+        nmcli)
+          configure_rhel_add "$CONN_TARGET" "$subnet" "$TRUNK_GW"
+          ;;
+        netplan)
+          configure_ubuntu_add "$IFACE" "$subnet" "$TRUNK_GW"
+          ;;
+        networkd)
+          configure_networkd_add "$IFACE" "$subnet" "$TRUNK_GW"
+          ;;
+        iproute-systemd)
+          configure_iproute_systemd_add "$IFACE" "$subnet" "$TRUNK_GW"
+          ;;
+      esac
     else
       echo "   ⏭️  [건너뜀] 현재 서버의 소속 대역과 동일한 입력 정보는 작업 대상에서 제외됩니다: $subnet"
     fi
@@ -915,22 +1250,34 @@ if [ ${#ADD_NETWORKS[@]} -gt 0 ]; then
   echo ""
 fi
 
-# OS별 변경 사항 영구 반영 데몬 리로드 처리
-if [ "$OS_TYPE" == "macos" ]; then
-  if [ "$DRY_RUN" = false ]; then
-    echo "✨ macOS 커널 라우팅 및 LaunchDaemon 등록이 안전하게 완료되었습니다."
-  fi
-elif [ "$USE_NMCLI" = true ]; then
-  if [ "$DRY_RUN" = false ]; then
-    CMD_SUDO="$(resolve_command "sudo")"
-    echo ""
-    echo "🔄 [시스템 반영 중] nmcli connection up 커맨드를 호출합니다..."
-    "$CMD_SUDO" "$CMD_NMCLI" connection up "$CONN_TARGET"
-    echo "✨ NetworkManager 변경 사항이 시스템에 안전하게 반영되었습니다."
-  fi
-elif [ "$OS_TYPE" == "ubuntu" ]; then
-  apply_ubuntu
-fi
+# OS 및 네트워크 백엔드별 변경 사항 영구 반영 데몬 리로드 처리
+case "$NET_BACKEND" in
+  macos)
+    if [ "$DRY_RUN" = false ]; then
+      echo "✨ macOS 커널 라우팅 및 LaunchDaemon 등록이 안전하게 완료되었습니다."
+    fi
+    ;;
+  nmcli)
+    if [ "$DRY_RUN" = false ]; then
+      CMD_SUDO="$(resolve_command "sudo")"
+      echo ""
+      echo "🔄 [시스템 반영 중] nmcli connection up 커맨드를 호출합니다..."
+      "$CMD_SUDO" "$CMD_NMCLI" connection up "$CONN_TARGET"
+      echo "✨ NetworkManager 변경 사항이 시스템에 안전하게 반영되었습니다."
+    fi
+    ;;
+  netplan)
+    apply_ubuntu
+    ;;
+  networkd)
+    apply_networkd
+    ;;
+  iproute-systemd)
+    if [ "$DRY_RUN" = false ]; then
+      echo "✨ Linux 커널 라우팅 및 systemd 영구 서비스 반영이 안전하게 완료되었습니다."
+    fi
+    ;;
+esac
 
 echo "================================================================================"
 echo "🎉 모든 라우팅 변경 라이프사이클 작업이 완료되었습니다."

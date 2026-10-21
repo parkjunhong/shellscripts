@@ -1,24 +1,30 @@
 # =======================================
 # @author : parkjunhong77@gmail.com
-# @title : search files.
+# @title : add-vlan-routes.sh bash completion.
 # @license : Apache License 2.0
 # @since : 2026-07-23
-# @desc : support macOS 11.2.3, Ubuntu 18.04 or higher, CentOS 7 or higher
+# @desc : support macOS 11.2.3+, Ubuntu 18.04+, Debian, RHEL 7+ (Rocky, CentOS, Oracle, AlmaLinux, Fedora), Arch Linux (Manjaro, EndeavourOS), SUSE, Alpine, and universal Linux
 # @installation :
-# 1. insert 'source <path>/<파일명>' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/<파일명>' into etc/bashrc for all users.
+# 1. insert 'source <path>/add-vlan-routes.sh.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/add-vlan-routes.sh.completion' into /etc/bashrc for all users.
 # =======================================
 
-# ----------------------------------------------------------------------
-# [Bash Completion 파라미터 설명]
-# - COMP_WORDS: 현재 커맨드 라인에 입력된 단어들의 배열
-# - COMP_CWORD: 현재 커서가 위치한 단어의 인덱스 (COMP_WORDS 배열 내 위치)
-# - COMP_LINE: 현재까지 커맨드 라인에 입력된 전체 문자열
-# - COMPREPLY: bash completion이 제안할 단어들의 배열 (이 배열에 값을 넣으면 화면에 출력됨)
-# - $1: 명령의 이름 (이 completion이 바인딩된 커맨드 이름)
-# - $2: 현재 커서에서 완성하려고 하는 단어 (현재 단어)
-# - $3: 현재 완성하려고 하는 단어의 바로 이전 단어
-# ----------------------------------------------------------------------
+# =======================================
+# [Bash Completion Parameter Description]
+# 1. COMP_WORDS: an array containing all individual words in the current command line
+#    (현재 커맨드 라인에 입력된 단어들의 배열)
+# 2. COMP_CWORD: an index of the word containing the current cursor position
+#    (현재 커서가 위치한 단어의 인덱스)
+# 3. COMP_LINE: the current command line string
+#    (현재까지 커맨드 라인에 입력된 전체 문자열)
+# 4. COMPREPLY: an array variable from which Bash reads the possible completions
+#    (bash completion이 제안할 단어들의 배열)
+#
+# Arguments of completion function:
+# - $1: name of the command whose arguments are being completed (명령의 이름)
+# - $2: word being completed (현재 커서에서 완성하려고 하는 단어)
+# - $3: word preceding the word being completed (현재 완성하려는 단어의 바로 이전 단어)
+# =======================================
 
 _add_vlan_routes() {
     local cur prev opts
