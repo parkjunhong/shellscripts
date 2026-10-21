@@ -1,11 +1,11 @@
 # =======================================
 # @author : parkjunhong77@gmail.com
-# @title : search files.
+# @title : install-antigravity-x64.sh bash completion.
 # @license : Apache License 2.0
 # @since : 2026-10-08
-# @desc : support RHEL, Oracle Linux, Ubuntu, RockyOS
+# @desc : support RHEL, Oracle Linux, Ubuntu, RockyOS, CentOS
 # @installation : 
-# 1. insert 'source <path>/install-antigravity-x64.sh.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 1. insert 'source <path>/install-antigravity-x64.sh.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
 # 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/install-antigravity-x64.sh.completion' into '/etc/bashrc' or '/usr/share/bash-completion/completions/' for all users.
 # =======================================
 # Global Reserved Variables
@@ -36,19 +36,13 @@ _install_antigravity_x64_completion() {
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
   # 지원하는 Long 옵션 목록 정의 (단축 옵션 완전 배제) / Define supported long options list
-  opts="--file --version --dry-run --help"
+  opts="--version --dry-run --help"
 
   # 이전 인자 컨텍스트에 따른 동적 자동완성 제어 / Dynamic completion based on previous context
   case "${prev}" in
-    --file)
-      # 로컬 압축 파일 및 경로 자동완성 위임 / Delegate to native file path completion
-      compopt -o default 2>/dev/null || true
-      COMPREPLY=()
-      return 0
-      ;;
     --version)
-      # 일반적으로 사용되는 버전 식별자 예시 제안 / Suggest common version examples
-      local common_versions="1 2 3 latest"
+      # 지원되는 2.x 이상 버전 식별자 예시 제안 / Suggest common 2.x+ version examples
+      local common_versions="2 2.24 2.24.0"
       COMPREPLY=( $(compgen -W "${common_versions}" -- "${cur}") )
       return 0
       ;;

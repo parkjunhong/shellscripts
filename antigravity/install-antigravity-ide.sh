@@ -46,23 +46,25 @@ help(){
   echo "사용법 (Usage): ./$FILENAME [옵션]"
   echo ""
   echo "[설명]"
-  echo "  Antigravity IDE 바이너리 패키지를 시스템(/opt/antigravity-ide)에 설치하고"
-  echo "  전역 실행 심볼릭 링크, 샌드박스 보안 권한 및 데스크톱 바로가기를 구성합니다."
+  echo "  Google Antigravity 공식 저장소에서 다운로드 가능한 Antigravity IDE 버전(2.x 이상) 목록을 조회하고,"
+  echo "  사용자가 선택한 버전의 바이너리 패키지를 다운로드하여 시스템(/opt/antigravity-ide)에 설치합니다."
+  echo "  전역 실행 심볼릭 링크, 샌드박스 보안 권한 및 데스크톱 바로가기를 자동으로 구성합니다."
   echo ""
   echo "[옵션 (Options)]"
-  echo "  --file <경로>          설치할 로컬 Antigravity IDE 압축 파일(.tar.gz) 경로"
-  echo "  --version <버전>       원격 저장소에서 다운로드하여 설치할 버전 번호 (예: 2, 2.1.0)"
-  echo "  --dry-run              실제 설치를 진행하지 않고 실행될 명령어만 출력합니다."
+  echo "  --version <버전>       원격 저장소에서 필터링할 버전 식별자 (예: 2, 2.5, 2.5.5)"
+  echo "                         지정하지 않으면 2.x 이상의 전체 버전 목록을 출력합니다."
+  echo "  --dry-run              실제 다운로드 및 설치를 진행하지 않고 실행될 명령어만 출력합니다."
   echo "  --help                 이 도움말을 출력하고 종료합니다."
   echo ""
   echo "[주의사항]"
-  echo "  단축 옵션(-f, -v, -d, -h 등)은 지원하지 않으므로 반드시 Long 옵션을 사용하십시오."
-  echo "  --file 옵션이 전달되지 않은 경우에만 --version 옵션을 통해 원격에서 파일을 다운로드하여 설치합니다."
+  echo "  단축 옵션(-v, -d, -h 등)은 지원하지 않으므로 반드시 Long 옵션을 사용하십시오."
 }
 
 # 전역 상태 변수 선언 (메인 스코프에서는 local 키워드를 일절 사용하지 않음)
-FILE_INPUT=""
 VERSION_INPUT=""
+SELECTED_VERSION=""
+SELECTED_BUILD_ID=""
+SELECTED_DOWNLOAD_URL=""
 TARGET_INSTALL_FILE=""
 DRY_RUN=false
 
@@ -273,52 +275,138 @@ EOF
 }
 
 ##
-# 지정한 버전에 해당하는 다운로드 메타데이터 파일(.url)을 조회하여 실제 다운로드 URL을 반환합니다.
+# 전달된 버전 필터 조건(--version)의 유효성을 검증합니다.
+# (2.x 이상 버전만 지원하므로 2로 시작하는 버전 형식인지 확인합니다.)
 #
-# @param $1 {string} 버전 식별자 (예: 2, 2.1.0)
+# @param $1 {string} 사용자가 입력한 버전 문자열
 #
-# @return {string} 정제된 실제 다운로드 URL (표준 출력)
+# @return (유효하지 않은 경우 오류 메시지 출력 후 종료)
 ##
-fetch_download_url() {
+validate_version_input() {
   local ver="$1"
 
-  if [[ ! "$ver" =~ ^[0-9a-zA-Z._-]+$ ]]; then
-    help "유효하지 않은 버전 문자열 형식입니다 -> '$ver'" "$LINENO"
-    exit 1
-  fi
-
-  local meta_url="https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main/antigravity/download-antigravity-ide-v${ver}.url"
-  echo ">> 원격 버전 메타데이터 확인 중: $meta_url" >&2
-
-  if ! command -v curl >/dev/null 2>&1; then
-    help "원격 버전 조회를 위해 'curl' 바이너리가 시스템에 필요합니다." "$LINENO"
-    exit 1
-  fi
-
-  local raw_content=""
-  if ! raw_content="$(curl -fsSL --connect-timeout 10 "$meta_url" 2>/dev/null)"; then
+  # 허용 문자 및 기본 버전 형식 검사 (숫자와 점으로 구성된 버전 식별자)
+  if [[ ! "$ver" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
     echo "" >&2
     echo "================================================================================" >&2
-    echo "❌ [오류] 지원하지 않는 버전입니다: 'v${ver}'" >&2
-    echo "   - 원격 메타데이터 파일을 찾을 수 없습니다 -> $meta_url" >&2
-    echo "   - 제공되는 버전 정보를 다시 확인한 후 실행하십시오." >&2
+    echo "❌ [오류] 잘못된 버전 형식입니다: '$ver'" >&2
+    echo "   - 버전은 숫자와 점(.)으로만 지정해야 합니다. (예: 2, 2.5, 2.5.5)" >&2
     echo "================================================================================" >&2
     exit 1
   fi
 
-  local clean_url=""
-  clean_url="$(echo "$raw_content" | tr -d '\r' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g' | head -n 1)"
-
-  if [[ -z "$clean_url" || ! "$clean_url" =~ ^https?:// ]]; then
+  local major="${ver%%.*}"
+  if (( major < 2 )); then
+    echo "" >&2
     echo "================================================================================" >&2
-    echo "❌ [오류] 원격 메타데이터 파일 내 유효한 다운로드 URL이 존재하지 않습니다." >&2
-    echo "   - 조회 URL: $meta_url" >&2
-    echo "   - 내용: '$clean_url'" >&2
+    echo "❌ [오류] 지원하지 않는 메이저 버전입니다: '$ver'" >&2
+    echo "   - 이 스크립트는 Antigravity IDE 2.x 이상 버전만 지원합니다. (예: --version 2)" >&2
     echo "================================================================================" >&2
     exit 1
   fi
+}
 
-  echo "$clean_url"
+##
+# Google Antigravity IDE 공식 배포 저장소(Auto-Updater Releases API 및 배포 포털)에서
+# 다운로드 가능한 2.x 이상의 linux-x64 버전 목록을 자동으로 수집하여 최신순으로 반환합니다.
+#
+# @param $1 {string} 필터링할 버전 접두사 (빈 문자열이면 2.x 이상 전체 조회)
+#
+# @return {string} "버전|빌드ID|다운로드URL" 형식의 줄바꿈 구분 목록 (표준 출력)
+##
+fetch_available_versions() {
+  local filter_ver="${1:-}"
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    help "원격 버전 목록 조회 및 파싱을 위해 'python3'가 시스템에 필요합니다." "$LINENO"
+    exit 1
+  fi
+
+  python3 - "$filter_ver" <<'PY'
+import json
+import re
+import sys
+import urllib.request
+import xml.etree.ElementTree as ET
+
+filter_ver = sys.argv[1].strip()
+cdn_base = "https://edgedl.me.gvt1.com/edgedl/release2/j0qc3/antigravity/stable"
+target_suffix = "/linux-x64/Antigravity%20IDE.tar.gz"
+
+# key: (version, build_id) -> url
+discovered = {}
+
+def add_candidate(ver_str, build_str, custom_url=""):
+    # 메이저 버전 2 이상만 허용
+    parts = ver_str.split(".")
+    try:
+        if int(parts[0]) < 2:
+            return
+    except Exception:
+        return
+
+    # 필터 조건 확인: 정확히 일치하거나 '필터.'으로 시작하는 하위 버전 매칭
+    if filter_ver:
+        if not (ver_str == filter_ver or ver_str.startswith(filter_ver + ".")):
+            return
+
+    url = custom_url if custom_url else f"{cdn_base}/{ver_str}-{build_str}{target_suffix}"
+    discovered[(ver_str, build_str)] = url
+
+def fetch_url_text(url, timeout=10):
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64)"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return resp.read().decode("utf-8", errors="replace")
+
+# 1. 공식 Auto-Updater Cloud Run Releases 엔드포인트 조회 (Antigravity IDE 릴리즈 목록)
+try:
+    rel_data = json.loads(fetch_url_text("https://antigravity-auto-updater-974169037036.us-central1.run.app/releases", timeout=10))
+    if isinstance(rel_data, list):
+        for item in rel_data:
+            if isinstance(item, dict):
+                v = str(item.get("version", "")).strip()
+                b = str(item.get("execution_id") or item.get("build_id") or item.get("build") or "").strip()
+                if re.match(r"^[0-9]+(?:\.[0-9]+)+$", v) and re.match(r"^[0-9]+$", b):
+                    add_candidate(v, b)
+except Exception:
+    pass
+
+# 2. 공식 다운로드 페이지(antigravity.google/download) 내 IDE 링크 보조 탐색
+try:
+    dl_html = fetch_url_text("https://antigravity.google/download", timeout=8)
+    for m in re.finditer(r"https://edgedl\.me\.gvt1\.com/edgedl/release2/j0qc3/antigravity/stable/([0-9]+(?:\.[0-9]+)+)-([0-9]+)/linux-x64/Antigravity(?:%20|\s)IDE\.tar\.gz", dl_html):
+        add_candidate(m.group(1), m.group(2))
+except Exception:
+    pass
+
+# 3. GCS 버킷 내 antigravity-ide 프리픽스가 존재할 경우 보조 탐색
+try:
+    api_url = "https://storage.googleapis.com/storage/v1/b/antigravity-public/o?prefix=antigravity-ide/&delimiter=/"
+    data = json.loads(fetch_url_text(api_url, timeout=8))
+    for prefix in data.get("prefixes", []):
+        m = re.match(r"^antigravity-ide/([0-9]+(?:\.[0-9]+)+)-([0-9]+)/$", prefix)
+        if m:
+            v, b = m.group(1), m.group(2)
+            if (v, b) not in discovered:
+                add_candidate(v, b)
+except Exception:
+    pass
+
+def parse_ver_key(item):
+    ver_str, build_str = item[0]
+    ver_nums = [int(x) for x in ver_str.split(".")]
+    try:
+        build_num = int(build_str)
+    except Exception:
+        build_num = 0
+    return (ver_nums, build_num)
+
+# 최신 버전이 위로 오도록 내림차순 정렬
+sorted_items = sorted(discovered.items(), key=parse_ver_key, reverse=True)
+
+for (ver_str, build_str), url in sorted_items:
+    print(f"{ver_str}|{build_str}|{url}")
+PY
 }
 
 ##
@@ -367,52 +455,122 @@ download_installation_package() {
 }
 
 ##
-# 전달된 옵션을 분석하여 로컬 파일 또는 원격 다운로드 방식을 통해 최종 설치 파일을 결정합니다.
+# Google Antigravity IDE 원격 저장소에서 버전 목록을 조회하여 출력하고,
+# 사용자가 선택한 버전의 설치 패키지를 다운로드(또는 Dry-Run 설정)합니다.
 #
 # @param 없음
 #
-# @return (전역 변수 TARGET_INSTALL_FILE 확정)
+# @return (전역 변수 SELECTED_VERSION, SELECTED_BUILD_ID, SELECTED_DOWNLOAD_URL, TARGET_INSTALL_FILE 확정)
 ##
 resolve_install_source() {
-  # 1. --file 옵션이 우선적으로 전달된 경우 (Dry-Run 여부와 무관하게 로컬 파일 실재성 검증)
-  if [ -n "$FILE_INPUT" ]; then
-    if [ ! -f "$FILE_INPUT" ]; then
-      help "지정한 로컬 설치 파일이 존재하지 않습니다 -> '$FILE_INPUT'" "$LINENO"
-      exit 1
-    fi
-    if [ ! -r "$FILE_INPUT" ]; then
-      help "지정한 로컬 설치 파일에 대한 읽기 권한이 없습니다 -> '$FILE_INPUT'" "$LINENO"
-      exit 1
-    fi
-    TARGET_INSTALL_FILE="$FILE_INPUT"
-    echo ">> [소스 확인] 지정된 로컬 파일로 설치를 진행합니다: $TARGET_INSTALL_FILE"
-    return 0
-  fi
-
-  # 2. --file 옵션이 없고 --version 옵션이 전달된 경우
   if [ -n "$VERSION_INPUT" ]; then
-    local target_dl_url=""
-    target_dl_url="$(fetch_download_url "$VERSION_INPUT")"
+    validate_version_input "$VERSION_INPUT"
+    echo ">> Google Antigravity 공식 저장소에서 'v${VERSION_INPUT}' 조건에 해당하는 Antigravity IDE 버전 목록을 조회합니다..."
+  else
+    echo ">> Google Antigravity 공식 저장소에서 다운로드 가능한 전체 Antigravity IDE 버전(2.x 이상) 목록을 조회합니다..."
+  fi
 
-    if [ "$DRY_RUN" = true ]; then
-      TARGET_INSTALL_FILE="/tmp/antigravity_ide_v${VERSION_INPUT}_dryrun.tar.gz"
-      echo ">> [소스 확인] 원격 v${VERSION_INPUT} 버전 패키지를 다운로드하여 설치할 예정입니다."
-      echo "   - 다운로드 대상 URL: $target_dl_url"
-      download_installation_package "$target_dl_url" "$TARGET_INSTALL_FILE"
-      return 0
+  local raw_list=""
+  if ! raw_list="$(fetch_available_versions "$VERSION_INPUT")"; then
+    echo "" >&2
+    echo "================================================================================" >&2
+    echo "❌ [오류] 원격 저장소에서 버전 목록을 가져오는 중 오류가 발생했습니다." >&2
+    echo "   - 네트워크 연결 상태를 확인하십시오." >&2
+    echo "================================================================================" >&2
+    exit 1
+  fi
+
+  local entries=()
+  local line=""
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && entries+=( "$line" )
+  done <<< "$raw_list"
+
+  if [ "${#entries[@]}" -eq 0 ]; then
+    echo "" >&2
+    echo "================================================================================" >&2
+    if [ -n "$VERSION_INPUT" ]; then
+      echo "❌ [오류] 요청하신 버전('${VERSION_INPUT}')에 해당하는 Antigravity IDE 설치 패키지를 찾을 수 없습니다." >&2
+      echo "   - 입력한 버전 번호가 올바른지 확인하거나, '--version' 옵션 없이 실행하여 전체 버전 목록을 확인하십시오." >&2
+    else
+      echo "❌ [오류] 다운로드 가능한 Antigravity IDE (2.x 이상) 버전 목록을 찾을 수 없습니다." >&2
+      echo "   - 네트워크 연결 상태 또는 공식 배포 저장소 상태를 확인하십시오." >&2
+    fi
+    echo "================================================================================" >&2
+    exit 1
+  fi
+
+  echo ""
+  echo "================================================================================"
+  if [ -n "$VERSION_INPUT" ]; then
+    echo " 📋 Antigravity IDE 다운로드 가능 버전 목록 (필터: v${VERSION_INPUT})"
+  else
+    echo " 📋 Antigravity IDE 다운로드 가능 버전 목록 (전체: 2.x 이상)"
+  fi
+  echo "--------------------------------------------------------------------------------"
+  printf "  %-6s  %-22s  %-20s\n" "[번호]" "버전 (Version)" "빌드 ID (Build ID)"
+  echo "--------------------------------------------------------------------------------"
+
+  local idx=1
+  local entry ver_str build_str dl_url label_ver
+  for entry in "${entries[@]}"; do
+    IFS='|' read -r ver_str build_str dl_url <<< "$entry"
+    if [ "$idx" -eq 1 ]; then
+      label_ver="${ver_str} (latest)"
+    else
+      label_ver="${ver_str}"
+    fi
+    printf "  [%4d]  %-22s  %-20s\n" "$idx" "$label_ver" "$build_str"
+    ((idx++)) || true
+  done
+  echo "================================================================================"
+
+  local total="${#entries[@]}"
+  local choice=""
+  while true; do
+    printf "설치할 버전의 번호를 선택하세요 [1-%d] (종료: Enter): " "$total"
+    if ! IFS= read -r choice; then
+      echo ""
+      echo ">> 입력이 종료되어 설치를 취소합니다."
+      exit 0
     fi
 
-    DOWNLOADED_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/antigravity_ide_dl_XXXXXX")"
-    DOWNLOADED_TEMP_FILE="${DOWNLOADED_TEMP_DIR}/antigravity-ide-v${VERSION_INPUT}.tar.gz"
+    # 앞뒤 공백 제거
+    choice="$(echo "$choice" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
 
-    download_installation_package "$target_dl_url" "$DOWNLOADED_TEMP_FILE"
-    TARGET_INSTALL_FILE="$DOWNLOADED_TEMP_FILE"
+    if [[ -z "$choice" ]]; then
+      echo ">> 사용자 요청에 의해 설치를 종료합니다."
+      exit 0
+    fi
+
+    if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= total )); then
+      local selected_entry="${entries[$((choice - 1))]}"
+      IFS='|' read -r SELECTED_VERSION SELECTED_BUILD_ID SELECTED_DOWNLOAD_URL <<< "$selected_entry"
+      break
+    fi
+
+    echo "❗ 잘못된 선택입니다. 1부터 ${total} 사이의 번호를 입력하거나 Enter를 눌러 종료하십시오."
+  done
+
+  echo ""
+  echo ">> [선택 완료] Antigravity IDE v${SELECTED_VERSION} (Build: ${SELECTED_BUILD_ID}) 설치를 진행합니다."
+
+  if ! command -v curl >/dev/null 2>&1; then
+    help "설치 패키지 다운로드를 위해 'curl' 바이너리가 시스템에 필요합니다." "$LINENO"
+    exit 1
+  fi
+
+  if [ "$DRY_RUN" = true ]; then
+    TARGET_INSTALL_FILE="/tmp/antigravity_ide_v${SELECTED_VERSION}_${SELECTED_BUILD_ID}_dryrun.tar.gz"
+    download_installation_package "$SELECTED_DOWNLOAD_URL" "$TARGET_INSTALL_FILE"
     return 0
   fi
 
-  # 3. --file 과 --version 둘 다 없는 경우
-  help "설치할 로컬 파일(--file) 또는 버전(--version)을 지정해야 합니다." "$LINENO"
-  exit 1
+  DOWNLOADED_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/antigravity_ide_dl_XXXXXX")"
+  DOWNLOADED_TEMP_FILE="${DOWNLOADED_TEMP_DIR}/antigravity-ide-v${SELECTED_VERSION}-${SELECTED_BUILD_ID}.tar.gz"
+
+  download_installation_package "$SELECTED_DOWNLOAD_URL" "$DOWNLOADED_TEMP_FILE"
+  TARGET_INSTALL_FILE="$DOWNLOADED_TEMP_FILE"
 }
 
 ##
@@ -423,24 +581,15 @@ resolve_install_source() {
 # @return (없음)
 ##
 main() {
-  if [ $# -eq 0 ]; then
-    help "실행 파라미터가 누락되었습니다." "$LINENO"
-    exit 1
-  fi
-
   while [[ "$#" -gt 0 ]]; do
     case "$1" in
-      --file)
-        if [[ -z "${2:-}" || "$2" == --* ]]; then
-          help "--file 옵션에는 파일 경로를 지정해야 합니다." "$LINENO"
-          exit 1
-        fi
-        FILE_INPUT="$2"
-        shift 2
-        ;;
       --version)
         if [[ -z "${2:-}" || "$2" == --* ]]; then
-          help "--version 옵션에는 버전 식별자를 지정해야 합니다 (예: 2)." "$LINENO"
+          echo "" >&2
+          echo "================================================================================" >&2
+          echo "❌ [오류] '--version' 옵션에는 버전 값을 지정해야 합니다. (예: --version 2, --version 2.5.5)" >&2
+          echo "   - 전체 버전 목록에서 선택하려면 '--version' 옵션 없이 실행하십시오." >&2
+          echo "================================================================================" >&2
           exit 1
         fi
         VERSION_INPUT="$2"
@@ -465,7 +614,7 @@ main() {
     esac
   done
 
-  # 설치 소스 확정 (로컬 파일 검증 또는 원격 버전 다운로드)
+  # 설치 소스 확정 (원격 버전 목록 조회 -> 사용자 선택 -> 다운로드)
   resolve_install_source
 
   if [ "$DRY_RUN" = true ]; then
