@@ -1,0 +1,654 @@
+#!/usr/bin/env bash
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : firewalld Docker Container Port-Forwarding Policy Generator.
+# @license : Apache License 2.0
+# @since : 2026-10-24
+# @desc : support RHEL 8+, Oracle Linux 8+, Ubuntu 20.04+, RockyOS 8+, CentOS 8+ (firewalld 0.9.0+ with policy support)
+# @installation :
+# 1. insert 'source <path>/fwc-docker-policy.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the completion file to /etc/bash_completion.d/ or insert 'source <path>/fwc-docker-policy.completion' into '/etc/bashrc' or '/usr/share/bash-completion/completions/' for all users.
+# =======================================
+
+set -Eeuo pipefail
+
+if (( BASH_VERSINFO[0] < 4 )); then
+  printf '❌ [ERROR] Bash 4 이상이 필요합니다.\n' >&2
+  exit 1
+fi
+
+readonly FILENAME="$(basename "$0")"
+
+# 전역 상태 변수 선언
+SUDO_CMD=()
+FWC_CMD=()
+declare -A OPT_VALUES=()
+
+FWC_VERSION=""
+FW_MAJOR=0
+FW_MINOR=0
+FW_PATCH=0
+FW_SUFFIX=""
+EGRESS_ZONE=""
+
+POLICY_NAME=""
+INGRESS_ZONE=""
+COMMON_PORT=""
+HOST_PORT=""
+CONT_IP=""
+CONT_PORT=""
+
+POLICY_CREATED=false
+POLICY_COMMITTED=false
+IN_ERROR_HANDLER=false
+
+##
+# 오류 원인 및 콜스택 진단 정보를 포맷팅하여 표준 에러(stderr)로 출력합니다.
+#
+# @param $1 {string} 실패 원인 메시지
+# @param $2 {string} 오류 발생 라인 번호
+# @param $3 {int} FUNCNAME 콜스택 시작 오프셋 (기본값: 2)
+#
+# @return 표준 에러(stderr)로 오류 진단 정보 출력
+##
+print_error_cause() {
+  local cause="${1:-}"
+  local line="${2:-UNKNOWN}"
+  local stack_offset="${3:-2}"
+
+  local indent=10
+  local formatl=" - %-"$indent"s: %s\n"
+  local formatr=" - %"$indent"s: %s\n"
+  echo >&2
+  echo "================================================================================" >&2
+  printf "$formatl" "filename" "$FILENAME" >&2
+  printf "$formatl" "line" "$line" >&2
+  printf "$formatl" "callstack" "" >&2
+  local idx=1
+  local func
+  for func in "${FUNCNAME[@]:$stack_offset}"; do
+    printf "$formatr" "[$idx]" "$func" >&2
+    ((idx++)) || true
+  done
+  printf "$formatl" "cause" "$cause" >&2
+  echo "================================================================================" >&2
+}
+
+##
+# 스크립트 사용법(Usage) 및 파라미터 설명을 출력합니다.
+#
+# @param 없음
+#
+# @return 사용법 화면 출력
+##
+usage() {
+  cat <<EOF
+
+사용법 (Usage):
+  $FILENAME --policy <정책명> --zone <존이름> --host-port <호스트포트> --cont-ip <컨테이너IP> --cont-port <컨테이너포트>
+  $FILENAME --policy <정책명> --zone <존이름> --port <공통포트> --cont-ip <컨테이너IP>
+  $FILENAME --help
+
+설명 (Description):
+  외부(지정된 firewalld Zone)에서 유입되는 요청을 호스트 수신 포트(--host-port 또는 --port)에서
+  Docker 브릿지 내부 컨테이너(--cont-ip:--cont-port 또는 --port)로 전달(DNAT)하는 firewalld Policy를 생성합니다.
+  Egress Zone은 시스템에 설치된 firewall-cmd 버전에 따라 자동 설정됩니다 (2.3.2 이상 정식 릴리즈: HOST, 그 외: ANY).
+
+필수 파라미터 (Required Options):
+  --policy    <policy-name>   생성할 firewalld 정책(Policy) 이름 (예: workToMariaDB)
+  --zone      <zone-name>     패킷을 수신할 firewalld Ingress Zone 이름 (예: work, public)
+  --cont-ip   <ipv4-addr>     컨테이너 Unicast IPv4 주소 (Docker 브릿지에서 할당받은 IP, 예: 172.30.10.2)
+
+포트 파라미터 (Port Options - 상호 배타 선택):
+  [개별 지정 방식] (--port 옵션과 함께 사용 불가)
+  --host-port <port>          호스트 수신 포트 번호 (1 ~ 65535, 예: 13306)
+  --cont-port <port>          컨테이너 내부 수신 포트 번호 (1 ~ 65535, 예: 3306)
+
+  [단일 지정 방식] (--host-port, --cont-port 옵션과 함께 사용 불가)
+  --port      <port>          호스트 수신 포트와 컨테이너 내부 수신 포트를 동일한 값으로 설정 (1 ~ 65535, 예: 3306)
+
+기타 옵션 (Other Options):
+  --help                      이 도움말을 출력하고 종료합니다.
+
+참고:
+  --option=value 형식도 지원합니다. 동일 옵션의 중복 지정은 허용되지 않습니다.
+
+예시 (Example):
+  # 1) 호스트 포트(13306)와 컨테이너 포트(3306)가 다른 경우
+  $FILENAME --policy workToMariaDB --zone work --host-port 13306 --cont-ip 172.30.10.2 --cont-port 3306
+
+  # 2) 호스트 포트와 컨테이너 포트가 동일한 경우 (3306 -> 3306)
+  $FILENAME --policy workToMariaDB --zone work --port 3306 --cont-ip 172.30.10.2
+EOF
+}
+
+##
+# 파라미터 전달 오류 발생 시 오류 원인과 함께 스크립트 사용법(Usage)을 출력하고 종료(exit 2)합니다.
+#
+# @param $1 {string} 파라미터 오류 원인 메시지
+# @param $2 {string} 오류 발생 라인 번호 (선택)
+#
+# @return exit 2로 프로세스 즉시 종료
+##
+argument_error() {
+  local cause="${1:-잘못된 명령어 인수가 전달되었습니다.}"
+  local line="${2:-${BASH_LINENO[0]:-UNKNOWN}}"
+  IN_ERROR_HANDLER=true
+  print_error_cause "$cause" "$line" 2
+  usage >&2
+  exit 2
+}
+
+##
+# 런타임/검증 단계에서 동작을 멈춰야 하는 오류 발생 시,
+# 스크립트 사용법(Usage)을 출력하지 않고 오류 원인과 위치만 출력한 후 종료(exit 1)합니다.
+#
+# @param $1 {string} 오류 원인 메시지
+# @param $2 {string} 오류 발생 라인 번호 (선택)
+#
+# @return exit 1로 프로세스 즉시 종료
+##
+runtime_error() {
+  local cause="${1:-알 수 없는 실행 오류가 발생했습니다.}"
+  local line="${2:-${BASH_LINENO[0]:-UNKNOWN}}"
+  IN_ERROR_HANDLER=true
+  print_error_cause "$cause" "$line" 2
+  exit 1
+}
+
+##
+# 프로세스 종료(EXIT) 및 인터럽트 시그널(INT/TERM) 발생 시,
+# 커밋(검증 및 리로드)이 완료되지 않은 신규 영구 정책을 원자적으로 롤백(삭제)합니다.
+#
+# @param $1 {int} 종료 상태 코드
+# @param $2 {string} 마지막 실행 라인 번호
+#
+# @return 원래의 종료 코드로 프로세스 종료
+##
+cleanup_and_rollback_on_exit() {
+  local exit_status="${1:-0}"
+  local err_line="${2:-UNKNOWN}"
+  trap - EXIT INT TERM ERR
+
+  if [ "$POLICY_CREATED" = true ] && [ "$POLICY_COMMITTED" = false ] && [ -n "$POLICY_NAME" ] && [ ${#FWC_CMD[@]} -gt 0 ]; then
+    echo "⚠️  [ROLLBACK] 정책 구성이 완료되지 않아 생성 중이던 영구 정책('${POLICY_NAME}')을 롤백(삭제)합니다..." >&2
+    local rb_out=""
+    if ! rb_out=$("${FWC_CMD[@]}" --permanent "--delete-policy=${POLICY_NAME}" 2>&1); then
+      printf '❌ [ROLLBACK ERROR] 영구 정책(%s) 삭제 실패. 원인: %s\n' "$POLICY_NAME" "${rb_out:-진단 메시지 없음}" >&2
+    fi
+    POLICY_CREATED=false
+  fi
+
+  if (( exit_status != 0 )) && [ "$IN_ERROR_HANDLER" = false ]; then
+    print_error_cause "스크립트 실행이 비정상 중단되었습니다 (종료 코드: ${exit_status})." "$err_line" 2
+  fi
+
+  exit "$exit_status"
+}
+
+##
+# 터미널 너비에 맞춰 구분선을 출력합니다.
+#
+# @return 등호(=) 구분선 출력
+##
+print_separator() {
+  local cols=80
+  if [ -t 1 ]; then
+    cols=$(tput cols 2>/dev/null || echo "${COLUMNS:-80}")
+  else
+    cols="${COLUMNS:-80}"
+  fi
+
+  if ! [[ "$cols" =~ ^[0-9]+$ ]] || [ "$cols" -le 0 ]; then
+    cols=80
+  fi
+
+  local sep_len=$(( cols < 80 ? cols : 80 ))
+  local line
+  printf -v line '%*s' "$sep_len" ''
+  echo "${line// /=}"
+}
+
+##
+# firewall-cmd 명령을 실행하고, 실패 시 원본 진단 메시지를 포함하여 runtime_error를 호출합니다.
+#
+# @param $@ {array} firewall-cmd에 전달할 인자 목록
+#
+# @return 성공 시 명령 표준 출력 반환, 실패 시 runtime_error 호출 후 종료(exit 1)
+##
+run_fw() {
+  local output=""
+  if output=$("${FWC_CMD[@]}" "$@" 2>&1); then
+    printf '%s\n' "$output"
+  else
+    runtime_error "firewall-cmd $* 실행 실패. 원인: ${output:-진단 메시지 없음}" "${BASH_LINENO[0]:-$LINENO}"
+  fi
+}
+
+##
+# 공백/줄바꿈으로 구분된 단어 목록 내에 특정 단어가 정확히 포함되어 있는지 확인합니다.
+#
+# @param $1 {string} 공백 또는 줄바꿈으로 구분된 전체 문자열
+# @param $2 {string} 찾을 대상 단어
+#
+# @return 존재 시 0, 미존재 시 1 반환
+##
+contains_word() {
+  local list="${1//$'\n'/ }"
+  local wanted="$2"
+  local item
+  local -a items=()
+  read -r -a items <<< "$list"
+  for item in "${items[@]}"; do
+    [[ "$item" != "$wanted" ]] || return 0
+  done
+  return 1
+}
+
+##
+# 주어진 문자열이 유효한 컨테이너 Unicast IPv4 주소인지 정밀 검증합니다.
+# - 불필요한 선행 0(예: 010) 차단
+# - 각 옥텟 0~255 범위 검증
+# - 루프백(127.0.0.0/8), 0.0.0.0/8, 멀티캐스트/예약 대역(224.0.0.0+) 차단
+#
+# @param $1 {string} 검증 대상 IPv4 문자열
+#
+# @return 유효 시 0, 무효 시 argument_error 호출 후 종료(exit 2)
+##
+validate_ipv4() {
+  local ip="$1"
+  local octet
+  local -a octets=()
+
+  if [[ ! "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+    argument_error "컨테이너 IP('${ip}')가 올바른 IPv4 주소 형식이 아닙니다." "${BASH_LINENO[0]:-$LINENO}"
+  fi
+
+  IFS='.' read -r -a octets <<< "$ip"
+  for octet in "${octets[@]}"; do
+    if [[ "$octet" != "0" && "$octet" == 0* ]]; then
+      argument_error "IPv4 주소('${ip}') 각 옥텟의 불필요한 선행 0을 제거하십시오." "${BASH_LINENO[0]:-$LINENO}"
+    fi
+    if (( 10#$octet < 0 || 10#$octet > 255 )); then
+      argument_error "컨테이너 IP('${ip}')의 옥텟 값이 0~255 범위를 벗어났습니다." "${BASH_LINENO[0]:-$LINENO}"
+    fi
+  done
+
+  if (( 10#${octets[0]} < 1 || 10#${octets[0]} > 223 || 10#${octets[0]} == 127 )); then
+    argument_error "컨테이너 IP('${ip}')에는 루프백(127.x.x.x)이나 예약 대역이 아닌 Unicast IPv4 주소를 지정하십시오." "${BASH_LINENO[0]:-$LINENO}"
+  fi
+
+  return 0
+}
+
+##
+# 주어진 문자열이 유효한 TCP/UDP 포트 번호(1 ~ 65535)인지 검증합니다.
+#
+# @param $1 {string} 옵션 명칭 (오류 표시용)
+# @param $2 {string} 검증 대상 포트 번호 문자열
+#
+# @return 유효 시 0, 무효 시 argument_error 호출 후 종료(exit 2)
+##
+validate_port() {
+  local opt_name="$1"
+  local port="$2"
+
+  if [[ ! "$port" =~ ^[0-9]{1,5}$ ]]; then
+    argument_error "포트 번호('${opt_name} ${port}')가 유효하지 않습니다. (1 ~ 65535 범위의 정수만 허용)" "${BASH_LINENO[0]:-$LINENO}"
+  fi
+
+  if (( 10#$port < 1 || 10#$port > 65535 )); then
+    argument_error "포트 번호('${opt_name} ${port}')는 1 ~ 65535 범위여야 합니다." "${BASH_LINENO[0]:-$LINENO}"
+  fi
+
+  return 0
+}
+
+##
+# 주어진 문자열이 firewalld 정책(Policy) 및 Zone 이름 규칙에 부합하는지 검증합니다.
+#
+# @param $1 {string} 항목 구분 ('정책' 또는 'Zone')
+# @param $2 {string} 검증 대상 식별자 문자열
+#
+# @return 유효 시 0, 무효 시 argument_error 호출 후 종료(exit 2)
+##
+validate_identifier_name() {
+  local label="$1"
+  local name="$2"
+
+  if [[ ! "$name" =~ ^[A-Za-z0-9_][A-Za-z0-9._-]*$ ]]; then
+    argument_error "${label} 이름('${name}')이 유효하지 않습니다. (영문/숫자/_로 시작하며 영문, 숫자, '.', '_', '-' 만 허용)" "${BASH_LINENO[0]:-$LINENO}"
+  fi
+
+  return 0
+}
+
+##
+# CLI 인자를 파싱하고 중복 옵션, 필수 파라미터, 상호 배타 조건(--port vs --host-port/--cont-port) 및 포맷을 검증합니다.
+#
+# @param $@ {array} 스크립트 실행 인자 목록
+#
+# @return 성공 시 0, 실패 시 argument_error 호출 후 종료(exit 2)
+##
+parse_and_validate_arguments() {
+  if (( $# == 0 )); then
+    argument_error "명령어 파라미터가 지정되지 않았습니다." "$LINENO"
+  fi
+
+  OPT_VALUES=()
+  local key="" value=""
+
+  while (( $# > 0 )); do
+    case "$1" in
+      --help)
+        usage
+        exit 0
+        ;;
+      --policy|--zone|--port|--host-port|--cont-ip|--cont-port|\
+      --policy=*|--zone=*|--port=*|--host-port=*|--cont-ip=*|--cont-port=*)
+        key="${1%%=*}"
+        if [[ -n "${OPT_VALUES[$key]+present}" ]]; then
+          argument_error "동일한 옵션이 중복 지정되었습니다: '$key'" "$LINENO"
+        fi
+
+        if [[ "$1" == *=* ]]; then
+          value="${1#*=}"
+          shift 1
+        else
+          if (( $# < 2 )) || [[ -z "${2:-}" ]] || [[ "${2:-}" == -* ]]; then
+            argument_error "'$key' 옵션에 값이 지정되지 않았습니다." "$LINENO"
+          fi
+          value="$2"
+          shift 2
+        fi
+
+        if [[ -z "$value" ]]; then
+          argument_error "'$key' 옵션에 빈 값을 사용할 수 없습니다." "$LINENO"
+        fi
+        OPT_VALUES["$key"]="$value"
+        ;;
+      *)
+        argument_error "지원하지 않거나 알 수 없는 옵션입니다: '$1'" "$LINENO"
+        ;;
+    esac
+  done
+
+  POLICY_NAME="${OPT_VALUES[--policy]:-}"
+  INGRESS_ZONE="${OPT_VALUES[--zone]:-}"
+  COMMON_PORT="${OPT_VALUES[--port]:-}"
+  HOST_PORT="${OPT_VALUES[--host-port]:-}"
+  CONT_PORT="${OPT_VALUES[--cont-port]:-}"
+  CONT_IP="${OPT_VALUES[--cont-ip]:-}"
+
+  # 1. --port 와 (--host-port, --cont-port) 상호 배타 검증
+  if [[ -n "$COMMON_PORT" ]] && [[ -n "$HOST_PORT" || -n "$CONT_PORT" ]]; then
+    argument_error "'--port' 옵션은 '--host-port' 또는 '--cont-port' 옵션과 함께 사용할 수 없습니다." "$LINENO"
+  fi
+
+  # 2. 필수 파라미터 누락 검증
+  local -a missing_params=()
+  [[ -z "$POLICY_NAME" ]] && missing_params+=("--policy")
+  [[ -z "$INGRESS_ZONE" ]] && missing_params+=("--zone")
+  [[ -z "$CONT_IP" ]] && missing_params+=("--cont-ip")
+
+  if [[ -z "$COMMON_PORT" ]]; then
+    if [[ -z "$HOST_PORT" && -z "$CONT_PORT" ]]; then
+      missing_params+=("--port 또는 (--host-port 및 --cont-port)")
+    else
+      [[ -z "$HOST_PORT" ]] && missing_params+=("--host-port")
+      [[ -z "$CONT_PORT" ]] && missing_params+=("--cont-port")
+    fi
+  fi
+
+  if (( ${#missing_params[@]} > 0 )); then
+    argument_error "필수 파라미터가 누락되었습니다: ${missing_params[*]}" "$LINENO"
+  fi
+
+  # 3. 값 형식 유효성 검증 및 포트 숫자 정규화
+  validate_identifier_name "정책" "$POLICY_NAME"
+  validate_identifier_name "Zone" "$INGRESS_ZONE"
+
+  if [[ -n "$COMMON_PORT" ]]; then
+    validate_port "--port" "$COMMON_PORT"
+    HOST_PORT="$(( 10#$COMMON_PORT ))"
+    CONT_PORT="$(( 10#$COMMON_PORT ))"
+  else
+    validate_port "--host-port" "$HOST_PORT"
+    validate_port "--cont-port" "$CONT_PORT"
+    HOST_PORT="$(( 10#$HOST_PORT ))"
+    CONT_PORT="$(( 10#$CONT_PORT ))"
+  fi
+
+  validate_ipv4 "$CONT_IP"
+}
+
+##
+# 시스템에 설치된 firewall-cmd 버전을 파싱하고 Egress Zone 값을 결정합니다.
+# - 0.9.0 미만: Policy 기능 미지원으로 오류 종료
+# - 2.3.2 이상 (정식 릴리즈): HOST (일반 Ingress Zone + Egress HOST 의 nat PREROUTING 포워딩 패치 포함)
+# - 2.3.2 미만 또는 프리릴리즈(alpha/beta/rc/dev): ANY (구버전 호환)
+#
+# @param $1 {string} firewall-cmd --version 출력 문자열
+#
+# @return 전역 변수 FW_MAJOR, FW_MINOR, FW_PATCH, FW_SUFFIX, EGRESS_ZONE 설정
+##
+parse_version_and_select_egress() {
+  local version="$1"
+
+  if [[ ! "$version" =~ ^([0-9]{1,4})\.([0-9]{1,4})(\.([0-9]{1,4}))?([-+~._a-zA-Z0-9]*)$ ]]; then
+    runtime_error "firewall-cmd 버전을 해석할 수 없습니다: '${version}'" "$LINENO"
+  fi
+
+  FW_MAJOR="$(( 10#${BASH_REMATCH[1]} ))"
+  FW_MINOR="$(( 10#${BASH_REMATCH[2]} ))"
+  FW_PATCH="$(( 10#${BASH_REMATCH[4]:-0} ))"
+  FW_SUFFIX="${BASH_REMATCH[5]:-}"
+
+  if (( FW_MAJOR == 0 && FW_MINOR < 9 )); then
+    runtime_error "firewalld Policy 기능을 사용하려면 firewalld 0.9.0 이상이 필요합니다 (현재 버전: ${version})." "$LINENO"
+  fi
+
+  EGRESS_ZONE="ANY"
+  if (( FW_MAJOR > 2 || (FW_MAJOR == 2 && (FW_MINOR > 3 || (FW_MINOR == 3 && FW_PATCH >= 2))) )); then
+    EGRESS_ZONE="HOST"
+  fi
+
+  # 프리릴리즈(alpha/beta/rc/dev) 빌드인 경우 보수적으로 ANY 적용
+  if [[ "${FW_SUFFIX,,}" =~ (alpha|beta|rc|dev) ]]; then
+    EGRESS_ZONE="ANY"
+  fi
+}
+
+##
+# firewall-cmd 명령어 존재 여부, 실행 권한(sudo), firewalld 데몬 구동 상태 및 버전을 점검합니다.
+#
+# @param 없음
+#
+# @return 전역 배열 SUDO_CMD, FWC_CMD 및 버전 기반 EGRESS_ZONE 초기화
+##
+ensure_firewalld_ready() {
+  if ! command -v firewall-cmd >/dev/null 2>&1; then
+    runtime_error "시스템에서 'firewall-cmd' 명령어를 찾을 수 없습니다." "$LINENO"
+  fi
+
+  if (( EUID == 0 )); then
+    SUDO_CMD=()
+    FWC_CMD=(firewall-cmd)
+  else
+    if ! command -v sudo >/dev/null 2>&1; then
+      runtime_error "루트 권한 작업을 위해 'sudo' 명령어가 필요하나 시스템에 설치되어 있지 않습니다." "$LINENO"
+    fi
+
+    if ! sudo -n true 2>/dev/null; then
+      echo "🔐 [AUTH] 방화벽 정책(Policy) 조회 및 생성을 위해 sudo 권한 확인이 필요합니다."
+      sudo -v || {
+        runtime_error "sudo 권한 획득에 실패하여 작업을 진행할 수 없습니다." "$LINENO"
+      }
+    fi
+    SUDO_CMD=(sudo)
+    FWC_CMD=(sudo firewall-cmd)
+  fi
+
+  run_fw --state >/dev/null
+
+  FWC_VERSION="$(run_fw --version)"
+  FWC_VERSION="${FWC_VERSION#"${FWC_VERSION%%[![:space:]]*}"}"
+  FWC_VERSION="${FWC_VERSION%"${FWC_VERSION##*[![:space:]]}"}"
+
+  parse_version_and_select_egress "$FWC_VERSION"
+}
+
+##
+# [전처리 검증]
+# 1. 입력된 '--zone'이 firewalld의 Permanent 및 Runtime 양쪽에 모두 존재하는지 검증합니다.
+# 2. 입력된 '--policy'가 기존 Zone 이름과 충돌(NAME_CONFLICT)하지 않는지 검증합니다.
+# 3. 입력된 '--policy'가 Permanent 및 Runtime에 이미 존재하는지 검증합니다.
+#
+# @param 없음
+#
+# @return 검증 통과 시 0, 실패 시 사용법 출력 없이 오류 원인만 출력 후 종료(exit 1)
+##
+preflight_validate() {
+  echo "🔍 [전처리] 방화벽 Zone 및 Policy 사전 무결성 검증을 시작합니다..."
+  echo "  ℹ️  감지된 firewall-cmd 버전: ${FWC_VERSION} -> 자동 선택된 Egress Zone: ${EGRESS_ZONE}"
+
+  local perm_zones runtime_zones perm_policies runtime_policies
+  perm_zones="$(run_fw --permanent --get-zones)"
+  runtime_zones="$(run_fw --get-zones)"
+
+  # 1. Zone 존재 여부 개별 검증 (Permanent & Runtime)
+  if ! contains_word "$perm_zones" "$INGRESS_ZONE"; then
+    runtime_error "permanent 설정에 지정한 Zone('${INGRESS_ZONE}')이 존재하지 않습니다. (Permanent Zones: ${perm_zones})" "$LINENO"
+  fi
+  if ! contains_word "$runtime_zones" "$INGRESS_ZONE"; then
+    runtime_error "runtime 설정에 지정한 Zone('${INGRESS_ZONE}')이 존재하지 않습니다. (Runtime Zones: ${runtime_zones})" "$LINENO"
+  fi
+  echo "  ✅ [통과] 수신 Zone('${INGRESS_ZONE}') 존재 확인 완료 (Permanent & Runtime)."
+
+  # 2. Policy 이름과 기존 Zone 이름 충돌 검사 (firewalld 제약사항: Policy는 Zone과 동일한 이름을 가질 수 없음)
+  if contains_word "$perm_zones $runtime_zones" "$POLICY_NAME"; then
+    runtime_error "정책 이름('${POLICY_NAME}')은 기존 firewalld Zone 이름과 동일할 수 없습니다 (NAME_CONFLICT)." "$LINENO"
+  fi
+
+  # 3. Policy 중복 존재 여부 개별 검증 (Permanent & Runtime)
+  perm_policies="$(run_fw --permanent --get-policies)"
+  if contains_word "$perm_policies" "$POLICY_NAME"; then
+    runtime_error "동일한 이름의 정책('${POLICY_NAME}')이 permanent 설정에 이미 존재하므로 작업을 중단합니다." "$LINENO"
+  fi
+
+  runtime_policies="$(run_fw --get-policies)"
+  if contains_word "$runtime_policies" "$POLICY_NAME"; then
+    runtime_error "동일한 이름의 정책('${POLICY_NAME}')이 runtime 설정에 이미 존재하므로 작업을 중단합니다." "$LINENO"
+  fi
+
+  echo "  ✅ [통과] 정책 이름('${POLICY_NAME}') 중복 없음 확인 완료 (Permanent & Runtime)."
+}
+
+##
+# 컨테이너 포트 포워딩을 위한 firewalld Policy를 생성하고,
+# --check-config 사전 정합성 검증을 거친 후 방화벽을 리로드합니다.
+#
+# @param 없음
+#
+# @return 정책 생성, 검증 및 리로드 진행 상태 출력
+##
+create_docker_forward_policy() {
+  local rich_rule="rule family=\"ipv4\" forward-port port=\"${HOST_PORT}\" protocol=\"tcp\" to-port=\"${CONT_PORT}\" to-addr=\"${CONT_IP}\""
+  local -a policy_fw=(--permanent "--policy=${POLICY_NAME}")
+
+  echo ""
+  print_separator
+  echo "🛡️  [정책 생성] firewalld 컨테이너 포트 포워딩 정책 구성을 시작합니다."
+  print_separator
+  printf " - %-16s: %s\n" "firewall-cmd Ver" "${FWC_VERSION}"
+  printf " - %-16s: %s\n" "Policy Name" "${POLICY_NAME}"
+  printf " - %-16s: %s\n" "Ingress Zone" "${INGRESS_ZONE}"
+  printf " - %-16s: %s\n" "Egress Zone" "${EGRESS_ZONE}"
+  printf " - %-16s: %s\n" "Target" "CONTINUE"
+  printf " - %-16s: %s (tcp) -> %s:%s\n" "Forwarding" "Host:${HOST_PORT}" "${CONT_IP}" "${CONT_PORT}"
+  printf " - %-16s: %s\n" "Rich Rule" "${rich_rule}"
+  print_separator
+
+  # 1. 신규 정책 생성
+  echo "  1️⃣  신규 영구 정책 생성 (--new-policy=${POLICY_NAME})..."
+  run_fw --permanent "--new-policy=${POLICY_NAME}" >/dev/null
+  POLICY_CREATED=true
+
+  # 2. Ingress Zone 등록
+  echo "  2️⃣  Ingress Zone 등록 (--add-ingress-zone=${INGRESS_ZONE})..."
+  run_fw "${policy_fw[@]}" "--add-ingress-zone=${INGRESS_ZONE}" >/dev/null
+
+  # 3. Egress Zone 등록 (firewall-cmd 버전에 따라 HOST 또는 ANY 지정)
+  echo "  3️⃣  Egress Zone 등록 (--add-egress-zone=${EGRESS_ZONE})..."
+  run_fw "${policy_fw[@]}" "--add-egress-zone=${EGRESS_ZONE}" >/dev/null
+
+  # 4. Target 설정 (CONTINUE)
+  echo "  4️⃣  정책 Target 설정 (--set-target=CONTINUE)..."
+  run_fw "${policy_fw[@]}" --set-target=CONTINUE >/dev/null
+
+  # 5. Forward-Port Rich Rule 등록
+  echo "  5️⃣  Forward-Port Rich Rule 추가..."
+  run_fw "${policy_fw[@]}" "--add-rich-rule=${rich_rule}" >/dev/null
+
+  # 6. 리로드 전 영구 설정 정합성 사전 검증 (--check-config)
+  echo "  6️⃣  방화벽 영구 설정 정합성 검증 (firewall-cmd --check-config)..."
+  run_fw --check-config >/dev/null
+
+  # 7. 방화벽 리로드하여 런타임 즉시 반영
+  echo "  🔄 방화벽 규칙 리로드 중 (firewall-cmd --reload)..."
+  run_fw --reload >/dev/null
+
+  # 검증 및 리로드까지 모두 성공하였으므로 롤백 대상에서 해제 (커밋 완료)
+  POLICY_COMMITTED=true
+  echo "  ✅ 방화벽 설정 검증, 리로드 및 정책 활성화 완료."
+}
+
+##
+# [후처리 검증]
+# 생성 및 리로드된 정책이 런타임에 정상 반영되었는지 확인하고 상세 정보를 출력합니다.
+#
+# @param 없음
+#
+# @return 생성된 정책 상세 정보 출력
+##
+postflight_verify() {
+  echo ""
+  print_separator
+  echo "📋 [후처리 검증] 생성된 정책('${POLICY_NAME}') 런타임 적용 결과"
+  print_separator
+
+  local info_out=""
+  info_out="$(run_fw "--info-policy=${POLICY_NAME}")"
+  printf '%s\n' "$info_out"
+
+  print_separator
+  echo "🎉 모든 작업이 성공적으로 완료되었습니다!"
+}
+
+##
+# 스크립트 메인 진입점 함수입니다.
+#
+# @param $@ {array} CLI 인자 목록
+#
+# @return 정상 종료 시 0
+##
+main() {
+  export LC_ALL=C
+  POLICY_CREATED=false
+  POLICY_COMMITTED=false
+  IN_ERROR_HANDLER=false
+
+  trap 'cleanup_and_rollback_on_exit "$?" "$LINENO"' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+
+  parse_and_validate_arguments "$@"
+  ensure_firewalld_ready
+  preflight_validate
+  create_docker_forward_policy
+  postflight_verify
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

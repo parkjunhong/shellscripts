@@ -1,0 +1,176 @@
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : fwc-docker-policy bash completion.
+# @license : Apache License 2.0
+# @since : 2026-10-24
+# @desc : support RHEL 8+, Oracle Linux 8+, Ubuntu 20.04+, RockyOS 8+, CentOS 8+
+# @installation :
+# 1. insert 'source <path>/fwc-docker-policy.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/fwc-docker-policy.completion' into '/etc/bashrc' or '/usr/share/bash-completion/completions/' for all users.
+# =======================================
+
+# =======================================
+# [Bash Completion Parameter Description]
+# 1. COMP_WORDS: an array containing all individual words in the current command line
+#    (현재 커맨드 라인에 입력된 단어들의 배열)
+# 2. COMP_CWORD: an index of the word containing the current cursor position
+#    (현재 커서가 위치한 단어의 인덱스)
+# 3. COMP_LINE: the current command line string
+#    (현재까지 커맨드 라인에 입력된 전체 문자열)
+# 4. COMPREPLY: an array variable from which Bash reads the possible completions
+#    (bash completion이 제안할 단어들의 배열)
+#
+# Arguments of completion function:
+# - $1: name of the command whose arguments are being completed (명령의 이름)
+# - $2: word being completed (현재 커서에서 완성하려고 하는 단어)
+# - $3: word preceding the word being completed (현재 완성하려는 단어의 바로 이전 단어)
+# =======================================
+
+##
+# 시스템의 firewalld에서 사용 가능한 Zone 목록을 조회합니다.
+# 비루트 사용자 환경에서도 동작하도록 단계별 폴백(firewall-cmd -> sudo -n -> XML 디렉터리)을 수행합니다.
+#
+# @return 공백으로 구분된 firewalld zone 목록 출력
+##
+_fwc_docker_policy_get_zones() {
+  local zones=""
+  if command -v firewall-cmd >/dev/null 2>&1; then
+    zones=$(firewall-cmd --get-zones 2>/dev/null \
+      || firewall-cmd --permanent --get-zones 2>/dev/null \
+      || sudo -n firewall-cmd --get-zones 2>/dev/null \
+      || sudo -n firewall-cmd --permanent --get-zones 2>/dev/null \
+      || true)
+  fi
+
+  # 비루트 상태에서 sudo -n이 불가할 경우 표준 디렉터리(/etc/firewalld/zones, /usr/lib/firewalld/zones) 폴백 조회
+  if [[ -z "$zones" ]]; then
+    local zfile zname
+    local -a fallback_zones=()
+    for zfile in /etc/firewalld/zones/*.xml /usr/lib/firewalld/zones/*.xml; do
+      [[ -e "$zfile" ]] || continue
+      zname="$(basename "$zfile" .xml)"
+      fallback_zones+=("$zname")
+    done
+    if (( ${#fallback_zones[@]} > 0 )); then
+      zones=$(printf "%s\n" "${fallback_zones[@]}" | sort -u | tr '\n' ' ')
+    fi
+  fi
+
+  echo "$zones"
+}
+
+##
+# fwc-docker-policy 명령어에 대한 Bash 자동완성 처리 함수입니다.
+# - bash-completion의 _init_completion(-n =) 지원 및 수동 COMP_WORDS 파싱 폴백 제공
+# - 커서가 명령행 중간에 위치한 경우에도 현재 커서(cword)를 제외한 전체 토큰을 검사하여
+#   중복 옵션 및 상호 배타 옵션(--port <-> --host-port/--cont-port)을 정확히 필터링합니다.
+#
+# @param $1 {string} 명령어 이름 (Command name)
+# @param $2 {string} 현재 완성 중인 단어 (Current word)
+# @param $3 {string} 직전 입력된 단어 (Previous word)
+#
+# @return COMPREPLY 배열 설정
+##
+_fwc_docker_policy_completions() {
+  # shellcheck disable=SC2034
+  local cur prev words cword
+  local zones candidate token opt i
+  local has_port=false has_split_port=false
+  local -a used_opts=() available_opts=()
+
+  COMPREPLY=()
+
+  if declare -F _init_completion >/dev/null 2>&1; then
+    _init_completion -n = || return 0
+  else
+    words=("${COMP_WORDS[@]}")
+    cword=$COMP_CWORD
+    cur="${words[cword]:-}"
+    prev="${words[cword-1]:-}"
+
+    if [[ "$cur" == "=" && "$cword" -ge 1 ]]; then
+      if [[ "$prev" == "--zone" ]]; then
+        zones="$(_fwc_docker_policy_get_zones)"
+        COMPREPLY=( $(compgen -W "$zones" -- "") )
+      fi
+      return 0
+    elif [[ "$prev" == "=" && "$cword" -ge 2 ]]; then
+      prev="${words[cword-2]}"
+    fi
+  fi
+
+  # 1. 현재 커서 위치(cword)를 제외한 모든 토큰을 스캔하여 사용된 옵션 및 포트 상호 배타 상태 파악
+  for (( i=1; i < ${#words[@]}; i++ )); do
+    (( i != cword )) || continue
+    token="${words[i]%%=*}"
+    case "$token" in
+      --port)
+        has_port=true
+        used_opts+=("--port")
+        ;;
+      --host-port|--cont-port)
+        has_split_port=true
+        used_opts+=("$token")
+        ;;
+      --policy|--zone|--cont-ip|--help)
+        used_opts+=("$token")
+        ;;
+    esac
+  done
+
+  # 2. --옵션=값 형태로 입력 중인 경우 처리
+  case "$cur" in
+    --zone=*)
+      zones="$(_fwc_docker_policy_get_zones)"
+      while IFS= read -r candidate; do
+        [[ -n "$candidate" ]] && COMPREPLY+=("--zone=$candidate")
+      done < <(compgen -W "$zones" -- "${cur#--zone=}")
+      return 0
+      ;;
+    --*=*)
+      return 0
+      ;;
+  esac
+
+  # 3. 직전 토큰(prev)이 값을 요구하는 옵션 플래그인 경우 처리
+  case "$prev" in
+    --zone)
+      zones="$(_fwc_docker_policy_get_zones)"
+      while IFS= read -r candidate; do
+        [[ -n "$candidate" ]] && COMPREPLY+=("$candidate")
+      done < <(compgen -W "$zones" -- "$cur")
+      return 0
+      ;;
+    --policy|--port|--host-port|--cont-ip|--cont-port)
+      return 0
+      ;;
+  esac
+
+  # 4. 옵션 플래그 추천 목록 구성 (상호 배타 및 중복 옵션 제외)
+  local -a all_opts=(--policy --zone --port --host-port --cont-ip --cont-port --help)
+  local used
+  for opt in "${all_opts[@]}"; do
+    # 상호 배타 규칙 1: --port 사용 시 --port, --host-port, --cont-port 모두 제외
+    if [[ "$has_port" == true ]] && [[ "$opt" == "--port" || "$opt" == "--host-port" || "$opt" == "--cont-port" ]]; then
+      continue
+    fi
+    # 상호 배타 규칙 2: --host-port 또는 --cont-port 사용 시 --port 제외
+    if [[ "$has_split_port" == true ]] && [[ "$opt" == "--port" ]]; then
+      continue
+    fi
+
+    for used in "${used_opts[@]}"; do
+      [[ "$opt" != "$used" ]] || continue 2
+    done
+
+    available_opts+=("$opt")
+  done
+
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] && COMPREPLY+=("$candidate")
+  done < <(compgen -W "${available_opts[*]}" -- "$cur")
+
+  return 0
+}
+
+complete -F _fwc_docker_policy_completions fwc-docker-policy ./fwc-docker-policy
