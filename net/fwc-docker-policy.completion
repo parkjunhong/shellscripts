@@ -60,6 +60,49 @@ _fwc_docker_policy_get_zones() {
 }
 
 ##
+# '--zone' 옵션에 대해 단일 Zone 및 콤마(,)로 구분된 다중 Zone 자동완성을 수행합니다.
+# 이미 콤마 앞에 입력된 Zone은 후보 목록에서 자동으로 제외합니다.
+#
+# @param $1 {string} 현재 입력 중인 Zone 값 문자열 (예: 'tr' 또는 'trusted,wo')
+# @param $2 {string} 출력 접두사 (기본값: '', '--zone=*' 완성 시 '--zone=')
+#
+# @return COMPREPLY 배열에 완성 후보 추가
+##
+_fwc_docker_policy_complete_zones() {
+  local cur_val="$1"
+  local opt_prefix="${2:-}"
+  local zones
+  zones="$(_fwc_docker_policy_get_zones)"
+  [[ -n "$zones" ]] || return 0
+
+  local list_prefix=""
+  local partial="$cur_val"
+  local -a selected_zones=()
+  local -a zone_list=()
+  local -a filtered_zones=()
+  local z sel candidate
+
+  read -r -a zone_list <<< "$zones"
+
+  if [[ "$cur_val" == *,* ]]; then
+    list_prefix="${cur_val%,*},"
+    partial="${cur_val##*,}"
+    IFS=',' read -r -a selected_zones <<< "${cur_val%,*}"
+  fi
+
+  for z in "${zone_list[@]}"; do
+    for sel in "${selected_zones[@]}"; do
+      [[ "$z" != "$sel" ]] || continue 2
+    done
+    filtered_zones+=("$z")
+  done
+
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] && COMPREPLY+=("${opt_prefix}${list_prefix}${candidate}")
+  done < <(compgen -W "${filtered_zones[*]}" -- "$partial")
+}
+
+##
 # fwc-docker-policy 명령어에 대한 Bash 자동완성 처리 함수입니다.
 # - bash-completion의 _init_completion(-n =) 지원 및 수동 COMP_WORDS 파싱 폴백 제공
 # - 커서가 명령행 중간에 위치한 경우에도 현재 커서(cword)를 제외한 전체 토큰을 검사하여
@@ -74,7 +117,7 @@ _fwc_docker_policy_get_zones() {
 _fwc_docker_policy_completions() {
   # shellcheck disable=SC2034
   local cur prev words cword
-  local zones candidate token opt i
+  local candidate token opt i
   local has_port=false has_split_port=false
   local -a used_opts=() available_opts=()
 
@@ -90,8 +133,7 @@ _fwc_docker_policy_completions() {
 
     if [[ "$cur" == "=" && "$cword" -ge 1 ]]; then
       if [[ "$prev" == "--zone" ]]; then
-        zones="$(_fwc_docker_policy_get_zones)"
-        COMPREPLY=( $(compgen -W "$zones" -- "") )
+        _fwc_docker_policy_complete_zones "" ""
       fi
       return 0
     elif [[ "$prev" == "=" && "$cword" -ge 2 ]]; then
@@ -121,10 +163,7 @@ _fwc_docker_policy_completions() {
   # 2. --옵션=값 형태로 입력 중인 경우 처리
   case "$cur" in
     --zone=*)
-      zones="$(_fwc_docker_policy_get_zones)"
-      while IFS= read -r candidate; do
-        [[ -n "$candidate" ]] && COMPREPLY+=("--zone=$candidate")
-      done < <(compgen -W "$zones" -- "${cur#--zone=}")
+      _fwc_docker_policy_complete_zones "${cur#--zone=}" "--zone="
       return 0
       ;;
     --*=*)
@@ -135,10 +174,7 @@ _fwc_docker_policy_completions() {
   # 3. 직전 토큰(prev)이 값을 요구하는 옵션 플래그인 경우 처리
   case "$prev" in
     --zone)
-      zones="$(_fwc_docker_policy_get_zones)"
-      while IFS= read -r candidate; do
-        [[ -n "$candidate" ]] && COMPREPLY+=("$candidate")
-      done < <(compgen -W "$zones" -- "$cur")
+      _fwc_docker_policy_complete_zones "$cur" ""
       return 0
       ;;
     --policy|--port|--host-port|--cont-ip|--cont-port)

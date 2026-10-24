@@ -1,0 +1,82 @@
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : search files.
+# @license : Apache License 2.0
+# @since : 2026-10-24
+# @desc : support RHEL 8+, Oracle Linux 8+, Ubuntu 20.04+, RockyOS 8+
+# @installation : 
+# 1. insert 'source <path>/remove-script.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/remove-script' into '/etc/bashrc' or '/usr/share/bash-completion/completions/' for all users.
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+
+##
+# remove-script 명령에 대한 자동 완성 처리 함수
+# Auto-completion handler function for remove-script
+#
+# @param $1 {string} 실행된 명령 파일명 (Command name)
+# @param $2 {string} 현재 커서가 위치한 단어 (Current word)
+# @param $3 {string} 이전 단어 (Previous word)
+#
+# @return COMPREPLY 배열을 통한 추천 단어 목록 반환 (Return suggested tokens via COMPREPLY)
+##
+_remove_script_completion() {
+  local cur prev
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  # 지원 가능한 옵션 목록 (단축 옵션 완전 배제)
+  # List of supported options (Short options are strictly excluded)
+  local all_opts=("--name" "--force" "--dry-run" "--help")
+
+  # 1. 이전 인자가 파일 입력 옵션(--name)인 경우 파일 및 디렉토리 경로 추천
+  # Suggest files and directories when previous argument is --name
+  case "$prev" in
+    --name)
+      COMPREPLY=( $(compgen -f -- "$cur") )
+      return 0
+      ;;
+  esac
+
+  # 2. 이미 입력된 일회성 옵션 필터링
+  # Filter out options that have already been typed
+  local available_opts=()
+  for opt in "${all_opts[@]}"; do
+    local already_used=false
+    for ((i=1; i < COMP_CWORD; i++)); do
+      if [[ "${COMP_WORDS[i]}" == "$opt" ]]; then
+        already_used=true
+        break
+      fi
+    done
+
+    if [ "$already_used" = false ]; then
+      available_opts+=("$opt")
+    fi
+  done
+
+  # 3. '-' 또는 '--'를 입력하지 않고 <TAB>만 입력해도 전체 사용 가능 옵션 추천
+  # Suggest parameters on <TAB> even without typing '-' or '--'
+  if [[ -z "$cur" ]]; then
+    COMPREPLY=( $(compgen -W "${available_opts[*]}" -- "") )
+  else
+    COMPREPLY=( $(compgen -W "${available_opts[*]}" -- "$cur") )
+  fi
+}
+
+# completion 함수 등록
+# Register completion function
+complete -F _remove_script_completion remove-script
