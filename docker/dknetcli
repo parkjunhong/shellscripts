@@ -6,8 +6,8 @@
 # @since : 2026-10-19
 # @desc : support RHEL 7+, Oracle Linux 7+, Ubuntu 18.04+, RockyOS 8+, CentOS 7+
 # @installation : 
-# 1. insert 'source <path>/dknetcli.sh.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/dknetcli.sh' into '/etc/bashrc' or '/usr/share/bash-completion/completions/' for all users.
+# 1. insert 'source <path>/dknetcli.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the completion file to /etc/bash_completion.d/ or insert 'source <path>/dknetcli.completion' into '/etc/bashrc' or '/usr/share/bash-completion/completions/' for all users.
 # =======================================
 
 set -Eeuo pipefail
@@ -56,7 +56,7 @@ help(){
   echo "사용법:"
   echo "  $FILENAME network create --name <network-name> --bridge <bridge-name> --gateway <network-gateway> --subnet <network-subnet>"
   echo "  $FILENAME network delete --name <network-name>"
-  echo "  $FILENAME network inspect [--name <network-name>] [--containers]"
+  echo "  $FILENAME network inspect [--name <network-name|pattern>] [--containers]"
   echo "  $FILENAME --help"
   echo
   echo "서브커맨드:"
@@ -66,6 +66,7 @@ help(){
   echo
   echo "옵션 상세:"
   echo "  --name        <network-name>     대상 Docker 네트워크 이름"
+  echo "                                   (inspect 시 '%' 와일드카드 패턴 지원: <word>%, %<word>, %<word>%)"
   echo "  --bridge      <bridge-name>      호스트 커널에 바인딩할 브릿지 인터페이스 이름 (최대 15자, create 전용)"
   echo "  --gateway     <network-gateway>  네트워크 게이트웨이 IPv4 주소 (예: 172.31.255.1, create 전용)"
   echo "  --subnet      <network-subnet>   CIDR 포맷의 서브넷 대역 (예: 172.31.255.0/24, create 전용)"
@@ -172,6 +173,25 @@ validate_bridge_name() {
 validate_network_name() {
   local name="$1"
   if [[ ! "$name" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]]; then
+    return 1
+  fi
+  return 0
+}
+
+##
+# Docker 네트워크 검색용 이름 패턴이 유효한지 검증합니다.
+# - <word>   : 정확히 일치
+# - <word>%  : <word>로 시작하는 이름
+# - %<word>  : <word>로 끝나는 이름
+# - %<word>% : <word>가 포함된 이름
+#
+# @param $1 {string} 검증 대상 네트워크 이름 또는 검색 패턴
+#
+# @return 유효한 경우 0 반환, 유효하지 않은 경우 1 반환
+##
+validate_network_name_pattern() {
+  local pattern="$1"
+  if [[ ! "$pattern" =~ ^([a-zA-Z0-9][a-zA-Z0-9_.-]*%?|%[a-zA-Z0-9_.-]+%?)$ ]]; then
     return 1
   fi
   return 0
@@ -368,9 +388,16 @@ parse_arguments() {
   done
 
   if [[ -n "$NET_NAME" ]]; then
-    if ! validate_network_name "$NET_NAME"; then
-      help "네트워크 이름('$NET_NAME')이 올바르지 않습니다. (영문/숫자로 시작하며 영문, 숫자, '-', '_', '.' 만 허용)" "$LINENO"
-      exit 1
+    if [[ "$COMMAND_ACTION" == "inspect" ]]; then
+      if ! validate_network_name_pattern "$NET_NAME"; then
+        help "네트워크 검색 이름('$NET_NAME')이 올바르지 않습니다. (허용 형식: <word>, <word>%, %<word>, %<word>% / 허용 문자: 영문, 숫자, '-', '_', '.')" "$LINENO"
+        exit 1
+      fi
+    else
+      if ! validate_network_name "$NET_NAME"; then
+        help "네트워크 이름('$NET_NAME')이 올바르지 않습니다. (영문/숫자로 시작하며 영문, 숫자, '-', '_', '.' 만 허용)" "$LINENO"
+        exit 1
+      fi
     fi
   fi
 
@@ -627,31 +654,91 @@ inspect_single_network() {
 }
 
 ##
-# 전체 또는 특정 Docker bridge network 및 연결된 컨테이너 정보를 조회합니다.
+# 전체 또는 특정(단일 일치 / '<word>%', '%<word>', '%<word>%' 패턴 일치) Docker bridge network 및 연결된 컨테이너 정보를 조회합니다.
 #
 # @param 없음
 #
 # @return 조회된 결과 화면 출력
 ##
 inspect_docker_networks() {
+  local bridge_networks
+  bridge_networks=$("${DOCKER_CMD[@]}" network ls --filter "driver=bridge" --format '{{.Name}}' 2>/dev/null || true)
+
   if [[ -n "$NET_NAME" ]]; then
-    if ! "${DOCKER_CMD[@]}" network inspect "$NET_NAME" >/dev/null 2>&1; then
-      help "조회할 Docker 네트워크 '$NET_NAME'가 존재하지 않습니다." "$LINENO"
-      exit 1
-    fi
+    if [[ "$NET_NAME" == *%* ]]; then
+      local word=""
+      local mode=""
+      if [[ "$NET_NAME" == %*% ]]; then
+        word="${NET_NAME#%}"
+        word="${word%\%}"
+        mode="contains"
+      elif [[ "$NET_NAME" == *% ]]; then
+        word="${NET_NAME%\%}"
+        mode="prefix"
+      elif [[ "$NET_NAME" == %* ]]; then
+        word="${NET_NAME#%}"
+        mode="suffix"
+      fi
 
-    local driver
-    driver=$("${DOCKER_CMD[@]}" network inspect "$NET_NAME" --format '{{.Driver}}' 2>/dev/null || true)
-    if [[ "$driver" != "bridge" ]]; then
-      help "네트워크 '$NET_NAME'는 'bridge' 드라이버 네트워크가 아닙니다 (현재 드라이버: '$driver')." "$LINENO"
-      exit 1
-    fi
+      local matched_networks=()
+      local net
+      while read -r net; do
+        [[ -n "$net" ]] || continue
+        case "$mode" in
+          contains)
+            if [[ "$net" == *"${word}"* ]]; then
+              matched_networks+=("$net")
+            fi
+            ;;
+          prefix)
+            if [[ "$net" == "${word}"* ]]; then
+              matched_networks+=("$net")
+            fi
+            ;;
+          suffix)
+            if [[ "$net" == *"${word}" ]]; then
+              matched_networks+=("$net")
+            fi
+            ;;
+        esac
+      done <<< "$bridge_networks"
 
-    inspect_single_network "$NET_NAME" "$OPT_CONTAINERS"
+      if (( ${#matched_networks[@]} == 0 )); then
+        echo "ℹ️  조건('${NET_NAME}')에 일치하는 Docker bridge 네트워크가 존재하지 않습니다."
+        return 0
+      fi
+
+      for net in "${matched_networks[@]}"; do
+        inspect_single_network "$net" "$OPT_CONTAINERS"
+      done
+    else
+      local exact_match=false
+      local net
+      while read -r net; do
+        if [[ -n "$net" && "$net" == "$NET_NAME" ]]; then
+          exact_match=true
+          break
+        fi
+      done <<< "$bridge_networks"
+
+      if [[ "$exact_match" == "false" ]]; then
+        local existing_name
+        existing_name=$("${DOCKER_CMD[@]}" network inspect "$NET_NAME" --format '{{.Name}}' 2>/dev/null || true)
+        if [[ "$existing_name" == "$NET_NAME" ]]; then
+          local driver
+          driver=$("${DOCKER_CMD[@]}" network inspect "$NET_NAME" --format '{{.Driver}}' 2>/dev/null || true)
+          if [[ "$driver" != "bridge" ]]; then
+            help "네트워크 '$NET_NAME'는 'bridge' 드라이버 네트워크가 아닙니다 (현재 드라이버: '$driver')." "$LINENO"
+            exit 1
+          fi
+        fi
+        help "조회할 Docker 네트워크 '$NET_NAME'가 존재하지 않습니다." "$LINENO"
+        exit 1
+      fi
+
+      inspect_single_network "$NET_NAME" "$OPT_CONTAINERS"
+    fi
   else
-    local bridge_networks
-    bridge_networks=$("${DOCKER_CMD[@]}" network ls --filter "driver=bridge" --format '{{.Name}}' 2>/dev/null || true)
-
     if [[ -z "${bridge_networks// /}" ]]; then
       echo "ℹ️  시스템에 등록된 Docker bridge 네트워크가 존재하지 않습니다."
       return 0
