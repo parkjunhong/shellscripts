@@ -1,0 +1,1239 @@
+#!/usr/bin/env bash
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : scriptctl: Custom Script & Bash Completion Lifecycle Manager
+# @license : Apache License 2.0
+# @since : 2026-10-26
+# @desc : support RHEL 8+, Oracle Linux 8+, Ubuntu 20.04+, RockyOS 8+, CentOS 7+
+# @installation :
+# 1. insert 'source <path>/scriptctl.completion' into ~/.bashrc or ~/.bash_profile for a personal usage.
+# 2. copy the completion file to /usr/share/bash-completion/completions/ (1st) or /etc/bash_completion.d/ (2nd) for all users.
+# =======================================
+
+set -Eeuo pipefail
+
+readonly FILENAME="$(basename "$0")"
+
+# OS 핵심 유틸리티 보호 블랙리스트 (설치 덮어쓰기 및 삭제 양방향 차단)
+readonly -a PROTECTED_TOOLS=(
+  "bash" "sh" "dash" "zsh" "ksh" "csh" "tcsh"
+  "ls" "rm" "cp" "mv" "cat" "chmod" "chown" "chgrp" "mkdir" "rmdir"
+  "touch" "ln" "sed" "awk" "grep" "egrep" "fgrep" "find" "tar"
+  "gzip" "gunzip" "bzip2" "xz" "systemctl" "journalctl" "init" "service"
+  "mount" "umount" "df" "du" "ps" "top" "kill" "killall" "pkill"
+  "sudo" "su" "passwd" "login" "ssh" "sshd" "curl" "wget" "python"
+  "python3" "perl" "ruby" "gcc" "make" "apt" "apt-get" "dpkg" "yum"
+  "dnf" "rpm" "which" "whereis" "env" "vi" "vim" "nano"
+)
+
+##
+# 오류 원인 및 콜스택 진단 정보를 표준 에러(stderr)로 출력합니다.
+#
+# @param $1 {string} 오류 원인 메시지
+# @param $2 {number} 오류 발생 행 번호
+#
+# @return 없음
+##
+print_error_box() {
+  local cause="${1:-}"
+  local line="${2:-unknown}"
+  [[ -n "$cause" ]] || return 0
+
+  local indent=10
+  local formatl=" - %-${indent}s: %s\n"
+  local formatr=" - %${indent}s: %s\n"
+  echo >&2
+  echo "================================================================================" >&2
+  printf "$formatl" "filename" "$FILENAME" >&2
+  printf "$formatl" "line" "$line" >&2
+  printf "$formatl" "callstack" "" >&2
+  local idx=1
+  local func
+  for func in "${FUNCNAME[@]:2}"; do
+    printf "$formatr" "[${idx}]" "$func" >&2
+    ((idx++)) || true
+  done
+  printf "$formatl" "cause" "$cause" >&2
+  echo "================================================================================" >&2
+}
+
+##
+# 전체 사용법 또는 서브커맨드별 도움말을 출력합니다.
+#
+# @param $1 {string} 오류 원인 메시지 (선택)
+# @param $2 {number} 오류 발생 라인 번호 (선택)
+# @param $3 {string} 서브커맨드 이름 (install | remove | list | empty)
+#
+# @return 없음
+##
+help() {
+  local cause="${1:-}"
+  local line="${2:-unknown}"
+  local subcmd="${3:-}"
+
+  if [[ -n "$cause" ]]; then
+    print_error_box "$cause" "$line"
+  fi
+
+  case "$subcmd" in
+    install)
+      cat <<EOF
+
+📦 사용법 (Usage - install):
+  $FILENAME install --script <스크립트_경로> [--target <local|global>] [--force] [--dry-run]
+  $FILENAME install --help
+
+📝 설명 (Description):
+  지정된 커스텀 스크립트를 개인 실행 공간(\$HOME/bin) 또는 전역 실행 공간(/usr/local/bin)에 설치하고,
+  동일 디렉토리에 연관된 '<script>.completion' 파일이 존재하면 시스템 자동 완성 경로에 함께 설치합니다.
+
+⚙️  옵션 (Options):
+  --script <PATH>           설치할 스크립트 파일 경로 (필수, 절대/상대 경로 지원)
+  --target <local|global>   설치 대상 범위 (기본값: local)
+                            - local  : 개인 사용자 전용 (\$HOME/bin, 미존재 시 자동 생성)
+                            - global : 전체 사용자 공용 (/usr/local/bin)
+  --force                   동일 이름의 파일이 이미 설치되어 있을 때 확인 없이 덮어쓰기
+  --dry-run                 실제 설치를 수행하지 않고 예정된 작업 과정과 필요 권한만 출력
+  --help                    install 서브커맨드 도움말 출력
+
+📂 Bash Completion 설치 경로 우선순위:
+  - 1순위 (최신 경로) : /usr/share/bash-completion/completions/
+  - 2순위 (대체 경로) : /etc/bash_completion.d/
+
+💡 예시 (Examples):
+  $FILENAME install --script ./ps-port
+  $FILENAME install --script ../net/ps-port/ps-port --target global --dry-run
+  $FILENAME install --script ../net/ps-port/ps-port --target global
+EOF
+      ;;
+    remove)
+      cat <<EOF
+
+🗑️  사용법 (Usage - remove):
+  $FILENAME remove --name <스크립트명_또는_경로> [--target <local|global|all>] [--force] [--dry-run]
+  $FILENAME remove --help
+
+📝 설명 (Description):
+  설치된 커스텀 스크립트와 연관된 bash completion 파일을 탐색하여 안전하게 삭제합니다.
+
+⚙️  옵션 (Options):
+  --name <NAME_OR_PATTERN>      삭제할 스크립트 파일명, 경로 또는 와일드카드 패턴 (필수)
+                                - 와일드카드(*, ?, [...]) 사용 시 셸 확장을 막기 위해 따옴표로 감싸세요 (예: 'yes-*')
+  --target <local|global|all>   탐색 및 삭제 범위 지정 (기본값: all)
+                                - local  : 개인 실행 공간(\$HOME/bin, \$HOME/.local/bin)만 탐색
+                                - global : 전역 실행 공간(/usr/local/bin)만 탐색
+                                - all    : 개인/전역 실행 공간 및 전체 \$PATH 탐색
+  --force                       사용자 확인 대화창(y/N)을 건너뛰고 즉시 삭제
+  --dry-run                     실제 삭제 없이 탐색된 파일 목록과 필요 권한만 출력
+  --help                        remove 서브커맨드 도움말 출력
+
+💡 예시 (Examples):
+  $FILENAME remove --name ps-port
+  $FILENAME remove --name 'yes-*' --target local --dry-run
+  $FILENAME remove --name ps-port --target local
+  $FILENAME remove --name ps-port --force
+EOF
+      ;;
+    list)
+      cat <<EOF
+
+📋 사용법 (Usage - list):
+  $FILENAME list [--target <local|global|all>]
+  $FILENAME list --help
+
+📝 설명 (Description):
+  개인 실행 공간(\$HOME/bin, \$HOME/.local/bin) 및 전역 실행 공간(/usr/local/bin)에 설치된
+  커스텀 스크립트 목록과 연관된 bash completion 설치 상태를 조회합니다.
+
+⚙️  옵션 (Options):
+  --target <local|global|all>   조회할 대상 범위 (기본값: all)
+  --help                        list 서브커맨드 도움말 출력
+EOF
+      ;;
+    *)
+      cat <<EOF
+
+🛠️  사용법 (Usage):
+  $FILENAME <command> [options]
+  $FILENAME --help
+
+📝 설명 (Description):
+  커스텀 스크립트와 연관된 Bash 자동 완성(.completion) 파일의 설치(install), 삭제(remove), 조회(list)를
+  통합 관리하는 CLI 도구입니다.
+  - 단축 옵션(Short Option)은 지원하지 않으며, 전체 옵션명(Long Option)만 사용 가능합니다.
+  - 본 도구는 외부에서 'sudo'로 직접 실행할 수 없으며, 권한이 필요한 시점에 내부적으로 sudo를 요청합니다.
+
+🧭 명령어 (Commands):
+  install   커스텀 스크립트 및 연관 bash completion 파일 설치
+  remove    설치된 커스텀 스크립트 및 연관 bash completion 파일 삭제
+  list      설치된 커스텀 스크립트 및 연관 bash completion 현황 조회
+
+⚙️  명령어별 주요 옵션:
+  [install]
+    --script <PATH>               설치할 스크립트 경로 (필수, 절대/상대 경로)
+    --target <local|global>       설치 범위 (기본값: local -> \$HOME/bin, global -> /usr/local/bin)
+    --force                       기존 파일 확인 없이 덮어쓰기
+    --dry-run                     작업 과정만 시뮬레이션 출력
+
+  [remove]
+    --name <NAME>                 삭제할 스크립트 이름 또는 경로 (필수)
+    --target <local|global|all>   탐색 범위 (기본값: all, local -> \$HOME/bin & \$HOME/.local/bin)
+    --force                       확인 프롬프트(y/N) 없이 즉시 삭제
+    --dry-run                     삭제 대상 및 필요 권한만 시뮬레이션 출력
+
+  [list]
+    --target <local|global|all>   조회 범위 (기본값: all)
+
+💡 예시 (Examples):
+  $FILENAME install --script ./ps-port
+  $FILENAME install --script ./ps-port --target global --dry-run
+  $FILENAME remove --name ps-port --target local
+  $FILENAME list
+EOF
+      ;;
+  esac
+}
+
+##
+# 외부에서 sudo(또는 root)로 스크립트 자체를 권한 승격하여 실행했는지 검사합니다.
+#
+# @return 강제 승격 실행 감지 시 에러 출력 후 exit 1
+##
+reject_external_sudo() {
+  if [[ "${EUID:-$(id -u)}" -eq 0 || -n "${SUDO_USER:-}" || -n "${SUDO_UID:-}" ]]; then
+    help "🚫 보안 정책 위반: '$FILENAME' 스크립트 자체를 sudo 또는 root 권한으로 직접 실행할 수 없습니다. 필요한 시점에 내부적으로 sudo 권한을 요청합니다." "${BASH_LINENO[0]:-$LINENO}"
+    exit 1
+  fi
+}
+
+##
+# 대상 경로에 파일 생성/덮어쓰기 작업을 수행할 때 sudo 권한이 필요한지 판별합니다.
+#
+# @param $1 {string} 검사할 대상 파일 또는 디렉토리 경로
+#
+# @return 0 (sudo 필요), 1 (일반 사용자 권한으로 가능)
+##
+is_sudo_required_for_write() {
+  local target_path="$1"
+  local check_dir="$target_path"
+
+  while [[ ! -e "$check_dir" && "$check_dir" != "/" && "$check_dir" != "." ]]; do
+    check_dir="$(dirname "$check_dir")"
+  done
+
+  if [[ -f "$target_path" || -L "$target_path" ]]; then
+    local parent_dir
+    parent_dir="$(dirname "$target_path")"
+    if [[ ! -w "$parent_dir" || ! -w "$target_path" ]]; then
+      return 0
+    fi
+    return 1
+  fi
+
+  if [[ ! -w "$check_dir" ]]; then
+    return 0
+  fi
+
+  return 1
+}
+
+##
+# 존재하는 대상 파일을 삭제할 때 sudo 권한이 필요한지 판별합니다.
+#
+# @param $1 {string} 삭제할 파일 절대 경로
+#
+# @return 0 (sudo 필요), 1 (일반 사용자 권한으로 삭제 가능)
+##
+is_sudo_required_for_delete() {
+  local target_path="$1"
+  local parent_dir
+  parent_dir="$(dirname "$target_path")"
+
+  if [[ ! -w "$parent_dir" ]]; then
+    return 0
+  fi
+
+  if [[ -k "$parent_dir" ]]; then
+    local current_uid file_uid dir_uid
+    current_uid="$(id -u)"
+    file_uid="$(stat -c '%u' "$target_path" 2>/dev/null || echo "$current_uid")"
+    dir_uid="$(stat -c '%u' "$parent_dir" 2>/dev/null || echo "$current_uid")"
+
+    if [[ "$current_uid" != "$file_uid" && "$current_uid" != "$dir_uid" ]]; then
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+##
+# 시스템 보호 바이너리 및 패키지 관리 대상 파일 여부 검증
+#
+# @param $1 {string} 검증할 파일 경로
+#
+# @return 0 (시스템 보호 파일임 -> 차단), 1 (보호 대상 아님 -> 허용)
+##
+is_protected_system_tool() {
+  local target_path="$1"
+  local base_name
+  base_name="$(basename "$target_path")"
+
+  local tool
+  for tool in "${PROTECTED_TOOLS[@]}"; do
+    if [[ "$base_name" == "$tool" ]]; then
+      return 0
+    fi
+  done
+
+  if [[ ! -e "$target_path" && ! -L "$target_path" ]]; then
+    return 1
+  fi
+
+  if command -v file >/dev/null 2>&1; then
+    local mime_type
+    mime_type="$(file -b --mime-type "$target_path" 2>/dev/null || true)"
+    if [[ "$mime_type" == "application/x-executable" || "$mime_type" == "application/x-pie-executable" || "$mime_type" == "application/x-sharedlib" ]]; then
+      return 0
+    fi
+  fi
+
+  if command -v rpm >/dev/null 2>&1; then
+    if rpm -qf "$target_path" >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
+
+  if command -v dpkg >/dev/null 2>&1; then
+    if dpkg -S "$target_path" >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
+
+  if [[ -L "$target_path" ]]; then
+    local real_target
+    real_target="$(readlink -f "$target_path" 2>/dev/null || true)"
+    if [[ -n "$real_target" && "$real_target" != "$target_path" ]]; then
+      if is_protected_system_tool "$real_target"; then
+        return 0
+      fi
+    fi
+  fi
+
+  return 1
+}
+
+##
+# 설치할 스크립트와 동일한 디렉토리에 있는 bash completion 파일을 탐색합니다 (엄격한 1:1 이름 매칭, 확장자 임의 제거 금지).
+#
+# @param $1 {string} 원본 스크립트 절대 경로
+#
+# @return 발견된 completion 파일 절대 경로 출력
+##
+find_companion_completion() {
+  local script_abs="$1"
+  local script_dir script_base
+  script_dir="$(dirname "$script_abs")"
+  script_base="$(basename "$script_abs")"
+
+  local cand="${script_dir}/${script_base}.completion"
+  if [[ -f "$cand" ]]; then
+    printf '%s\n' "$cand"
+  fi
+
+  return 0
+}
+
+##
+# 시스템에서 지원하는 bash completion 설치 디렉토리를 우선순위에 따라 결정합니다.
+# - 1순위: /usr/share/bash-completion/completions
+# - 2순위: /etc/bash_completion.d
+#
+# @return 선택된 설치 디렉토리 경로 출력
+##
+resolve_completion_install_dir() {
+  local primary_dir="/usr/share/bash-completion/completions"
+  local secondary_dir="/etc/bash_completion.d"
+
+  if [[ -d "$primary_dir" ]]; then
+    printf '%s\n' "$primary_dir"
+    return 0
+  elif [[ -d "$secondary_dir" ]]; then
+    printf '%s\n' "$secondary_dir"
+    return 0
+  fi
+
+  return 1
+}
+
+##
+# 문자열에 와일드카드(Glob) 패턴 문자(*, ?, [...])가 포함되어 있는지 확인합니다.
+#
+# @param $1 {string} 검사할 문자열
+#
+# @return 0 (와일드카드 포함), 1 (미포함)
+##
+contains_wildcard() {
+  local str="$1"
+  [[ "$str" == *"*"* || "$str" == *"?"* || "$str" == *"["* ]]
+}
+
+##
+# 와일드카드 패턴이 리터럴 식별자 없이 '*', '?' 등으로만 구성된 위험 패턴인지 검증합니다.
+#
+# @param $1 {string} 검사할 패턴 문자열
+#
+# @return 0 (위험한 전체 매칭 패턴임 -> 차단), 1 (안전한 부분 패턴)
+##
+is_unsafe_wildcard() {
+  local base_pattern
+  base_pattern="$(basename "$1")"
+  # *, ?, [, ], . 문자를 모두 제거했을 때 남는 영숫자/식별자가 하나도 없으면 위험 패턴으로 판정
+  local stripped="${base_pattern//[\*\?\[\]\.]/}"
+  [[ -z "$stripped" ]]
+}
+
+##
+# 설치된 스크립트 파일을 탐색합니다 (리터럴 파일명 및 와일드카드 패턴 지원).
+# - local : $HOME/bin, $HOME/.local/bin
+# - global: /usr/local/bin
+# - all   : $HOME/bin, $HOME/.local/bin, /usr/local/bin 및 $PATH (단, 와일드카드 사용 시 관리 대상 디렉토리만 탐색)
+#
+# @param $1 {string} 스크립트 이름, 경로 또는 와일드카드 패턴 (예: 'yes-*')
+# @param $2 {string} 탐색 범위 (local | global | all)
+#
+# @return 발견된 스크립트 절대 경로 목록 (개행 구분)
+##
+find_installed_scripts() {
+  local input_name="$1"
+  local target_scope="${2:-all}"
+  local -a matched_files=()
+  local is_glob=false
+
+  if contains_wildcard "$input_name"; then
+    is_glob=true
+  fi
+
+  if [[ "$input_name" == *"/"* ]]; then
+    local target_dir target_pattern abs_dir entry bname
+    target_dir="$(dirname "$input_name")"
+    target_pattern="$(basename "$input_name")"
+    if [[ -d "$target_dir" ]]; then
+      abs_dir="$(cd -P -- "$target_dir" >/dev/null && pwd -P)"
+      if [[ "$is_glob" == true ]]; then
+        for entry in "$abs_dir"/*; do
+          [[ -f "$entry" || -L "$entry" ]] || continue
+          [[ ! -d "$entry" ]] || continue
+          bname="$(basename "$entry")"
+          # [[ ... ]] 내부 우변 비인용 패턴 매칭 (Word Splitting 없이 안전한 fnmatch 수행)
+          # shellcheck disable=SC2053
+          if [[ "$bname" == $target_pattern ]]; then
+            if ! is_protected_system_tool "$entry"; then
+              matched_files+=("${abs_dir}/${bname}")
+            fi
+          fi
+        done
+      else
+        if [[ -f "${abs_dir}/${target_pattern}" || -L "${abs_dir}/${target_pattern}" ]]; then
+          matched_files+=("${abs_dir}/${target_pattern}")
+        fi
+      fi
+    fi
+  else
+    local -a search_dirs=()
+    case "$target_scope" in
+      local)
+        search_dirs+=("${HOME}/bin" "${HOME}/.local/bin")
+        ;;
+      global)
+        search_dirs+=("/usr/local/bin")
+        ;;
+      all|*)
+        search_dirs+=("${HOME}/bin" "${HOME}/.local/bin" "/usr/local/bin")
+        # 리터럴 단일 이름 검색일 때만 일반 $PATH 전체 확장 (와일드카드 검색 시 시스템 /usr/bin 등 오탐 방지)
+        if [[ "$is_glob" == false ]]; then
+          local IFS=':'
+          local -a path_dirs=()
+          read -r -a path_dirs <<< "${PATH:-}"
+          search_dirs+=("${path_dirs[@]}")
+        fi
+        ;;
+    esac
+
+    local dir abs_dir candidate entry bname
+    for dir in "${search_dirs[@]}"; do
+      [[ -n "$dir" && -d "$dir" ]] || continue
+      abs_dir="$(cd -P -- "$dir" >/dev/null && pwd -P)"
+
+      if [[ "$is_glob" == true ]]; then
+        for entry in "$abs_dir"/*; do
+          [[ -f "$entry" || -L "$entry" ]] || continue
+          [[ ! -d "$entry" ]] || continue
+          bname="$(basename "$entry")"
+          # shellcheck disable=SC2053
+          if [[ "$bname" == $input_name ]]; then
+            if ! is_protected_system_tool "$entry"; then
+              matched_files+=("${abs_dir}/${bname}")
+            fi
+          fi
+        done
+      else
+        candidate="${abs_dir}/${input_name}"
+        if [[ -f "$candidate" || -L "$candidate" ]]; then
+          matched_files+=("$candidate")
+        fi
+      fi
+    done
+  fi
+
+  if (( ${#matched_files[@]} > 0 )); then
+    printf "%s\n" "${matched_files[@]}" | sort -u
+  fi
+}
+
+##
+# 시스템에 설치된 bash completion 파일을 탐색합니다 (엄격한 1:1 매칭 적용, 확장자 임의 제거 금지).
+#
+# @param $1 {string} 스크립트 이름, 경로 또는 와일드카드 패턴
+#
+# @return 발견된 completion 파일 절대 경로 목록 (개행 구분)
+##
+find_installed_completions() {
+  local raw_name="$1"
+  local base_name
+  base_name="$(basename "$raw_name")"
+  local is_glob=false
+
+  if contains_wildcard "$base_name"; then
+    is_glob=true
+  fi
+
+  local -a search_dirs=(
+    "/usr/share/bash-completion/completions"
+    "/usr/share/bash-completion/completion"
+    "/etc/bash_completion.d"
+    "/etc/bash-completion.d"
+    "${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions"
+    "$HOME/.bash_completion.d"
+  )
+
+  # 엄격한 1:1 매칭 후보 정의 (.sh 등 확장자를 임의로 제거하지 않음)
+  local -a candidate_patterns=(
+    "${base_name}.completion"
+    "${base_name}"
+  )
+
+  local -a found_completions=()
+  local dir abs_dir pattern target entry bname
+  for dir in "${search_dirs[@]}"; do
+    [[ -d "$dir" ]] || continue
+    abs_dir="$(cd -P -- "$dir" >/dev/null && pwd -P)"
+
+    if [[ "$is_glob" == true ]]; then
+      for entry in "$abs_dir"/*; do
+        [[ -f "$entry" || -L "$entry" ]] || continue
+        [[ ! -d "$entry" ]] || continue
+        bname="$(basename "$entry")"
+        for pattern in "${candidate_patterns[@]}"; do
+          # shellcheck disable=SC2053
+          if [[ "$bname" == $pattern ]]; then
+            found_completions+=("${abs_dir}/${bname}")
+            break
+          fi
+        done
+      done
+    else
+      for pattern in "${candidate_patterns[@]}"; do
+        target="${abs_dir}/${pattern}"
+        if [[ -f "$target" || -L "$target" ]]; then
+          found_completions+=("$target")
+        fi
+      done
+    fi
+  done
+
+  if (( ${#found_completions[@]} > 0 )); then
+    printf "%s\n" "${found_completions[@]}" | sort -u
+  fi
+}
+
+##
+# [install 서브커맨드] 커스텀 스크립트 및 연관 completion 파일 설치
+#
+# @param $@ {array} install 서브커맨드 인자
+#
+# @return 0 on success
+##
+cmd_install() {
+  local script_arg=""
+  local target_scope="local"
+  local is_dry_run=false
+  local is_force=false
+  local has_script_opt=false
+  local has_target_opt=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --script|--script=*)
+        if [[ "$has_script_opt" == true ]]; then
+          help "❌ '--script' 옵션이 중복 지정되었습니다." "$LINENO" "install"
+          exit 1
+        fi
+        has_script_opt=true
+        if [[ "$1" == *=* ]]; then
+          script_arg="${1#*=}"
+          shift
+        else
+          if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == -* ]]; then
+            help "❌ '--script' 옵션 뒤에 설치할 스크립트 파일 경로를 지정해야 합니다." "$LINENO" "install"
+            exit 1
+          fi
+          script_arg="$2"
+          shift 2
+        fi
+        ;;
+      --target|--target=*)
+        if [[ "$has_target_opt" == true ]]; then
+          help "❌ '--target' 옵션이 중복 지정되었습니다." "$LINENO" "install"
+          exit 1
+        fi
+        has_target_opt=true
+        if [[ "$1" == *=* ]]; then
+          target_scope="${1#*=}"
+          shift
+        else
+          if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == -* ]]; then
+            help "❌ '--target' 옵션 뒤에 'local' 또는 'global'을 지정해야 합니다." "$LINENO" "install"
+            exit 1
+          fi
+          target_scope="$2"
+          shift 2
+        fi
+        ;;
+      --dry-run)
+        is_dry_run=true
+        shift
+        ;;
+      --force)
+        is_force=true
+        shift
+        ;;
+      --help)
+        help "" "" "install"
+        exit 0
+        ;;
+      -*)
+        help "❌ 단축 옵션(Short Option)은 지원하지 않거나 알 수 없는 옵션입니다: '$1'" "$LINENO" "install"
+        exit 1
+        ;;
+      *)
+        help "❌ 알 수 없는 인자입니다: '$1'" "$LINENO" "install"
+        exit 1
+        ;;
+    esac
+  done
+
+  if [[ -z "$script_arg" ]]; then
+    help "❌ 필수 파라미터 '--script <파일경로>'가 누락되었습니다." "$LINENO" "install"
+    exit 1
+  fi
+
+  if [[ "$target_scope" != "local" && "$target_scope" != "global" ]]; then
+    help "❌ 'install' 명령의 '--target' 옵션 값은 'local' 또는 'global'만 허용됩니다 (입력값: '$target_scope')." "$LINENO" "install"
+    exit 1
+  fi
+
+  echo "🔍 [1/5] 설치 대상 스크립트 및 환경 검증을 시작합니다..."
+
+  if [[ ! -e "$script_arg" ]]; then
+    help "❌ 지정한 스크립트 파일이 존재하지 않습니다: '$script_arg'" "$LINENO" "install"
+    exit 1
+  fi
+
+  if [[ -d "$script_arg" ]]; then
+    help "❌ 지정한 경로는 파일이 아니라 디렉토리입니다: '$script_arg'" "$LINENO" "install"
+    exit 1
+  fi
+
+  if [[ ! -f "$script_arg" ]]; then
+    help "❌ 지정한 경로는 일반 파일이 아닙니다: '$script_arg'" "$LINENO" "install"
+    exit 1
+  fi
+
+  if [[ ! -r "$script_arg" ]]; then
+    help "❌ 지정한 스크립트 파일에 읽기 권한이 없습니다: '$script_arg'" "$LINENO" "install"
+    exit 1
+  fi
+
+  local script_abs script_name
+  script_abs="$(cd -P -- "$(dirname "$script_arg")" >/dev/null && pwd -P)/$(basename "$script_arg")"
+  script_name="$(basename "$script_abs")"
+
+  echo "  ✅ 원본 스크립트 확인 완료: $script_abs"
+
+  local install_dir=""
+  local need_create_dir=false
+
+  if [[ "$target_scope" == "local" ]]; then
+    install_dir="${HOME}/bin"
+    if [[ -e "$install_dir" || -L "$install_dir" ]]; then
+      if [[ ! -d "$install_dir" ]]; then
+        echo >&2
+        echo "❌ [오류] 로컬 설치 경로('$install_dir')가 디렉토리가 아닌 파일로 존재합니다!" >&2
+        echo "📊 [현재 파일 상태]:" >&2
+        ls -ld "$install_dir" >&2 || true
+        if command -v stat >/dev/null 2>&1; then
+          stat "$install_dir" >&2 || true
+        fi
+        help "'$install_dir' 경로가 디렉토리가 아니므로 설치를 진행할 수 없습니다. 해당 파일을 이동하거나 삭제한 후 다시 시도하세요." "$LINENO" "install"
+        exit 1
+      fi
+    else
+      need_create_dir=true
+    fi
+  else
+    install_dir="/usr/local/bin"
+    if [[ -e "$install_dir" || -L "$install_dir" ]]; then
+      if [[ ! -d "$install_dir" ]]; then
+        echo >&2
+        echo "❌ [오류] 전역 설치 경로('$install_dir')가 디렉토리가 아닌 파일로 존재합니다!" >&2
+        echo "📊 [현재 파일 상태]:" >&2
+        ls -ld "$install_dir" >&2 || true
+        help "'$install_dir' 경로가 디렉토리가 아니므로 설치를 진행할 수 없습니다." "$LINENO" "install"
+        exit 1
+      fi
+    else
+      need_create_dir=true
+    fi
+  fi
+
+  local dest_script="${install_dir}/${script_name}"
+
+  if is_protected_system_tool "$dest_script"; then
+    help "🛡️  안전 위협 감지: '$dest_script' 은(는) OS 핵심 유틸리티 이름이거나 패키지 관리자(RPM/DPKG)에 등록된 시스템 바이너리입니다. 시스템 보호를 위해 설치가 거부되었습니다." "$LINENO" "install"
+    exit 1
+  fi
+
+  if [[ -e "$dest_script" ]] && [[ "$script_abs" -ef "$dest_script" ]]; then
+    echo "⚠️  [알림] 원본 스크립트와 설치 대상 경로('$dest_script')가 이미 동일한 파일입니다."
+    exit 0
+  fi
+
+  echo "🧩 [2/5] 연관 Bash Completion 파일을 탐색합니다..."
+  local comp_src=""
+  local comp_install_dir=""
+  local comp_dest=""
+  local comp_priority_label=""
+
+  comp_src="$(find_companion_completion "$script_abs")"
+  if [[ -n "$comp_src" ]]; then
+    if comp_install_dir="$(resolve_completion_install_dir)"; then
+      comp_dest="${comp_install_dir}/$(basename "$comp_src")"
+      if [[ "$comp_install_dir" == "/usr/share/bash-completion/completions" ]]; then
+        comp_priority_label="1순위 (최신 경로: /usr/share/bash-completion/completions/)"
+      else
+        comp_priority_label="2순위 (대체 경로: /etc/bash_completion.d/)"
+      fi
+      echo "  ✅ Completion 파일 발견: $comp_src"
+      echo "  📂 Completion 설치 경로 선택: $comp_priority_label"
+    else
+      echo "  ⚠️  Completion 파일($comp_src)이 존재하지만, 시스템에 '/usr/share/bash-completion/completions/' 및 '/etc/bash_completion.d/' 경로가 모두 없어 Completion 설치는 건너뜁니다."
+      comp_src=""
+    fi
+  else
+    echo "  ℹ️  동일 디렉토리 내 연관된 '.completion' 파일이 없어 스크립트만 설치합니다."
+  fi
+
+  local need_sudo_for_dir=false
+  local need_sudo_for_script=false
+  local need_sudo_for_comp=false
+  local need_any_sudo=false
+
+  if [[ "$need_create_dir" == true ]] && is_sudo_required_for_write "$install_dir"; then
+    need_sudo_for_dir=true
+    need_any_sudo=true
+  fi
+
+  if is_sudo_required_for_write "$dest_script"; then
+    need_sudo_for_script=true
+    need_any_sudo=true
+  fi
+
+  if [[ -n "$comp_dest" ]] && is_sudo_required_for_write "$comp_dest"; then
+    need_sudo_for_comp=true
+    need_any_sudo=true
+  fi
+
+  echo
+  echo "==================== 📋 [설치 작업 계획 요약] ===================="
+  printf " 🎯 설치 범위 (--target) : %s\n" "$target_scope"
+  if [[ "$need_create_dir" == true ]]; then
+    if [[ "$need_sudo_for_dir" == true ]]; then
+      printf " 📁 디렉토리 생성        : %s [생성 예정 / 🔐 sudo 권한 필요]\n" "$install_dir"
+    else
+      printf " 📁 디렉토리 생성        : %s [생성 예정 / 👤 일반 권한]\n" "$install_dir"
+    fi
+  else
+    printf " 📁 설치 대상 디렉토리   : %s [존재함]\n" "$install_dir"
+  fi
+
+  if [[ "$need_sudo_for_script" == true ]]; then
+    printf " 🚀 스크립트 설치        : %s -> %s (권한: 0755) [🔐 sudo 권한 필요]\n" "$script_abs" "$dest_script"
+  else
+    printf " 🚀 스크립트 설치        : %s -> %s (권한: 0755) [👤 일반 권한]\n" "$script_abs" "$dest_script"
+  fi
+
+  if [[ -n "$comp_dest" ]]; then
+    if [[ "$need_sudo_for_comp" == true ]]; then
+      printf " 🧩 Completion 설치      : %s -> %s (권한: 0644) [🔐 sudo 권한 필요]\n" "$comp_src" "$comp_dest"
+    else
+      printf " 🧩 Completion 설치      : %s -> %s (권한: 0644) [👤 일반 권한]\n" "$comp_src" "$comp_dest"
+    fi
+  else
+    printf " 🧩 Completion 설치      : 해당 없음\n"
+  fi
+  echo "=================================================================="
+  echo
+
+  if [[ "$is_dry_run" == true ]]; then
+    echo "🧪 [DRY-RUN] 시뮬레이션 모드이므로 실제 파일 생성 및 복사를 수행하지 않고 안전하게 종료합니다."
+    exit 0
+  fi
+
+  if [[ "$is_force" == false ]] && [[ -e "$dest_script" || ( -n "$comp_dest" && -e "$comp_dest" ) ]]; then
+    echo "⚠️  [주의] 이미 설치된 파일이 존재합니다:"
+    [[ -e "$dest_script" ]] && echo "   - 스크립트   : $dest_script"
+    [[ -n "$comp_dest" && -e "$comp_dest" ]] && echo "   - Completion : $comp_dest"
+    local confirm=""
+    printf "❓ 기존 파일을 덮어쓰시겠습니까? (y/N): "
+    read -r confirm
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+      echo "🛑 [취소] 사용자에 의해 설치 작업이 취소되었습니다."
+      exit 0
+    fi
+  fi
+
+  if [[ "$need_any_sudo" == true ]]; then
+    echo "🔐 [3/5] 시스템 영역 설치를 위해 sudo 권한 확인이 필요합니다..."
+    if ! command -v sudo >/dev/null 2>&1; then
+      help "❌ 'sudo' 명령어가 시스템에 설치되어 있지 않아 권한이 필요한 작업을 수행할 수 없습니다." "$LINENO" "install"
+      exit 1
+    fi
+    if ! sudo -v; then
+      help "❌ sudo 인증에 실패하였거나 권한이 없어 설치 작업을 중단합니다." "$LINENO" "install"
+      exit 1
+    fi
+    echo "  ✅ sudo 권한 확인 완료."
+  else
+    echo "👤 [3/5] 일반 사용자 권한으로 설치 가능한 경로입니다 (sudo 불필요)."
+  fi
+
+  echo "🚀 [4/5] 파일 설치를 진행합니다..."
+
+  if [[ "$need_create_dir" == true ]]; then
+    if [[ "$need_sudo_for_dir" == true ]]; then
+      sudo mkdir -p "$install_dir"
+      echo "  📁 디렉토리 생성 완료 (sudo 적용): $install_dir"
+    else
+      mkdir -p "$install_dir"
+      echo "  📁 디렉토리 생성 완료 (일반 권한): $install_dir"
+    fi
+  fi
+
+  if [[ "$need_sudo_for_script" == true ]]; then
+    sudo install -m 0755 "$script_abs" "$dest_script"
+    echo "  ✅ 스크립트 설치 완료 (sudo 적용): $dest_script"
+  else
+    install -m 0755 "$script_abs" "$dest_script"
+    echo "  ✅ 스크립트 설치 완료 (일반 권한): $dest_script"
+  fi
+
+  if [[ -n "$comp_dest" ]]; then
+    if [[ "$need_sudo_for_comp" == true ]]; then
+      sudo install -m 0644 "$comp_src" "$comp_dest"
+      echo "  ✅ Bash Completion 설치 완료 (sudo 적용): $comp_dest"
+    else
+      install -m 0644 "$comp_src" "$comp_dest"
+      echo "  ✅ Bash Completion 설치 완료 (일반 권한): $comp_dest"
+    fi
+  fi
+
+  echo "🎉 [5/5] 모든 설치 작업이 성공적으로 완료되었습니다!"
+  if [[ ":$PATH:" != *":${install_dir}:"* ]]; then
+    echo "💡 [참고] 현재 셸의 \$PATH 환경변수에 '${install_dir}' 경로가 포함되어 있지 않습니다."
+    echo "         ~/.bashrc 또는 ~/.bash_profile에 아래 설정을 추가하면 어디서든 '${script_name}' 명령을 바로 실행할 수 있습니다:"
+    echo "         export PATH=\"${install_dir}:\$PATH\""
+  fi
+  if [[ -n "$comp_dest" ]]; then
+    echo "💡 [참고] 현재 터미널에 자동 완성을 즉시 적용하려면 다음 명령을 실행하세요:"
+    echo "         source \"$comp_dest\""
+  fi
+}
+
+##
+# [remove 서브커맨드] 설치된 커스텀 스크립트 및 연관 completion 파일 삭제
+#
+# @param $@ {array} remove 서브커맨드 인자
+#
+# @return 0 on success
+##
+cmd_remove() {
+  local target_name=""
+  local target_scope="all"
+  local is_force=false
+  local is_dry_run=false
+  local has_name_opt=false
+  local has_target_opt=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --name|--name=*)
+        if [[ "$has_name_opt" == true ]]; then
+          help "❌ '--name' 옵션이 중복 지정되었습니다." "$LINENO" "remove"
+          exit 1
+        fi
+        has_name_opt=true
+        if [[ "$1" == *=* ]]; then
+          target_name="${1#*=}"
+          shift
+        else
+          if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == -* ]]; then
+            help "❌ 옵션 '--name' 뒤에 유효한 파일명을 지정해야 합니다." "$LINENO" "remove"
+            exit 1
+          fi
+          target_name="$2"
+          shift 2
+        fi
+        ;;
+      --target|--target=*)
+        if [[ "$has_target_opt" == true ]]; then
+          help "❌ '--target' 옵션이 중복 지정되었습니다." "$LINENO" "remove"
+          exit 1
+        fi
+        has_target_opt=true
+        if [[ "$1" == *=* ]]; then
+          target_scope="${1#*=}"
+          shift
+        else
+          if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == -* ]]; then
+            help "❌ 옵션 '--target' 뒤에 'local', 'global' 또는 'all'을 지정해야 합니다." "$LINENO" "remove"
+            exit 1
+          fi
+          target_scope="$2"
+          shift 2
+        fi
+        ;;
+      --force)
+        is_force=true
+        shift
+        ;;
+      --dry-run)
+        is_dry_run=true
+        shift
+        ;;
+      --help)
+        help "" "" "remove"
+        exit 0
+        ;;
+      -*)
+        help "❌ 단축 옵션(Short Option)은 지원하지 않거나 알 수 없는 옵션입니다: '$1'" "$LINENO" "remove"
+        exit 1
+        ;;
+      *)
+        help "❌ 알 수 없는 인자입니다: '$1'" "$LINENO" "remove"
+        exit 1
+        ;;
+    esac
+  done
+
+  if [[ -z "$target_name" ]]; then
+    help "❌ 'remove' 명령에는 '--name <스크립트명_또는_경로>' 옵션이 필수입니다." "$LINENO" "remove"
+    exit 1
+  fi
+
+  if [[ "$target_scope" != "local" && "$target_scope" != "global" && "$target_scope" != "all" ]]; then
+    help "❌ 'remove' 명령의 '--target' 옵션 값은 'local', 'global', 'all' 중 하나여야 합니다 (입력값: '$target_scope')." "$LINENO" "remove"
+    exit 1
+  fi
+
+  if [[ "$target_name" == "/" || "$target_name" == "." || "$target_name" == ".." ]]; then
+    help "🚫 보안 경고: 위험한 파일명 또는 루트 경로는 지정할 수 없습니다: '$target_name'" "$LINENO" "remove"
+    exit 1
+  fi
+
+  if contains_wildcard "$target_name" && is_unsafe_wildcard "$target_name"; then
+    help "🚫 보안 경고: 전체 파일이 매칭될 수 있는 순수 와일드카드 패턴('$target_name')은 허용되지 않습니다. 최소 하나 이상의 식별 문자를 포함하세요 (예: 'yes-*')." "$LINENO" "remove"
+    exit 1
+  fi
+
+  if [[ "$target_scope" == "local" || "$target_scope" == "all" ]]; then
+    if [[ -e "${HOME}/bin" && ! -d "${HOME}/bin" ]]; then
+      echo "⚠️  [경고] '${HOME}/bin' 경로가 디렉토리가 아닌 파일로 존재합니다:" >&2
+      ls -ld "${HOME}/bin" >&2 || true
+    fi
+  fi
+
+  echo "🔍 [1/4] 삭제 대상 스크립트 및 completion 파일 탐색 시작: '$target_name' (범위: $target_scope)"
+
+  local -a script_targets=()
+  local line
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && script_targets+=("$line")
+  done < <(find_installed_scripts "$target_name" "$target_scope")
+
+  local file
+  for file in "${script_targets[@]}"; do
+    if is_protected_system_tool "$file"; then
+      help "🛡️  안전 위협 감지: '$file' 은(는) OS 핵심 유틸리티이거나 패키지 관리자(RPM/DPKG)에 등록된 바이너리입니다. 시스템 보호를 위해 삭제가 거부되었습니다." "$LINENO" "remove"
+      exit 1
+    fi
+  done
+
+  # 매칭된 각 스크립트의 연관 completion 및 패턴 매칭 completion 수집 (중복 제거)
+  local -a raw_completions=()
+  for file in "${script_targets[@]}"; do
+    while IFS= read -r line; do
+      [[ -n "$line" ]] && raw_completions+=("$line")
+    done < <(find_installed_completions "$(basename "$file")")
+  done
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && raw_completions+=("$line")
+  done < <(find_installed_completions "$target_name")
+
+  local -a completion_targets=()
+  if (( ${#raw_completions[@]} > 0 )); then
+    while IFS= read -r line; do
+      [[ -n "$line" ]] && completion_targets+=("$line")
+    done < <(printf "%s\n" "${raw_completions[@]}" | sort -u)
+  fi
+
+  if (( ${#script_targets[@]} == 0 && ${#completion_targets[@]} == 0 )); then
+    echo "⚠️  [WARN] 삭제 대상 스크립트 및 bash completion 파일을 찾을 수 없습니다."
+    exit 0
+  fi
+
+  echo
+  echo "==================== 📋 [삭제 대상 파일 목록] ===================="
+  local item
+  if (( ${#script_targets[@]} > 0 )); then
+    echo " 🚀 [스크립트 파일]"
+    for item in "${script_targets[@]}"; do
+      if is_sudo_required_for_delete "$item"; then
+        echo "  -> $item [🔐 sudo 권한 필요]"
+      else
+        echo "  -> $item [👤 일반 권한]"
+      fi
+    done
+  fi
+
+  if (( ${#completion_targets[@]} > 0 )); then
+    echo " 🧩 [Bash Completion 파일]"
+    for item in "${completion_targets[@]}"; do
+      if is_sudo_required_for_delete "$item"; then
+        echo "  -> $item [🔐 sudo 권한 필요]"
+      else
+        echo "  -> $item [👤 일반 권한]"
+      fi
+    done
+  fi
+  echo "=================================================================="
+  echo
+
+  if [[ "$is_dry_run" == true ]]; then
+    echo "🧪 [DRY-RUN] 시뮬레이션 모드이므로 실제 파일을 삭제하지 않고 안전하게 종료합니다."
+    exit 0
+  fi
+
+  if [[ "$is_force" == false ]]; then
+    local confirm=""
+    printf "❓ 위 파일들을 영구히 삭제하시겠습니까? (y/N): "
+    read -r confirm
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+      echo "🛑 [ABORT] 사용자에 의해 삭제가 취소되었습니다."
+      exit 0
+    fi
+  fi
+
+  local -a all_targets=("${script_targets[@]}" "${completion_targets[@]}")
+  local need_sudo=false
+
+  for file in "${all_targets[@]}"; do
+    if is_sudo_required_for_delete "$file"; then
+      need_sudo=true
+      break
+    fi
+  done
+
+  if [[ "$need_sudo" == true ]]; then
+    if ! command -v sudo >/dev/null 2>&1; then
+      help "❌ 시스템 오류: 일부 시스템 파일 삭제를 위해 'sudo'가 필요하지만 시스템에 sudo 명령어가 설치되어 있지 않습니다." "$LINENO" "remove"
+      exit 1
+    fi
+    echo "🔐 [2/4] 시스템 보호 영역 파일 삭제를 위해 sudo 자격 증명을 확인합니다..."
+    if ! sudo -v; then
+      help "❌ 인증 오류: sudo 인증에 실패하였거나 권한이 없어 삭제 작업을 전면 중단합니다." "$LINENO" "remove"
+      exit 1
+    fi
+    echo "  ✅ sudo 권한 확인 완료."
+  else
+    echo "👤 [2/4] 일반 사용자 권한으로 삭제 가능한 대상입니다 (sudo 불필요)."
+  fi
+
+  echo "🗑️  [3/4] 파일 삭제를 진행합니다..."
+  for file in "${all_targets[@]}"; do
+    if is_sudo_required_for_delete "$file"; then
+      sudo rm -f "$file"
+      echo "  ✅ [SUCCESS] 삭제 완료 (sudo 적용) -> $file"
+    else
+      rm -f "$file"
+      echo "  ✅ [SUCCESS] 삭제 완료 (일반 권한) -> $file"
+    fi
+  done
+
+  echo
+  echo "🎉 [4/4] 모든 관련 파일이 성공적으로 삭제되었습니다!"
+}
+
+##
+# [list 서브커맨드] 개인 및 전역 실행 공간에 설치된 커스텀 스크립트 목록 조회
+#
+# @param $@ {array} list 서브커맨드 인자
+#
+# @return 0 on success
+##
+cmd_list() {
+  local target_scope="all"
+  local has_target_opt=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --target|--target=*)
+        if [[ "$has_target_opt" == true ]]; then
+          help "❌ '--target' 옵션이 중복 지정되었습니다." "$LINENO" "list"
+          exit 1
+        fi
+        has_target_opt=true
+        if [[ "$1" == *=* ]]; then
+          target_scope="${1#*=}"
+          shift
+        else
+          if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == -* ]]; then
+            help "❌ 옵션 '--target' 뒤에 'local', 'global' 또는 'all'을 지정해야 합니다." "$LINENO" "list"
+            exit 1
+          fi
+          target_scope="$2"
+          shift 2
+        fi
+        ;;
+      --help)
+        help "" "" "list"
+        exit 0
+        ;;
+      -*)
+        help "❌ 단축 옵션(Short Option)은 지원하지 않거나 알 수 없는 옵션입니다: '$1'" "$LINENO" "list"
+        exit 1
+        ;;
+      *)
+        help "❌ 알 수 없는 인자입니다: '$1'" "$LINENO" "list"
+        exit 1
+        ;;
+    esac
+  done
+
+  if [[ "$target_scope" != "local" && "$target_scope" != "global" && "$target_scope" != "all" ]]; then
+    help "❌ 'list' 명령의 '--target' 옵션 값은 'local', 'global', 'all' 중 하나여야 합니다 (입력값: '$target_scope')." "$LINENO" "list"
+    exit 1
+  fi
+
+  local -a dirs=()
+  case "$target_scope" in
+    local)
+      dirs=("${HOME}/bin" "${HOME}/.local/bin")
+      ;;
+    global)
+      dirs=("/usr/local/bin")
+      ;;
+    all)
+      dirs=("${HOME}/bin" "${HOME}/.local/bin" "/usr/local/bin")
+      ;;
+  esac
+
+  echo "==================== 📋 [설치된 커스텀 스크립트 현황 (범위: ${target_scope})] ===================="
+  local dir entry bname comp_list
+  local total_count=0
+  for dir in "${dirs[@]}"; do
+    if [[ ! -d "$dir" ]]; then
+      echo " 📁 ${dir} (디렉토리 없음)"
+      continue
+    fi
+    echo " 📁 ${dir}"
+    local dir_count=0
+    for entry in "$dir"/*; do
+      [[ -e "$entry" || -L "$entry" ]] || continue
+      [[ ! -d "$entry" ]] || continue
+      if is_protected_system_tool "$entry"; then
+        continue
+      fi
+      bname="$(basename "$entry")"
+      comp_list="$(find_installed_completions "$bname" | tr '\n' ' ')"
+      if [[ -n "$comp_list" ]]; then
+        printf "   - %-28s (🧩 completion: %s)\n" "$bname" "${comp_list% }"
+      else
+        printf "   - %-28s (🧩 completion: 없음)\n" "$bname"
+      fi
+      ((dir_count++)) || true
+      ((total_count++)) || true
+    done
+    if (( dir_count == 0 )); then
+      echo "   (설치된 커스텀 스크립트 없음)"
+    fi
+  done
+  echo "=========================================================================================="
+  echo " 📊 총 ${total_count}개의 커스텀 스크립트가 조회되었습니다."
+}
+
+##
+# 메인 진입점
+#
+# @param $@ {array} CLI 인자
+#
+# @return 0 on success
+##
+main() {
+  reject_external_sudo
+
+  if [[ $# -eq 0 ]]; then
+    help "❌ 실행할 서브커맨드('install', 'remove', 'list')를 지정해야 합니다." "$LINENO"
+    exit 1
+  fi
+
+  local subcmd="$1"
+  shift
+
+  case "$subcmd" in
+    install)
+      cmd_install "$@"
+      ;;
+    remove)
+      cmd_remove "$@"
+      ;;
+    list)
+      cmd_list "$@"
+      ;;
+    --help|help)
+      help ""
+      exit 0
+      ;;
+    -*)
+      help "❌ 첫 번째 인자로는 서브커맨드('install', 'remove', 'list')가 와야 합니다 (입력값: '$subcmd')." "$LINENO"
+      exit 1
+      ;;
+    *)
+      help "❌ 알 수 없는 서브커맨드입니다: '$subcmd' ('install', 'remove', 'list' 중 선택)" "$LINENO"
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"
+exit 0

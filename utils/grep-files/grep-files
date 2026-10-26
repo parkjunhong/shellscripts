@@ -1,0 +1,524 @@
+#!/usr/bin/env bash
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : grep-files: File Content Pattern Presence/Absence Scanner & Directory Report Generator
+# @license : Apache License 2.0
+# @since : 2024-03-10
+# @version : 2.1.0 (2026-10-26)
+# @desc : support RHEL 8+, Oracle Linux 8+, Ubuntu 20.04+, RockyOS 8+, CentOS 7+, macOS 11+
+# @installation :
+# 1. insert 'source <path>/grep-files.completion' into ~/.bashrc or ~/.bash_profile for a personal usage.
+# 2. or run 'scriptctl install --script <path>/grep-files [--target local|global]'
+# =======================================
+
+set -Eeuo pipefail
+
+if (( BASH_VERSINFO[0] < 4 )); then
+  printf '❌ [ERROR] Bash 4 이상이 필요합니다.\n' >&2
+  exit 1
+fi
+
+readonly FILENAME="$(basename "$0")"
+
+##
+# 오류 원인 및 콜스택 진단 정보를 표준 에러(stderr)로 출력합니다.
+#
+# @param $1 {string} 오류 원인 메시지
+# @param $2 {number} 오류 발생 행 번호
+#
+# @return 없음
+##
+print_error_box() {
+  local cause="${1:-}"
+  local line="${2:-unknown}"
+  [[ -n "$cause" ]] || return 0
+
+  local indent=10
+  local formatl=" - %-${indent}s: %s\n"
+  local formatr=" - %${indent}s: %s\n"
+  echo >&2
+  echo "================================================================================" >&2
+  printf "$formatl" "filename" "$FILENAME" >&2
+  printf "$formatl" "line" "$line" >&2
+  printf "$formatl" "callstack" "" >&2
+  local idx=1
+  local func
+  for func in "${FUNCNAME[@]:2}"; do
+    printf "$formatr" "[${idx}]" "$func" >&2
+    ((idx++)) || true
+  done
+  printf "$formatl" "cause" "$cause" >&2
+  echo "================================================================================" >&2
+}
+
+##
+# 도움말 및 사용법을 출력합니다.
+#
+# @param $1 {string} 오류 원인 메시지 (선택)
+# @param $2 {number} 오류 발생 행 번호 (선택)
+#
+# @return 없음
+##
+help() {
+  local cause="${1:-}"
+  local line="${2:-unknown}"
+
+  if [[ -n "$cause" ]]; then
+    print_error_box "$cause" "$line"
+  fi
+
+  cat <<EOF
+
+🔎 사용법 (Usage):
+  $FILENAME --pattern <문자열> [--ext <확장자1[,확장자2...]>] [--dir <디렉토리>] [옵션]
+  $FILENAME --help
+
+📝 설명 (Description):
+  지정된 디렉토리(복수 지정 가능)에서 파일들을 대상으로 특정 문자열(--pattern)이
+  포함된 파일(match) 또는 누락된 파일(missing)을 검색하고,
+  디렉토리/서브디렉토리별 통계와 매칭된 줄 번호 및 내용(grep -rn 형식)을 리포트로 출력합니다.
+  - 단축 옵션(Short Option)은 지원하지 않으며, 전체 옵션명(Long Option)만 사용 가능합니다.
+
+⚙️  필수 옵션 (Required Options):
+  --pattern <STRING>          파일 내부에서 찾을 리터럴 문자열
+
+⚙️  선택 옵션 (Optional Options):
+  --ext <EXT1[,EXT2...]>      검색할 파일 확장자 (생략 시 모든 텍스트 파일 대상, 대소문자 무시)
+                              콤마(,) 구분 또는 여러 번 지정 가능 (예: --ext sh,completion,properties)
+  --dir <DIR>                 검색 대상 디렉토리 (여러 번 지정 가능, 생략 시 현재 디렉토리)
+  --exclude-dir <DIR>         검색에서 제외할 디렉토리 경로 또는 폴더명 (여러 번 지정 가능, .git 기본 제외)
+  --mode <match|missing>      검색 조건 (기본값: match)
+                              - match   (또는 o) : 문자열이 포함된 파일 및 발생 줄 번호/내용 출력
+                              - missing (또는 x) : 문자열이 포함되지 않은(누락된) 파일 목록 출력
+  --ignore-case               문자열(--pattern) 검색 시 대소문자 무시
+  --output <FILE>             결과 리포트를 화면 대신 지정된 파일에 저장
+  --help                      이 도움말을 출력하고 종료
+
+💡 예시 (Examples):
+  # 1) 확장자 제한 없이 '../../' 하위 모든 파일에서 'searching-word'가 포함된 파일 및 줄 번호/내용 조회
+  $FILENAME --pattern searching-word --dir ../../
+
+  # 2) 복수 확장자(sh, completion, properties) 지정 검색
+  $FILENAME --ext sh,completion,properties --pattern searching-word --dir ../../
+
+  # 3) 현재 디렉토리 하위 모든 .java 파일 중 '@NullMarked'가 누락된(missing) 파일 감사 리포트 출력
+  $FILENAME --ext java --pattern "@NullMarked" --mode missing
+EOF
+}
+
+##
+# 입력된 경로를 정규화된 절대 경로로 변환합니다.
+#
+# @param $1 {string} 변환할 경로
+#
+# @return 정규화된 절대 경로 출력 (실패 시 1 반환)
+##
+resolve_abs_dir() {
+  local target="$1"
+  if [[ ! -d "$target" ]]; then
+    return 1
+  fi
+  (cd -P -- "$target" 2>/dev/null && pwd -P)
+}
+
+##
+# 메인 실행 함수
+#
+# @param $@ {array} CLI 인자
+#
+# @return 0 on success
+##
+main() {
+  local -a raw_dirs=()
+  local -a raw_excludes=(".git")
+  local -a raw_exts=()
+  local search_pattern=""
+  local search_mode="match"
+  local ignore_case=false
+  local output_file=""
+
+  local has_pattern=false
+  local has_mode=false
+  local has_output=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dir|--dir=*)
+        local val=""
+        if [[ "$1" == *=* ]]; then
+          val="${1#*=}"
+          shift
+        else
+          if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == -* ]]; then
+            help "❌ '--dir' 옵션 뒤에 디렉토리 경로를 지정해야 합니다." "$LINENO"
+            exit 1
+          fi
+          val="$2"
+          shift 2
+        fi
+        raw_dirs+=("$val")
+        ;;
+      --exclude-dir|--exclude-dir=*)
+        local val=""
+        if [[ "$1" == *=* ]]; then
+          val="${1#*=}"
+          shift
+        else
+          if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == -* ]]; then
+            help "❌ '--exclude-dir' 옵션 뒤에 제외할 디렉토리를 지정해야 합니다." "$LINENO"
+            exit 1
+          fi
+          val="$2"
+          shift 2
+        fi
+        raw_excludes+=("$val")
+        ;;
+      --ext|--ext=*)
+        local val=""
+        if [[ "$1" == *=* ]]; then
+          val="${1#*=}"
+          shift
+        else
+          if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == -* ]]; then
+            help "❌ '--ext' 옵션 뒤에 파일 확장자를 지정해야 합니다." "$LINENO"
+            exit 1
+          fi
+          val="$2"
+          shift 2
+        fi
+        raw_exts+=("$val")
+        ;;
+      --pattern|--pattern=*)
+        if [[ "$has_pattern" == true ]]; then
+          help "❌ '--pattern' 옵션이 중복 지정되었습니다." "$LINENO"
+          exit 1
+        fi
+        has_pattern=true
+        if [[ "$1" == *=* ]]; then
+          search_pattern="${1#*=}"
+          shift
+        else
+          if [[ $# -lt 2 || -z "${2:-}" ]]; then
+            help "❌ '--pattern' 옵션 뒤에 찾을 문자열을 지정해야 합니다." "$LINENO"
+            exit 1
+          fi
+          search_pattern="$2"
+          shift 2
+        fi
+        ;;
+      --mode|--mode=*)
+        if [[ "$has_mode" == true ]]; then
+          help "❌ '--mode' 옵션이 중복 지정되었습니다." "$LINENO"
+          exit 1
+        fi
+        has_mode=true
+        if [[ "$1" == *=* ]]; then
+          search_mode="${1#*=}"
+          shift
+        else
+          if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == -* ]]; then
+            help "❌ '--mode' 옵션 뒤에 'match'(또는 'o')나 'missing'(또는 'x')을 지정해야 합니다." "$LINENO"
+            exit 1
+          fi
+          search_mode="$2"
+          shift 2
+        fi
+        ;;
+      --ignore-case)
+        ignore_case=true
+        shift
+        ;;
+      --output|--output=*)
+        if [[ "$has_output" == true ]]; then
+          help "❌ '--output' 옵션이 중복 지정되었습니다." "$LINENO"
+          exit 1
+        fi
+        has_output=true
+        if [[ "$1" == *=* ]]; then
+          output_file="${1#*=}"
+          shift
+        else
+          if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == -* ]]; then
+            help "❌ '--output' 옵션 뒤에 출력 파일 경로를 지정해야 합니다." "$LINENO"
+            exit 1
+          fi
+          output_file="$2"
+          shift 2
+        fi
+        ;;
+      --help)
+        help ""
+        exit 0
+        ;;
+      -*)
+        help "❌ 단축 옵션(Short Option)은 지원하지 않거나 알 수 없는 옵션입니다: '$1'" "$LINENO"
+        exit 1
+        ;;
+      *)
+        help "❌ 알 수 없는 인자입니다: '$1'" "$LINENO"
+        exit 1
+        ;;
+    esac
+  done
+
+  # 1. 필수 파라미터 검증 (--pattern)
+  if [[ -z "$search_pattern" ]]; then
+    help "❌ 필수 옵션 '--pattern <문자열>'이 누락되었습니다." "$LINENO"
+    exit 1
+  fi
+
+  # 2. 확장자 목록 파싱 및 정규화 (생략 시 전체 파일 대상)
+  local -a extensions=()
+  local raw_ext item cleaned_ext existing_ext is_dup
+  for raw_ext in "${raw_exts[@]}"; do
+    local -a split_exts=()
+    IFS=',' read -r -a split_exts <<< "$raw_ext"
+    for item in "${split_exts[@]}"; do
+      cleaned_ext="${item#.}"
+      [[ -n "$cleaned_ext" && "$cleaned_ext" != "*" ]] || continue
+      is_dup=false
+      for existing_ext in "${extensions[@]}"; do
+        if [[ "${existing_ext,,}" == "${cleaned_ext,,}" ]]; then
+          is_dup=true
+          break
+        fi
+      done
+      [[ "$is_dup" == false ]] && extensions+=("$cleaned_ext")
+    done
+  done
+
+  # 3. 검색 모드 정규화 (match/o vs missing/x)
+  local mode_normalized="${search_mode,,}"
+  case "$mode_normalized" in
+    match|o)
+      mode_normalized="match"
+      ;;
+    missing|x)
+      mode_normalized="missing"
+      ;;
+    *)
+      help "❌ '--mode' 값은 'match'(또는 'o'), 'missing'(또는 'x')만 허용됩니다 (입력값: '$search_mode')." "$LINENO"
+      exit 1
+      ;;
+  esac
+
+  # 4. 검색 대상 디렉토리 정규화 (생략 시 현재 디렉토리)
+  if (( ${#raw_dirs[@]} == 0 )); then
+    raw_dirs=("$(pwd -P)")
+  fi
+
+  local -a directories=()
+  local d abs_d
+  for d in "${raw_dirs[@]}"; do
+    if abs_d="$(resolve_abs_dir "$d")"; then
+      directories+=("$abs_d")
+    else
+      help "❌ 검색 대상 디렉토리가 존재하지 않습니다: '$d'" "$LINENO"
+      exit 1
+    fi
+  done
+
+  local -a unique_dirs=()
+  while IFS= read -r d; do
+    [[ -n "$d" ]] && unique_dirs+=("$d")
+  done < <(printf "%s\n" "${directories[@]}" | sort -u)
+  directories=("${unique_dirs[@]}")
+
+  # 5. 제외 디렉토리 정규화 (중복 제거)
+  local -a exclude_abs_paths=()
+  local -a exclude_names=()
+  local -a exclude_display=()
+  local ex abs_ex
+  local -A seen_ex=()
+  for ex in "${raw_excludes[@]}"; do
+    [[ -n "${seen_ex["$ex"]:-}" ]] && continue
+    seen_ex["$ex"]=1
+    if [[ "$ex" == *"/"* ]] && abs_ex="$(resolve_abs_dir "$ex")"; then
+      exclude_abs_paths+=("$abs_ex")
+      exclude_display+=("$abs_ex")
+    elif [[ "$ex" == *"/"* ]]; then
+      exclude_abs_paths+=("${ex%/}")
+      exclude_display+=("${ex%/}")
+    else
+      exclude_names+=("$ex")
+      exclude_display+=("$ex (폴더명 매칭)")
+    fi
+  done
+
+  # 6. grep 옵션 구성 (-I: 바이너리 제외, -F: 고정 문자열 리터럴 검색, -n: 줄 번호 포함)
+  local -a grep_match_opts=(-I -F -n)
+  local -a grep_quiet_opts=(-I -F -q)
+  if [[ "$ignore_case" == true ]]; then
+    grep_match_opts+=(-i)
+    grep_quiet_opts+=(-i)
+  fi
+
+  # 7. 검색 및 집계 수행 (eval 없이 안전한 배열 기반 find 실행)
+  declare -A dir_scanned=()
+  declare -A dir_count=()
+  declare -A subdir_count=()
+  declare -A found_files=()
+  declare -A file_match_lines=()
+  local total_scanned=0
+  local total_count=0
+
+  local directory file rel_path dir_name grep_out
+  for directory in "${directories[@]}"; do
+    dir_scanned["$directory"]=0
+    dir_count["$directory"]=0
+    found_files["$directory"]=""
+
+    local -a find_args=("$directory")
+    local has_prune=false
+    local -a prune_expr=()
+
+    for abs_ex in "${exclude_abs_paths[@]}"; do
+      [[ "$has_prune" == true ]] && prune_expr+=(-o)
+      prune_expr+=(-path "$abs_ex")
+      has_prune=true
+    done
+
+    for ex in "${exclude_names[@]}"; do
+      [[ "$has_prune" == true ]] && prune_expr+=(-o)
+      prune_expr+=(-name "$ex")
+      has_prune=true
+    done
+
+    if [[ "$has_prune" == true ]]; then
+      find_args+=( "(" "${prune_expr[@]}" ")" -prune -o )
+    fi
+
+    find_args+=( -type f )
+
+    if (( ${#extensions[@]} > 0 )); then
+      local -a ext_expr=()
+      local e
+      for e in "${extensions[@]}"; do
+        (( ${#ext_expr[@]} > 0 )) && ext_expr+=(-o)
+        ext_expr+=(-iname "*.${e}")
+      done
+      find_args+=( "(" "${ext_expr[@]}" ")" )
+    fi
+
+    find_args+=( -print0 )
+
+    while IFS= read -r -d '' file; do
+      dir_scanned["$directory"]=$(( ${dir_scanned["$directory"]:-0} + 1 ))
+      ((total_scanned++)) || true
+      rel_path="${file#"${directory}"/}"
+
+      if [[ "$mode_normalized" == "match" ]]; then
+        if grep_out="$(grep "${grep_match_opts[@]}" -- "$search_pattern" "$file" 2>/dev/null)"; then
+          found_files["$directory"]+="${rel_path}"$'\n'
+          file_match_lines["${directory}|${rel_path}"]="$grep_out"
+          dir_name="$(dirname "$rel_path")"
+          subdir_count["${directory}|${dir_name}"]=$(( ${subdir_count["${directory}|${dir_name}"]:-0} + 1 ))
+          dir_count["$directory"]=$(( ${dir_count["$directory"]:-0} + 1 ))
+          ((total_count++)) || true
+        fi
+      else
+        # missing 모드: 바이너리 파일은 제외하고 텍스트 파일 중 패턴이 없는 파일만 집계
+        if grep -I -q "" "$file" 2>/dev/null || [[ ! -s "$file" ]]; then
+          if ! grep "${grep_quiet_opts[@]}" -- "$search_pattern" "$file" 2>/dev/null; then
+            found_files["$directory"]+="${rel_path}"$'\n'
+            dir_name="$(dirname "$rel_path")"
+            subdir_count["${directory}|${dir_name}"]=$(( ${subdir_count["${directory}|${dir_name}"]:-0} + 1 ))
+            dir_count["$directory"]=$(( ${dir_count["$directory"]:-0} + 1 ))
+            ((total_count++)) || true
+          fi
+        fi
+      fi
+    done < <(find "${find_args[@]}")
+  done
+
+  # 8. 리포트 출력 함수 정의 (화면 또는 파일)
+  render_report() {
+    local ext_label="전체 파일 (*, 바이너리 제외)"
+    if (( ${#extensions[@]} > 0 )); then
+      local -a ext_patterns=()
+      local e
+      for e in "${extensions[@]}"; do
+        ext_patterns+=("*.${e}")
+      done
+      ext_label="${ext_patterns[*]} (대소문자 무시)"
+    fi
+
+    echo "=================================================================="
+    echo " 🔎 검색 요청사항 (Search Criteria)"
+    echo "=================================================================="
+    echo " 📁 검색 디렉토리:"
+    local d
+    for d in "${directories[@]}"; do
+      echo "   - $d"
+    done
+    echo " 📄 파일 확장자   : ${ext_label}"
+    echo " 🔤 찾을 문자열   : ${search_pattern} (대소문자 구분: $([[ "$ignore_case" == true ]] && echo "무시" || echo "구분"))"
+    if [[ "$mode_normalized" == "match" ]]; then
+      echo " 🎯 검색 모드     : match (문자열이 포함된 파일 및 발생 위치)"
+    else
+      echo " 🎯 검색 모드     : missing (문자열이 누락된 파일)"
+    fi
+    if [[ -n "$output_file" ]]; then
+      echo " 💾 출력 파일     : $output_file"
+    fi
+    if (( ${#exclude_display[@]} > 0 )); then
+      echo " 🚫 제외 디렉토리 :"
+      local ex_item
+      for ex_item in "${exclude_display[@]}"; do
+        echo "   - $ex_item"
+      done
+    fi
+    echo "------------------------------------------------------------------"
+    echo " 📊 검색 결과 요약: 매칭 파일 ${total_count} 개 / 전체 검사 대상 ${total_scanned} 개"
+    echo "------------------------------------------------------------------"
+    echo " 📂 디렉토리별 파일 개수"
+    for d in "${directories[@]}"; do
+      local count="${dir_count["$d"]:-0}"
+      local scanned="${dir_scanned["$d"]:-0}"
+      echo " - ${d}: 매칭 ${count} 개 (검사 대상 ${scanned} 개)"
+      if (( ${#subdir_count[@]} > 0 )); then
+        local key base sub
+        while IFS= read -r key; do
+          [[ -n "$key" ]] || continue
+          IFS='|' read -r base sub <<< "$key"
+          if [[ "$base" == "$d" ]]; then
+            echo "   + ${sub}: ${subdir_count["$key"]} 개"
+          fi
+        done < <(printf "%s\n" "${!subdir_count[@]}" | sort)
+      fi
+    done
+    echo "------------------------------------------------------------------"
+    echo " 📋 검색된 파일 목록 및 매칭 내용"
+    for d in "${directories[@]}"; do
+      echo " - ${d}"
+      if [[ -n "${found_files["$d"]:-}" ]]; then
+        local rpath mline line_no line_content
+        while IFS= read -r rpath; do
+          [[ -n "$rpath" ]] || continue
+          echo "   + ${rpath}"
+          if [[ "$mode_normalized" == "match" && -n "${file_match_lines["${d}|${rpath}"]:-}" ]]; then
+            while IFS= read -r mline; do
+              [[ -n "$mline" ]] || continue
+              line_no="${mline%%:*}"
+              line_content="${mline#*:}"
+              printf "      [L%-4s] %s\n" "$line_no" "$line_content"
+            done <<< "${file_match_lines["${d}|${rpath}"]}"
+          fi
+        done < <(printf "%s" "${found_files["$d"]}" | sort)
+      else
+        echo "   (일치하는 파일 없음)"
+      fi
+    done
+    echo "=================================================================="
+  }
+
+  if [[ -n "$output_file" ]]; then
+    render_report > "$output_file"
+    echo "✅ 검색 리포트가 파일에 저장되었습니다: $output_file (매칭 ${total_count}개 / 검사 대상 ${total_scanned}개)"
+  else
+    render_report
+  fi
+}
+
+main "$@"
+exit 0

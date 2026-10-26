@@ -1,0 +1,633 @@
+#!/usr/bin/env bash
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : replace-files: Safe Multi-File String Replacer with Backup & Audit Logging
+# @license : Apache License 2.0
+# @since : 2025-04-23
+# @version : 2.0.0 (2026-10-26)
+# @desc : support RHEL 8+, Oracle Linux 8+, Ubuntu 20.04+, RockyOS 8+, CentOS 7+, macOS 11+
+# @installation :
+# 1. insert 'source <path>/replace-files.completion' into ~/.bashrc or ~/.bash_profile for a personal usage.
+# 2. or run 'scriptctl install --script <path>/replace-files [--target local|global]'
+# =======================================
+
+set -Eeuo pipefail
+
+if (( BASH_VERSINFO[0] < 4 )); then
+  printf '❌ [ERROR] Bash 4 이상이 필요합니다.\n' >&2
+  exit 1
+fi
+
+readonly FILENAME="$(basename "$0")"
+
+##
+# 오류 원인 및 콜스택 진단 정보를 표준 에러(stderr)로 출력합니다.
+#
+# @param $1 {string} 오류 원인 메시지
+# @param $2 {number} 오류 발생 행 번호
+#
+# @return 없음
+##
+print_error_box() {
+  local cause="${1:-}"
+  local line="${2:-unknown}"
+  [[ -n "$cause" ]] || return 0
+
+  local indent=10
+  local formatl=" - %-${indent}s: %s\n"
+  local formatr=" - %${indent}s: %s\n"
+  echo >&2
+  echo "================================================================================" >&2
+  printf "$formatl" "filename" "$FILENAME" >&2
+  printf "$formatl" "line" "$line" >&2
+  printf "$formatl" "callstack" "" >&2
+  local idx=1
+  local func
+  for func in "${FUNCNAME[@]:2}"; do
+    printf "$formatr" "[${idx}]" "$func" >&2
+    ((idx++)) || true
+  done
+  printf "$formatl" "cause" "$cause" >&2
+  echo "================================================================================" >&2
+}
+
+##
+# 도움말 및 사용법을 출력합니다.
+#
+# @param $1 {string} 오류 원인 메시지 (선택)
+# @param $2 {number} 오류 발생 행 번호 (선택)
+#
+# @return 없음
+##
+help() {
+  local cause="${1:-}"
+  local line="${2:-unknown}"
+
+  if [[ -n "$cause" ]]; then
+    print_error_box "$cause" "$line"
+  fi
+
+  cat <<EOF
+
+✏️  사용법 (Usage):
+  $FILENAME --from <검색_문자열> --to <치환_문자열> [옵션]
+  $FILENAME --help
+
+📝 설명 (Description):
+  지정된 디렉토리 하위의 텍스트 파일들에서 특정 리터럴 문자열(--from)을 찾아 새로운 문자열(--to)로 안전하게 일괄 치환합니다.
+  - 단축 옵션(Short Option)은 지원하지 않으며, 전체 옵션명(Long Option)만 지원합니다.
+  - 바이너리 파일 및 '.git', '*.bak' 백업 파일은 손상 방지를 위해 자동으로 제외됩니다.
+
+⚙️  필수 옵션 (Required Options):
+  --from <STRING>               검색할 원본 리터럴 문자열 (필수, 비어 있을 수 없음)
+  --to <STRING>                 치환할 결과 리터럴 문자열 (필수, 빈 문자열 "" 지정 시 검색 문자열 삭제)
+
+⚙️  선택 옵션 (Optional Options):
+  --dir <DIR>                   검색 시작 디렉토리 (여러 번 지정 가능, 기본값: 현재 디렉토리)
+  --exclude-dir <DIR>           검색에서 제외할 디렉토리 경로 또는 폴더명 (여러 번 지정 가능, .git 기본 제외)
+  --ext <EXT1[,EXT2...]>        검색할 파일 확장자 필터 (대소문자 무시, 콤마 구분 가능, 예: sh,conf,xml)
+  --filename <RULE>             파일명 매칭 규칙 (여러 번 지정 가능: '^접두어', '접미어\$', '포함문자열')
+  --backup                      치환 전 원본 파일을 '<파일명>.bak'으로 백업
+  --confirm                     각 파일 치환 전 사용자에게 실행 여부(y/N) 확인 (--confirm-before-change 호환)
+  --dry-run                     실제 파일을 변경하지 않고 치환 대상 파일 및 매칭 줄만 시뮬레이션 출력
+  --summary                     작업 완료 후 전체 스캔/매칭/치환/백업 요약 통계 출력
+  --log-output <FILE>           치환 내역 로그를 지정한 파일에 저장
+  --log-format <plain|json>     로그 저장 형식 (기본값: plain)
+  --help                        이 도움말을 출력하고 종료
+
+💡 예시 (Examples):
+  # 1) 실제 변경 전 치환 대상 파일 및 라인 미리보기 (--dry-run)
+  $FILENAME --dir ./config --ext conf,properties --from "localhost:8080" --to "10.0.0.10:8080" --dry-run --summary
+
+  # 2) 백업(.bak) 생성과 함께 일괄 치환 및 JSON 로그 저장
+  $FILENAME --dir ./src --filename '^application' --from "dev-db" --to "prod-db" --backup --log-output replace.json --log-format json
+
+  # 3) 특정 문자열 삭제 (--to "")
+  $FILENAME --dir ./scripts --ext sh --from "DEPRECATED_FLAG" --to ""
+EOF
+}
+
+##
+# 입력된 경로를 정규화된 절대 경로로 변환합니다.
+#
+# @param $1 {string} 변환할 디렉토리 경로
+#
+# @return 정규화된 절대 경로 출력 (실패 시 1 반환)
+##
+resolve_abs_dir() {
+  local target="$1"
+  if [[ ! -d "$target" ]]; then
+    return 1
+  fi
+  (cd -P -- "$target" 2>/dev/null && pwd -P)
+}
+
+##
+# sed 's/.../.../g' 구문에서 리터럴 문자열로 안전하게 처리되도록
+# 정규식 메타문자(BRE) 및 구분자('/')를 이스케이프합니다.
+#
+# @param $1 {string} 원본 문자열
+# @param $2 {string} 모드 ('target' 또는 'replace')
+#
+# @return 이스케이프된 문자열 출력
+##
+escape_sed_literal() {
+  local str="$1"
+  local mode="${2:-target}"
+
+  if [[ "$mode" == "target" ]]; then
+    # BRE 패턴 메타문자: \ . * ^ $ [ ] /
+    printf '%s' "$str" | sed -e 's/[][\/.^$*]/\\&/g'
+  else
+    # 치환 문자열 메타문자: \ & /
+    printf '%s' "$str" | sed -e 's/[\/&]/\\&/g'
+  fi
+}
+
+##
+# JSON 문자열로 안전하게 출력하기 위해 특수문자를 이스케이프합니다.
+#
+# @param $1 {string} 원본 문자열
+#
+# @return JSON 이스케이프된 문자열 출력
+##
+json_escape() {
+  local s="${1:-}"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"
+  s="${s//$'\r'/\\r}"
+  s="${s//$'\t'/\\t}"
+  printf '%s' "$s"
+}
+
+##
+# 파일명이 사용자가 지정한 --filename 규칙(^접두어, 접미어$, 포함)에 부합하는지 확인합니다.
+#
+# @param $1 {string} 파일명 (basename)
+# @param $@ {array} 규칙 목록
+#
+# @return 일치 시 0, 불일치 시 1
+##
+matches_filename_rules() {
+  local fname="$1"
+  shift
+  local -a rules=("$@")
+
+  if (( ${#rules[@]} == 0 )); then
+    return 0
+  fi
+
+  local rule prefix suffix
+  for rule in "${rules[@]}"; do
+    if [[ "$rule" == ^* && "$rule" == *\$ ]]; then
+      local exact="${rule#^}"
+      exact="${exact%\$}"
+      [[ "$fname" == "$exact" ]] && return 0
+    elif [[ "$rule" == ^* ]]; then
+      prefix="${rule#^}"
+      [[ "$fname" == "${prefix}"* ]] && return 0
+    elif [[ "$rule" == *\$ ]]; then
+      suffix="${rule%\$}"
+      [[ "$fname" == *"${suffix}" ]] && return 0
+    else
+      [[ "$fname" == *"${rule}"* ]] && return 0
+    fi
+  done
+
+  return 1
+}
+
+##
+# 메인 실행 함수
+#
+# @param $@ {array} CLI 인자
+#
+# @return 0 on success
+##
+main() {
+  local -a raw_dirs=()
+  local -a raw_excludes=(".git")
+  local -a raw_exts=()
+  local -a filename_rules=()
+
+  local from_str=""
+  local to_str=""
+  local has_from=false
+  local has_to=false
+
+  local backup=false
+  local dry_run=false
+  local confirm=false
+  local summary=false
+  local log_output=""
+  local log_format="plain"
+
+  local has_log_output=false
+  local has_log_format=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dir|--dir=*)
+        local val=""
+        if [[ "$1" == *=* ]]; then
+          val="${1#*=}"
+          shift
+        else
+          if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == -* ]]; then
+            help "❌ '--dir' 옵션 뒤에 디렉토리 경로를 지정해야 합니다." "$LINENO"
+            exit 1
+          fi
+          val="$2"
+          shift 2
+        fi
+        raw_dirs+=("$val")
+        ;;
+      --exclude-dir|--exclude|--exclude-dir=*|--exclude=*)
+        local val=""
+        if [[ "$1" == *=* ]]; then
+          val="${1#*=}"
+          shift
+        else
+          if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == -* ]]; then
+            help "❌ '${1}' 옵션 뒤에 제외할 디렉토리 경로 또는 이름을 지정해야 합니다." "$LINENO"
+            exit 1
+          fi
+          val="$2"
+          shift 2
+        fi
+        raw_excludes+=("$val")
+        ;;
+      --ext|--ext=*)
+        local val=""
+        if [[ "$1" == *=* ]]; then
+          val="${1#*=}"
+          shift
+        else
+          if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == -* ]]; then
+            help "❌ '--ext' 옵션 뒤에 파일 확장자를 지정해야 합니다." "$LINENO"
+            exit 1
+          fi
+          val="$2"
+          shift 2
+        fi
+        raw_exts+=("$val")
+        ;;
+      --filename|--filename=*)
+        local val=""
+        if [[ "$1" == *=* ]]; then
+          val="${1#*=}"
+          shift
+        else
+          if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == -* ]]; then
+            help "❌ '--filename' 옵션 뒤에 파일명 규칙을 지정해야 합니다." "$LINENO"
+            exit 1
+          fi
+          val="$2"
+          shift 2
+        fi
+        filename_rules+=("$val")
+        ;;
+      --from|--from=*)
+        if [[ "$has_from" == true ]]; then
+          help "❌ '--from' 옵션이 중복 지정되었습니다." "$LINENO"
+          exit 1
+        fi
+        has_from=true
+        if [[ "$1" == *=* ]]; then
+          from_str="${1#*=}"
+          shift
+        else
+          if [[ $# -lt 2 ]]; then
+            help "❌ '--from' 옵션 뒤에 검색할 문자열을 지정해야 합니다." "$LINENO"
+            exit 1
+          fi
+          from_str="$2"
+          shift 2
+        fi
+        ;;
+      --to|--to=*)
+        if [[ "$has_to" == true ]]; then
+          help "❌ '--to' 옵션이 중복 지정되었습니다." "$LINENO"
+          exit 1
+        fi
+        has_to=true
+        if [[ "$1" == *=* ]]; then
+          to_str="${1#*=}"
+          shift
+        else
+          if [[ $# -lt 2 ]]; then
+            help "❌ '--to' 옵션 뒤에 치환할 문자열(삭제 시 \"\")을 지정해야 합니다." "$LINENO"
+            exit 1
+          fi
+          to_str="$2"
+          shift 2
+        fi
+        ;;
+      --backup)
+        backup=true
+        shift
+        ;;
+      --dry-run)
+        dry_run=true
+        shift
+        ;;
+      --summary)
+        summary=true
+        shift
+        ;;
+      --confirm|--confirm-before-change)
+        confirm=true
+        shift
+        ;;
+      --log-output|--log-output=*)
+        if [[ "$has_log_output" == true ]]; then
+          help "❌ '--log-output' 옵션이 중복 지정되었습니다." "$LINENO"
+          exit 1
+        fi
+        has_log_output=true
+        if [[ "$1" == *=* ]]; then
+          log_output="${1#*=}"
+          shift
+        else
+          if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == -* ]]; then
+            help "❌ '--log-output' 옵션 뒤에 로그 파일 경로를 지정해야 합니다." "$LINENO"
+            exit 1
+          fi
+          log_output="$2"
+          shift 2
+        fi
+        ;;
+      --log-format|--log-format=*)
+        if [[ "$has_log_format" == true ]]; then
+          help "❌ '--log-format' 옵션이 중복 지정되었습니다." "$LINENO"
+          exit 1
+        fi
+        has_log_format=true
+        if [[ "$1" == *=* ]]; then
+          log_format="${1#*=}"
+          shift
+        else
+          if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == -* ]]; then
+            help "❌ '--log-format' 옵션 뒤에 'plain' 또는 'json'을 지정해야 합니다." "$LINENO"
+            exit 1
+          fi
+          log_format="$2"
+          shift 2
+        fi
+        ;;
+      --help)
+        help ""
+        exit 0
+        ;;
+      -*)
+        help "❌ 단축 옵션(Short Option)은 지원하지 않거나 알 수 없는 옵션입니다: '$1'" "$LINENO"
+        exit 1
+        ;;
+      *)
+        help "❌ 알 수 없는 인자입니다: '$1'" "$LINENO"
+        exit 1
+        ;;
+    esac
+  done
+
+  # 1. 필수 파라미터 검증 (--from은 비어 있을 수 없음, --to는 빈 문자열 "" 허용!)
+  if [[ "$has_from" == false || -z "$from_str" ]]; then
+    help "❌ 필수 옵션 '--from <문자열>'이 누락되었거나 비어 있습니다." "$LINENO"
+    exit 1
+  fi
+
+  if [[ "$has_to" == false ]]; then
+    help "❌ 필수 옵션 '--to <문자열>'이 누락되었습니다 (문자열 삭제를 원하시면 --to \"\" 를 지정하세요)." "$LINENO"
+    exit 1
+  fi
+
+  if [[ "$from_str" == *$'\n'* || "$to_str" == *$'\n'* ]]; then
+    help "❌ '--from' 및 '--to'에는 개행(Newline) 문자를 포함할 수 없습니다." "$LINENO"
+    exit 1
+  fi
+
+  # 2. 로그 포맷 검증
+  log_format="${log_format,,}"
+  if [[ "$log_format" != "plain" && "$log_format" != "json" ]]; then
+    help "❌ '--log-format' 값은 'plain' 또는 'json'만 허용됩니다 (입력값: '$log_format')." "$LINENO"
+    exit 1
+  fi
+
+  # 3. 확장자 목록 파싱
+  local -a extensions=()
+  local raw_ext item cleaned_ext existing_ext is_dup
+  for raw_ext in "${raw_exts[@]}"; do
+    local -a split_exts=()
+    IFS=',' read -r -a split_exts <<< "$raw_ext"
+    for item in "${split_exts[@]}"; do
+      cleaned_ext="${item#.}"
+      [[ -n "$cleaned_ext" && "$cleaned_ext" != "*" ]] || continue
+      is_dup=false
+      for existing_ext in "${extensions[@]}"; do
+        if [[ "${existing_ext,,}" == "${cleaned_ext,,}" ]]; then
+          is_dup=true
+          break
+        fi
+      done
+      [[ "$is_dup" == false ]] && extensions+=("$cleaned_ext")
+    done
+  done
+
+  # 4. 검색 대상 디렉토리 정규화
+  if (( ${#raw_dirs[@]} == 0 )); then
+    raw_dirs=("$(pwd -P)")
+  fi
+
+  local -a directories=()
+  local d abs_d
+  for d in "${raw_dirs[@]}"; do
+    if abs_d="$(resolve_abs_dir "$d")"; then
+      directories+=("$abs_d")
+    else
+      help "❌ 검색 대상 디렉토리가 존재하지 않습니다: '$d'" "$LINENO"
+      exit 1
+    fi
+  done
+
+  local -a unique_dirs=()
+  while IFS= read -r d; do
+    [[ -n "$d" ]] && unique_dirs+=("$d")
+  done < <(printf "%s\n" "${directories[@]}" | sort -u)
+  directories=("${unique_dirs[@]}")
+
+  # 5. 제외 디렉토리 정규화 (포함 관계 및 중복 정리)
+  local -a exclude_abs_paths=()
+  local -a exclude_names=()
+  local ex abs_ex
+  local -A seen_ex=()
+  for ex in "${raw_excludes[@]}"; do
+    [[ -n "${seen_ex["$ex"]:-}" ]] && continue
+    seen_ex["$ex"]=1
+    if [[ "$ex" == *"/"* ]] && abs_ex="$(resolve_abs_dir "$ex")"; then
+      exclude_abs_paths+=("$abs_ex")
+    elif [[ "$ex" == *"/"* ]]; then
+      exclude_abs_paths+=("${ex%/}")
+    else
+      exclude_names+=("$ex")
+    fi
+  done
+
+  # 6. sed 안전 이스케이프 문자열 생성
+  local esc_from esc_to
+  esc_from="$(escape_sed_literal "$from_str" "target")"
+  esc_to="$(escape_sed_literal "$to_str" "replace")"
+
+  local count_scanned=0
+  local count_matched=0
+  local count_modified=0
+  local count_backup=0
+  local plain_logs=""
+  local -a json_items=()
+
+  echo "🔍 문자열 검색 및 치환 작업을 시작합니다..."
+  printf "   - 원본 문자열 (--from) : '%s'\n" "$from_str"
+  printf "   - 치환 문자열 (--to)   : '%s'%s\n" "$to_str" "$([[ -z "$to_str" ]] && echo " (빈 문자열 -> 삭제)" || echo "")"
+  [[ "$dry_run" == true ]] && echo "   - 실행 모드            : 🧪 DRY-RUN (실제 파일 미변경)"
+  echo
+
+  # 7. 파일 탐색 및 치환 실행 (파이프라인 서브셸 대신 FD 3 프로세스 치환을 사용하여 변수 증발 및 stdin 충돌 완벽 방지!)
+  local directory file fname grep_raw mline lineno linecontent yn file_changed
+  for directory in "${directories[@]}"; do
+    local -a find_args=("$directory")
+    local has_prune=false
+    local -a prune_expr=()
+
+    for abs_ex in "${exclude_abs_paths[@]}"; do
+      [[ "$has_prune" == true ]] && prune_expr+=(-o)
+      prune_expr+=(-path "$abs_ex")
+      has_prune=true
+    done
+
+    for ex in "${exclude_names[@]}"; do
+      [[ "$has_prune" == true ]] && prune_expr+=(-o)
+      prune_expr+=(-name "$ex")
+      has_prune=true
+    done
+
+    if [[ "$has_prune" == true ]]; then
+      find_args+=( "(" "${prune_expr[@]}" ")" -prune -o )
+    fi
+
+    # .bak 백업 파일은 치환 대상에서 자동 제외
+    find_args+=( -type f ! -name "*.bak" )
+
+    if (( ${#extensions[@]} > 0 )); then
+      local -a ext_expr=()
+      local e
+      for e in "${extensions[@]}"; do
+        (( ${#ext_expr[@]} > 0 )) && ext_expr+=(-o)
+        ext_expr+=(-iname "*.${e}")
+      done
+      find_args+=( "(" "${ext_expr[@]}" ")" )
+    fi
+
+    find_args+=( -print0 )
+
+    while IFS= read -r -d '' -u 3 file; do
+      fname="$(basename "$file")"
+      if ! matches_filename_rules "$fname" "${filename_rules[@]}"; then
+        continue
+      fi
+
+      ((count_scanned++)) || true
+
+      # 치환 전 매칭 라인 캡처 (-I: 바이너리 제외, -F: 리터럴 고정 문자열 검색, -n: 줄 번호)
+      if ! grep_raw="$(grep -IFn -- "$from_str" "$file" 2>/dev/null)"; then
+        continue
+      fi
+
+      ((count_matched++)) || true
+      echo "🎯 [MATCHED] $file"
+
+      # 매칭된 줄 번호 및 내용 출력 + 로그용 데이터 사전 구성 (sed 실행 전에 수행하여 데이터 유실 방지)
+      local -a file_json_matches=()
+      while IFS= read -r mline; do
+        [[ -n "$mline" ]] || continue
+        lineno="${mline%%:*}"
+        linecontent="${mline#*:}"
+        printf "   [L%-4s] %s\n" "$lineno" "$linecontent"
+
+        if [[ "$log_format" == "plain" ]]; then
+          plain_logs+="${file} | L${lineno} | ${linecontent}"$'\n'
+        else
+          file_json_matches+=("$(printf '{"line":%s,"content":"%s"}' "$lineno" "$(json_escape "$linecontent")")")
+        fi
+      done <<< "$grep_raw"
+
+      file_changed=false
+      local file_backed_up=false
+
+      if [[ "$dry_run" == false ]]; then
+        if [[ "$confirm" == true ]]; then
+          printf "❓ '%s' 파일의 내용을 치환하시겠습니까? (y/N): " "$file"
+          read -r yn </dev/tty || yn="n"
+          if [[ ! "$yn" =~ ^[Yy]$ ]]; then
+            echo "   ⏭️  [SKIPPED] 사용자 선택으로 건너뜀: $file"
+            echo
+            continue
+          fi
+        fi
+
+        if [[ ! -w "$file" ]]; then
+          echo "   ❌ [ERROR] 파일에 쓰기 권한이 없어 건너뜁니다: $file" >&2
+          echo
+          continue
+        fi
+
+        if [[ "$backup" == true ]]; then
+          cp -p "$file" "${file}.bak"
+          file_backed_up=true
+          ((count_backup++)) || true
+          echo "   💾 [BACKUP] 백업 생성 완료: ${file}.bak"
+        fi
+
+        sed -i "s/${esc_from}/${esc_to}/g" "$file"
+        file_changed=true
+        ((count_modified++)) || true
+        echo "   ✅ [REPLACED] 치환 완료: $file"
+      fi
+
+      if [[ "$log_format" == "json" ]]; then
+        local IFS=','
+        local matches_json="[${file_json_matches[*]}]"
+        json_items+=("$(printf '{"file":"%s","backup":%s,"changed":%s,"matches":%s}' \
+          "$(json_escape "$file")" "$file_backed_up" "$file_changed" "$matches_json")")
+      fi
+      echo
+    done 3< <(find "${find_args[@]}")
+  done
+
+  # 8. 로그 파일 저장 (버그 수정: plain과 json을 명확히 분기하여 오염 없이 출력)
+  if [[ -n "$log_output" ]]; then
+    if [[ "$log_format" == "plain" ]]; then
+      printf "%s" "$plain_logs" > "$log_output"
+    else
+      local IFS=','
+      printf "[%s]\n" "${json_items[*]}" > "$log_output"
+    fi
+    echo "📝 [INFO] 로그 파일이 저장되었습니다: $log_output (형식: $log_format)"
+  fi
+
+  # 9. 요약 통계 출력 (--summary 지정 시 또는 기본 완료 안내)
+  if [[ "$summary" == true ]]; then
+    echo "=================================================================="
+    echo " 📊 작업 요약 통계 (Summary)"
+    echo "=================================================================="
+    printf " - 검사 대상 파일 수 : %d 개\n" "$count_scanned"
+    printf " - 매칭된 파일 수    : %d 개\n" "$count_matched"
+    printf " - 치환된 파일 수    : %d 개%s\n" "$count_modified" "$([[ "$dry_run" == true ]] && echo " (DRY-RUN)" || echo "")"
+    printf " - 백업된 파일 수    : %d 개\n" "$count_backup"
+    echo "=================================================================="
+  else
+    echo "🎉 작업 완료 (검사: ${count_scanned}개, 매칭: ${count_matched}개, 치환: ${count_modified}개)"
+  fi
+}
+
+main "$@"
+exit 0

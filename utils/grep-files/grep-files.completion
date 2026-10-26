@@ -1,0 +1,191 @@
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : grep-files bash completion.
+# @license : Apache License 2.0
+# @since : 2024-03-10
+# @version : 2.1.0 (2026-10-26)
+# @desc : support RHEL 8+, Oracle Linux 8+, Ubuntu 20.04+, RockyOS 8+, CentOS 7+, macOS 11+
+# @installation :
+# 1. insert 'source <path>/grep-files.completion' into ~/.bashrc or ~/.bash_profile for a personal usage.
+# 2. or run 'scriptctl install --script <path>/grep-files [--target local|global]'
+# =======================================
+
+# =======================================
+# [Bash Completion Parameter Description]
+# 1. COMP_WORDS: an array containing all individual words in the current command line
+#    (현재 커맨드 라인에 입력된 단어들의 배열)
+# 2. COMP_CWORD: an index of the word containing the current cursor position
+#    (현재 커서가 위치한 단어의 인덱스)
+# 3. COMP_LINE: the current command line string
+#    (현재까지 커맨드 라인에 입력된 전체 문자열)
+# 4. COMPREPLY: an array variable from which Bash reads the possible completions
+#    (bash completion이 제안할 단어들의 배열)
+#
+# Arguments of completion function:
+# - $1: name of the command whose arguments are being completed (명령의 이름)
+# - $2: word being completed (현재 커서에서 완성하려고 하는 단어)
+# - $3: word preceding the word being completed (현재 완성하려는 단어의 바로 이전 단어)
+# =======================================
+
+##
+# 콤마(,)로 구분된 다중 확장자 자동 완성을 수행합니다.
+#
+# @param $1 {string} 현재 입력 중인 확장자 문자열 (예: 'sh,comp')
+# @param $2 {string} 출력 접두사 (기본값: '', '--ext=*' 완성 시 '--ext=')
+#
+# @return COMPREPLY 배열 설정
+##
+_grep_files_complete_exts() {
+  local cur_val="$1"
+  local opt_prefix="${2:-}"
+  local -a ext_list=(java sh completion py js ts json xml yml yaml conf md properties sql txt html css)
+
+  local list_prefix=""
+  local partial="$cur_val"
+  local -a selected_exts=()
+  local -a filtered_exts=()
+  local e sel candidate
+
+  if [[ "$cur_val" == *,* ]]; then
+    list_prefix="${cur_val%,*},"
+    partial="${cur_val##*,}"
+    IFS=',' read -r -a selected_exts <<< "${cur_val%,*}"
+  fi
+
+  for e in "${ext_list[@]}"; do
+    for sel in "${selected_exts[@]}"; do
+      [[ "$e" != "$sel" ]] || continue 2
+    done
+    filtered_exts+=("$e")
+  done
+
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] && COMPREPLY+=("${opt_prefix}${list_prefix}${candidate}")
+  done < <(compgen -W "${filtered_exts[*]}" -- "$partial")
+}
+
+##
+# grep-files 명령어에 대한 Bash 자동 완성 처리 함수
+#
+# @param $1 {string} 명령어 이름 (Command name)
+# @param $2 {string} 현재 완성 중인 단어 (Current word)
+# @param $3 {string} 직전 단어 (Previous word)
+#
+# @return COMPREPLY 배열 설정
+##
+_grep_files_completion() {
+  local cur prev
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]:-}"
+  prev="${COMP_WORDS[COMP_CWORD-1]:-}"
+
+  # 지원 옵션 목록 (--dir, --exclude-dir, --ext는 다중 지정 허용)
+  local -a single_opts=(
+    "--pattern"
+    "--mode"
+    "--ignore-case"
+    "--output"
+    "--help"
+  )
+  local -a multi_opts=(
+    "--dir"
+    "--exclude-dir"
+    "--ext"
+  )
+
+  # 1. --옵션=값 형태로 입력 중인 경우 처리
+  case "$cur" in
+    --dir=*|--exclude-dir=*)
+      local opt_prefix="${cur%%=*}=_"
+      opt_prefix="${opt_prefix%_}"
+      local dir_part="${cur#*=}"
+      local candidate
+      compopt -o nospace 2>/dev/null || true
+      while IFS= read -r candidate; do
+        [[ -n "$candidate" ]] && COMPREPLY+=("${opt_prefix}${candidate%/}/")
+      done < <(compgen -d -- "$dir_part")
+      return 0
+      ;;
+    --output=*)
+      local file_part="${cur#--output=}"
+      local candidate
+      compopt -o nospace 2>/dev/null || true
+      while IFS= read -r candidate; do
+        [[ -n "$candidate" ]] || continue
+        if [[ -d "$candidate" ]]; then
+          COMPREPLY+=("--output=${candidate%/}/")
+        else
+          COMPREPLY+=("--output=${candidate}")
+        fi
+      done < <(compgen -f -- "$file_part")
+      return 0
+      ;;
+    --mode=*)
+      local mode_part="${cur#--mode=}"
+      local candidate
+      while IFS= read -r candidate; do
+        [[ -n "$candidate" ]] && COMPREPLY+=("--mode=${candidate}")
+      done < <(compgen -W "match missing" -- "$mode_part")
+      return 0
+      ;;
+    --ext=*)
+      _grep_files_complete_exts "${cur#--ext=}" "--ext="
+      return 0
+      ;;
+    --pattern=*)
+      return 0
+      ;;
+  esac
+
+  # 2. 직전 토큰(prev)에 따른 인자 자동 완성
+  case "$prev" in
+    --dir|--exclude-dir)
+      compopt -o filenames 2>/dev/null || true
+      COMPREPLY=( $(compgen -d -- "$cur") )
+      if (( ${#COMPREPLY[@]} == 1 )) && [[ -d "${COMPREPLY[0]}" ]]; then
+        compopt -o nospace 2>/dev/null || true
+      fi
+      return 0
+      ;;
+    --output)
+      compopt -o filenames 2>/dev/null || true
+      COMPREPLY=( $(compgen -f -- "$cur") )
+      if (( ${#COMPREPLY[@]} == 1 )) && [[ -d "${COMPREPLY[0]}" ]]; then
+        compopt -o nospace 2>/dev/null || true
+      fi
+      return 0
+      ;;
+    --mode)
+      COMPREPLY=( $(compgen -W "match missing" -- "$cur") )
+      return 0
+      ;;
+    --ext)
+      _grep_files_complete_exts "$cur" ""
+      return 0
+      ;;
+    --pattern)
+      return 0
+      ;;
+  esac
+
+  # 3. 옵션 추천 (--dir, --exclude-dir, --ext는 여러 번 사용 가능, 단일 옵션은 중복 제외)
+  local -a available_opts=("${multi_opts[@]}")
+  local opt used_token already_used i
+  for opt in "${single_opts[@]}"; do
+    already_used=false
+    for (( i=1; i < ${#COMP_WORDS[@]}; i++ )); do
+      (( i != COMP_CWORD )) || continue
+      used_token="${COMP_WORDS[i]%%=*}"
+      if [[ "$used_token" == "$opt" ]]; then
+        already_used=true
+        break
+      fi
+    done
+    [[ "$already_used" == false ]] && available_opts+=("$opt")
+  done
+
+  COMPREPLY=( $(compgen -W "${available_opts[*]}" -- "$cur") )
+  return 0
+}
+
+complete -F _grep_files_completion grep-files ./grep-files

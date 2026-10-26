@@ -1,0 +1,298 @@
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : dkcontls bash completion.
+# @license : Apache License 2.0
+# @since : 2026-10-26
+# @desc : support RHEL 8+, Oracle Linux 8+, Ubuntu 20.04+, RockyOS 8+, CentOS 7+
+# @installation :
+# 1. insert 'source <path>/dkcontls.completion' into ~/.bashrc or ~/.bash_profile for a personal usage.
+# 2. or run 'scriptctl install --script <path>/dkcontls [--target local|global]'
+# =======================================
+
+# =======================================
+# [Bash Completion Parameter Description]
+# 1. COMP_WORDS: an array containing all individual words in the current command line
+#    (현재 커맨드 라인에 입력된 단어들의 배열)
+# 2. COMP_CWORD: an index of the word containing the current cursor position
+#    (현재 커서가 위치한 단어의 인덱스)
+# 3. COMP_LINE: the current command line string
+#    (현재까지 커맨드 라인에 입력된 전체 문자열)
+# 4. COMPREPLY: an array variable from which Bash reads the possible completions
+#    (bash completion이 제안할 단어들의 배열)
+#
+# Arguments of completion function:
+# - $1: name of the command whose arguments are being completed (명령의 이름)
+# - $2: word being completed (현재 커서에서 완성하려고 하는 단어)
+# - $3: word preceding the word being completed (현재 완성하려는 단어의 바로 이전 단어)
+# =======================================
+
+##
+# 비루트/루트 환경에서 비밀번호 프롬프트 없이 안전하게 docker 조회 명령을 실행합니다.
+#
+# @param $@ {array} docker 하위 인자
+#
+# @return 명령 표준 출력 (실패 시 빈 출력)
+##
+_dkcontls_safe_docker() {
+  if ! command -v docker >/dev/null 2>&1; then
+    return 0
+  fi
+  docker "$@" 2>/dev/null || sudo -n docker "$@" 2>/dev/null || true
+}
+
+##
+# '--format' 옵션에 대해 [ID|Image|Command|CreatedAT|RunningFor|Ports|State|Status|Names|Size]
+# 중 콤마(,)로 구분된 다중 선택 자동 완성을 수행합니다 (이미 선택된 항목은 자동 제외).
+#
+# @param $1 {string} 현재 입력 중인 format 값 문자열 (예: 'ID,Nam')
+# @param $2 {string} 출력 접두사 (기본값: '', '--format=*' 완성 시 '--format=')
+#
+# @return COMPREPLY 배열 설정
+##
+_dkcontls_complete_format() {
+  local cur_val="$1"
+  local opt_prefix="${2:-}"
+  local -a all_fields=(
+    "ID"
+    "Image"
+    "Command"
+    "CreatedAT"
+    "RunningFor"
+    "Ports"
+    "State"
+    "Status"
+    "Names"
+    "Size"
+  )
+
+  local list_prefix=""
+  local partial="$cur_val"
+  local -a selected_fields=()
+  local -a filtered_fields=()
+  local f sel candidate
+
+  if [[ "$cur_val" == *,* ]]; then
+    list_prefix="${cur_val%,*},"
+    partial="${cur_val##*,}"
+    IFS=',' read -r -a selected_fields <<< "${cur_val%,*}"
+  fi
+
+  for f in "${all_fields[@]}"; do
+    for sel in "${selected_fields[@]}"; do
+      [[ "$f" != "$sel" ]] || continue 2
+    done
+    filtered_fields+=("$f")
+  done
+
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] && COMPREPLY+=("${opt_prefix}${list_prefix}${candidate}")
+  done < <(compgen -W "${filtered_fields[*]}" -- "$partial")
+}
+
+##
+# '--filter' 옵션에 대해 속성(Key) 및 속성별 가능한 값(Value) 자동 완성을 수행합니다.
+#
+# @param $1 {string} 현재 입력 중인 filter 문자열 (예: 'stat' 또는 'status=run')
+# @param $2 {string} 출력 접두사 (기본값: '', '--filter=*' 완성 시 '--filter=')
+#
+# @return COMPREPLY 배열 설정
+##
+_dkcontls_complete_filter() {
+  local cur_val="$1"
+  local opt_prefix="${2:-}"
+
+  local -a filter_keys=(
+    "id="
+    "name="
+    "label="
+    "exited="
+    "status="
+    "ancestor="
+    "before="
+    "since="
+    "isolation="
+    "volume="
+    "network="
+    "publish="
+    "expose="
+    "health="
+    "is-task="
+  )
+
+  # 아직 '='가 입력되지 않은 경우: 필터 속성(Key=) 목록 추천 (뒤에 공백 미추가)
+  if [[ "$cur_val" != *=* ]]; then
+    compopt -o nospace 2>/dev/null || true
+    local candidate
+    while IFS= read -r candidate; do
+      [[ -n "$candidate" ]] && COMPREPLY+=("${opt_prefix}${candidate}")
+    done < <(compgen -W "${filter_keys[*]}" -- "$cur_val")
+    return 0
+  fi
+
+  # 'key=value' 형태로 값(Value)을 입력 중인 경우: 속성별 맞춤형 값 추천
+  local key="${cur_val%%=*}"
+  local val_part="${cur_val#*=}"
+  local val_candidates=""
+
+  case "$key" in
+    status)
+      val_candidates="created restarting running removing paused exited dead"
+      ;;
+    health)
+      val_candidates="starting healthy unhealthy none"
+      ;;
+    is-task)
+      val_candidates="true false"
+      ;;
+    isolation)
+      val_candidates="default process hyperv"
+      ;;
+    exited)
+      val_candidates="0 1 127 137 143"
+      ;;
+    name|before|since)
+      val_candidates="$(_dkcontls_safe_docker container ls -a --format '{{.Names}}')"
+      ;;
+    id)
+      val_candidates="$(_dkcontls_safe_docker container ls -a --format '{{.ID}}')"
+      ;;
+    network)
+      val_candidates="$(_dkcontls_safe_docker network ls --format '{{.Name}}')"
+      ;;
+    volume)
+      val_candidates="$(_dkcontls_safe_docker volume ls --format '{{.Name}}')"
+      ;;
+    ancestor)
+      val_candidates="$(_dkcontls_safe_docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -v '<none>' || true)"
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+
+  local candidate
+  # COMP_WORDBREAKS에 '='가 포함되어 있고 _init_completion이 없는 폴백 환경을 고려한 접두어 처리
+  local key_prefix="${opt_prefix}${key}="
+  if [[ "${COMP_WORDBREAKS:-}" == *"="* ]] && ! declare -F _init_completion >/dev/null 2>&1; then
+    key_prefix=""
+  fi
+
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] && COMPREPLY+=("${key_prefix}${candidate}")
+  done < <(compgen -W "$val_candidates" -- "$val_part")
+}
+
+##
+# dkcontls 명령어에 대한 Bash 자동 완성 처리 함수
+#
+# @param $1 {string} 명령어 이름 (Command name)
+# @param $2 {string} 현재 완성 중인 단어 (Current word)
+# @param $3 {string} 직전 단어 (Previous word)
+#
+# @return COMPREPLY 배열 설정
+##
+_dkcontls_completions() {
+  # shellcheck disable=SC2034
+  local cur prev words cword
+  COMPREPLY=()
+
+  if declare -F _init_completion >/dev/null 2>&1; then
+    _init_completion -n = || return 0
+  else
+    words=("${COMP_WORDS[@]}")
+    cword=$COMP_CWORD
+    cur="${words[cword]:-}"
+    prev="${words[cword-1]:-}"
+
+    # COMP_WORDBREAKS에 '='가 포함된 기본 환경에서 'key=<TAB>' 또는 'key=val<TAB>' 복원
+    if [[ "$cur" == "=" && "$cword" -ge 2 ]]; then
+      local opt_before_key="${words[cword-2]:-}"
+      if [[ "$opt_before_key" == "--filter" ]]; then
+        _dkcontls_complete_filter "${prev}=" ""
+        return 0
+      elif [[ "$prev" == "--format" ]]; then
+        _dkcontls_complete_format "" ""
+        return 0
+      elif [[ "$prev" == "--filter" ]]; then
+        _dkcontls_complete_filter "" ""
+        return 0
+      fi
+    elif [[ "$prev" == "=" && "$cword" -ge 3 ]]; then
+      local opt_before_key="${words[cword-3]:-}"
+      local key_before_eq="${words[cword-2]:-}"
+      if [[ "$opt_before_key" == "--filter" ]]; then
+        _dkcontls_complete_filter "${key_before_eq}=${cur}" ""
+        return 0
+      elif [[ "$key_before_eq" == "--format" ]]; then
+        _dkcontls_complete_format "$cur" ""
+        return 0
+      elif [[ "$key_before_eq" == "--filter" ]]; then
+        _dkcontls_complete_filter "$cur" ""
+        return 0
+      fi
+    fi
+  fi
+
+  # 1. --옵션=값 형태로 입력 중인 경우 처리
+  case "$cur" in
+    --format=*)
+      _dkcontls_complete_format "${cur#--format=}" "--format="
+      return 0
+      ;;
+    --filter=*)
+      _dkcontls_complete_filter "${cur#--filter=}" "--filter="
+      return 0
+      ;;
+    --last=*)
+      return 0
+      ;;
+  esac
+
+  # 2. 직전 토큰(prev)에 따른 인자 자동 완성
+  case "$prev" in
+    --format)
+      _dkcontls_complete_format "$cur" ""
+      return 0
+      ;;
+    --filter)
+      _dkcontls_complete_filter "$cur" ""
+      return 0
+      ;;
+    --last)
+      COMPREPLY=( $(compgen -W "1 3 5 10 20" -- "$cur") )
+      return 0
+      ;;
+  esac
+
+  # 3. 옵션 추천 (--filter는 다중 지정 허용, 나머지 단일 옵션은 중복 제안 방지)
+  local -a single_opts=(
+    "--all"
+    "--format"
+    "--last"
+    "--latest"
+    "--no-trunc"
+    "--quiet"
+    "--size"
+    "--help"
+  )
+  local -a available_opts=("--filter")
+
+  local opt used_token already_used i
+  for opt in "${single_opts[@]}"; do
+    already_used=false
+    for (( i=1; i < ${#words[@]}; i++ )); do
+      (( i != cword )) || continue
+      used_token="${words[i]%%=*}"
+      if [[ "$used_token" == "$opt" ]]; then
+        already_used=true
+        break
+      fi
+    done
+    [[ "$already_used" == false ]] && available_opts+=("$opt")
+  done
+
+  COMPREPLY=( $(compgen -W "${available_opts[*]}" -- "$cur") )
+  return 0
+}
+
+complete -F _dkcontls_completions dkcontls ./dkcontls

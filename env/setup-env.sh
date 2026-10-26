@@ -991,8 +991,92 @@ _install_completion() {
 }
 
 ##
+# 확장자가 없는 신규 스크립트 설치 시, 동일한 이름에 '.sh'가 붙은 구버전 스크립트 및
+# bash completion 파일이 설치되어 있으면 확인 후 삭제합니다.
+#
+# @param $1 {string} 삭제 확인할 구버전 명령어 이름 (예: my-tool.sh)
+# @param $2 {string} 사용자 스크립트 설치 디렉토리 (예: $HOME/bin)
+#
+# @return 진행 상황 메시지 (표준 출력)
+##
+_remove_legacy_sh_tool() {
+  local legacy_cmd="$1"
+  local bin_dir="$2"
+
+  if [ -z "$legacy_cmd" ] || [ -z "$bin_dir" ]; then
+    return 0
+  fi
+
+  local legacy_script="${bin_dir}/${legacy_cmd}"
+  local has_legacy_script=0
+  if [ -f "$legacy_script" ] || [ -L "$legacy_script" ]; then
+    has_legacy_script=1
+  fi
+
+  # Bash Completion 탐색 대상 디렉토리 수집 (중복 방지)
+  local -a comp_dirs=()
+  local pkg_comp_dir=""
+  if command -v pkg-config &> /dev/null; then
+    pkg_comp_dir="$(pkg-config --variable=completionsdir bash-completion 2>/dev/null)"
+  fi
+  if [ -n "$pkg_comp_dir" ] && [ -d "$pkg_comp_dir" ]; then
+    comp_dirs+=("$pkg_comp_dir")
+  fi
+  if [ -d "/usr/share/bash-completion/completions" ] && [[ "$pkg_comp_dir" != "/usr/share/bash-completion/completions" ]]; then
+    comp_dirs+=("/usr/share/bash-completion/completions")
+  fi
+  if [ -d "/etc/bash_completion.d" ] && [[ "$pkg_comp_dir" != "/etc/bash_completion.d" ]]; then
+    comp_dirs+=("/etc/bash_completion.d")
+  fi
+
+  # 구버전(.sh)과 1:1 매칭되는 completion 파일 목록 탐색
+  local -a legacy_comp_files=()
+  local dir cand
+  for dir in "${comp_dirs[@]}"; do
+    for cand in "${dir}/${legacy_cmd}" "${dir}/${legacy_cmd}.completion"; do
+      if [ -f "$cand" ] || [ -L "$cand" ]; then
+        legacy_comp_files+=("$cand")
+      fi
+    done
+  done
+
+  # 구버전 스크립트와 completion 파일이 모두 없으면 아무 작업도 하지 않고 종료
+  if (( has_legacy_script == 0 && ${#legacy_comp_files[@]} == 0 )); then
+    return 0
+  fi
+
+  echo "............... ${FUNCNAME[0]} - $legacy_cmd ..............."
+
+  # 1. 구버전 스크립트 파일 삭제
+  if (( has_legacy_script == 1 )); then
+    if rm -f -- "$legacy_script"; then
+      echo_i " - [🗑️ ] '${legacy_cmd}' 구버전 실행 파일을 삭제했습니다. ($legacy_script)"
+    else
+      echo_e " - [❌] '${legacy_cmd}' 구버전 실행 파일 삭제에 실패했습니다. ($legacy_script)"
+    fi
+  fi
+
+  # 2. 구버전 bash completion 파일 삭제
+  local comp_file
+  for comp_file in "${legacy_comp_files[@]}"; do
+    if sudo rm -f -- "$comp_file"; then
+      echo_i " - [🗑️ ] '${legacy_cmd} completion' 구버전 자동완성 파일을 삭제했습니다. ($comp_file)"
+    else
+      echo_e " - [❌] '${legacy_cmd} completion' 구버전 자동완성 파일 삭제에 실패했습니다. ($comp_file)"
+    fi
+  done
+
+  # 3. 현재 쉘이 source 실행 상태라면 메모리에 등록된 구버전 자동완성 해제
+  if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+    complete -r "$legacy_cmd" 2>/dev/null || true
+  fi
+}
+
+##
 # 사용자 정의 도구 및 bash completion 파일을 다운로드하고 설치합니다.
 # 파일이 이미 존재할 경우 내용을 비교하여 다를 때만 사용자에게 설치 여부를 확인합니다.
+# 설치하려는 도구 이름이 '.sh'로 끝나지 않는 경우, '동일한 이름 + .sh' 구버전 도구 및
+# bash completion 파일이 존재하면 함께 삭제합니다.
 #
 # @param $1 사용자 정의 도구 URL
 #
@@ -1001,7 +1085,8 @@ _install_completion() {
 _install_custom_tools() {
   local func_name="${FUNCNAME[0]}"
   local tool_url="$1"
-  local target_cmd=$(basename "$tool_url")
+  local target_cmd
+  target_cmd="$(basename "$tool_url")"
   
   echo
   echo "############### $func_name - $target_cmd ###############"
@@ -1046,6 +1131,11 @@ _install_custom_tools() {
   # 공통 함수를 호출하여 completion 다운로드 및 설치 위임 (URL은 tool_url.completion 규칙 적용)
   local completion_url="${tool_url}.completion"
   _install_completion "$completion_url" "$target_cmd"
+
+  # 설치 대상 스크립트 이름이 '.sh'로 끝나지 않는 경우, '동일한 이름 + .sh' 구버전 스크립트 및 completion 삭제
+  if [[ "$target_cmd" != *.sh ]]; then
+    _remove_legacy_sh_tool "${target_cmd}.sh" "$bin_dir"
+  fi
 }
 
 ##
