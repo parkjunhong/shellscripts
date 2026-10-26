@@ -1,6 +1,6 @@
 # =======================================
 # @author   : parkjunhong77@gmail.com
-# @title    : clone-gitlab-projects.sh completions.
+# @title    : clone-gitlab-projects completions.
 # @license  : Apache License 2.0
 # @since    : 2026-05-07
 # @desc     : support RHEL, Oracle Linux, Ubuntu, RockyOS
@@ -73,5 +73,5 @@ _clone_gitlab_projects_completions() {
   return 0
 }
 
-complete -F _clone_gitlab_projects_completions clone-gitlab-projects.sh
+complete -F _clone_gitlab_projects_completions clone-gitlab-projects
 
