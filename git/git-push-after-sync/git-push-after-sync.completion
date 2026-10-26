@@ -1,6 +1,6 @@
 # =======================================
 # @author   : parkjunhong77@gmail.com
-# @title    : search files.
+# @title    : git-push-after-sync (bash completion).
 # @license  : Apache License 2.0
 # @since    : 2026-05-21
 # @desc     : support RHEL, Oracle Linux, Ubuntu, RockyOS
@@ -80,5 +80,5 @@ _git_push_after_sync_completion() {
   return 0
 }
 
-complete -F _git_push_after_sync_completion git-push-after-sync.sh
+complete -F _git_push_after_sync_completion git-push-after-sync
 

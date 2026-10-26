@@ -2,7 +2,7 @@
 
 # =======================================
 # @author		: parkjunhong77@gmail.com
-# @title		: build maven projects with user-custom 'profile' for build.
+# @title		: Create and push Git tags across multiple repositories (bash completion).
 # @license		: Apache License 2.0
 # @since		: 2023-10-11
 # @desc			: support macOS 11.2.3, Ubuntu 18.04, CentOS 7

@@ -19,7 +19,7 @@ GitLab 프로젝트 일괄 복제 CLI 도구 및 GitLab API 연동 참조 모듈
 
 ### 1. [`git-branch-module-gitlab-api.sh`](./git-branch-module-gitlab-api.sh)
 
-* **용도**: [`git/git-branch-cmd.sh`](../git/git-branch-cmd.sh) 등 브랜치 제어 스크립트에서 GitLab 저장소의 브랜치 보호(Protected Branch) 및 기본 브랜치(Default Branch) 설정을 제어할 때 호출하는 API 모듈입니다.
+* **용도**: [`git/git-branch-cmd/git-branch-cmd`](../git/git-branch-cmd/git-branch-cmd) 등 브랜치 제어 스크립트에서 GitLab 저장소의 브랜치 보호(Protected Branch) 및 기본 브랜치(Default Branch) 설정을 제어할 때 호출하는 API 모듈입니다.
 * **요구 사항**: 시스템에 GitLab 공식 CLI 도구인 `glab`이 설치 및 인증되어 있어야 합니다 (`jq` 없이 POSIX/표준 텍스트 처리만으로 동작).
 * **제공 함수 명세**:
 

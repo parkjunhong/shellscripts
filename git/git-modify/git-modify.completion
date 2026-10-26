@@ -1,0 +1,115 @@
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : Batch modify Git repository remote URLs and user configurations (bash completion).
+# @license : Apache License 2.0
+# @since : 2026-10-26
+# @desc : support RHEL 7+, Oracle Linux 7+, Ubuntu 18.04+, RockyOS 8+, CentOS 7+
+# @installation :
+# 1. insert 'source <path>/git-modify.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/git-modify.completion' into /etc/bashrc for all users.
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+#
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+# =======================================
+
+##
+# 디렉토리 경로 자동완성 시 슬래시(/)만 붙이고 후행 공백을 추가하지 않도록 처리합니다.
+#
+# @param $1 {string} 현재 입력 중인 경로 단어
+#
+# @return COMPREPLY 설정
+##
+_git_modify_complete_directories() {
+  local cur="$1"
+  compopt -o filenames 2>/dev/null || true
+  mapfile -t COMPREPLY < <(compgen -d -- "$cur")
+  if (( ${#COMPREPLY[@]} == 1 )) && [[ -d "${COMPREPLY[0]}" ]]; then
+    compopt -o nospace 2>/dev/null || true
+  fi
+}
+
+##
+# git-modify 명령어에 대한 Bash 자동완성 함수입니다.
+#
+# @param $1 {string} 명령어 이름
+# @param $2 {string} 현재 입력 중인 단어
+# @param $3 {string} 직전 입력 단어
+#
+# @return COMPREPLY 배열 설정
+##
+_git_modify_completions() {
+  local cur prev
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  local subcommands="remote-url userinfo --help"
+
+  if (( COMP_CWORD == 1 )); then
+    COMPREPLY=( $(compgen -W "$subcommands" -- "$cur") )
+    return 0
+  fi
+
+  local subcmd="${COMP_WORDS[1]:-}"
+
+  case "$prev" in
+    --dir)
+      _git_modify_complete_directories "$cur"
+      return 0
+      ;;
+    --remote)
+      COMPREPLY=( $(compgen -W "origin upstream" -- "$cur") )
+      return 0
+      ;;
+    --from|--to|--prefix|--name|--email)
+      return 0
+      ;;
+  esac
+
+  local single_opts=""
+  case "$subcmd" in
+    remote-url)
+      single_opts="--from --to --prefix --remote --dry-run --verbose --help"
+      ;;
+    userinfo)
+      single_opts="--name --email --prefix --dry-run --verbose --help"
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+
+  # --dir 옵션은 다중 지정 가능하므로 항상 추천 목록에 포함
+  local available_opts="--dir "
+  local opt used i
+  for opt in $single_opts; do
+    used=false
+    for (( i=2; i < COMP_CWORD; i++ )); do
+      if [[ "${COMP_WORDS[i]}" == "$opt" ]]; then
+        used=true
+        break
+      fi
+    done
+    if [[ "$used" == false ]]; then
+      available_opts+="$opt "
+    fi
+  done
+
+  COMPREPLY=( $(compgen -W "$available_opts" -- "$cur") )
+  return 0
+}
+
+complete -F _git_modify_completions git-modify ./git-modify

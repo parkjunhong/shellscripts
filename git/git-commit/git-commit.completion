@@ -1,0 +1,121 @@
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : Git commit & reset management CLI (bash completion).
+# @license : Apache License 2.0
+# @since : 2026-10-26
+# @desc : support RHEL 7+, Oracle Linux 7+, Ubuntu 18.04+, RockyOS 8+, CentOS 7+
+# @installation :
+# 1. insert 'source <path>/git-commit.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/git-commit.completion' into /etc/bashrc for all users.
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+#
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+# =======================================
+
+##
+# git-commit 명령어에 대한 Bash 자동완성 함수입니다.
+#
+# @param $1 {string} 명령어 이름
+# @param $2 {string} 현재 입력 중인 단어
+# @param $3 {string} 직전 입력 단어
+#
+# @return COMPREPLY 배열 설정
+##
+_git_commit_completions() {
+  local cur prev
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  local subcommands="push cancel unstaged rollback --help"
+
+  if (( COMP_CWORD == 1 )); then
+    COMPREPLY=( $(compgen -W "$subcommands" -- "$cur") )
+    return 0
+  fi
+
+  local subcmd="${COMP_WORDS[1]:-}"
+
+  case "$prev" in
+    --message)
+      return 0
+      ;;
+    --steps)
+      COMPREPLY=( $(compgen -W "1 2 3 4 5" -- "$cur") )
+      return 0
+      ;;
+    --commit)
+      if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        local recent_commits
+        recent_commits="$(git log -n 15 --pretty=format:'%h' 2>/dev/null || true)"
+        COMPREPLY=( $(compgen -W "$recent_commits" -- "$cur") )
+      fi
+      return 0
+      ;;
+  esac
+
+  local opts=""
+  case "$subcmd" in
+    push)
+      opts="--message --add-all --yes --help"
+      ;;
+    cancel|unstaged)
+      opts="--steps --commit --help"
+      ;;
+    rollback)
+      opts="--steps --commit --yes --help"
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+
+  # 이미 사용된 옵션 및 상호 배타 옵션(--steps vs --commit) 제외
+  local has_steps=false
+  local has_commit=false
+  local i word
+  for (( i=2; i < COMP_CWORD; i++ )); do
+    word="${COMP_WORDS[i]}"
+    [[ "$word" == "--steps" ]] && has_steps=true
+    [[ "$word" == "--commit" ]] && has_commit=true
+  done
+
+  local available_opts=""
+  local opt used
+  for opt in $opts; do
+    if [[ "$opt" == "--steps" && "$has_commit" == true ]]; then
+      continue
+    fi
+    if [[ "$opt" == "--commit" && "$has_steps" == true ]]; then
+      continue
+    fi
+    used=false
+    for (( i=2; i < COMP_CWORD; i++ )); do
+      if [[ "${COMP_WORDS[i]}" == "$opt" ]]; then
+        used=true
+        break
+      fi
+    done
+    if [[ "$used" == false ]]; then
+      available_opts+="$opt "
+    fi
+  done
+
+  COMPREPLY=( $(compgen -W "$available_opts" -- "$cur") )
+  return 0
+}
+
+complete -F _git_commit_completions git-commit ./git-commit

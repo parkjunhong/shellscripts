@@ -1,0 +1,478 @@
+#!/usr/bin/env bash
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : Batch modify Git repository remote URLs and user configurations.
+# @license : Apache License 2.0
+# @since : 2026-10-26
+# @desc : support RHEL 7+, Oracle Linux 7+, Ubuntu 18.04+, RockyOS 8+, CentOS 7+
+# @installation :
+# 1. insert 'source <path>/git-modify.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/git-modify.completion' into /etc/bashrc for all users.
+# =======================================
+
+set -Eeuo pipefail
+
+readonly FILENAME="$(basename "$0")"
+
+SUBCOMMAND=""
+declare -a TARGET_DIRS=()
+OPT_PREFIX=""
+OPT_FROM=""
+OPT_TO=""
+OPT_REMOTE="origin"
+OPT_USER_NAME=""
+OPT_USER_EMAIL=""
+OPT_DRY_RUN=false
+OPT_VERBOSE=false
+
+##
+# 스크립트 사용 방법 및 오류 원인을 출력합니다.
+#
+# @param $1 {string} 오류 발생 원인 메시지 (선택)
+# @param $2 {string} 오류 발생 라인 번호 (선택)
+#
+# @return 도움말 화면 표준 출력
+##
+help() {
+  if [[ -n "${1:-}" ]]; then
+    local indent=10
+    local formatl=" - %-${indent}s: %s\n"
+    local formatr=" - %${indent}s: %s\n"
+    echo
+    echo "================================================================================"
+    printf "$formatl" "filename" "$FILENAME"
+    printf "$formatl" "line" "${2:-UNKNOWN}"
+    printf "$formatl" "callstack" ""
+    local idx=1
+    local func
+    for func in "${FUNCNAME[@]:1}"; do
+      printf "$formatr" "[${idx}]" "$func"
+      ((idx++)) || true
+    done
+    printf "$formatl" "cause" "$1"
+    echo "================================================================================"
+  fi
+  echo
+  echo "사용법 (Usage):"
+  echo "  $FILENAME remote-url --dir <경로> [--dir <경로>...] --from <찾을문자열> --to <바꿀문자열> [--prefix <접두사>] [--remote <리모트명>] [--dry-run]"
+  echo "  $FILENAME userinfo   --dir <경로> [--dir <경로>...] [--name <사용자명>] [--email <이메일>] [--prefix <접두사>] [--dry-run] [--verbose]"
+  echo "  $FILENAME --help"
+  echo
+  echo "서브커맨드 (Subcommands):"
+  echo "  remote-url   지정 디렉토리 하위 Git 저장소들의 원격 저장소(Remote) URL 문자열을 일괄 치환"
+  echo "  userinfo     지정 디렉토리 하위 Git 저장소들의 로컬 user.name 및 user.email 설정을 일괄 변경"
+  echo
+  echo "[공통 옵션]:"
+  echo "  --dir <경로>       탐색할 기준 디렉토리 경로 (필수, 여러 번 지정 가능)"
+  echo "  --prefix <접두사>  하위 저장소 디렉토리명이 해당 접두사로 시작하는 경우만 처리 (선택)"
+  echo "  --dry-run          실제 Git 설정을 변경하지 않고 변경 예정 내역만 시뮬레이션 출력"
+  echo "  --verbose          탐색 및 스킵된 저장소까지 상세 로그 출력"
+  echo "  --help             도움말을 출력하고 종료합니다."
+  echo
+  echo "[remote-url 전용 옵션]:"
+  echo "  --from <문자열>    기존 Remote URL에서 찾을 대상 문자열 (필수)"
+  echo "  --to <문자열>      새로 변경할 대체 문자열 (필수)"
+  echo "  --remote <이름>    대상 리모트 이름 (선택, 기본값: origin)"
+  echo
+  echo "[userinfo 전용 옵션]:"
+  echo "  --name <이름>      변경할 Git user.name 값 (--name 또는 --email 중 최소 1개 필수)"
+  echo "  --email <이메일>   변경할 Git user.email 값 (--name 또는 --email 중 최소 1개 필수)"
+  echo
+  echo "주의사항:"
+  echo "  단축 옵션(-d, -s, -t, -u, -e 등)은 허용되지 않으며 정규 롱 옵션만 지원합니다."
+  echo
+}
+
+##
+# 명령줄 인자를 파싱하고 서브커맨드별 필수/선택 옵션을 검증합니다.
+#
+# @param $@ {array} 명령줄 전체 인자
+#
+# @return 성공 시 0
+##
+parse_arguments() {
+  if (( $# == 0 )); then
+    help "실행할 서브커맨드(remote-url, userinfo)를 지정해 주세요." "$LINENO"
+    exit 1
+  fi
+
+  if [[ "$1" == "--help" ]]; then
+    help "" ""
+    exit 0
+  fi
+
+  if [[ "$1" == -* ]]; then
+    help "지원하지 않는 옵션이거나 서브커맨드가 누락되었습니다 (단축 옵션 불가): '$1'" "$LINENO"
+    exit 1
+  fi
+
+  case "$1" in
+    remote-url|userinfo)
+      SUBCOMMAND="$1"
+      shift 1
+      ;;
+    *)
+      help "알 수 없는 서브커맨드입니다: '$1' (허용: remote-url, userinfo)" "$LINENO"
+      exit 1
+      ;;
+  esac
+
+  while (( $# > 0 )); do
+    case "$1" in
+      --dir)
+        if (( $# < 2 )) || [[ -z "${2:-}" || "${2:-}" == --* ]]; then
+          help "'--dir' 옵션에 유효한 디렉토리 경로를 지정해 주세요." "$LINENO"
+          exit 1
+        fi
+        if [[ ! -d "$2" ]]; then
+          help "지정한 디렉토리가 존재하지 않습니다: '$2'" "$LINENO"
+          exit 1
+        fi
+        TARGET_DIRS+=("$2")
+        shift 2
+        ;;
+      --prefix)
+        if (( $# < 2 )) || [[ -z "${2:-}" || "${2:-}" == --* ]]; then
+          help "'--prefix' 옵션에 하위 디렉토리 접두사를 지정해 주세요." "$LINENO"
+          exit 1
+        fi
+        OPT_PREFIX="$2"
+        shift 2
+        ;;
+      --from)
+        if [[ "$SUBCOMMAND" != "remote-url" ]]; then
+          help "'--from' 옵션은 'remote-url' 서브커맨드에서만 사용할 수 있습니다." "$LINENO"
+          exit 1
+        fi
+        if (( $# < 2 )) || [[ -z "${2:-}" ]]; then
+          help "'--from' 옵션에 찾을 문자열을 입력해 주세요." "$LINENO"
+          exit 1
+        fi
+        OPT_FROM="$2"
+        shift 2
+        ;;
+      --to)
+        if [[ "$SUBCOMMAND" != "remote-url" ]]; then
+          help "'--to' 옵션은 'remote-url' 서브커맨드에서만 사용할 수 있습니다." "$LINENO"
+          exit 1
+        fi
+        if (( $# < 2 )) || [[ -z "${2:-}" ]]; then
+          help "'--to' 옵션에 변경할 문자열을 입력해 주세요." "$LINENO"
+          exit 1
+        fi
+        OPT_TO="$2"
+        shift 2
+        ;;
+      --remote)
+        if [[ "$SUBCOMMAND" != "remote-url" ]]; then
+          help "'--remote' 옵션은 'remote-url' 서브커맨드에서만 사용할 수 있습니다." "$LINENO"
+          exit 1
+        fi
+        if (( $# < 2 )) || [[ -z "${2:-}" || "${2:-}" == --* ]]; then
+          help "'--remote' 옵션에 리모트 이름을 지정해 주세요." "$LINENO"
+          exit 1
+        fi
+        OPT_REMOTE="$2"
+        shift 2
+        ;;
+      --name)
+        if [[ "$SUBCOMMAND" != "userinfo" ]]; then
+          help "'--name' 옵션은 'userinfo' 서브커맨드에서만 사용할 수 있습니다." "$LINENO"
+          exit 1
+        fi
+        if (( $# < 2 )) || [[ -z "${2:-}" || "${2:-}" == --* ]]; then
+          help "'--name' 옵션에 설정할 사용자 이름(user.name)을 지정해 주세요." "$LINENO"
+          exit 1
+        fi
+        OPT_USER_NAME="$2"
+        shift 2
+        ;;
+      --email)
+        if [[ "$SUBCOMMAND" != "userinfo" ]]; then
+          help "'--email' 옵션은 'userinfo' 서브커맨드에서만 사용할 수 있습니다." "$LINENO"
+          exit 1
+        fi
+        if (( $# < 2 )) || [[ -z "${2:-}" || "${2:-}" == --* ]]; then
+          help "'--email' 옵션에 설정할 이메일(user.email)을 지정해 주세요." "$LINENO"
+          exit 1
+        fi
+        OPT_USER_EMAIL="$2"
+        shift 2
+        ;;
+      --dry-run)
+        OPT_DRY_RUN=true
+        shift 1
+        ;;
+      --verbose)
+        OPT_VERBOSE=true
+        shift 1
+        ;;
+      --help)
+        help "" ""
+        exit 0
+        ;;
+      -*)
+        help "지원하지 않는 옵션입니다 (단축 옵션은 허용되지 않습니다): '$1'" "$LINENO"
+        exit 1
+        ;;
+      *)
+        help "알 수 없는 인자입니다: '$1'" "$LINENO"
+        exit 1
+        ;;
+    esac
+  done
+
+  if (( ${#TARGET_DIRS[@]} == 0 )); then
+    help "필수 파라미터 '--dir'가 지정되지 않았습니다." "$LINENO"
+    exit 1
+  fi
+
+  if [[ "$SUBCOMMAND" == "remote-url" ]]; then
+    if [[ -z "$OPT_FROM" ]]; then
+      help "필수 파라미터 '--from'이 지정되지 않았습니다." "$LINENO"
+      exit 1
+    fi
+    if [[ -z "$OPT_TO" ]]; then
+      help "필수 파라미터 '--to'가 지정되지 않았습니다." "$LINENO"
+      exit 1
+    fi
+  elif [[ "$SUBCOMMAND" == "userinfo" ]]; then
+    if [[ -z "$OPT_USER_NAME" && -z "$OPT_USER_EMAIL" ]]; then
+      help "'userinfo' 서브커맨드는 '--name' 또는 '--email' 중 최소 하나를 지정해야 합니다." "$LINENO"
+      exit 1
+    fi
+  fi
+}
+
+##
+# 지정된 기준 디렉토리에서 Git 저장소(.git 디렉토리 보유) 경로 목록을 널(\0) 구분자로 출력합니다.
+# Word Splitting을 완전히 방지하며 .git 내부 하위 폴더는 탐색에서 프루닝(prune)합니다.
+#
+# @param $1 {string} 기준 디렉토리 경로
+#
+# @return 발견된 Git 저장소 절대 경로 (null-terminated stream)
+##
+discover_git_repositories() {
+  local base_dir="$1"
+  local abs_base
+  abs_base="$(cd -P -- "$base_dir" >/dev/null 2>&1 && pwd -P)"
+
+  local -a found_repos=()
+  local git_dir repo_dir rel_path repo_base
+
+  while IFS= read -r -d '' git_dir; do
+    repo_dir="$(dirname "$git_dir")"
+    if [[ "$repo_dir" == "$abs_base" ]]; then
+      rel_path="$(basename "$repo_dir")"
+    else
+      rel_path="${repo_dir#"${abs_base}/"}"
+    fi
+    repo_base="$(basename "$repo_dir")"
+
+    if [[ -n "$OPT_PREFIX" ]]; then
+      if [[ "$rel_path" != "${OPT_PREFIX}"* && "$repo_base" != "${OPT_PREFIX}"* ]]; then
+        continue
+      fi
+    fi
+
+    found_repos+=("$repo_dir")
+  done < <(find "$abs_base" -type d -name ".git" -prune -print0 2>/dev/null | sort -z)
+
+  if (( ${#found_repos[@]} > 0 )); then
+    printf '%s\0' "${found_repos[@]}"
+  fi
+}
+
+##
+# remote-url 서브커맨드를 실행하여 Git 저장소들의 Remote URL을 일괄 치환합니다.
+#
+# @param 없음
+#
+# @return 성공 시 0
+##
+execute_modify_remote_url() {
+  local total_scanned=0
+  local total_modified=0
+  local total_skipped=0
+
+  echo "================================================================================"
+  echo "🌐 [git-modify remote-url] Git 원격 저장소 URL 일괄 변경"
+  echo "--------------------------------------------------------------------------------"
+  echo " 📁 대상 디렉토리 : ${TARGET_DIRS[*]}"
+  echo " 🔗 대상 리모트   : ${OPT_REMOTE}"
+  echo " 🔍 찾을 문자열   : ${OPT_FROM}"
+  echo " ✏️  바꿀 문자열   : ${OPT_TO}"
+  [[ -n "$OPT_PREFIX" ]] && echo " 🏷️  접두사 필터   : ${OPT_PREFIX}*"
+  [[ "$OPT_DRY_RUN" == true ]] && echo " 💡 실행 모드     : DRY-RUN (실제 변경 없음)"
+  echo "================================================================================"
+
+  local base_dir repo_dir remote_url new_url
+  for base_dir in "${TARGET_DIRS[@]}"; do
+    local -a repos=()
+    while IFS= read -r -d '' repo_dir; do
+      repos+=("$repo_dir")
+    done < <(discover_git_repositories "$base_dir")
+
+    echo
+    echo "📂 기준 디렉토리: $base_dir (발견된 Git 저장소: ${#repos[@]}개)"
+    if (( ${#repos[@]} == 0 )); then
+      echo "   (일치하는 Git 저장소 없음)"
+      continue
+    fi
+
+    local idx=0
+    for repo_dir in "${repos[@]}"; do
+      ((idx++)) || true
+      ((total_scanned++)) || true
+
+      if [[ ! -w "${repo_dir}/.git" ]]; then
+        printf "  [%03d] ❌ [권한 없음] %s (.git 쓰기 권한 부족)\n" "$idx" "$repo_dir"
+        ((total_skipped++)) || true
+        continue
+      fi
+
+      remote_url="$(git -C "$repo_dir" remote get-url "$OPT_REMOTE" 2>/dev/null || true)"
+      if [[ -z "$remote_url" ]]; then
+        if [[ "$OPT_VERBOSE" == true ]]; then
+          printf "  [%03d] ⏭️  [리모트 없음] %s ('%s' 리모트 미설정)\n" "$idx" "$repo_dir" "$OPT_REMOTE"
+        fi
+        ((total_skipped++)) || true
+        continue
+      fi
+
+      if [[ "$remote_url" == *"$OPT_FROM"* ]]; then
+        new_url="${remote_url//"$OPT_FROM"/"$OPT_TO"}"
+        if [[ "$OPT_DRY_RUN" == true ]]; then
+          printf "  [%03d] 💡 [DRY-RUN] %s\n" "$idx" "$repo_dir"
+        else
+          git -C "$repo_dir" remote set-url "$OPT_REMOTE" "$new_url"
+          printf "  [%03d] ✅ [변경 완료] %s\n" "$idx" "$repo_dir"
+        fi
+        printf "        - 기존(%s): %s\n" "$OPT_REMOTE" "$remote_url"
+        printf "        - 변경(%s): %s\n" "$OPT_REMOTE" "$new_url"
+        ((total_modified++)) || true
+      else
+        if [[ "$OPT_VERBOSE" == true ]]; then
+          printf "  [%03d] ⏭️  [일치 없음] %s (%s)\n" "$idx" "$repo_dir" "$remote_url"
+        fi
+        ((total_skipped++)) || true
+      fi
+    done
+  done
+
+  echo
+  echo "================================================================================"
+  printf "📊 [요약] 탐색 저장소: %d개 | 변경%s: %d개 | 스킵: %d개\n" \
+    "$total_scanned" "$([[ "$OPT_DRY_RUN" == true ]] && echo "(예정)" || echo " 완료")" "$total_modified" "$total_skipped"
+  echo "================================================================================"
+}
+
+##
+# userinfo 서브커맨드를 실행하여 Git 저장소들의 user.name 및 user.email을 일괄 변경합니다.
+#
+# @param 없음
+#
+# @return 성공 시 0
+##
+execute_modify_userinfo() {
+  local total_scanned=0
+  local total_modified=0
+
+  echo "================================================================================"
+  echo "👤 [git-modify userinfo] Git 저장소 사용자 정보(user.name / user.email) 일괄 변경"
+  echo "--------------------------------------------------------------------------------"
+  echo " 📁 대상 디렉토리 : ${TARGET_DIRS[*]}"
+  [[ -n "$OPT_USER_NAME" ]]  && echo " 👤 새 user.name  : ${OPT_USER_NAME}"
+  [[ -n "$OPT_USER_EMAIL" ]] && echo " 📧 새 user.email : ${OPT_USER_EMAIL}"
+  [[ -n "$OPT_PREFIX" ]]     && echo " 🏷️  접두사 필터   : ${OPT_PREFIX}*"
+  [[ "$OPT_DRY_RUN" == true ]] && echo " 💡 실행 모드     : DRY-RUN (실제 변경 없음)"
+  echo "================================================================================"
+
+  local base_dir repo_dir old_name old_email new_name new_email
+  for base_dir in "${TARGET_DIRS[@]}"; do
+    local -a repos=()
+    while IFS= read -r -d '' repo_dir; do
+      repos+=("$repo_dir")
+    done < <(discover_git_repositories "$base_dir")
+
+    echo
+    echo "📂 기준 디렉토리: $base_dir (발견된 Git 저장소: ${#repos[@]}개)"
+    if (( ${#repos[@]} == 0 )); then
+      echo "   (일치하는 Git 저장소 없음)"
+      continue
+    fi
+
+    local idx=0
+    for repo_dir in "${repos[@]}"; do
+      ((idx++)) || true
+      ((total_scanned++)) || true
+
+      old_name="$(git -C "$repo_dir" config user.name 2>/dev/null || echo "Not Set")"
+      old_email="$(git -C "$repo_dir" config user.email 2>/dev/null || echo "Not Set")"
+
+      if [[ "$OPT_DRY_RUN" == true ]]; then
+        new_name="${OPT_USER_NAME:-$old_name}"
+        new_email="${OPT_USER_EMAIL:-$old_email}"
+        printf "  [%03d] 💡 [DRY-RUN] %s\n" "$idx" "$repo_dir"
+      else
+        if [[ -n "$OPT_USER_NAME" ]]; then
+          git -C "$repo_dir" config user.name "$OPT_USER_NAME"
+        fi
+        if [[ -n "$OPT_USER_EMAIL" ]]; then
+          git -C "$repo_dir" config user.email "$OPT_USER_EMAIL"
+        fi
+        new_name="$(git -C "$repo_dir" config user.name 2>/dev/null || echo "Not Set")"
+        new_email="$(git -C "$repo_dir" config user.email 2>/dev/null || echo "Not Set")"
+        printf "  [%03d] ✅ [변경 완료] %s\n" "$idx" "$repo_dir"
+      fi
+
+      if [[ -n "$OPT_USER_NAME" || "$OPT_VERBOSE" == true ]]; then
+        printf "        - %-10s : %-30s <- %s\n" "user.name" "$new_name" "$old_name"
+      fi
+      if [[ -n "$OPT_USER_EMAIL" || "$OPT_VERBOSE" == true ]]; then
+        printf "        - %-10s : %-30s <- %s\n" "user.email" "$new_email" "$old_email"
+      fi
+      ((total_modified++)) || true
+    done
+  done
+
+  if (( total_scanned == 0 )); then
+    echo
+    echo "❌ 지정된 디렉토리에서 조건에 일치하는 Git 저장소를 찾지 못했습니다." >&2
+    exit 1
+  fi
+
+  echo
+  echo "================================================================================"
+  printf "📊 [요약] 총 %d개 Git 저장소 사용자 정보 업데이트%s 완료\n" \
+    "$total_modified" "$([[ "$OPT_DRY_RUN" == true ]] && echo " 시뮬레이션" || echo "")"
+  echo "================================================================================"
+}
+
+##
+# 메인 실행 진입점입니다.
+#
+# @param $@ {array} 명령줄 인자
+#
+# @return 0
+##
+main() {
+  if ! command -v git >/dev/null 2>&1; then
+    help "시스템에 'git' 명령어가 설치되어 있지 않습니다." "$LINENO"
+    exit 1
+  fi
+
+  parse_arguments "$@"
+
+  case "$SUBCOMMAND" in
+    remote-url)
+      execute_modify_remote_url
+      ;;
+    userinfo)
+      execute_modify_userinfo
+      ;;
+  esac
+}
+
+main "$@"
+exit 0

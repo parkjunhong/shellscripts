@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =======================================
 # @author : parkjunhong77@gmail.com
-# @title : search files.
+# @title : GitLab API branch module
 # @license : Apache License 2.0
 # @since : 2026-08-06
 # @desc : support RHEL 8+, Oracle Linux 9+, Ubuntu 20.04+, RockyOS 9+, CentOS 7

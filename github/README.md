@@ -10,7 +10,7 @@ GitHub REST API 연동을 위한 참조 모듈 스크립트를 관리하는 디�
 
 ### 1. [`git-branch-module-github-api.sh`](./git-branch-module-github-api.sh)
 
-* **용도**: [`git/git-branch-cmd.sh`](../git/git-branch-cmd.sh) 등 브랜치 제어 스크립트에서 GitHub 저장소의 브랜치 보호(Branch Protection) 및 기본 브랜치(Default Branch) 설정을 제어할 때 호출하는 API 모듈입니다.
+* **용도**: [`git/git-branch-cmd/git-branch-cmd`](../git/git-branch-cmd/git-branch-cmd) 등 브랜치 제어 스크립트에서 GitHub 저장소의 브랜치 보호(Branch Protection) 및 기본 브랜치(Default Branch) 설정을 제어할 때 호출하는 API 모듈입니다.
 * **요구 사항**: 시스템에 GitHub 공식 CLI 도구인 `gh`가 설치 및 인증되어 있어야 합니다 (`X-GitHub-Api-Version: 2022-11-28` 기준).
 * **주요 특징**:
   * **리포지토리 식별자 캐싱 (`_CACHED_GITHUB_REPO`)**: `gh repo view --json nameWithOwner` 호출 결과를 메모리에 캐싱하여 반복적인 API 호출 오버헤드를 줄입니다.

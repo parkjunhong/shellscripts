@@ -1,4 +1,17 @@
 #!/usr/bin/env bash
+
+# =======================================
+# @auther : parkjunhong77@gmail.com
+# @title  : Create and push Git tags across multiple repositories.
+# @license: Apache License 2.0
+# @since  : 2023-10-11
+# @desc   : support macOS 11.2.3, Ubuntu 18.04, CentOS 7
+# @completion: git-tags.completion
+#            1. insert 'source <path>/git-tags.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#            2. copy the above file to /etc/bash_completion.d/ for all users.
+# =======================================
+
+
 # TOOD
 # - LICENSE 추가
 
@@ -18,18 +31,20 @@ help(){
     fi
     echo
     echo "[Usage]"
-    echo "git-tag-today.sh <directory> -b <branch> [-m <tag message>] [-t <tag type>] [ --prefix <tag prefix>] [--suffix <tag suffix>] "
+    echo "git-tags.sh <directory> -b <branch> [-m <tag message>] [-t <tag type>] [ --prefix <tag prefix>] [--suffix <tag suffix>] "
     echo
     echo "[Parameters]"
     echo " directory: directory that contains git projects."
     echo
 	echo "[Options]"
 	echo " -b | --branch : branchname"
+	echo " -h | --help   : show help message."
 	echo " -m | --message: tag message"
+	echo " -p | --prefix : tag name prefix. If empty, set a project directory as a prefix."
+	echo " -s | --suffix : tag name suffix. "
 	echo " -t | --type   : tag type. default is 'release'"
-	echo " --prefix      : tag name prefix. If empty, set a project directory as a prefix."
-	echo " --suffix      : tag name suffix. "
 }
+
 
 DIR="."
 BRANCH=""
@@ -44,21 +59,25 @@ do
 			shift
 			BRANCH="$1"
 			;;
+		-h | --help)
+			help
+			exit 0
+			;;
 		-m | --message)
 			shift
 			MSG="$1"
 			;;
-		-t | --type)
-			shift
-			TYPE="$1"
-			;;
-		--prefix)
+		-p | --prefix)
 			shift
 			PREFIX="$1"
 			;;
-		--suffix)
+		-s | --suffix)
 			shift
 			SUFFIX="$1"
+			;;
+		-t | --type)
+			shift
+			TYPE="$1"
 			;;
 		*)
 			if [ ! -d "$1" ];then

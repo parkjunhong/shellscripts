@@ -1,0 +1,445 @@
+#!/usr/bin/env bash
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : Git commit & reset management CLI (push, cancel, unstaged, rollback).
+# @license : Apache License 2.0
+# @since : 2026-10-26
+# @desc : support RHEL 7+, Oracle Linux 7+, Ubuntu 18.04+, RockyOS 8+, CentOS 7+
+# @installation :
+# 1. insert 'source <path>/git-commit.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/git-commit.completion' into /etc/bashrc for all users.
+# =======================================
+
+set -Eeuo pipefail
+
+readonly FILENAME="$(basename "$0")"
+
+SUBCOMMAND=""
+OPT_MESSAGE=""
+OPT_ADD_ALL=false
+OPT_STEPS=1
+OPT_COMMIT=""
+OPT_STEPS_SET=false
+OPT_COMMIT_SET=false
+OPT_YES=false
+
+##
+# 스크립트 사용 방법 및 오류 원인을 출력합니다.
+#
+# @param $1 {string} 오류 발생 원인 메시지 (선택)
+# @param $2 {string} 오류 발생 라인 번호 (선택)
+#
+# @return 도움말 화면 표준 출력
+##
+help() {
+  if [[ -n "${1:-}" ]]; then
+    local indent=10
+    local formatl=" - %-${indent}s: %s\n"
+    local formatr=" - %${indent}s: %s\n"
+    echo
+    echo "================================================================================"
+    printf "$formatl" "filename" "$FILENAME"
+    printf "$formatl" "line" "${2:-UNKNOWN}"
+    printf "$formatl" "callstack" ""
+    local idx=1
+    local func
+    for func in "${FUNCNAME[@]:1}"; do
+      printf "$formatr" "[${idx}]" "$func"
+      ((idx++)) || true
+    done
+    printf "$formatl" "cause" "$1"
+    echo "================================================================================"
+  fi
+  echo
+  echo "사용법 (Usage):"
+  echo "  $FILENAME <subcommand> [옵션]"
+  echo
+  echo "서브커맨드 (Subcommands):"
+  echo "  push       커밋 메시지(제목/본문) 작성 후 git commit 및 git push 수행"
+  echo "  cancel     최근 커밋만 취소하고 스테이징 영역과 작업 디렉토리 변경 내용은 유지 (git reset --soft)"
+  echo "  unstaged   최근 커밋과 스테이징 영역을 초기화하고 작업 디렉토리 변경 내용은 유지 (git reset --mixed)"
+  echo "  rollback   최근 커밋, 스테이징 영역 및 작업 디렉토리 변경 내용을 모두 초기화 [복구 불가] (git reset --hard)"
+  echo
+  echo "[push 전용 옵션]:"
+  echo "  --message <msg>    커밋 제목 메시지 직접 지정 (생략 시 대화형으로 제목 및 다중 줄 본문 입력)"
+  echo "  --add-all          커밋 전 변경/추적되지 않은 모든 파일을 스테이징 (git add -A)"
+  echo "  --yes              커밋 및 푸시 전 확인 프롬프트(y/N) 생략"
+  echo
+  echo "[cancel | unstaged | rollback 공통 옵션]:"
+  echo "  --steps <N>        되돌릴 커밋 단계 수 지정 (기본값: 1 -> HEAD~1)"
+  echo "  --commit <hash>    되돌릴 기준 커밋 해시 또는 참조 직접 지정 (--steps 와 동시 사용 불가)"
+  echo "  --yes              (rollback 전용) 삭제 확인 프롬프트(y/N) 생략"
+  echo
+  echo "[공통 옵션]:"
+  echo "  --help             도움말을 출력하고 종료합니다."
+  echo
+  echo "주의사항:"
+  echo "  단축 옵션(-m, -a, -y, -h 등)은 허용되지 않으며 정규 롱 옵션만 지원합니다."
+  echo
+}
+
+##
+# 현재 작업 디렉토리가 유효한 Git 저장소 내부인지 검증합니다.
+#
+# @param 없음
+#
+# @return 유효한 Git 저장소면 0, 아니면 오류 출력 후 종료
+##
+ensure_git_repository() {
+  if ! command -v git >/dev/null 2>&1; then
+    help "시스템에 'git' 명령어가 설치되어 있지 않습니다." "$LINENO"
+    exit 1
+  fi
+
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    help "현재 경로($(pwd))는 Git 저장소 내부가 아닙니다." "$LINENO"
+    exit 1
+  fi
+}
+
+##
+# 명령줄 인자를 파싱하고 서브커맨드별 옵션 유효성을 검증합니다.
+#
+# @param $@ {array} 명령줄 전체 인자
+#
+# @return 성공 시 0
+##
+parse_arguments() {
+  if (( $# == 0 )); then
+    help "실행할 서브커맨드(push, cancel, unstaged, rollback)를 지정해 주세요." "$LINENO"
+    exit 1
+  fi
+
+  if [[ "$1" == "--help" ]]; then
+    help "" ""
+    exit 0
+  fi
+
+  if [[ "$1" == -* ]]; then
+    help "지원하지 않는 옵션이거나 서브커맨드가 누락되었습니다 (단축 옵션 불가): '$1'" "$LINENO"
+    exit 1
+  fi
+
+  case "$1" in
+    push|cancel|unstaged|rollback)
+      SUBCOMMAND="$1"
+      shift 1
+      ;;
+    *)
+      help "알 수 없는 서브커맨드입니다: '$1' (허용: push, cancel, unstaged, rollback)" "$LINENO"
+      exit 1
+      ;;
+  esac
+
+  while (( $# > 0 )); do
+    case "$1" in
+      --message)
+        if [[ "$SUBCOMMAND" != "push" ]]; then
+          help "'--message' 옵션은 'push' 서브커맨드에서만 사용할 수 있습니다." "$LINENO"
+          exit 1
+        fi
+        if (( $# < 2 )) || [[ "${2:-}" == --* ]]; then
+          help "'--message' 옵션에 커밋 메시지를 입력해 주세요." "$LINENO"
+          exit 1
+        fi
+        OPT_MESSAGE="$2"
+        shift 2
+        ;;
+      --add-all)
+        if [[ "$SUBCOMMAND" != "push" ]]; then
+          help "'--add-all' 옵션은 'push' 서브커맨드에서만 사용할 수 있습니다." "$LINENO"
+          exit 1
+        fi
+        OPT_ADD_ALL=true
+        shift 1
+        ;;
+      --steps)
+        if [[ "$SUBCOMMAND" == "push" ]]; then
+          help "'--steps' 옵션은 'cancel', 'unstaged', 'rollback' 서브커맨드에서만 사용할 수 있습니다." "$LINENO"
+          exit 1
+        fi
+        if (( $# < 2 )) || ! [[ "${2:-}" =~ ^[1-9][0-9]*$ ]]; then
+          help "'--steps' 옵션에는 1 이상의 양의 정수를 입력해야 합니다: '${2:-}'" "$LINENO"
+          exit 1
+        fi
+        OPT_STEPS="$2"
+        OPT_STEPS_SET=true
+        shift 2
+        ;;
+      --commit)
+        if [[ "$SUBCOMMAND" == "push" ]]; then
+          help "'--commit' 옵션은 'cancel', 'unstaged', 'rollback' 서브커맨드에서만 사용할 수 있습니다." "$LINENO"
+          exit 1
+        fi
+        if (( $# < 2 )) || [[ -z "${2:-}" || "${2:-}" == --* ]]; then
+          help "'--commit' 옵션에는 유효한 커밋 해시 또는 참조를 지정해야 합니다." "$LINENO"
+          exit 1
+        fi
+        OPT_COMMIT="$2"
+        OPT_COMMIT_SET=true
+        shift 2
+        ;;
+      --yes)
+        OPT_YES=true
+        shift 1
+        ;;
+      --help)
+        help "" ""
+        exit 0
+        ;;
+      -*)
+        help "지원하지 않는 옵션입니다 (단축 옵션은 허용되지 않습니다): '$1'" "$LINENO"
+        exit 1
+        ;;
+      *)
+        help "알 수 없는 인자입니다: '$1'" "$LINENO"
+        exit 1
+        ;;
+    esac
+  done
+
+  if [[ "$OPT_STEPS_SET" == true && "$OPT_COMMIT_SET" == true ]]; then
+    help "'--steps' 옵션과 '--commit' 옵션은 동시에 지정할 수 없습니다." "$LINENO"
+    exit 1
+  fi
+}
+
+##
+# git commit 및 git push 워크플로우를 실행합니다.
+# - --message 미지정 시 대화형으로 제목(필수) 및 본문(다중 줄, 빈 줄 입력 시 종료)을 입력받습니다.
+# - 커밋할 변경 사항이 없으면 [Skip] 출력 후 push 단계를 진행합니다.
+# - 푸시할 변경 사항이 없으면(Everything up-to-date) [Skip] 출력 후 정상 종료합니다.
+#
+# @param 없음
+#
+# @return 성공 시 0
+##
+execute_push() {
+  # 한글 파일명 이스케이프 깨짐 방지
+  git config --local core.quotepath false >/dev/null 2>&1 || true
+
+  local commit_subject=""
+  local commit_body=""
+
+  if [[ -n "$OPT_MESSAGE" ]]; then
+    commit_subject="$OPT_MESSAGE"
+  else
+    echo
+    echo "📝 [입력] 커밋 메시지를 작성하세요."
+    echo "--------------------------------------------------------------------------------"
+    echo " * 제목(필수)을 입력하고 Enter를 누르세요."
+    echo " * 본문(선택)은 한 줄씩 입력하고 Enter를 누르면 줄바꿈됩니다."
+    echo " * 본문 입력을 마치려면 [빈 줄에서 Enter]를 누르세요."
+    echo "--------------------------------------------------------------------------------"
+
+    while [[ -z "$commit_subject" ]]; do
+      read -r -p "제목 > " commit_subject || {
+        echo
+        echo "🛑 [Cancel] 입력이 종료되어 작업을 취소합니다."
+        exit 1
+      }
+      if [[ -z "${commit_subject//[[:space:]]/}" ]]; then
+        commit_subject=""
+        echo "⚠️  제목은 필수입니다. 다시 입력해 주세요."
+      fi
+    done
+
+    echo "본문 (종료: 빈 줄에서 Enter)"
+    local body_line=""
+    while IFS= read -r -p "> " body_line; do
+      if [[ -z "$body_line" ]]; then
+        break
+      fi
+      if [[ -z "$commit_body" ]]; then
+        commit_body="$body_line"
+      else
+        commit_body+=$'\n'"$body_line"
+      fi
+    done
+  fi
+
+  echo
+  echo "--------------------------------------------------------------------------------"
+  echo "📋 [Commit Message Preview]"
+  echo " - 제목: $commit_subject"
+  if [[ -n "$commit_body" ]]; then
+    echo " - 본문:"
+    printf '   %s\n' "${commit_body//$'\n'/$'\n'   }"
+  fi
+  echo "--------------------------------------------------------------------------------"
+
+  if [[ "$OPT_YES" == false ]]; then
+    local confirm=""
+    read -r -p "❓ 위 메시지로 커밋 및 푸시를 진행하시겠습니까? (y/N): " confirm
+    if [[ ! "$confirm" =~ ^[yY]([eE][sS])?$ ]]; then
+      echo "🛑 [Cancel] 사용자에 의해 작업이 취소되었습니다."
+      exit 0
+    fi
+  fi
+
+  echo
+  echo "⏳ [Committing...]"
+
+  if [[ "$OPT_ADD_ALL" == true ]]; then
+    echo " - '--add-all' 옵션이 활성화되어 'git add -A'를 수행합니다."
+    git add -A
+  fi
+
+  local diff_rc=0
+  git diff --cached --quiet || diff_rc=$?
+
+  if (( diff_rc == 0 )); then
+    git status
+    echo
+    echo "⏭️  [Skip] 스테이징된(커밋할) 변경 사항이 없어 커밋 단계를 건너뜁니다."
+    echo "💡 (추적되지 않은 파일 및 변경 파일 전체를 포함하려면 '--add-all' 옵션을 함께 사용하세요.)"
+  elif (( diff_rc == 1 )); then
+    local -a commit_cmd=(git commit -m "$commit_subject")
+    if [[ -n "$commit_body" ]]; then
+      commit_cmd+=(-m "$commit_body")
+    fi
+    "${commit_cmd[@]}"
+    echo
+    echo "✅ [Success] 커밋이 완료되었습니다."
+  else
+    help "커밋 준비 단계(git diff --cached)에서 오류가 발생했습니다." "$LINENO"
+    exit 1
+  fi
+
+  echo
+  echo "🚀 [Pushing...]"
+  local push_output=""
+  local push_rc=0
+  push_output="$(git push 2>&1)" || push_rc=$?
+
+  printf '%s\n' "$push_output"
+
+  if grep -qiE "Everything up-to-date|Everything up to date" <<< "$push_output"; then
+    echo
+    echo "⏭️  [Skip] 푸시할 변경 사항이 없습니다 (Everything up-to-date)."
+    echo "✅ [Success] 원격 저장소가 이미 최신 상태입니다."
+    return 0
+  fi
+
+  if (( push_rc != 0 )); then
+    echo
+    echo "❌ [Error] 푸시에 실패했습니다. 위 로그를 확인하세요." >&2
+    exit 1
+  fi
+
+  echo
+  echo "✅ [Success] 성공적으로 푸시되었습니다."
+}
+
+##
+# 대상 리셋 참조(HEAD~N 또는 커밋 해시)를 결정하고 유효성을 검증합니다.
+#
+# @param 없음
+#
+# @return 유효한 Git 리비전 문자열 출력
+##
+resolve_reset_target() {
+  local target=""
+  if [[ "$OPT_COMMIT_SET" == true ]]; then
+    target="$OPT_COMMIT"
+  else
+    target="HEAD~${OPT_STEPS}"
+  fi
+
+  if ! git rev-parse --verify "${target}^{commit}" >/dev/null 2>&1; then
+    help "되돌릴 대상 커밋 참조('${target}')가 현재 브랜치 히스토리에 존재하지 않습니다." "$LINENO"
+    exit 1
+  fi
+
+  printf '%s\n' "$target"
+}
+
+##
+# cancel (soft), unstaged (mixed), rollback (hard) 리셋 동작을 수행합니다.
+#
+# @param $1 {string} 리셋 모드 ('cancel' | 'unstaged' | 'rollback')
+#
+# @return 성공 시 0
+##
+execute_reset_action() {
+  local action="$1"
+  local target_ref
+  target_ref="$(resolve_reset_target)"
+
+  local reset_flag=""
+  local desc_title=""
+  local desc_detail_1=""
+  local desc_detail_2=""
+
+  case "$action" in
+    cancel)
+      reset_flag="--soft"
+      desc_title="커밋만 취소하고 변경 내용은 스테이징 상태로 유지합니다."
+      desc_detail_1="대상(${target_ref}) 이후의 커밋 이력만 취소됨"
+      desc_detail_2="작업 디렉토리와 스테이징 영역(Index)은 그대로 유지됨"
+      ;;
+    unstaged)
+      reset_flag="--mixed"
+      desc_title="커밋과 스테이징을 취소하고 작업 디렉토리 변경 내용은 유지합니다."
+      desc_detail_1="대상(${target_ref}) 이후의 커밋과 스테이징 영역(Index)을 모두 초기화"
+      desc_detail_2="작업 디렉토리(Working Tree)의 파일 변경 내용은 그대로 유지됨"
+      ;;
+    rollback)
+      reset_flag="--hard"
+      desc_title="커밋, 스테이징 및 작업 디렉토리 변경 내용을 모두 초기화합니다. (복구 불가)"
+      desc_detail_1="대상(${target_ref}) 이후의 커밋, 스테이징, 작업 디렉토리 변경 사항이 영구 삭제됨"
+      desc_detail_2="이미 원격에 푸시한 커밋을 취소하려면 팀 협의 후 신중히 진행해야 함"
+      ;;
+  esac
+
+  echo
+  echo "================================================================================"
+  echo "🔄 [git-commit ${action}] ${desc_title}"
+  echo "--------------------------------------------------------------------------------"
+  echo " - 실행 명령 : git reset ${reset_flag} ${target_ref}"
+  echo " - 동작 상세 : 1) ${desc_detail_1}"
+  echo "               2) ${desc_detail_2}"
+  echo "================================================================================"
+
+  if [[ "$action" == "rollback" && "$OPT_YES" == false ]]; then
+    echo
+    local confirm=""
+    read -r -p "⚠️  [경고] 작업 디렉토리의 변경 내용이 영구 삭제됩니다. 계속하시겠습니까? (y/N): " confirm
+    if [[ ! "$confirm" =~ ^[yY]([eE][sS])?$ ]]; then
+      echo "🛑 [Cancel] 사용자에 의해 rollback 작업이 취소되었습니다."
+      exit 0
+    fi
+  fi
+
+  echo
+  echo "▶️  실행: git reset ${reset_flag} ${target_ref}"
+  git reset "$reset_flag" "$target_ref"
+
+  echo
+  echo ">>> 현재 상태 (git status) >>>"
+  git status
+}
+
+##
+# 메인 실행 진입점입니다.
+#
+# @param $@ {array} 명령줄 인자
+#
+# @return 0
+##
+main() {
+  parse_arguments "$@"
+  ensure_git_repository
+
+  case "$SUBCOMMAND" in
+    push)
+      execute_push
+      ;;
+    cancel|unstaged|rollback)
+      execute_reset_action "$SUBCOMMAND"
+      ;;
+  esac
+}
+
+main "$@"
+exit 0

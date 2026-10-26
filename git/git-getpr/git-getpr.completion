@@ -1,12 +1,12 @@
 # =======================================
 # @author   : parkjunhong77@gmail.com
-# @title    : search files.
+# @title    : Download specific files or directories from a remote Git repository (bash completion).
 # @license  : Apache License 2.0
 # @since    : 2026-07-08
 # @desc     : support Ubuntu 20+, Rocky Linux 9+, RHEL 8+, Oracle Linux 9+, CentOS Stream 9+, macOS
 # @installation : 
-#   1. insert 'source <path>/git-getpr.sh" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/git-getpr.sh' into /etc/bashrc for all users.
+#   1. insert 'source <path>/git-getpr" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/git-getpr' into /etc/bashrc for all users.
 # =======================================
 # =======================================
 # Global Reserved Variables
@@ -27,8 +27,8 @@
 # =======================================
 
 ##
-# @desc git-getpr.sh 명령어에 대한 순차적 자동완성(Wizard) 기능을 제공합니다.
-#       Provides sequential auto-completion for git-getpr.sh command.
+# @desc git-getpr 명령어에 대한 순차적 자동완성(Wizard) 기능을 제공합니다.
+#       Provides sequential auto-completion for git-getpr command.
 #
 # @param $1 {string} 명령어 이름
 # @param $2 {string} 현재 입력 중인 단어
@@ -188,5 +188,5 @@ _git_getpr_completion() {
 }
 
 # 자동완성 함수 등록 (Register completion function)
-complete -F _git_getpr_completion git-getpr.sh
+complete -F _git_getpr_completion git-getpr
 
