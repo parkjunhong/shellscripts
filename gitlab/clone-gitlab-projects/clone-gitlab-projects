@@ -2,13 +2,13 @@
 
 # =======================================
 # @author : parkjunhong77@gmail.com
-# @title : search files.
+# @title : clone-gitlab-projects
 # @license : Apache License 2.0
 # @since : 2026-07-24
 # @desc : support RHEL 7 or higher, Oracle Linux 7 or higher, Ubuntu 18.04 or higher, RockyOS 8 or higher, CentOS 7 or higher
 # @installation : 
-# 1. insert 'source <path>/<파일명>' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/<파일명>' into /etc/bashrc for all users.
+# 1. insert 'source <path>/clone-gitlab-projects.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/clone-gitlab-projects.completion' into /etc/bashrc for all users.
 # =======================================
 
 set -Eeuo pipefail
