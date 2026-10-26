@@ -1090,7 +1090,7 @@ _install_custom_tools() {
   
   echo
   echo "############### $func_name - $target_cmd ###############"
-  echo "[✨] '$target_cmd' 설치 중..."
+  echo "[✨] '$target_cmd' 설치 중... ($tool_url) "
   local bin_dir="$HOME/bin"
   local temp_bin="/tmp/${target_cmd}"
   

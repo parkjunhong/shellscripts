@@ -18,7 +18,10 @@
      * `--target local`: 개인 실행 공간(`$HOME/bin`, `$HOME/.local/bin`) 탐색
      * `--target global`: 전역 실행 공간(`/usr/local/bin`) 탐색
      * `--target all` (기본값): 개인·전역 실행 공간 및 `$PATH` 전체 탐색
-3. **지능형 Bash 자동 완성 (`scriptctl.completion`)**
+3. **지능형 Bash 자동 완성 (`scriptctl.completion`) 연동 및 OS 표준 준수**
+   * 스크립트 설치 시 연관 `.completion` 파일을 시스템 자동 완성 디렉토리에 함께 설치합니다:
+     * **1순위 (`/usr/share/bash-completion/completions/`)**: 최신 Bash Completion v2 규격에 맞추어 **명령어 이름과 동일한 이름으로 설치(`.completion` 확장자 제거)**하여 별도 `source` 없이도 동적 자동 완성(autoloading)을 지원합니다.
+     * **2순위 (`/etc/bash_completion.d/`)**: 레거시 디렉토리 환경에서는 관례에 맞게 **`.completion` 확장자를 유지**하여 설치합니다.
    * `scriptctl remove --name <TAB>` 입력 시 현재 작업 디렉토리가 아니라 **`$HOME/bin`, `$HOME/.local/bin`, `/usr/local/bin`에 실제 설치된 커스텀 스크립트 목록**을 동적으로 스캔하여 추천합니다.
    * 만약 `scriptctl remove --target local --name <TAB>`처럼 `--target`이 먼저 지정되어 있으면 해당 범위(`$HOME/bin`, `$HOME/.local/bin`)의 스크립트만 필터링하여 제안합니다.
 4. **시스템 보호 및 최소 권한(`sudo`) 원칙**

@@ -7,7 +7,7 @@
 # @desc : support RHEL 8+, Oracle Linux 8+, Ubuntu 20.04+, RockyOS 8+, CentOS 7+
 # @installation :
 # 1. insert 'source <path>/scriptctl.completion' into ~/.bashrc or ~/.bash_profile for a personal usage.
-# 2. copy the completion file to /usr/share/bash-completion/completions/ (1st) or /etc/bash_completion.d/ (2nd) for all users.
+# 2. copy the completion file to /usr/share/bash-completion/completions/scriptctl (1st) or /etc/bash_completion.d/scriptctl.completion (2nd) for all users.
 # =======================================
 
 set -Eeuo pipefail
@@ -346,8 +346,8 @@ find_companion_completion() {
 
 ##
 # 시스템에서 지원하는 bash completion 설치 디렉토리를 우선순위에 따라 결정합니다.
-# - 1순위: /usr/share/bash-completion/completions
-# - 2순위: /etc/bash_completion.d
+# - 1순위: /usr/share/bash-completion/completions (설치 시 파일명: <tool>, 확장자 제거)
+# - 2순위: /etc/bash_completion.d (설치 시 파일명: <tool>.completion, 확장자 유지)
 #
 # @return 선택된 설치 디렉토리 경로 출력
 ##
@@ -728,14 +728,19 @@ cmd_install() {
   comp_src="$(find_companion_completion "$script_abs")"
   if [[ -n "$comp_src" ]]; then
     if comp_install_dir="$(resolve_completion_install_dir)"; then
-      comp_dest="${comp_install_dir}/$(basename "$comp_src")"
-      if [[ "$comp_install_dir" == "/usr/share/bash-completion/completions" ]]; then
-        comp_priority_label="1순위 (최신 경로: /usr/share/bash-completion/completions/)"
-      else
+      local comp_dest_name=""
+      if [[ "$comp_install_dir" == *"/etc/bash_completion.d"* ]]; then
         comp_priority_label="2순위 (대체 경로: /etc/bash_completion.d/)"
+        comp_dest_name="${script_name}.completion"
+      else
+        # /usr/share/bash-completion/completions/ 등 표준 동적 로딩 경로: 명령어 이름과 정확히 일치 (.completion 확장자 제거)
+        comp_priority_label="1순위 (최신 경로: /usr/share/bash-completion/completions/)"
+        comp_dest_name="$script_name"
       fi
+      comp_dest="${comp_install_dir}/${comp_dest_name}"
       echo "  ✅ Completion 파일 발견: $comp_src"
       echo "  📂 Completion 설치 경로 선택: $comp_priority_label"
+      echo "  🏷️  Completion 설치 파일명: $comp_dest_name"
     else
       echo "  ⚠️  Completion 파일($comp_src)이 존재하지만, 시스템에 '/usr/share/bash-completion/completions/' 및 '/etc/bash_completion.d/' 경로가 모두 없어 Completion 설치는 건너뜁니다."
       comp_src=""
