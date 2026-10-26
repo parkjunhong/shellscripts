@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =======================================
 # @author   : parkjunhong77@gmail.com
-# @title    : gitlab-clone.sh
+# @title    : gitlab-clone
 # @license  : Apache License 2.0
 # @since    : 2026-06-18
 # @desc     : support RHEL, Oracle Linux, Ubuntu, RockyOS

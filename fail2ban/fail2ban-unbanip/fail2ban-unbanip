@@ -6,24 +6,8 @@
 # @since : 2026-09-03
 # @desc : support RHEL 7 or higher, Oracle Linux 7 or higher, Ubuntu 18.04 or higher, RockyOS 8 or higher, CentOS 7 or higher
 # @installation : 
-# 1. insert 'source <path>/fail2ban-unbanip.sh" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/fail2ban-unbanip.sh' into /etc/bashrc for all users.
-# =======================================
-# Global Reserved Variables (Bash Completion Parameter Description)
-# 1. COMP_WORDS: an array, contains all arguments
-# 2. COMP_CWORD: a index of a cursor
-# 3. COMP_LINE: all command string
-# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
-#
-# Arguments of a function
-# 1. $1: command
-# 2. $2: current
-# 3. $3: previous
-#
-# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
-# - $1: mycmd
-# - $2: arg4
-# - $3: arg3
+# 1. insert 'source <path>/fail2ban-unbanip.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/fail2ban-unbanip.completion' into /etc/bashrc for all users.
 # =======================================
 
 set -Eeuo pipefail

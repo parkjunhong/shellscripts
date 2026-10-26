@@ -14,9 +14,9 @@
 set -Eeuo pipefail
 
 FILENAME=$(basename "$0")
-REMOTE_SCRIPT_URL="https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main/gitlab/gitlab-clone.sh"
+REMOTE_SCRIPT_URL="https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main/gitlab/gitlab-clone/gitlab-clone"
 TARGET_BIN_DIR="$HOME/bin"
-TARGET_SCRIPT_PATH="$TARGET_BIN_DIR/gitlab-clone.sh"
+TARGET_SCRIPT_PATH="$TARGET_BIN_DIR/gitlab-clone"
 
 help(){
   if [ ! -z "${1:-}" ];
@@ -86,15 +86,15 @@ ensure_directory_exists() {
 }
 
 ##
-# gitlab-clone.sh 스크립트의 존재 여부 및 무결성을 검증합니다.
+# gitlab-clone 스크립트의 존재 여부 및 무결성을 검증합니다.
 # 안내 메시지는 stderr(>&2)로 출력하고, 결과 경로는 stdout으로 반환합니다.
 #
 # @param 없음
 #
-# @return {String} 최종 사용될 gitlab-clone.sh 파일의 절대 경로 출력
+# @return {String} 최종 사용될 gitlab-clone 파일의 절대 경로 출력
 ##
 ensure_gitlab_clone_integrity() {
-  echo "🔍 [1/3] 내부 스크립트(gitlab-clone.sh) 상태 검증을 시작합니다..." >&2
+  echo "🔍 [1/3] 내부 스크립트(gitlab-clone) 상태 검증을 시작합니다..." >&2
   ensure_directory_exists "$TARGET_BIN_DIR"
 
   case ":$PATH:" in
@@ -108,21 +108,21 @@ ensure_gitlab_clone_integrity() {
   echo "📥 [2/3] 최신 버전의 스크립트를 원격지에서 다운로드 중입니다..." >&2
   download_remote_script "$REMOTE_SCRIPT_URL" "$temp_remote_file"
 
-  if command -v gitlab-clone.sh >/dev/null 2>&1; then
+  if command -v gitlab-clone >/dev/null 2>&1; then
     local installed_script
-    installed_script=$(command -v gitlab-clone.sh)
+    installed_script=$(command -v gitlab-clone)
 
     echo "⚖️  [3/3] 기존 스크립트($installed_script)와 무결성 비교를 진행합니다..." >&2
     if cmp -s "$installed_script" "$temp_remote_file"; then
-      echo "✅ 무결성 확인 완료: 기존 'gitlab-clone.sh' 파일이 최신 상태와 일치하여 그대로 사용합니다." >&2
+      echo "✅ 무결성 확인 완료: 기존 'gitlab-clone' 파일이 최신 상태와 일치하여 그대로 사용합니다." >&2
       rm -f "$temp_remote_file"
       echo "$installed_script"
       return 0
     else
-      echo "🔄 무결성 불일치: 다운로드 받은 최신 'gitlab-clone.sh' 파일로 교체합니다." >&2
+      echo "🔄 무결성 불일치: 다운로드 받은 최신 'gitlab-clone' 파일로 교체합니다." >&2
     fi
   else
-    echo "⚠️  [3/3] 로컬에 스크립트가 존재하지 않아, 새로 다운로드 받은 'gitlab-clone.sh' 파일을 설치합니다." >&2
+    echo "⚠️  [3/3] 로컬에 스크립트가 존재하지 않아, 새로 다운로드 받은 'gitlab-clone' 파일을 설치합니다." >&2
   fi
 
   mv "$temp_remote_file" "$TARGET_SCRIPT_PATH"

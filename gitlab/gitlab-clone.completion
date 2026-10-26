@@ -1,12 +1,12 @@
 # =======================================
 # @author   : parkjunhong77@gmail.com
-# @title    : gitlab-clone.sh completions
+# @title    : gitlab-clone completions
 # @license  : Apache License 2.0
 # @since    : 2026-06-18
 # @desc     : support RHEL, Oracle Linux, Ubuntu, RockyOS
 # @installation : 
-#   1. insert 'source <path>/gitlab-clone.sh.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/gitlab-clone.sh.completion' into /etc/bashrc for all users.
+#   1. insert 'source <path>/gitlab-clone.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/gitlab-clone.completion' into /etc/bashrc for all users.
 # =======================================
 # Global Reserved Variables
 # 1. COMP_WORDS: an array, contains all arguments
@@ -86,4 +86,4 @@ _gitlab_clone_completions() {
   return 0
 }
 
-complete -F _gitlab_clone_completions gitlab-clone.sh
+complete -F _gitlab_clone_completions gitlab-clone
