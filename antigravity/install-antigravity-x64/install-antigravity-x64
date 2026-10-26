@@ -6,8 +6,8 @@
 # @since : 2026-10-08
 # @desc : support RHEL, Oracle Linux, Ubuntu, RockyOS, CentOS
 # @installation : 
-# 1. insert 'source <path>/install-antigravity-x64.sh.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/install-antigravity-x64.sh' into '/etc/bashrc' or '/usr/share/bash-completion/completions/' for all users.
+# 1. insert 'source <path>/install-antigravity-x64.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/install-antigravity-x64' into '/etc/bashrc' or '/usr/share/bash-completion/completions/' for all users.
 # =======================================
 
 set -Eeuo pipefail
