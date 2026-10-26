@@ -1,6 +1,6 @@
 # =======================================
 # @author : parkjunhong77@gmail.com
-# @title : search files.
+# @title : Pull and archive GitLab Docker images (bash completion).
 # @license : Apache License 2.0
 # @since : 2026-08-25
 # @desc : support Ubuntu 18.04 or higher, RHEL 7 or higher, Oracle Linux 7 or higher, RockyOS 8 or higher, CentOS 7 or higher
