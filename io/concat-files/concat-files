@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 
 # =======================================
-# @auther : parkjunhong77@gmail.com
-# @title  : concatenate files.
+# @author : parkjunhong77@gmail.com
+# @title  : concat-files: Concatenate files with optional line filtering
 # @license: Apache License 2.0
 # @since  : 2021-05-24
 # @desc   : support macOS 11.2.3, Ubuntu 18.04, CentOS 7 or higher
-# @completion: concat-files.completion
-#			 1. insert 'source <path>/concat-files.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#			 2. copy 'concat-files.completion' file to /etc/bash_completion.d/ for all users.
+# @installation :
+# 1. insert 'source <path>/concat-files.completion' into ~/.bashrc or ~/.bash_profile for a personal usage.
+# 2. copy the completion file to /usr/share/bash-completion/completions/concat-files (1st) or /etc/bash_completion.d/concat-files.completion (2nd) for all users.
 # =======================================
 
 # get a filename

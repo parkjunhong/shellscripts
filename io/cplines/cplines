@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 
 # =======================================
-# @auther : parkjunhong77@gmail.com
-# @title  : copy lines as many as specified.
+# @author : parkjunhong77@gmail.com
+# @title  : cplines: Copy specified line range from file with progress tracking
 # @license: Apache License 2.0
 # @since  : 2021-04-19
 # @desc   : support macOS 11.2.3, Ubuntu 18.04, CentOS 7 or higher
-# @completion: cplines.completion
-#			 1. insert 'source <path>/cplines.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#			 2. copy the above file to /etc/bash_completion.d/ for all users.
+# @installation :
+# 1. insert 'source <path>/cplines.completion' into ~/.bashrc or ~/.bash_profile for a personal usage.
+# 2. copy the completion file to /usr/share/bash-completion/completions/cplines (1st) or /etc/bash_completion.d/cplines.completion (2nd) for all users.
 # =======================================
 
 # get a filename
