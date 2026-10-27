@@ -5,8 +5,8 @@
 # @since    : 2026-01-22
 # @desc     : support RHEL 7/8/9, Oracle Linux 7/8/9, Ubuntu 20.04/22.04/24.04, Centos 7/Stream 8/9.
 # @installation :
-#   1. insert 'source <path>/<파일명>" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/<파일명>' into
+#   1. insert 'source <path>/mvn-deploy.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/mvn-deploy.completion' into
 #   /etc/bashrc for all users.
 # =======================================
 
@@ -21,7 +21,7 @@
 #
 # =======================================
 
-# mvn-deploy.sh 자동완성
+# mvn-deploy 자동완성
 _mvn_deploy_sh() {
   local cmd="$1"
   local cur="$2"
@@ -130,5 +130,6 @@ _mvn_deploy_sh() {
   return 0
 }
 
-complete -F _mvn_deploy_sh mvn-deploy.sh
+complete -F _mvn_deploy_sh mvn-deploy
+complete -F _mvn_deploy_sh ./mvn-deploy
 

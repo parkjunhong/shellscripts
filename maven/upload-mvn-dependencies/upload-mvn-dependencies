@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 
 # =======================================
-# @auther : parkjunhong77@gmail.com
-# @title  : upload maven dependency files.
+# @author : parkjunhong77@gmail.com
+# @title  : upload maven dependency files to remote repository.
 # @license: Apache License 2.0
 # @since  : 2024-01-18
-# @desc   : support macOS 11.2.3, Ubuntu 18.04, CentOS 7
-# @completion: upload-mvn-dependencies_completion
-#            1. insert 'source <path>/upload-mvn-dependencies_completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#            2. copy the above file to /etc/bash_completion.d/ for all users.
+# @desc   : support macOS 11.2.3, Ubuntu 18.04, CentOS 7, RHEL 8/9, RockyOS 8/9
+# @installation :
+#   1. Copy this script to ~/bin or /usr/local/bin and grant execute permission:
+#      chmod +x upload-mvn-dependencies
+#   2. Or install via scriptctl:
+#      scriptctl install maven/upload-mvn-dependencies
 # =======================================
 
 FILENAME="$(basename $0)"

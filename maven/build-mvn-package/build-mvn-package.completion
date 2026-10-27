@@ -93,18 +93,18 @@ _build_mvn_package_completion() {
   _bldmvnpkg_log "CURRENT    : $cur, PREVIOUS: $prev"
 
   # 전체 가능한 옵션 목록 / List of all possible options
-  opts="--help --deploy --offline --profile --test --update --debug"
+  opts="-p --profile -t --test -u --update --debug -o --offline -d --deploy -h --help"
 
   # 특정 옵션 뒤에 오는 파라미터 처리 / Handle parameters following specific options
   case "${prev}" in
-    --profile)
+    -p|--profile)
       # 기존 파일의 특정 디렉토리 추출 로직 연동 / Integrate profile directory extraction logic
       local profiles
       profiles=$(_bldmvnpkg_read_profiles)
       COMPREPLY=( $(compgen -W "${profiles}" -- "${cur}") )
       return 0
       ;;
-    --deploy)
+    -d|--deploy)
       # 경로 및 파일 자동완성 지원 (Tab 키 연동) / Support path and file completion via Tab key
       COMPREPLY=( $(compgen -f -- "${cur}") )
       return 0

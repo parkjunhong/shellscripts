@@ -2,13 +2,13 @@
 
 # =======================================
 # @author		: parkjunhong77@gmail.com
-# @title		: build maven projects with user-custom 'profile' for build.
+# @title		: completion for upload-mvn-dependencies.
 # @license		: Apache License 2.0
 # @since		: 2024-01-18
-# @desc			: support macOS 11.2.3, Ubuntu 18.04, CentOS 7
+# @desc			: support macOS 11.2.3, Ubuntu 18.04, CentOS 7, RHEL 8/9, RockyOS 8/9
 # @installation	: 
-#		1. insert 'source <path>/upload-mvn-dependencies_completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#		2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/upload-mvn-dependencies_completion' into /etc/bashrc for all users.
+#		1. insert 'source <path>/upload-mvn-dependencies.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#		2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/upload-mvn-dependencies.completion' into /etc/bashrc for all users.
 # =======================================
 
 # Global Reserved Variables
@@ -91,7 +91,7 @@ _uploadmvndependencies-handle_current(){
 			COMPREPLY+=("-m")
 			;;
 		-h | --h*)
-			COMPREPLY+=("-t")
+			COMPREPLY+=("-h")
 			;;
 		--ru*)
 			COMPREPLY+=("--run")
@@ -152,3 +152,4 @@ _uploadmvndependencies-profile(){
 }
 
 complete -F _uploadmvndependencies-profile upload-mvn-dependencies
+complete -F _uploadmvndependencies-profile ./upload-mvn-dependencies

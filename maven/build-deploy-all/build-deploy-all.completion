@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# =======================================
+# @author       : parkjunhong77@gmail.com
+# @title        : completion for build-deploy-all.
+# @license      : Apache License 2.0
+# @since        : 2026-01-22
+# @desc         : support RHEL 8/9, Oracle Linux 8/9, Ubuntu 20.04/22.04/24.04, RockyOS 8/9
+# @installation :
+#   1. insert 'source <path>/build-deploy-all.completion' into ~/.bashrc or ~/.bash_profile for personal usage.
+#   2. copy the file to /etc/bash_completion.d/ or insert 'source <path>/build-deploy-all.completion' into /etc/bashrc for all users.
+# =======================================
+
+# =======================================
+# Bash Completion Parameter Description
+#
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: an index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+#
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current word
+# 3. $3: previous word
+# =======================================
+
+##
+# config 및 config.profiles 디렉토리에서 프로파일 목록을 검색합니다.
+##
+_blddeployall_read_profiles() {
+  local _profiles=()
+  local _dirs=("$PWD/config" "$PWD/config.profiles")
+  local _sub
+  # 서브 디렉토리 내의 config 경로도 추가 탐색
+  for _sub in "$PWD"/*; do
+    if [[ -d "$_sub/config" ]]; then
+      _dirs+=("$_sub/config")
+    fi
+    if [[ -d "$_sub/config.profiles" ]]; then
+      _dirs+=("$_sub/config.profiles")
+    fi
+  done
+
+  local _profile_dir
+  for _profile_dir in "${_dirs[@]}"; do
+    if [[ -d "$_profile_dir" && -n "$(ls -A "$_profile_dir" 2>/dev/null)" ]]; then
+      local dir
+      for dir in $(ls -p "$_profile_dir" 2>/dev/null | grep -E "^[^/]+/$"); do
+        dir="${dir::-1}"
+        [[ "$dir" == "import" ]] && continue
+        [[ "$dir" == "init" ]] && continue
+        [[ "$dir" == "profile" ]] && continue
+        _profiles+=("$dir")
+      done
+    fi
+  done
+
+  if [[ ${#_profiles[@]} -gt 0 ]]; then
+    printf "%s\n" "${_profiles[@]}" | sort -u
+  fi
+}
+
+_build_deploy_all_completion() {
+  local cur prev opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  opts="-p --profile -d -t --test -u -h --help"
+
+  case "${prev}" in
+    -p|--profile)
+      local profiles
+      profiles=$(_blddeployall_read_profiles)
+      COMPREPLY=( $(compgen -W "${profiles}" -- "${cur}") )
+      return 0
+      ;;
+  esac
+
+  if [[ "$cur" == -* ]]; then
+    # 중복 옵션 제거
+    local word
+    for word in "${COMP_WORDS[@]}"; do
+      if [[ "$word" != "$cur" ]]; then
+        opts="${opts/ $word / }"
+        opts="${opts/^$word /}"
+        opts="${opts/ $word$/}"
+      fi
+    done
+    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+    return 0
+  fi
+
+  # 디렉토리 인자 자동완성
+  COMPREPLY=( $(compgen -d -- "${cur}") )
+  return 0
+}
+
+complete -F _build_deploy_all_completion build-deploy-all
+complete -F _build_deploy_all_completion ./build-deploy-all

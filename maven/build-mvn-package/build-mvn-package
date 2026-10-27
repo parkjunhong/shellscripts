@@ -6,9 +6,11 @@
 # @license      : Apache License 2.0
 # @since        : 2026-07-09
 # @desc         : support RHEL 8/9, Oracle Linux 8/9, Ubuntu 20.04/22.04/24.04, RockyOS 8/9
-# @installation : 
-#   1. insert 'source <path>/build-mvn-package' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/build-mvn-package' into /etc/bashrc for all users.
+# @installation :
+#   1. Copy this script to ~/bin or /usr/local/bin and grant execute permission:
+#      chmod +x build-mvn-package
+#   2. Or install via scriptctl:
+#      scriptctl install maven/build-mvn-package
 # =======================================
 
 ##
@@ -39,20 +41,20 @@ help(){
   fi
   echo
   echo "💡 Usage:"
-  echo "./$(basename "$0") --profile <profile> [--test] [--update] [--debug] [--offline] [--help] [--deploy=\"<옵션값>\"]"
+  echo "./$(basename "$0") -p|--profile <profile> [-t|--test] [-u|--update] [--debug] [-o|--offline] [-h|--help] [-d|--deploy[=\"<옵션값>\"]]"
   echo
   echo "⚙️ Options:"
-  echo " --profile <profile>: 빌드 프로파일을 지정합니다. (필수) 📝"
-  echo " --test             : Junit TestCase를 실행합니다. 🧪"
-  echo " --update           : 소스 빌드 전에 'git pull'을 수행합니다. 🔄"
-  echo " --debug            : 메이븐 'debug' 모드를 활성화합니다. 🐛"
-  echo " --offline          : 오프라인 의존성으로 빌드를 수행합니다. 🔌"
-  echo " --deploy=\"<Docker Deploy Options>\" : 빌드 후 배포 스크립트에 옵션값을 전달하며 배포를 수행합니다. 🚀 (값에 공백 포함 시 따옴표 필요)"
+  echo " -p, --profile <profile>            : 빌드 프로파일을 지정합니다. (필수) 📝"
+  echo " -t, --test                         : Junit TestCase를 건너뜁니다. (기본 실행) 🧪"
+  echo " -u, --update                       : 소스 빌드 전에 'git pull'을 수행합니다. 🔄"
+  echo " --debug                            : 메이븐 'debug' 모드를 활성화합니다. 🐛"
+  echo " -o, --offline                      : 오프라인 의존성으로 빌드를 수행합니다. 🔌"
+  echo " -d, --deploy[=\"<Deploy Options>\"] : 빌드 후 배포 스크립트에 옵션값을 전달하며 배포를 수행합니다. 🚀 (값에 공백 포함 시 따옴표 필요)"
   echo "   🐳 [Docker Deployment Options]"
   echo "     -d, --docker        : Docker 컨테이너 기반으로 배포합니다."
   echo "     -o, --build-only    : 컨테이너를 실행(배포)하지 않고 이미지만 생성합니다. (--docker 필요)"
   echo "     -i, --offline-image : 환경을 위해 미리 생성된 Docker 이미지(tar)를 로드합니다. (--docker 필요)"
-  echo " --help             : 도움말 메시지를 표시합니다. ❓"
+  echo " -h, --help                         : 도움말 메시지를 표시합니다. ❓"
 }
 
 PROFILE=""
@@ -66,29 +68,28 @@ OFFLINE=""
 # 옵션 파싱 루프
 while [ ! -z "$1" ]; do
   case "$1" in
-    --deploy)
-      shift
+    -d | --deploy)
       DEPLOY=1
       ;;
     --deploy=*)
       DEPLOY=1
       read -r -a DEPLOY_OPTS <<< "${1#*=}"
       ;;
-    --help)
+    -h | --help)
       help
       exit 0
       ;;
-    --offline)
+    -o | --offline)
       OFFLINE="-o"
       ;;
-    --profile)
+    -p | --profile)
       shift
       PROFILE="$1"
       ;;
-    --test)
+    -t | --test)
       TEST="false"
       ;;
-    --update)
+    -u | --update)
       GIT_PULL="true"
       ;;
     --debug)

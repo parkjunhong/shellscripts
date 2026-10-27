@@ -1,21 +1,36 @@
 #!/usr/bin/env bash
 
+# =======================================
+# @author       : parkjunhong77@gmail.com
+# @title        : build and deploy all maven projects in subdirectories.
+# @license      : Apache License 2.0
+# @since        : 2026-01-22
+# @desc         : support RHEL 8/9, Oracle Linux 8/9, Ubuntu 20.04/22.04/24.04, RockyOS 8/9
+# @installation :
+#   1. Copy this script to ~/bin or /usr/local/bin and grant execute permission:
+#      chmod +x build-deploy-all
+#   2. Or install via scriptctl:
+#      scriptctl install maven/build-deploy-all
+# =======================================
+
 help(){
 	if [ $# -gt 0 ];
 	then
 		echo
-		echo "['${FUNCNAME[1]}' says] " $1
+		echo "['${FUNCNAME[1]}' says] " "$1"
 	fi
 	echo
 	echo "[Usage]"
-	echo "build-deploy-all -p <profile> -d -t -u "
+	echo "build-deploy-all -p <profile> [-d] [-t] [-u] [-h|--help] [DIR]"
 	echo
 	echo "[Parameters]"
-	echo " -d: (optional) deploy after build."
-	echo " -p: Profile"
-	echo " -t: (optional) run Test"
-	echo " -u: (optional) update codes using 'git pull'"
-	
+	echo " -p, --profile <profile> : Maven profile (Required)"
+	echo " -d                      : (Optional) deploy after build"
+	echo " -t, --test              : (Optional) run Unit Tests"
+	echo " -u                      : (Optional) update codes using 'git pull'"
+	echo " -h, --help              : (Optional) show this help message"
+	echo " DIR                     : (Optional) target directory containing sub-projects (default: \$PWD)"
+	echo
 }
 PROFILE=""
 DEPLOY=0
