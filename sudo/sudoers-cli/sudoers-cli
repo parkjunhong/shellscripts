@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
-# =======================================
-# @author   : parkjunhong77@gmail.com
-# @title    : search files.
-# @license  : Apache License 2.0
-# @since    : 2026-06-05
-# @desc     : support RHEL 7+, Oracle Linux 7+, Ubuntu 18.04+, RockyOS 8+
-# @installation : 
-#   1. insert 'source <path>/<파일명>" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/<파일명>' into /etc/bashrc for all users.
-# =======================================
+
+# ==============================================================================
+# @author       : parkjunhong77@gmail.com
+# @title        : manage sudoers policies for users and groups with visudo validation
+# @description  : 사용자/그룹 대상 Sudoers 정책 부여, 명령어 병합 및 visudo 사전 문법 검증 관리 도구
+# @license      : Apache License 2.0
+# @since        : 2026-06-05
+# @installation : scriptctl install --script sudoers-cli
+# ==============================================================================
 
 FILENAME=$(basename $0)
 

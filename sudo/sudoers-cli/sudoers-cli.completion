@@ -1,13 +1,10 @@
-# =======================================
-# @author   : parkjunhong77@gmail.com
-# @title    : search files.
-# @license  : Apache License 2.0
-# @since    : 2026-06-02
-# @desc     : support RHEL 7+, Oracle Linux 7+, Ubuntu 18.04+, RockyOS 8+
-# @installation : 
-#   1. insert 'source <path>/<파일명>" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/<파일명>' into /etc/bashrc for all users.
-# =======================================
+# ==============================================================================
+# @author       : parkjunhong77@gmail.com
+# @title        : completion for sudoers-cli.
+# @license      : Apache License 2.0
+# @since        : 2026-06-02
+# @desc         : support RHEL 7+, Oracle Linux 7+, Ubuntu 18.04+, RockyOS 8+
+# ==============================================================================
 # Global Reserved Variables
 # 1. COMP_WORDS: an array, contains all arguments
 # 2. COMP_CWORD: a index of a cursor
@@ -25,7 +22,7 @@
 # - $3: arg3
 # =======================================
 
-_sudoers_cli_sh_completions() {
+_sudoers_cli_completion() {
   local cur prev opts
   COMPREPLY=()
   cur="${COMP_WORDS[COMP_CWORD]}"
@@ -94,4 +91,4 @@ _sudoers_cli_sh_completions() {
   return 0
 }
 
-complete -F _sudoers_cli_sh_completions sudoers-cli.sh
+complete -F _sudoers_cli_completion sudoers-cli ./sudoers-cli
