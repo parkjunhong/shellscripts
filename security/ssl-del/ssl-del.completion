@@ -1,0 +1,170 @@
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : ssl-del bash completion.
+# @license : Apache License 2.0
+# @since : 2026-10-27
+# @desc : support RHEL 7+, Oracle Linux 7+, Ubuntu 18.04+, RockyOS 8+, CentOS 7+, macOS 11+
+# @installation :
+# 1. insert 'source <path>/ssl-del.completion' into ~/.bashrc or ~/.bash_profile for a personal usage.
+# 2. copy the above file to /usr/share/bash-completion/completions/ssl-del (1st) or /etc/bash_completion.d/ssl-del.completion (2nd) for all users.
+# =======================================
+
+# =======================================
+# [Bash Completion Parameter Description]
+# 1. COMP_WORDS: an array containing all individual words in the current command line
+#    (현재 커맨드 라인에 입력된 단어들의 배열)
+# 2. COMP_CWORD: an index of the word containing the current cursor position
+#    (현재 커서가 위치한 단어의 인덱스)
+# 3. COMP_LINE: the current command line string
+#    (현재까지 커맨드 라인에 입력된 전체 문자열)
+# 4. COMPREPLY: an array variable from which Bash reads the possible completions
+#    (bash completion이 제안할 단어들의 배열)
+#
+# Arguments of completion function:
+# - $1: name of the command whose arguments are being completed (명령의 이름)
+# - $2: word being completed (현재 커서에서 완성하려고 하는 단어)
+# - $3: word preceding the word being completed (현재 완성하려는 단어의 바로 이전 단어)
+# =======================================
+
+##
+# 시스템의 기본 Java cacerts 파일 경로를 탐색합니다.
+#
+# @return 발견된 cacerts 파일 절대 경로 출력
+##
+_ssl_del_get_java_cacerts() {
+  local jhome=""
+  if [[ -n "${JAVA_HOME:-}" ]]; then
+    jhome="${JAVA_HOME}"
+  elif command -v java >/dev/null 2>&1; then
+    local java_bin
+    java_bin="$(readlink -f "$(which java)" 2>/dev/null || true)"
+    if [[ -n "$java_bin" ]]; then
+      jhome="$(dirname "$(dirname "$java_bin")")"
+    fi
+  fi
+
+  if [[ -n "$jhome" ]]; then
+    if [[ -f "${jhome}/lib/security/cacerts" ]]; then
+      printf '%s\n' "${jhome}/lib/security/cacerts"
+    elif [[ -f "${jhome}/jre/lib/security/cacerts" ]]; then
+      printf '%s\n' "${jhome}/jre/lib/security/cacerts"
+    fi
+  fi
+}
+
+##
+# Java TrustStore에 등록된 인증서 별칭(Alias) 목록을 조회합니다.
+#
+# @return 개행으로 구분된 별칭 목록 출력
+##
+_ssl_del_get_aliases() {
+  local cacerts
+  cacerts="$(_ssl_del_get_java_cacerts)"
+  [[ -n "$cacerts" && -f "$cacerts" ]] || return 0
+  command -v keytool >/dev/null 2>&1 || return 0
+
+  keytool -list -keystore "$cacerts" -storepass changeit 2>/dev/null | awk -F',' '/trustedCertEntry|PrivateKeyEntry/ {gsub(/^[ \t]+|[ \t]+$/, "", $1); print $1}' || true
+}
+
+##
+# /etc/hosts 및 ~/.ssh/known_hosts 파일에서 알려진 호스트/도메인 목록을 조회합니다.
+#
+# @return 개행으로 구분된 고유 호스트 목록 출력
+##
+_ssl_del_get_known_hosts() {
+  local -a hosts=()
+  if [[ -f /etc/hosts ]]; then
+    local line
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+      local -a words
+      read -ra words <<< "$line"
+      local i
+      for ((i=1; i<${#words[@]}; i++)); do
+        if [[ "${words[i]}" =~ ^[a-zA-Z0-9.-]+$ && "${words[i]}" != "localhost"* ]]; then
+          hosts+=("${words[i]}")
+        fi
+      done
+    done < /etc/hosts
+  fi
+  if [[ -f "${HOME}/.ssh/known_hosts" ]]; then
+    local line
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+      local h="${line%% *}"
+      h="${h%%,*}"
+      h="${h#\[}"
+      h="${h%%\]*}"
+      if [[ "$h" =~ ^[a-zA-Z0-9.-]+$ ]]; then
+        hosts+=("$h")
+      fi
+    done < "${HOME}/.ssh/known_hosts"
+  fi
+
+  if (( ${#hosts[@]} > 0 )); then
+    printf '%s\n' "${hosts[@]}" | sort -u
+  fi
+}
+
+##
+# 콤마(,)로 구분된 다중 파일 경로 입력을 자동 완성합니다.
+#
+# @param $1 {string} 현재 입력 커서 문자열
+##
+_ssl_del_complete_comma_files() {
+  local cur="$1"
+  if [[ "$cur" == *","* ]]; then
+    local prefix="${cur%,*},"
+    local subcur="${cur##*,}"
+    local -a matches=()
+    local item
+    for item in $(compgen -f -- "$subcur"); do
+      matches+=("${prefix}${item}")
+    done
+    COMPREPLY=( "${matches[@]}" )
+  else
+    COMPREPLY=( $(compgen -f -- "$cur") )
+  fi
+}
+
+##
+# ssl-del 명령어에 대한 Bash 자동 완성을 수행합니다.
+##
+_ssl_del_completion() {
+  local cur prev
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  local opts="-server -alias -cacerts_files -h --help"
+
+  case "$prev" in
+    -alias)
+      local aliases
+      aliases="$(_ssl_del_get_aliases)"
+      if [[ -n "$aliases" ]]; then
+        COMPREPLY=( $(compgen -W "${aliases}" -- "${cur}") )
+        return 0
+      fi
+      ;;
+    -server)
+      local hosts
+      hosts="$(_ssl_del_get_known_hosts)"
+      if [[ -n "$hosts" ]]; then
+        COMPREPLY=( $(compgen -W "${hosts}" -- "${cur}") )
+        return 0
+      fi
+      ;;
+    -cacerts_files)
+      _ssl_del_complete_comma_files "${cur}"
+      return 0
+      ;;
+  esac
+
+  if [[ "$cur" == -* ]]; then
+    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+    return 0
+  fi
+}
+
+complete -F _ssl_del_completion ssl-del

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # =======================================
 # @author : parkjunhong77@gmail.com
-# @title : search files.
+# @title : authelia-crypto-hash: Generate Authelia password crypto hashes via Docker.
 # @license : Apache License 2.0
 # @since : 2026-09-03
 # @desc : support Ubuntu 18.04 or higher, RHEL 7 or higher, Oracle Linux 7 or higher, RockyOS 8 or higher, CentOS 7 or higher
 # @installation : 
-# 1. insert 'source <path>/authelia-crypto-hash.sh" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/authelia-crypto-hash.sh' into /etc/bashrc for all users.
+# 1. insert 'source <path>/authelia-crypto-hash" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/authelia-crypto-hash' into /etc/bashrc for all users.
 # =======================================
 
 set -Eeuo pipefail

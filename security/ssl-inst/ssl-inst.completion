@@ -1,0 +1,139 @@
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : ssl-inst bash completion.
+# @license : Apache License 2.0
+# @since : 2026-10-27
+# @desc : support RHEL 7+, Oracle Linux 7+, Ubuntu 18.04+, RockyOS 8+, CentOS 7+, macOS 11+
+# @installation :
+# 1. insert 'source <path>/ssl-inst.completion' into ~/.bashrc or ~/.bash_profile for a personal usage.
+# 2. copy the above file to /usr/share/bash-completion/completions/ssl-inst (1st) or /etc/bash_completion.d/ssl-inst.completion (2nd) for all users.
+# =======================================
+
+# =======================================
+# [Bash Completion Parameter Description]
+# 1. COMP_WORDS: an array containing all individual words in the current command line
+#    (현재 커맨드 라인에 입력된 단어들의 배열)
+# 2. COMP_CWORD: an index of the word containing the current cursor position
+#    (현재 커서가 위치한 단어의 인덱스)
+# 3. COMP_LINE: the current command line string
+#    (현재까지 커맨드 라인에 입력된 전체 문자열)
+# 4. COMPREPLY: an array variable from which Bash reads the possible completions
+#    (bash completion이 제안할 단어들의 배열)
+#
+# Arguments of completion function:
+# - $1: name of the command whose arguments are being completed (명령의 이름)
+# - $2: word being completed (현재 커서에서 완성하려고 하는 단어)
+# - $3: word preceding the word being completed (현재 완성하려는 단어의 바로 이전 단어)
+# =======================================
+
+##
+# /etc/hosts 및 ~/.ssh/known_hosts 파일에서 알려진 호스트/도메인 목록을 조회합니다.
+#
+# @return 개행으로 구분된 고유 호스트 목록 출력
+##
+_ssl_inst_get_known_hosts() {
+  local -a hosts=()
+  if [[ -f /etc/hosts ]]; then
+    local line
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+      local -a words
+      read -ra words <<< "$line"
+      local i
+      for ((i=1; i<${#words[@]}; i++)); do
+        if [[ "${words[i]}" =~ ^[a-zA-Z0-9.-]+$ && "${words[i]}" != "localhost"* ]]; then
+          hosts+=("${words[i]}")
+        fi
+      done
+    done < /etc/hosts
+  fi
+  if [[ -f "${HOME}/.ssh/known_hosts" ]]; then
+    local line
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+      local h="${line%% *}"
+      h="${h%%,*}"
+      h="${h#\[}"
+      h="${h%%\]*}"
+      if [[ "$h" =~ ^[a-zA-Z0-9.-]+$ ]]; then
+        hosts+=("$h")
+      fi
+    done < "${HOME}/.ssh/known_hosts"
+  fi
+
+  if (( ${#hosts[@]} > 0 )); then
+    printf '%s\n' "${hosts[@]}" | sort -u
+  fi
+}
+
+##
+# 콤마(,)로 구분된 다중 파일 경로 입력을 자동 완성합니다.
+#
+# @param $1 {string} 현재 입력 커서 문자열
+##
+_ssl_inst_complete_comma_files() {
+  local cur="$1"
+  if [[ "$cur" == *","* ]]; then
+    local prefix="${cur%,*},"
+    local subcur="${cur##*,}"
+    local -a matches=()
+    local item
+    for item in $(compgen -f -- "$subcur"); do
+      matches+=("${prefix}${item}")
+    done
+    COMPREPLY=( "${matches[@]}" )
+  else
+    COMPREPLY=( $(compgen -f -- "$cur") )
+  fi
+}
+
+##
+# ssl-inst 명령어에 대한 Bash 자동 완성을 수행합니다.
+##
+_ssl_inst_completion() {
+  local cur prev
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  local opts="-server -alias -cacerts_files -h --help"
+
+  case "$prev" in
+    -alias)
+      # 커맨드라인에 이미 입력된 -server 값이 있다면 해당 호스트/도메인명을 별칭 후보로 제안
+      local server_val=""
+      local i
+      for ((i=1; i<COMP_CWORD; i++)); do
+        if [[ "${COMP_WORDS[i]}" == "-server" && $((i+1)) -lt ${#COMP_WORDS[@]} ]]; then
+          server_val="${COMP_WORDS[i+1]}"
+          break
+        fi
+      done
+      local candidates=""
+      if [[ -n "$server_val" ]]; then
+        candidates="$server_val ${server_val%%.*}"
+      fi
+      COMPREPLY=( $(compgen -W "${candidates}" -- "${cur}") )
+      return 0
+      ;;
+    -server)
+      local hosts
+      hosts="$(_ssl_inst_get_known_hosts)"
+      if [[ -n "$hosts" ]]; then
+        COMPREPLY=( $(compgen -W "${hosts}" -- "${cur}") )
+        return 0
+      fi
+      ;;
+    -cacerts_files)
+      _ssl_inst_complete_comma_files "${cur}"
+      return 0
+      ;;
+  esac
+
+  if [[ "$cur" == -* ]]; then
+    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+    return 0
+  fi
+}
+
+complete -F _ssl_inst_completion ssl-inst
