@@ -1,1 +1,0 @@
-complete -c -W "-v -h" vim-cli

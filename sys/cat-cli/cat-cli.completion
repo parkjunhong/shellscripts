@@ -1,0 +1,43 @@
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : completion for cat-cli.
+# @license  : Apache License 2.0
+# @since    : 2021-03-21
+# @desc     : support macOS, Ubuntu, RHEL, CentOS, RockyOS
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+#
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+# =======================================
+
+##
+# cat-cli 스크립트의 자동완성(Auto-completion)을 지원하는 함수입니다.
+##
+_cat_cli_completion() {
+  local cur prev opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  opts="-v -h --help"
+
+  if [[ "${cur}" == -* ]]; then
+    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+  else
+    COMPREPLY=( $(compgen -c -- "${cur}") )
+  fi
+}
+
+complete -F _cat_cli_completion cat-cli ./cat-cli

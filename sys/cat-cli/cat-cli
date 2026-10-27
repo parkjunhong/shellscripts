@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 
-# =======================================
-# @auther : parkjunhong77@gmail.com
-# @title  : execute cat to edit a command only with the name of it.
-# @license: Apache License 2.0
-# @since  : 2021-03-21
-# @description: To find commands automatically, run this command after download a this file.
-#               cp cat-cli ~/bin/;complete -c -W "-h -v" cat-cli
-# =======================================
+# ==============================================================================
+# @author       : parkjunhong77@gmail.com
+# @title        : display the content of a command script using cat
+# @description  : PATH에 등록된 명령어의 실제 파일 경로를 찾아 cat으로 내용 출력
+# @license      : Apache License 2.0
+# @since        : 2021-03-21
+# @installation : scriptctl install --script cat-cli
+# ==============================================================================
+
+FILENAME=$(basename "$0")
 
 CMD=""
 VERBOSE=0
@@ -17,7 +19,7 @@ do
 	case $1 in
 		-h | --help)
 			echo
-			echo "cat-cli.sh [-v] <command>"
+			echo "cat-cli [-v] <command>"
 			echo
 			echo "[Options]"
 			echo " -v : show a fullpath of a command."

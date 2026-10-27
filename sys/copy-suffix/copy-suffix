@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
 
+# ==============================================================================
+# @author       : parkjunhong77@gmail.com
+# @title        : copy files with date, time, or custom suffix
+# @description  : 파일 복사 시 날짜/시간/사용자 지정 접미사를 결합하여 안전하게 백업 및 복제
+# @license      : Apache License 2.0
+# @since        : 2020-01-14
+# @installation : scriptctl install --script copy-suffix
+# ==============================================================================
+
 #
 # Show help message.
 # $1 {string}: error message
@@ -8,7 +17,7 @@ help(){
 	echo "$1"
 	echo 
 	echo "Usage:"
-	echo " copy-suffix.sh [-d|-t] [-e]  <filename> -s <suffix> -o <outputdir>"
+	echo " copy-suffix [-d|-t] [-e] <filename> [-s <suffix>] [-o <outputdir>]"
 	echo
 	echo "[Parameters]"
 	echo " filename     : absolute/relative filepath."
@@ -18,11 +27,11 @@ help(){
 	echo
 	echo "[Options]"
 	echo " -d | --date: (optional) Add current 'date' string."
-	echo "               e.g.) copy-suffix.sh abc.txt -d -> abc-20200114.txt"
+	echo "               e.g.) copy-suffix abc.txt -d -> abc-20200114.txt"
 	echo " -e | --ext : (optional) Add a suffix to end of a filename."
 	echo "              e.g.) cpsuffix  abc.txt -e -d -> abc.txt-20200114"
 	echo " -t | --time: (optional) Add current 'time' string."
-	echo "               e.g.) copy-suffix.sh abc.txt -t -> abc-20200114191212.txt"
+	echo "               e.g.) copy-suffix abc.txt -t -> abc-20200114191212.txt"
 	echo
 }
 

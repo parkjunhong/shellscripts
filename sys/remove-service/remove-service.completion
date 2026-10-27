@@ -1,13 +1,10 @@
-# =======================================
-# @author   : parkjunhong77@gmail.com
-# @title    : completely remove linux service.
-# @license  : Apache License 2.0
-# @since    : 2026-06-25
-# @desc     : support Ubuntu 18+, RockyOS 9+, Oracle Linux 8+, RHEL 8+, CentOS 6+, CentOS Stream 9+
-# @installation : 
-#   1. insert 'source <path>/remove-service.sh.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/remove-service.sh.completion' into /etc/bashrc for all users.
-# =======================================
+# ==============================================================================
+# @author       : parkjunhong77@gmail.com
+# @title        : completion for remove-service.
+# @license      : Apache License 2.0
+# @since        : 2026-06-25
+# @desc         : support Ubuntu 18+, RockyOS 9+, Oracle Linux 8+, RHEL 8+, CentOS 6+, CentOS Stream 9+
+# ==============================================================================
 # Global Reserved Variables
 # 1. COMP_WORDS: an array, contains all arguments
 # 2. COMP_CWORD: a index of a cursor
@@ -26,8 +23,8 @@
 # =======================================
 
 ##
-# remove-service.sh 스크립트의 자동완성(Auto-completion)을 지원하는 함수
-# Auto-completion function for remove-service.sh script.
+# remove-service 스크립트의 자동완성(Auto-completion)을 지원하는 함수
+# Auto-completion function for remove-service script.
 ##
 _remove_service_completion() {
   local cur prev opts services
@@ -67,4 +64,4 @@ _remove_service_completion() {
 }
 
 # 스크립트 파일명과 자동완성 함수 연결
-complete -F _remove_service_completion remove-service.sh
+complete -F _remove_service_completion remove-service ./remove-service

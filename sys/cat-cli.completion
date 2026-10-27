@@ -1,2 +1,0 @@
-complete -c -W "-v -h" cat-cli.sh
-

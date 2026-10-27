@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
-# =======================================
-# @author   : parkjunhong77@gmail.com
-# @title    : completely remove linux service.
-# @license  : Apache License 2.0
-# @since    : 2026-06-25
-# @desc     : support Ubuntu 18+, RockyOS 9+, Oracle Linux 8+, RHEL 8+, CentOS 6+, CentOS Stream 9+
-# @installation : 
-#   1. insert 'source <path>/remove-service.sh" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/remove-service.sh' into /etc/bashrc for all users.
-# =======================================
+
+# ==============================================================================
+# @author       : parkjunhong77@gmail.com
+# @title        : completely remove linux systemd service
+# @description  : systemd 서비스 중지, 비활성화, 유닛 파일 삭제 및 데몬 상태 완전 초기화
+# @license      : Apache License 2.0
+# @since        : 2026-06-25
+# @installation : scriptctl install --script remove-service
+# ==============================================================================
 
 set -Eeuo pipefail
 

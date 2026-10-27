@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 
-# =======================================
-# @auther : parkjunhong77@gmail.com
-# @title  : rename filenames.
-# @license: Apache License 2.0
-# @since  : 2021-01-07
-# @desc   : support Ubuntu 18.04, CentOS 7
-# =======================================
+# ==============================================================================
+# @author       : parkjunhong77@gmail.com
+# @title        : batch rename files using regular expression
+# @description  : 대상 디렉토리의 파일명을 sed 정규식 패턴을 이용하여 일괄 변경
+# @license      : Apache License 2.0
+# @since        : 2021-01-07
+# @installation : scriptctl install --script ren-files
+# ==============================================================================
 
 CURDIR="$(pwd)"
-FILENAME="$0"
+FILENAME=$(basename "$0")
 
 usage(){
 	if [ ! -z "$1" ];
@@ -35,7 +36,7 @@ usage(){
 	echo "Change filenames using a regular expression (sed)"
 	echo
 	echo "[Usage]"
-	echo "ren-files.sh -d <directory> -i <input regex> -o <output regex> -f"
+	echo "ren-files -d <directory> -i <input regex> -o <output regex> -f"
 	echo
 	echo "[Parameters]"
 	echo " -d: directory"
@@ -45,7 +46,7 @@ usage(){
 	echo
 	echo "[Examples]"
 	echo " before: a-b.txt, a-c.txt, b-c.txt"
-	echo " [command] ren-files.sh -d . -i '(a)-(.+)' -o '\2-\1'"
+	echo " [command] ren-files -d . -i '(a)-(.+)' -o '\2-\1'"
 	echo " after: b-a.txt, c-a.txt, b-c.txt"
 	echo
 }
@@ -58,6 +59,10 @@ FORCE=0
 while [ "$1" != "" ];
 do
 	case $1 in
+		-h | --help)
+			usage
+			exit 0
+			;;
 		# directory
 		-d)
 			shift

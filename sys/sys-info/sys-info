@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
 
+# ==============================================================================
+# @author       : parkjunhong77@gmail.com
+# @title        : display comprehensive system and disk usage information
+# @description  : OS, CPU, 메모리 요약 정보 및 디스크 파일시스템별 필터링/정렬 상세 조회
+# @license      : Apache License 2.0
+# @since        : 2025-04-23
+# @installation : scriptctl install --script sys-info
+# ==============================================================================
+
 # 도움말 함수
 help() {
   cat <<EOF
