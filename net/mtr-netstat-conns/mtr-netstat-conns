@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =======================================
 # @author   : parkjunhong77@gmail.com
-# @title    : search files.
+# @title    : mtr-netstat-conns: Monitor netstat connections with multi-stage pipe filters and sorting.
 # @license  : Apache License 2.0
 # @since    : 2026-07-27
 # @desc     : support RHEL 7+, Oracle Linux 7+, Ubuntu 16.04+, RockyOS 8+, CentOS 7+

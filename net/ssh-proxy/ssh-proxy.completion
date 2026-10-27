@@ -1,0 +1,114 @@
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : ssh-proxy bash completion.
+# @license : Apache License 2.0
+# @since : 2026-10-27
+# @desc : support RHEL 7+, Oracle Linux 7+, Ubuntu 18.04+, RockyOS 8+, CentOS 7+, macOS 11+
+# @installation :
+# 1. insert 'source <path>/ssh-proxy.completion' into ~/.bashrc or ~/.bash_profile for a personal usage.
+# 2. copy the above file to /usr/share/bash-completion/completions/ssh-proxy (1st) or /etc/bash_completion.d/ssh-proxy.completion (2nd) for all users.
+# =======================================
+
+# =======================================
+# [Bash Completion Parameter Description]
+# 1. COMP_WORDS: an array containing all individual words in the current command line
+#    (현재 커맨드 라인에 입력된 단어들의 배열)
+# 2. COMP_CWORD: an index of the word containing the current cursor position
+#    (현재 커서가 위치한 단어의 인덱스)
+# 3. COMP_LINE: the current command line string
+#    (현재까지 커맨드 라인에 입력된 전체 문자열)
+# 4. COMPREPLY: an array variable from which Bash reads the possible completions
+#    (bash completion이 제안할 단어들의 배열)
+#
+# Arguments of completion function:
+# - $1: name of the command whose arguments are being completed (명령의 이름)
+# - $2: word being completed (현재 커서에서 완성하려고 하는 단어)
+# - $3: word preceding the word being completed (현재 완성하려는 단어의 바로 이전 단어)
+# =======================================
+
+##
+# ~/.ssh-proxy.services 파일에서 등록된 서비스 이름 목록을 조회합니다.
+#
+# @return 개행으로 구분된 서비스 이름 목록 출력
+##
+_ssh_proxy_get_services() {
+  local svc_file="${HOME}/ssh-proxy.services"
+  [[ -f "$svc_file" ]] || return 0
+
+  local line key
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+    if [[ "$line" =~ ^([^=]+)= ]]; then
+      key="${BASH_REMATCH[1]}"
+      key="$(echo -e "${key}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+      [[ -n "$key" ]] && printf '%s\n' "$key"
+    fi
+  done < "$svc_file"
+}
+
+##
+# ssh-proxy 명령어에 대한 Bash 자동 완성을 수행합니다.
+##
+_ssh_proxy_completion() {
+  local cur prev
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  local opts="--service-add --service-delete --service-list --service-file -nj --no-jump -h --help"
+
+  case "$prev" in
+    --service-delete)
+      local services
+      services="$(_ssh_proxy_get_services)"
+      COMPREPLY=( $(compgen -W "${services}" -- "${cur}") )
+      return 0
+      ;;
+    --service-file)
+      # 파일 경로 자동 완성
+      COMPREPLY=( $(compgen -f -- "${cur}") )
+      return 0
+      ;;
+    --service-add)
+      # 템플릿 제안
+      return 0
+      ;;
+  esac
+
+  if [[ "$cur" == -* ]]; then
+    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+    return 0
+  fi
+
+  # [sts-user@]<sts-host>:<sts-port>/[dest-user@]<dest-server> 형태 자동완성 지원
+  if [[ "$cur" == *"/"* ]]; then
+    local prefix="${cur%/*}/"
+    local rest="${cur#*/}"
+    local user_prefix=""
+    local server_part="$rest"
+
+    if [[ "$rest" == *"@"* ]]; then
+      user_prefix="${rest%@*}@"
+      server_part="${rest#*@}"
+    fi
+
+    local services
+    services="$(_ssh_proxy_get_services)"
+    local -a matched=()
+    local svc
+    for svc in $services; do
+      if [[ -z "$server_part" || "$svc" == "${server_part}"* ]]; then
+        matched+=("${prefix}${user_prefix}${svc}")
+      fi
+    done
+
+    if (( ${#matched[@]} > 0 )); then
+      COMPREPLY=( "${matched[@]}" )
+      return 0
+    fi
+  fi
+
+  COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+}
+
+complete -F _ssh_proxy_completion ssh-proxy

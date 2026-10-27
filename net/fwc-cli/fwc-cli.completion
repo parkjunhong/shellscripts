@@ -1,6 +1,6 @@
 # =======================================
 # @author   : parkjunhong77@gmail.com
-# @title    : search files.
+# @title    : fwc-cli bash completion: firewalld zone management wrapper.
 # @license  : Apache License 2.0
 # @since    : 2026-08-20
 # @desc     : support RHEL 7+, Oracle Linux 7+, Ubuntu 18.04+, RockyOS 8+, CentOS 7+
