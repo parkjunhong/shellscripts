@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+# ==============================================================================
+# @auther       : parkjunhong77@gmail.com
+# @title        : generate a list of UUIDs
+# @description  : 시스템의 uuidgen 명령어를 이용하여 요청한 개수만큼 고유 UUID 목록 생성
+# @license      : Apache License 2.0
+# @since        : 2020-03-28
+# @installation : scriptctl install --script uuid-list
+# ==============================================================================
+
+help(){
+  echo 
+  echo "Usage:"
+  echo "./uuid-list {count}"
+  echo " - count: a number of UUID."
+  echo
+}
+
+let UUID_MAX_COUNT=1
+while [ ! -z "$1" ];
+do
+  case "$1" in
+    -h|--help)
+      help
+      exit 0
+      ;;
+    *)
+      if [[ $1 =~ [[:digit:]]+ ]];
+      then
+        UUID_MAX_COUNT=$1
+      else
+        echo
+        echo "Not A Number. input=$1"
+
+        help
+        exit 1
+      fi
+      ;;
+  esac
+  # move to a next variable
+  shift
+done
+
+let uuid_idx=0
+while [ ${uuid_idx} -lt ${UUID_MAX_COUNT} ];
+do
+  # print 'uuid'
+  uuidgen
+  # increase an index of UUID
+  ((uuid_idx++))
+done
+
+exit 0

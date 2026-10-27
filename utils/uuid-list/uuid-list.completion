@@ -1,0 +1,42 @@
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : completion for uuid-list.
+# @license  : Apache License 2.0
+# @since    : 2020-03-28
+# @desc     : support macOS 11.2.3, Ubuntu 18.04, CentOS 7 or higher
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+#
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+# =======================================
+
+##
+# uuid-list 스크립트의 자동완성(Auto-completion)을 지원하는 함수입니다.
+##
+_uuid_list_completion() {
+  local cur opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+
+  opts="-h --help 1 5 10 20 50 100"
+
+  if [[ "${cur}" == -* ]]; then
+    COMPREPLY=( $(compgen -W "-h --help" -- "${cur}") )
+  else
+    COMPREPLY=( $(compgen -W "1 5 10 20 50 100" -- "${cur}") )
+  fi
+}
+
+complete -F _uuid_list_completion uuid-list ./uuid-list

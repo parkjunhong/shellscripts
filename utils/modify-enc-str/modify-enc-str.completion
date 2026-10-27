@@ -1,0 +1,62 @@
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : completion for modify-enc-str.
+# @license  : Apache License 2.0
+# @since    : 2023-09-15
+# @desc     : support macOS 11.2.3, Ubuntu 18.04, CentOS 7 or higher
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+#
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+# =======================================
+
+##
+# modify-enc-str 스크립트의 자동완성(Auto-completion)을 지원하는 함수입니다.
+##
+_modify_enc_str_completion() {
+  local cur prev opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  opts="-c --cipher -d --dir -f --files -h --help -n --new -o --old"
+
+  case "${prev}" in
+    -c|--cipher)
+      compopt -o default 2>/dev/null || true
+      COMPREPLY=()
+      return 0
+      ;;
+    -d|--dir)
+      compopt -o dirnames 2>/dev/null || true
+      COMPREPLY=()
+      return 0
+      ;;
+    -f|--files|-o|--old|-n|--new)
+      return 0
+      ;;
+    *)
+      ;;
+  esac
+
+  if [[ "${cur}" == -* ]]; then
+    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+  else
+    compopt -o default 2>/dev/null || true
+    COMPREPLY=()
+  fi
+}
+
+complete -F _modify_enc_str_completion modify-enc-str ./modify-enc-str

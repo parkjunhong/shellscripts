@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+
+# ==============================================================================
+# @auther       : parkjunhong77@gmail.com
+# @title        : extract the latest gz file and optionally backup
+# @description  : 대상 디렉토리에서 가장 최근에 생성된 .gz 파일의 압축을 풀고 백업 디렉토리로 이동
+# @license      : Apache License 2.0
+# @since        : 2020-11-23
+# @installation : scriptctl install --script gz-ext-latest
+# ==============================================================================
+
+help(){
+        if [ ! -z "$1" ];
+        then
+                echo
+                echo " !!! Caller: ${FUNCNAME[1]}, cause: $1"
+        fi
+
+        echo
+        echo "Usage:"
+        echo "gz-ext-latest [-h|--help] [-b <backup-dir>] <gz-directory>"
+        echo
+        echo "Arguments"
+        echo " -b <backup-dir>: (optional) gz files backup directory."
+        echo " -h, --help     : show help messages."
+}
+
+while [ ! -z "$1" ];
+do
+        case $1 in
+                -b)
+                        shift
+                        if [ -f "$1" ];
+                        then
+                                help "Invalid 'backup directory'. Looks like a file. input=$1"
+                                exit 1
+                        fi
+                        
+                        BACKUP_DIR="$1"
+                        ;;
+                -h|--help)
+                        help
+                        exit 0
+                        ;;
+                *)
+                        if [ ! -d "$1" ];
+                        then
+                                help "Invalid 'directory.'. input=$1"
+                                exit 1
+                        fi
+
+                        DIR="$1"
+                        ;;
+        esac
+        shift
+done
+
+if [ -z "$DIR" ]
+then
+        help "... Need more parameters. directory=$DIR"
+        exit 1
+fi
+
+# step1. select a latest gz file.
+LATEST_FILE=$(find $DIR -maxdepth 1 ! -type d -exec ls -r {} + | grep ".gz" | head -n 1)
+
+if [ -z "$LATEST_FILE" ];
+then
+        echo
+        echo "Oooooops. No .gz file."
+        exit 0
+fi
+
+TS_BEGIN=$(date +"%s")
+echo
+printf "... %-10s latest file=$LATEST_FILE" "[FOUND]"
+
+# step2. exctrac a latest file.
+echo
+printf "... %-10s gzip -dfv $LATEST_FILE\n" "[COMMAND]"
+printf "... %-10s " "[EXEC]"
+
+if [ -z "$BACKUP_DIR" ];
+then
+        gzip -dfv "$LATEST_FILE"
+else
+        filename=$(echo ${LATEST_FILE##*/})
+        gunzip -v --stdout "$LATEST_FILE" > $(echo ${LATEST_FILE/.gz/})
+fi
+
+TS_END=$(date +"%s")
+TS_ELAPSED=$(expr $TS_END - $TS_BEGIN)
+
+echo
+printf "... %-10s '%d's\n" "[elapsed]" $TS_ELAPSED
+
+# step3. move .gz file to a backup directory.
+if [ ! -z "$BACKUP_DIR" ];
+then
+        echo
+        printf "... %-10s move '%s*.gz' file to $BACKUP_DIR\n" "[MOVE]" "$DIR"
+        if [ ! -d "$BACKUP_DIR" ];
+        then
+                mkdir -pv $BACKUP_DIR
+        fi  
+        printf "... %-10s " "[COMMAND]"
+        eval mv -v $DIR"/*.gz" $BACKUP_DIR
+fi
+
+exit 0

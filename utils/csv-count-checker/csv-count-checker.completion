@@ -1,0 +1,61 @@
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : completion for csv-count-checker.
+# @license  : Apache License 2.0
+# @since    : 2023-09-14
+# @desc     : support macOS 11.2.3, Ubuntu 18.04, CentOS 7 or higher
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+#
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+# =======================================
+
+##
+# csv-count-checker 스크립트의 자동완성(Auto-completion)을 지원하는 함수입니다.
+##
+_csv_count_checker_completion() {
+  local cur prev opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  opts="-c --count -d --delim -f --file -h --help -n --number"
+
+  case "${prev}" in
+    -f|--file)
+      compopt -o default 2>/dev/null || true
+      COMPREPLY=()
+      return 0
+      ;;
+    -d|--delim)
+      COMPREPLY=( $(compgen -W '"," "|" "\\t" ";"' -- "${cur}") )
+      return 0
+      ;;
+    -c|--count|-n|--number)
+      return 0
+      ;;
+    *)
+      ;;
+  esac
+
+  if [[ "${cur}" == -* ]]; then
+    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+  else
+    compopt -o default 2>/dev/null || true
+    COMPREPLY=()
+  fi
+}
+
+complete -F _csv_count_checker_completion csv-count-checker ./csv-count-checker
