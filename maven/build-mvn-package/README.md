@@ -56,15 +56,3 @@ build-mvn-package -p prod --deploy="--docker"
 ```bash
 build-mvn-package -p staging -o --debug
 ```
-
----
-
-## 💻 Bash 자동완성 설정
-
-```bash
-# 개인 계정 적용 (~/.bashrc)
-source /path/to/shellscripts/maven/build-mvn-package/build-mvn-package.completion
-
-# 시스템 전역 적용
-sudo cp /path/to/shellscripts/maven/build-mvn-package/build-mvn-package.completion /etc/bash_completion.d/
-```

@@ -53,15 +53,3 @@ clean-project -d .
  🔹 'deploy' 디렉토리 삭제 개수        : 1 개
  🔹 'target' 디렉토리 삭제 개수        : 2 개
 ```
-
----
-
-## 💻 Bash 자동완성 설정
-
-```bash
-# 개인 계정 적용 (~/.bashrc)
-source /path/to/shellscripts/build/clean-project/clean-project.completion
-
-# 시스템 전역 적용
-sudo cp /path/to/shellscripts/build/clean-project/clean-project.completion /etc/bash_completion.d/
-```

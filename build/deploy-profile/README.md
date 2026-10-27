@@ -34,15 +34,3 @@ deploy-profile dev
 ```bash
 deploy-profile prod --docker --build-only
 ```
-
----
-
-## 💻 Bash 자동완성 설정
-
-```bash
-# 개인 계정 적용 (~/.bashrc)
-source /path/to/shellscripts/build/deploy-profile/deploy-profile.completion
-
-# 시스템 전역 적용
-sudo cp /path/to/shellscripts/build/deploy-profile/deploy-profile.completion /etc/bash_completion.d/
-```

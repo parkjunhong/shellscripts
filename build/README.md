@@ -34,31 +34,3 @@ build/
     ├── remove-deploy.completion       # Bash 자동완성 스크립트
     └── README.md                      # 개별 도구 상세 설명서
 ```
-
----
-
-## 🚀 빠른 시작 및 설치 안내
-
-### 1. 개별 도구 설치 및 PATH 등록
-사용할 스크립트를 `~/bin` 또는 `/usr/local/bin`에 복사하거나 심볼릭 링크를 생성합니다:
-```bash
-# 심볼릭 링크 예시
-ln -s /path/to/shellscripts/build/clean-project/clean-project ~/bin/clean-project
-chmod +x ~/bin/clean-project
-```
-
-또는 `scriptctl` 도구를 통해 손쉽게 설치할 수 있습니다:
-```bash
-scriptctl install build/clean-project
-scriptctl install build/remove-deploy
-scriptctl install build/deploy-profile
-```
-
-### 2. Bash 자동완성 일괄 활성화
-모든 Build 도구의 자동완성을 로드하려면 `~/.bashrc` 파일에 아래 내용을 추가하세요:
-```bash
-# Build 도구 자동완성 로드
-for completion in /path/to/shellscripts/build/*/*.completion; do
-  [ -f "$completion" ] && source "$completion"
-done
-```

@@ -44,33 +44,3 @@ maven/
     ├── upload-mvn-dependencies.completion # Bash 자동완성 스크립트
     └── README.md                      # 개별 도구 상세 설명서
 ```
-
----
-
-## 🚀 빠른 시작 및 설치 안내
-
-### 1. 개별 도구 설치 및 PATH 등록
-사용할 스크립트를 `~/bin` 또는 `/usr/local/bin`에 복사하거나 심볼릭 링크를 생성합니다.
-```bash
-# 예시: build-mvn-package 등록
-ln -s /path/to/shellscripts/maven/build-mvn-package/build-mvn-package ~/bin/build-mvn-package
-chmod +x ~/bin/build-mvn-package
-```
-
-또는 `scriptctl` 도구를 통해 간편하게 설치할 수 있습니다:
-```bash
-scriptctl install maven/build-mvn-package
-scriptctl install maven/build-deploy-all
-scriptctl install maven/mvn-deploy
-scriptctl install maven/update-mvn-config
-scriptctl install maven/upload-mvn-dependencies
-```
-
-### 2. Bash 자동완성 일괄 활성화
-모든 Maven 도구의 자동완성을 사용하려면 `~/.bashrc` 파일에 아래 내용을 추가하세요:
-```bash
-# Maven 도구 자동완성 로드
-for completion in /path/to/shellscripts/maven/*/*.completion; do
-  [ -f "$completion" ] && source "$completion"
-done
-```

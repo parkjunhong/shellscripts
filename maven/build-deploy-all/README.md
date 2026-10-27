@@ -42,15 +42,3 @@ build-deploy-all -p dev -u /home/user/workspace/microservices
 ```bash
 build-deploy-all -p prod -u -t -d
 ```
-
----
-
-## 💻 Bash 자동완성 설정
-
-```bash
-# 개인 계정 적용 (~/.bashrc)
-source /path/to/shellscripts/maven/build-deploy-all/build-deploy-all.completion
-
-# 시스템 전역 적용
-sudo cp /path/to/shellscripts/maven/build-deploy-all/build-deploy-all.completion /etc/bash_completion.d/
-```

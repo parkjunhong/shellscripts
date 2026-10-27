@@ -55,15 +55,3 @@ mvn-deploy -U -s --profile prod --dry-run
 ```bash
 mvn-deploy -U -- --batch-mode -Drevision=2.1.0
 ```
-
----
-
-## 💻 Bash 자동완성 설정
-
-```bash
-# 개인 계정 적용 (~/.bashrc)
-source /path/to/shellscripts/maven/mvn-deploy/mvn-deploy.completion
-
-# 시스템 전역 적용
-sudo cp /path/to/shellscripts/maven/mvn-deploy/mvn-deploy.completion /etc/bash_completion.d/
-```
