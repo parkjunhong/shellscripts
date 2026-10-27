@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # =======================================
 # @author       : parkjunhong77@gmail.com
-# @title        : Profile-based Deployment Script
+# @title        : execute profile-based deploy script.
 # @license      : Apache License 2.0
 # @since        : 2026-05-19
 # @desc         : support RHEL 8+, Oracle Linux 8+, Ubuntu 20.04+, RockyOS 9+
 # @installation : 
-#   1. insert 'source <path>/deploy_profile.sh' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/deploy_profile.sh' into /etc/bashrc for all users.
+#   1. Copy this script to ~/bin or /usr/local/bin and grant execute permission:
+#      chmod +x deploy-profile
+#   2. Or install via scriptctl:
+#      scriptctl install build/deploy-profile
 # =======================================
 
 FILENAME=$(basename "$0")

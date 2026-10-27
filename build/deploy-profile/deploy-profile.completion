@@ -1,6 +1,6 @@
 # =======================================
 # @author       : parkjunhong77@gmail.com
-# @title        : search files.
+# @title        : completion for deploy-profile.
 # @license      : Apache License 2.0
 # @since        : 2026-05-19
 # @desc         : support macOS 11.2.3, Ubuntu 18.04 or higher, CentOS 7 or higher
@@ -49,3 +49,4 @@ _deploy_profile_completion() {
 
 # 실행파일명에 확장자가 있는 경우와 없는 경우 모두에 대응하도록 매핑 등록
 complete -F _deploy_profile_completion deploy-profile
+complete -F _deploy_profile_completion ./deploy-profile

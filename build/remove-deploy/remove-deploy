@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # =======================================
 # @author   : parkjunhong77@gmail.com
-# @title    : remove deploy directories.
+# @title    : remove deploy directories in projects.
 # @license  : Apache License 2.0
 # @since    : 2026-07-14
 # @desc     : support RHEL, Oracle Linux, Ubuntu, RockyOS
 # @installation : 
-#   1. insert 'source <path>/remove-deploy.sh" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/remove-deploy.sh' into /etc/bashrc for all users.
+#   1. Copy this script to ~/bin or /usr/local/bin and grant execute permission:
+#      chmod +x remove-deploy
+#   2. Or install via scriptctl:
+#      scriptctl install build/remove-deploy
 # =======================================
 
 set -Eeuo pipefail

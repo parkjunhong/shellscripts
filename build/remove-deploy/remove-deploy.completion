@@ -1,12 +1,12 @@
 # =======================================
 # @author   : parkjunhong77@gmail.com
-# @title    : remove deploy directories.
+# @title    : completion for remove-deploy.
 # @license  : Apache License 2.0
 # @since    : 2026-07-14
 # @desc     : support RHEL, Oracle Linux, Ubuntu, RockyOS
 # @installation : 
-#   1. insert 'source <path>/remove-deploy.sh.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/remove-deploy.sh.completion' into /etc/bashrc for all users.
+#   1. insert 'source <path>/remove-deploy.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/remove-deploy.completion' into /etc/bashrc for all users.
 # =======================================
 # Global Reserved Variables
 # 1. COMP_WORDS: an array, contains all arguments
@@ -26,8 +26,8 @@
 # =======================================
 
 ##
-# remove-deploy.sh 스크립트의 자동완성(Auto-completion)을 지원하는 함수
-# Auto-completion function for remove-deploy.sh script.
+# remove-deploy 스크립트의 자동완성(Auto-completion)을 지원하는 함수
+# Auto-completion function for remove-deploy script.
 ##
 _remove_deploy_completion() {
   local cur prev opts
@@ -62,4 +62,5 @@ _remove_deploy_completion() {
 }
 
 # 스크립트 파일명과 자동완성 함수 연결
-complete -F _remove_deploy_completion remove-deploy.sh
+complete -F _remove_deploy_completion remove-deploy
+complete -F _remove_deploy_completion ./remove-deploy

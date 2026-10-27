@@ -1,12 +1,12 @@
 # =======================================
 # @author   : parkjunhong77@gmail.com
-# @title    : remove deploy and target directories.
+# @title    : completion for clean-project.
 # @license  : Apache License 2.0
 # @since    : 2026-07-14
 # @desc     : support RHEL 7+, Oracle Linux 7+, Ubuntu 16.04+, RockyOS 8+
 # @installation : 
-#   1. insert 'source <path>/clean-projects.sh.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/clean-projects.sh.completion' into /etc/bashrc for all users.
+#   1. insert 'source <path>/clean-project.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/clean-project.completion' into /etc/bashrc for all users.
 # =======================================
 # Global Reserved Variables
 # 1. COMP_WORDS: an array, contains all arguments
@@ -26,10 +26,10 @@
 # =======================================
 
 ##
-# clean-projects.sh 스크립트의 자동완성(Auto-completion)을 지원하는 함수
-# Auto-completion function for clean-projects.sh script.
+# clean-project 스크립트의 자동완성(Auto-completion)을 지원하는 함수
+# Auto-completion function for clean-project script.
 ##
-_clean_projects_completion() {
+_clean_project_completion() {
   local cur prev opts
   COMPREPLY=()
   cur="${COMP_WORDS[COMP_CWORD]}"
@@ -62,4 +62,5 @@ _clean_projects_completion() {
 }
 
 # 스크립트 파일명과 자동완성 함수 연결
-complete -F _clean_projects_completion clean-projects.sh
+complete -F _clean_project_completion clean-project
+complete -F _clean_project_completion ./clean-project
