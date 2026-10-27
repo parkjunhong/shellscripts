@@ -6,8 +6,8 @@
 # @since    : 2026-08-12
 # @desc     : support RHEL 9+, Oracle Linux 9+, Ubuntu 22.04+, RockyOS 9+, CentOS 9+
 # @installation : 
-#   1. insert 'source <path>/diff-file.sh" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/diff-file.sh' into /etc/bashrc for all users.
+#   1. insert 'source <path>/diff-file" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/diff-file' into /etc/bashrc for all users.
 # =======================================
 
 set -Eeuo pipefail

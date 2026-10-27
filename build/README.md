@@ -34,3 +34,22 @@ build/
     ├── remove-deploy.completion       # Bash 자동완성 스크립트
     └── README.md                      # 개별 도구 상세 설명서
 ```
+
+---
+
+## 🛠️ 공통 설치 안내
+
+각 도구는 독립 실행형 CLI 도구로, 저장소의 `utils/scriptctl` 유틸리티를 사용하여 개인 실행 경로(`~/bin`) 또는 전역 경로(`/usr/local/bin`)에 간편하게 설치할 수 있습니다. 스크립트 설치 시 연관된 Bash 자동완성 규칙이 시스템 표준 경로에 자동으로 등록됩니다.
+
+### `scriptctl` 도구를 사용한 설치
+
+```bash
+# 예 1: clean-project 설치 (개인 환경: ~/bin)
+../../utils/scriptctl/scriptctl install --script ./clean-project/clean-project --target local
+
+# 예 2: remove-deploy 설치
+../../utils/scriptctl/scriptctl install --script ./remove-deploy/remove-deploy --target local
+
+# 예 3: deploy-profile 설치
+../../utils/scriptctl/scriptctl install --script ./deploy-profile/deploy-profile --target local
+```

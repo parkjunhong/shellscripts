@@ -61,3 +61,18 @@ mtr-netstat-conns [netstat-옵션] [--filter "<필터조건1> | <필터조건2>.
 # 6) 특정 원격 IP(192.168.1.50)와 연결된 nginx 세션을 PID 내림차순 정렬
 ./mtr-netstat-conns --filter "192.168.1.50 | nginx | ESTABLISHED" --sort pid/d
 ```
+
+---
+
+## 💻 설치 안내
+
+저장소의 `utils/scriptctl` 도구를 사용하여 개인 실행 경로(`~/bin`) 또는 시스템 전역 경로에 간편하게 설치할 수 있습니다. 설치 시 Bash 자동완성 스크립트도 시스템 표준 경로에 자동으로 등록됩니다.
+
+```bash
+# 개인 환경 설치 (~/bin, 사용자 자동완성 등록)
+../../utils/scriptctl/scriptctl install --script ./mtr-netstat-conns --target local
+
+# 시스템 전역 설치 (/usr/local/bin, /usr/share/bash-completion/completions/ 등록)
+../../utils/scriptctl/scriptctl install --script ./mtr-netstat-conns --target global
+```
+

@@ -28,3 +28,14 @@ GitHub REST API 연동을 위한 참조 모듈 스크립트를 관리하는 디�
 | `api_github_show_default` | 없음 | 현재 저장소의 기본 브랜치(`default_branch`) 이름을 반환 |
 | `_get_github_repo` | 없음 | 현재 Git 디렉토리의 `<owner>/<repo>` 식별자를 조회 및 캐싱하여 반환 (내부 헬퍼) |
 | `_parse_github_error` | `$1`: API 원본 응답 | GitHub API 에러 JSON/메시지를 파싱하여 한 줄의 한국어/요약 에러 문자열로 반환 (내부 헬퍼) |
+
+---
+
+## 💡 모듈 사용 및 도구 설치 안내
+
+본 디렉토리의 스크립트는 다른 CLI 도구(예: `git-branch-cmd`)에서 내부적으로 호출/`source`하는 공통 모듈입니다. 따라서 단독 실행 도구로 설치하지 않으며, 이 모듈을 활용하는 상위 도구는 저장소의 `utils/scriptctl` 도구를 통해 설치합니다:
+
+```bash
+# 상위 도구(git-branch-cmd) 설치 예시
+../utils/scriptctl/scriptctl install --script ../git/git-branch-cmd/git-branch-cmd --target local
+```

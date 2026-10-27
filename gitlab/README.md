@@ -30,3 +30,20 @@ GitLab 프로젝트 일괄 복제 CLI 도구 및 GitLab API 연동 참조 모듈
 | `api_gitlab_show_protected` | 없음 | 현재 저장소에 설정된 보호된 브랜치 이름 목록을 개행으로 구분하여 반환 |
 | `api_gitlab_set_default` | `$1`: 브랜치명 | 저장소의 기본 브랜치(`default_branch`)를 지정한 브랜치로 변경 |
 | `api_gitlab_show_default` | 없음 | 현재 저장소의 기본 브랜치(`default_branch`) 이름을 반환 |
+
+---
+
+## 🛠️ 공통 설치 안내
+
+각 도구는 독립 실행형 CLI 도구로, 저장소의 `utils/scriptctl` 유틸리티를 사용하여 개인 실행 경로(`~/bin`) 또는 전역 경로(`/usr/local/bin`)에 간편하게 설치할 수 있습니다. 스크립트 설치 시 연관된 Bash 자동완성 규칙이 시스템 표준 경로에 자동으로 등록됩니다.
+
+### `scriptctl` 도구를 사용한 설치
+
+```bash
+# 예 1: gitlab-clone 설치 (개인 환경: ~/bin)
+../utils/scriptctl/scriptctl install --script ./gitlab-clone/gitlab-clone --target local
+
+# 예 2: clone-gitlab-projects 설치
+../utils/scriptctl/scriptctl install --script ./clone-gitlab-projects/clone-gitlab-projects --target local
+```
+

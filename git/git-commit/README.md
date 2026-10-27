@@ -63,3 +63,18 @@
 # 5) 특정 커밋 해시 시점으로 작업 디렉토리까지 완전 초기화 (확인 프롬프트 표시)
 ./git-commit rollback --commit a1b2c3d
 ```
+
+---
+
+## 💻 설치 안내
+
+저장소의 `utils/scriptctl` 도구를 사용하여 개인 실행 경로(`~/bin`) 또는 시스템 전역 경로에 간편하게 설치할 수 있습니다. 설치 시 Bash 자동완성 스크립트도 시스템 표준 경로에 자동으로 등록됩니다.
+
+```bash
+# 개인 환경 설치 (~/bin, 사용자 자동완성 등록)
+../../utils/scriptctl/scriptctl install --script ./git-commit --target local
+
+# 시스템 전역 설치 (/usr/local/bin, /usr/share/bash-completion/completions/ 등록)
+../../utils/scriptctl/scriptctl install --script ./git-commit --target global
+```
+

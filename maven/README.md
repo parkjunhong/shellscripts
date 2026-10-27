@@ -44,3 +44,28 @@ maven/
     ├── upload-mvn-dependencies.completion # Bash 자동완성 스크립트
     └── README.md                      # 개별 도구 상세 설명서
 ```
+
+---
+
+## 🛠️ 공통 설치 안내
+
+각 도구는 독립 실행형 CLI 도구로, 저장소의 `utils/scriptctl` 유틸리티를 사용하여 개인 실행 경로(`~/bin`) 또는 전역 경로(`/usr/local/bin`)에 간편하게 설치할 수 있습니다. 스크립트 설치 시 연관된 Bash 자동완성 규칙이 시스템 표준 경로에 자동으로 등록됩니다.
+
+### `scriptctl` 도구를 사용한 설치
+
+```bash
+# 예 1: build-mvn-package 설치 (개인 환경: ~/bin)
+../../utils/scriptctl/scriptctl install --script ./build-mvn-package/build-mvn-package --target local
+
+# 예 2: build-deploy-all 설치
+../../utils/scriptctl/scriptctl install --script ./build-deploy-all/build-deploy-all --target local
+
+# 예 3: mvn-deploy 설치
+../../utils/scriptctl/scriptctl install --script ./mvn-deploy/mvn-deploy --target local
+
+# 예 4: update-mvn-config 설치
+../../utils/scriptctl/scriptctl install --script ./update-mvn-config/update-mvn-config --target local
+
+# 예 5: upload-mvn-dependencies 설치
+../../utils/scriptctl/scriptctl install --script ./upload-mvn-dependencies/upload-mvn-dependencies --target local
+```
