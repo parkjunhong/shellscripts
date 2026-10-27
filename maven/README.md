@@ -55,17 +55,17 @@ maven/
 
 ```bash
 # 예 1: build-mvn-package 설치 (개인 환경: ~/bin)
-../../utils/scriptctl/scriptctl install --script ./build-mvn-package/build-mvn-package --target local
+../utils/scriptctl/scriptctl install --script ./build-mvn-package/build-mvn-package --target local
 
 # 예 2: build-deploy-all 설치
-../../utils/scriptctl/scriptctl install --script ./build-deploy-all/build-deploy-all --target local
+../utils/scriptctl/scriptctl install --script ./build-deploy-all/build-deploy-all --target local
 
 # 예 3: mvn-deploy 설치
-../../utils/scriptctl/scriptctl install --script ./mvn-deploy/mvn-deploy --target local
+../utils/scriptctl/scriptctl install --script ./mvn-deploy/mvn-deploy --target local
 
 # 예 4: update-mvn-config 설치
-../../utils/scriptctl/scriptctl install --script ./update-mvn-config/update-mvn-config --target local
+../utils/scriptctl/scriptctl install --script ./update-mvn-config/update-mvn-config --target local
 
 # 예 5: upload-mvn-dependencies 설치
-../../utils/scriptctl/scriptctl install --script ./upload-mvn-dependencies/upload-mvn-dependencies --target local
+../utils/scriptctl/scriptctl install --script ./upload-mvn-dependencies/upload-mvn-dependencies --target local
 ```

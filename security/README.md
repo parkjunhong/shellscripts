@@ -25,8 +25,8 @@ SSL/TLS 인증서 다운로드·설치·삭제 라이프사이클 관리 및 보
 
 ```bash
 # 예: authelia-crypto-hash 설치 (개인 환경: ~/bin)
-../../utils/scriptctl/scriptctl install --script ./authelia-crypto-hash/authelia-crypto-hash --target local
+../utils/scriptctl/scriptctl install --script ./authelia-crypto-hash/authelia-crypto-hash --target local
 
 # 예: ssl-inst 설치
-../../utils/scriptctl/scriptctl install --script ./ssl-inst/ssl-inst --target local
+../utils/scriptctl/scriptctl install --script ./ssl-inst/ssl-inst --target local
 ```

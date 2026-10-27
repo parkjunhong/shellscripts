@@ -26,8 +26,8 @@
 
 ```bash
 # 예: validate-csv 설치 (개인 환경: ~/bin)
-../../utils/scriptctl/scriptctl install --script ./validate-csv/validate-csv --target local
+../utils/scriptctl/scriptctl install --script ./validate-csv/validate-csv --target local
 
 # 예: concat-files 설치
-../../utils/scriptctl/scriptctl install --script ./concat-files/concat-files --target local
+../utils/scriptctl/scriptctl install --script ./concat-files/concat-files --target local
 ```

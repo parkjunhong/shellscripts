@@ -68,11 +68,11 @@ shellscripts/git/
 
 ```bash
 # 예 1: git-commit 설치 (개인 환경: ~/bin)
-../../utils/scriptctl/scriptctl install --script ./git-commit/git-commit --target local
+../utils/scriptctl/scriptctl install --script ./git-commit/git-commit --target local
 
 # 예 2: git-branch-cmd 설치
-../../utils/scriptctl/scriptctl install --script ./git-branch-cmd/git-branch-cmd --target local
+../utils/scriptctl/scriptctl install --script ./git-branch-cmd/git-branch-cmd --target local
 
 # 예 3: git-status-all 설치
-../../utils/scriptctl/scriptctl install --script ./git-status-all/git-status-all --target local
+../utils/scriptctl/scriptctl install --script ./git-status-all/git-status-all --target local
 ```

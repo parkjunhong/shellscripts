@@ -31,8 +31,9 @@
 chmod +x utils/scriptctl/scriptctl
 
 # 1. 개인 환경 설치 (~/bin 및 사용자 자동완성 등록)
-./utils/scriptctl/scriptctl install <카테고리>/<도구명>
+./utils/scriptctl/scriptctl install --script <카테고리>/<도구명>/<도구명> --target local
 
 # 2. 시스템 전역 설치 (/usr/local/bin 및 /usr/share/bash-completion/completions/ 등록)
-sudo ./utils/scriptctl/scriptctl install <카테고리>/<도구명> --target global
+# ※ 주의: scriptctl 자체의 권한 상승 차단을 위해 명령어 앞에 sudo를 붙이지 않습니다.
+./utils/scriptctl/scriptctl install --script <카테고리>/<도구명>/<도구명> --target global
 ```

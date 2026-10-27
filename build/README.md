@@ -45,11 +45,11 @@ build/
 
 ```bash
 # 예 1: clean-project 설치 (개인 환경: ~/bin)
-../../utils/scriptctl/scriptctl install --script ./clean-project/clean-project --target local
+../utils/scriptctl/scriptctl install --script ./clean-project/clean-project --target local
 
 # 예 2: remove-deploy 설치
-../../utils/scriptctl/scriptctl install --script ./remove-deploy/remove-deploy --target local
+../utils/scriptctl/scriptctl install --script ./remove-deploy/remove-deploy --target local
 
 # 예 3: deploy-profile 설치
-../../utils/scriptctl/scriptctl install --script ./deploy-profile/deploy-profile --target local
+../utils/scriptctl/scriptctl install --script ./deploy-profile/deploy-profile --target local
 ```

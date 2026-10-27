@@ -30,8 +30,8 @@
 
 ```bash
 # 예: ssh-proxy 설치 (개인 환경: ~/bin)
-../../utils/scriptctl/scriptctl install --script ./ssh-proxy/ssh-proxy --target local
+../utils/scriptctl/scriptctl install --script ./ssh-proxy/ssh-proxy --target local
 
 # 예: ps-port 설치
-../../utils/scriptctl/scriptctl install --script ./ps-port/ps-port --target local
+../utils/scriptctl/scriptctl install --script ./ps-port/ps-port --target local
 ```
