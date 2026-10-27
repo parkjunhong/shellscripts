@@ -1,0 +1,342 @@
+#!/usr/bin/env bash
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : scp-dir: Transfer files or directories to remote servers using sshpass
+# @license : Apache License 2.0
+# @since : 2026-10-27
+# @desc : support RHEL 7+, Oracle Linux 7+, Ubuntu 18.04+, RockyOS 8+, CentOS 7+, macOS 11+
+# @installation :
+# 1. insert 'source <path>/scp-dir.completion' into ~/.bashrc or ~/.bash_profile for a personal usage.
+# 2. copy the completion file to /usr/share/bash-completion/completions/scp-dir (1st) or /etc/bash_completion.d/scp-dir.completion (2nd) for all users.
+# =======================================
+
+set -Eeuo pipefail
+
+readonly FILENAME="$(basename "$0")"
+
+##
+# 오류 원인 및 콜스택 진단 정보를 포맷팅하여 표준 에러(stderr)로 출력합니다.
+#
+# @param $1 {string} 실패 원인 메시지
+# @param $2 {string} 오류 발생 라인 번호
+#
+# @return 없음
+##
+print_error_box() {
+  local cause="${1:-}"
+  local line="${2:-UNKNOWN}"
+  local indent=10
+  local formatl=" - %-${indent}s: %s\n"
+  local formatr=" - %${indent}s: %s\n"
+  echo >&2
+  echo "================================================================================" >&2
+  printf "$formatl" "filename" "$FILENAME" >&2
+  printf "$formatl" "line" "$line" >&2
+  printf "$formatl" "callstack" "" >&2
+  local idx=1
+  local func
+  for func in "${FUNCNAME[@]:2}"; do
+    printf "$formatr" "[$idx]" "$func" >&2
+    ((idx++)) || true
+  done
+  printf "$formatl" "cause" "$cause" >&2
+  echo "================================================================================" >&2
+}
+
+##
+# 도움말 및 사용법을 출력합니다.
+#
+# @param $1 {string} (선택) 오류 원인 메시지
+# @param $2 {string} (선택) 오류 발생 라인 번호
+#
+# @return 없음
+##
+help() {
+  local cause="${1:-}"
+  local line="${2:-}"
+  if [[ -n "$cause" ]]; then
+    print_error_box "$cause" "$line"
+  fi
+  cat << EOF
+
+사용법 (Usage):
+  $FILENAME -H <대상호스트> -s <소스경로> -d <원격대상경로> [옵션...]
+
+설명 (Description):
+  'sshpass' 도구를 이용하여 비밀번호 기반 SSH 인증을 자동화하고,
+  원격 서버에 대상 디렉토리를 자동 생성한 후 로컬 파일 또는 디렉토리를 안전하게 복사(SCP)합니다.
+
+필수 옵션 (Required Options):
+  -H, --host <host>                대상 원격 서버 호스트 (IP 또는 도메인)
+  -s, --src, --source <src>        전송할 로컬 원본 파일 또는 디렉토리 경로
+  -d, --dest, --destination <dest> 원격 서버 대상 디렉토리 경로
+
+선택 옵션 (Optional Options):
+  -u, --user, --username <user>    원격 서버 사용자 계정 (기본값: 현재 로컬 사용자 '${USER:-whoami}')
+  -p, --port <port>                원격 SSH 포트 번호 (기본값: 22)
+  -P, -i, --passwd, --password <passwd>
+                                   원격 서버 접속 비밀번호 (생략 시 대화형 마스킹 입력 프롬프트 제공)
+  -o, --ssh-option <option>        ssh/scp 추가 옵션 (예: -o "ConnectTimeout=10")
+  -h, --help                       이 도움말 출력 및 종료
+
+예시 (Examples):
+  # 1) 기본 전송 (비밀번호 대화형 마스킹 입력)
+  $FILENAME -H 192.168.1.100 -s ./my-app -d /opt/deploy
+
+  # 2) 원격 사용자 및 포트 지정 전송
+  $FILENAME -u deployer -H 192.168.1.100 -p 2222 -s ./config.json -d /etc/my-app/
+
+  # 3) 비밀번호 옵션 지정 전송
+  $FILENAME -u root -H 10.0.0.5 -P "mypassword" -s ./dist -d /var/www/html/
+EOF
+}
+
+##
+# 지정한 포트 번호가 1 ~ 65535 범위 내의 유효한 정수인지 검증합니다.
+#
+# @param $1 {string} 포트 번호
+#
+# @return 0 (유효), 1 (무효)
+##
+is_valid_port() {
+  local port="$1"
+  [[ "$port" =~ ^[0-9]+$ ]] && (( port >= 1 && port <= 65535 ))
+}
+
+##
+# 시스템에 sshpass 도구가 설치되어 있는지 확인하고, 없는 경우 사용자 확인 후 자동 설치를 진행합니다.
+#
+# @return 0 on success, exit 1 on failure
+##
+check_and_install_sshpass() {
+  if command -v sshpass >/dev/null 2>&1; then
+    return 0
+  fi
+
+  echo "⚠️  [알림] 원격 자동 인증 및 파일 전송에 필요한 'sshpass' 도구가 시스템에 설치되어 있지 않습니다."
+
+  # 대화형 TTY가 아닐 경우 안내 후 종료
+  if [[ ! -t 0 ]]; then
+    echo "❌ 대화형 터미널(TTY)이 아니므로 자동 설치를 진행할 수 없습니다." >&2
+    echo "   시스템 패키지 관리자를 통해 'sshpass'를 먼저 설치해 주세요." >&2
+    exit 1
+  fi
+
+  local answer=""
+  printf "❓ 'sshpass' 도구를 지금 설치하시겠습니까? (y/N): "
+  read -r answer
+  if [[ "$answer" != "y" && "$answer" != "Y" ]]; then
+    echo "🛑 사용자에 의해 설치가 취소되었습니다. 프로그램을 종료합니다."
+    exit 1
+  fi
+
+  echo "📦 패키지 관리자를 자동 감지하여 'sshpass' 설치를 시도합니다..."
+  local installed=false
+
+  if command -v apt-get >/dev/null 2>&1; then
+    sudo apt-get update -y && sudo apt-get install -y sshpass && installed=true
+  elif command -v dnf >/dev/null 2>&1; then
+    sudo dnf install -y sshpass && installed=true
+  elif command -v yum >/dev/null 2>&1; then
+    sudo yum install -y epel-release 2>/dev/null || true
+    sudo yum install -y sshpass && installed=true
+  elif command -v pacman >/dev/null 2>&1; then
+    sudo pacman -Sy --noconfirm sshpass && installed=true
+  elif command -v zypper >/dev/null 2>&1; then
+    sudo zypper install -y sshpass && installed=true
+  elif command -v brew >/dev/null 2>&1; then
+    brew install esolitos/ipa/sshpass && installed=true
+  fi
+
+  if [[ "$installed" == true ]] && command -v sshpass >/dev/null 2>&1; then
+    echo "✅ 'sshpass' 설치가 완료되었습니다!"
+    return 0
+  else
+    echo "❌ 'sshpass' 자동 설치에 실패하였습니다. 수동으로 패키지를 설치한 후 다시 실행해 주세요." >&2
+    exit 1
+  fi
+}
+
+##
+# 메인 함수: 옵션 파싱, 검증 및 파일 전송 실행
+##
+main() {
+  local user="${USER:-$(whoami)}"
+  local host=""
+  local port="22"
+  local src=""
+  local dest=""
+  local passwd=""
+  local -a extra_ssh_opts=()
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -H|--host)
+        if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == -* ]]; then
+          help "'-H|--host' 옵션 뒤에 대상 호스트를 지정해야 합니다." "$LINENO"
+          exit 1
+        fi
+        host="$2"
+        shift 2
+        ;;
+      --host=*)
+        host="${1#*=}"
+        shift
+        ;;
+      -u|--user|--username)
+        if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == -* ]]; then
+          help "'-u|--user' 옵션 뒤에 사용자 계정을 지정해야 합니다." "$LINENO"
+          exit 1
+        fi
+        user="$2"
+        shift 2
+        ;;
+      --user=*|--username=*)
+        user="${1#*=}"
+        shift
+        ;;
+      -p|--port)
+        if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == -* ]]; then
+          help "'-p|--port' 옵션 뒤에 포트 번호를 지정해야 합니다." "$LINENO"
+          exit 1
+        fi
+        port="$2"
+        shift 2
+        ;;
+      --port=*)
+        port="${1#*=}"
+        shift
+        ;;
+      -P|-i|--passwd|--password)
+        if [[ $# -lt 2 || -z "${2:-}" ]]; then
+          help "비밀번호 옵션 뒤에 유효한 비밀번호를 지정해야 합니다." "$LINENO"
+          exit 1
+        fi
+        passwd="$2"
+        shift 2
+        ;;
+      --passwd=*|--password=*)
+        passwd="${1#*=}"
+        shift
+        ;;
+      -s|--src|--source)
+        if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == -* ]]; then
+          help "'-s|--src' 옵션 뒤에 전송할 원본 파일/디렉토리 경로를 지정해야 합니다." "$LINENO"
+          exit 1
+        fi
+        src="$2"
+        shift 2
+        ;;
+      --src=*|--source=*)
+        src="${1#*=}"
+        shift
+        ;;
+      -d|--dest|--destination)
+        if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == -* ]]; then
+          help "'-d|--dest' 옵션 뒤에 원격 대상 디렉토리 경로를 지정해야 합니다." "$LINENO"
+          exit 1
+        fi
+        dest="$2"
+        shift 2
+        ;;
+      --dest=*|--destination=*)
+        dest="${1#*=}"
+        shift
+        ;;
+      -o|--ssh-option)
+        if [[ $# -lt 2 || -z "${2:-}" ]]; then
+          help "'-o|--ssh-option' 옵션 뒤에 ssh 옵션을 지정해야 합니다." "$LINENO"
+          exit 1
+        fi
+        extra_ssh_opts+=("-o" "$2")
+        shift 2
+        ;;
+      -h|--help)
+        help "" ""
+        exit 0
+        ;;
+      *)
+        help "알 수 없는 옵션입니다: '$1'" "$LINENO"
+        exit 1
+        ;;
+    esac
+  done
+
+  # 필수 파라미터 검증
+  if [[ -z "$host" ]]; then
+    help "원격 대상 호스트(-H, --host)가 지정되지 않았습니다." "$LINENO"
+    exit 1
+  fi
+
+  if [[ -z "$src" ]]; then
+    help "전송할 원본 경로(-s, --src)가 지정되지 않았습니다." "$LINENO"
+    exit 1
+  fi
+
+  if [[ ! -e "$src" ]]; then
+    help "지정한 로컬 원본 파일 또는 디렉토리가 존재하지 않습니다: '$src'" "$LINENO"
+    exit 1
+  fi
+
+  if [[ -z "$dest" ]]; then
+    help "원격 대상 디렉토리 경로(-d, --dest)가 지정되지 않았습니다." "$LINENO"
+    exit 1
+  fi
+
+  if ! is_valid_port "$port"; then
+    help "유효하지 않은 SSH 포트 번호입니다: '$port' (범위: 1 ~ 65535)" "$LINENO"
+    exit 1
+  fi
+
+  # sshpass 설치 여부 확인 및 필요시 자동 설치
+  check_and_install_sshpass
+
+  # 비밀번호 미입력 시 대화형 마스킹 입력
+  if [[ -z "$passwd" ]]; then
+    if [[ ! -t 0 ]]; then
+      help "비대화형 환경에서는 비밀번호(-P, --passwd)를 반드시 파라미터로 전달해야 합니다." "$LINENO"
+      exit 1
+    fi
+    printf "🔑 '%s@%s:%s' 접속 비밀번호 입력: " "$user" "$host" "$port"
+    read -r -s passwd
+    echo
+    if [[ -z "$passwd" ]]; then
+      help "비밀번호가 입력되지 않았습니다." "$LINENO"
+      exit 1
+    fi
+  fi
+
+  # 보안: 프로세스 목록(ps)에 비밀번호 노출 방지를 위해 SSHPASS 환경변수 사용
+  export SSHPASS="$passwd"
+  trap 'unset SSHPASS' EXIT
+
+  echo
+  echo "==================== 📋 [전송 작업 계획] ===================="
+  printf " 🎯 대상 호스트     : %s@%s:%s\n" "$user" "$host" "$port"
+  printf " 📁 로컬 원본 경로 : %s\n" "$src"
+  printf " 📂 원격 대상 경로 : %s\n" "$dest"
+  echo "============================================================"
+  echo
+
+  echo "📁 [1/2] 대상 원격 디렉토리를 생성/확인합니다..."
+  printf " 🚀 sshpass -e ssh -p %s %s@%s \"mkdir -p '%s'\"\n" "$port" "$user" "$host" "$dest"
+  if ! sshpass -e ssh -o StrictHostKeyChecking=no -p "$port" "${extra_ssh_opts[@]}" "$user@$host" "mkdir -p '$dest'"; then
+    echo >&2
+    echo "❌ 원격 대상 디렉토리 생성에 실패하였습니다. 권한이나 네트워크 상태를 확인하세요." >&2
+    exit 1
+  fi
+
+  echo
+  echo "🚀 [2/2] 파일/디렉토리를 대상 서버로 안전하게 복사(SCP)합니다..."
+  printf " 🚀 sshpass -e scp -r -P %s '%s' %s@%s:'%s'\n" "$port" "$src" "$user" "$host" "$dest"
+  if ! sshpass -e scp -o StrictHostKeyChecking=no -r -P "$port" "${extra_ssh_opts[@]}" "$src" "$user@$host:'$dest'"; then
+    echo >&2
+    echo "❌ 파일 복사(SCP) 중 오류가 발생하였습니다." >&2
+    exit 1
+  fi
+
+  echo
+  echo "🎉 [완료] 파일/디렉토리 전송이 성공적으로 완료되었습니다!"
+}
+
+main "$@"

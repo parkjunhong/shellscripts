@@ -1,0 +1,121 @@
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : scp-dir bash completion.
+# @license : Apache License 2.0
+# @since : 2026-10-27
+# @desc : support RHEL 7+, Oracle Linux 7+, Ubuntu 18.04+, RockyOS 8+, CentOS 7+, macOS 11+
+# @installation :
+# 1. insert 'source <path>/scp-dir.completion' into ~/.bashrc or ~/.bash_profile for a personal usage.
+# 2. copy the above file to /usr/share/bash-completion/completions/scp-dir (1st) or /etc/bash_completion.d/scp-dir.completion (2nd) for all users.
+# =======================================
+
+# =======================================
+# [Bash Completion Parameter Description]
+# 1. COMP_WORDS: an array containing all individual words in the current command line
+#    (현재 커맨드 라인에 입력된 단어들의 배열)
+# 2. COMP_CWORD: an index of the word containing the current cursor position
+#    (현재 커서가 위치한 단어의 인덱스)
+# 3. COMP_LINE: the current command line string
+#    (현재까지 커맨드 라인에 입력된 전체 문자열)
+# 4. COMPREPLY: an array variable from which Bash reads the possible completions
+#    (bash completion이 제안할 단어들의 배열)
+#
+# Arguments of completion function:
+# - $1: name of the command whose arguments are being completed (명령의 이름)
+# - $2: word being completed (현재 커서에서 완성하려고 하는 단어)
+# - $3: word preceding the word being completed (현재 완성하려는 단어의 바로 이전 단어)
+# =======================================
+
+##
+# /etc/hosts 및 ~/.ssh/known_hosts 파일에서 알려진 호스트/도메인 목록을 조회합니다.
+#
+# @return 개행으로 구분된 고유 호스트 목록 출력
+##
+_scp_dir_get_known_hosts() {
+  local -a hosts=()
+  if [[ -f /etc/hosts ]]; then
+    local line
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+      local -a words
+      read -ra words <<< "$line"
+      local i
+      for ((i=1; i<${#words[@]}; i++)); do
+        if [[ "${words[i]}" =~ ^[a-zA-Z0-9.-]+$ && "${words[i]}" != "localhost"* ]]; then
+          hosts+=("${words[i]}")
+        fi
+      done
+    done < /etc/hosts
+  fi
+  if [[ -f "${HOME}/.ssh/known_hosts" ]]; then
+    local line
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+      local h="${line%% *}"
+      h="${h%%,*}"
+      h="${h#\[}"
+      h="${h%%\]*}"
+      if [[ "$h" =~ ^[a-zA-Z0-9.-]+$ ]]; then
+        hosts+=("$h")
+      fi
+    done < "${HOME}/.ssh/known_hosts"
+  fi
+
+  if (( ${#hosts[@]} > 0 )); then
+    printf '%s\n' "${hosts[@]}" | sort -u
+  fi
+}
+
+##
+# scp-dir 명령어에 대한 Bash 자동 완성을 수행합니다.
+##
+_scp_dir_completion() {
+  local cur prev
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  local opts="-H --host -u --user --username -p --port -P -i --passwd --password -s --src --source -d --dest --destination -o --ssh-option -h --help"
+
+  case "$prev" in
+    -s|--src|--source)
+      # 로컬 파일 및 디렉토리 자동 완성
+      COMPREPLY=( $(compgen -f -- "${cur}") )
+      return 0
+      ;;
+    -H|--host)
+      # 알려진 호스트 목록 자동 완성
+      local hosts
+      hosts="$(_scp_dir_get_known_hosts)"
+      if [[ -n "$hosts" ]]; then
+        COMPREPLY=( $(compgen -W "${hosts}" -- "${cur}") )
+        return 0
+      fi
+      ;;
+    -p|--port)
+      # 기본 SSH 포트 제안
+      COMPREPLY=( $(compgen -W "22 2222" -- "${cur}") )
+      return 0
+      ;;
+    -u|--user|--username)
+      # 로컬 사용자 목록 제안
+      if command -v getent >/dev/null 2>&1; then
+        local users
+        users="$(getent passwd | cut -d: -f1)"
+        COMPREPLY=( $(compgen -W "${users}" -- "${cur}") )
+        return 0
+      fi
+      ;;
+    -P|-i|--passwd|--password)
+      # 비밀번호는 보안상 자동완성하지 않음
+      return 0
+      ;;
+  esac
+
+  if [[ "$cur" == -* ]]; then
+    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+    return 0
+  fi
+}
+
+complete -F _scp_dir_completion scp-dir

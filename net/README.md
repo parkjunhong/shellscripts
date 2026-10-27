@@ -17,6 +17,7 @@
 | **`fwc-docker-policy`** | 외부 유입 트래픽을 Docker 컨테이너로 연결하는 firewalld Policy 자동 생성 | [README](file:///home/parkjunhong/dev/bashshell-projects/github/shellscripts/net/fwc-docker-policy/README.md) |
 | **`fwc-cli`** | firewalld Zone별 규칙(IP, 포트, 서비스, 리치룰 등) 조회·추가·삭제·초기화 CLI 래퍼 | [README](file:///home/parkjunhong/dev/bashshell-projects/github/shellscripts/net/fwc-cli/README.md) |
 | **`mtr-netstat-conns`** | netstat 연결 상태 모니터링 및 다중 파이프라인 필터링·정렬 | [README](file:///home/parkjunhong/dev/bashshell-projects/github/shellscripts/net/mtr-netstat-conns/README.md) |
+| **`scp-dir`** | `sshpass` 기반 비밀번호 자동 인증을 통한 원격 디렉토리 생성 및 파일/디렉토리 복사(SCP) | [README](file:///home/parkjunhong/dev/bashshell-projects/github/shellscripts/net/scp-dir/README.md) |
 
 ---
 
