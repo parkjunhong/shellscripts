@@ -27,28 +27,69 @@
 # Auto-completion function for disk-size script.
 ##
 _disk_size_completion() {
-  local cur prev opts
+  local cur prev
   COMPREPLY=()
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  # 기본 지원 옵션들 (Default options)
-  opts="-h --help -r -sa -sd"
+  # 기본 지원 옵션 목록
+  local all_opts=("-h" "--help" "-r" "-sa" "-sd")
 
-  # 이미 입력한 옵션은 다시 제안하지 않음 (Remove already typed non-repeatable options)
-  for word in "${COMP_WORDS[@]}"; do
-    opts=$(echo "$opts" | sed "s/\b$word\b//g")
+  # 1. 이미 디렉토리 인자가 입력되었는지 확인 (현재 커서 단어 이전까지 분석)
+  local has_dir=0
+  local i
+  for (( i=1; i < COMP_CWORD; i++ )); do
+    local word="${COMP_WORDS[i]}"
+    if [[ "$word" != -* ]]; then
+      has_dir=1
+      break
+    fi
   done
 
-  # '-' 또는 '--'를 입력하지 않고 <TAB> 만 입력해도 옵션과 디렉토리명이 추천되도록 처리
-  # Recommend options and directory names even if <TAB> is pressed without '-' or '--'
-  if [[ ${cur} == * ]] ; then
-    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-    # 디렉토리를 탐색하는 스크립트이므로 bash 내장 디렉토리 자동완성 추가 
-    # Add built-in directory completion fallback
-    COMPREPLY+=($(compgen -d -- "${cur}"))
+  # 2. 이미 사용된 옵션 필터링
+  local filtered_opts=()
+  for opt in "${all_opts[@]}"; do
+    local used=0
+    for (( i=1; i < COMP_CWORD; i++ )); do
+      local word="${COMP_WORDS[i]}"
+      if [[ "$word" == "$opt" ]]; then
+        used=1
+        break
+      fi
+      if [[ "$word" == -* && "$word" != "--help" ]]; then
+        case "$opt" in
+          -r) [[ "$word" == *r* ]] && used=1 ;;
+          -sa) [[ "$word" == *sa* || "$word" == *sd* ]] && used=1 ;;
+          -sd) [[ "$word" == *sa* || "$word" == *sd* ]] && used=1 ;;
+        esac
+      fi
+    done
+    [[ $used -eq 0 ]] && filtered_opts+=("$opt")
+  done
+
+  # 3. 디렉토리가 이미 입력된 경우: 추가 디렉토리는 제안하지 않고 남은 옵션만 제안
+  if [[ $has_dir -eq 1 ]]; then
+    COMPREPLY=( $(compgen -W "${filtered_opts[*]}" -- "${cur}") )
     return 0
   fi
+
+  # 4. 옵션 입력 중인 경우
+  if [[ "${cur}" == -* ]]; then
+    COMPREPLY=( $(compgen -W "${filtered_opts[*]}" -- "${cur}") )
+    return 0
+  fi
+
+  # 5. 경로/디렉토리 입력 중인 경우
+  if [[ -n "${cur}" ]]; then
+    compopt -o dirnames 2>/dev/null || true
+    COMPREPLY=( $(compgen -d -- "${cur}") )
+    return 0
+  fi
+
+  # 6. 아무것도 입력하지 않은 초기 상태: 옵션 및 디렉토리 모두 제안
+  compopt -o dirnames 2>/dev/null || true
+  COMPREPLY=( $(compgen -W "${filtered_opts[*]}" -- "${cur}") $(compgen -d -- "${cur}") )
+  return 0
 }
 
 # 스크립트 파일명과 자동완성 함수 연결

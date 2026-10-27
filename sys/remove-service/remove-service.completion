@@ -32,12 +32,18 @@ _remove_service_completion() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  # 기본 지원 옵션들 (Default options)
-  opts="-h --help"
-
-  # 이미 입력한 옵션은 다시 제안하지 않음 (Remove already typed non-repeatable options)
-  for word in "${COMP_WORDS[@]}"; do
-    opts=$(echo "$opts" | sed "s/\b$word\b//g")
+  # 기본 지원 옵션들
+  local all_opts=("-h" "--help")
+  local filtered_opts=()
+  for opt in "${all_opts[@]}"; do
+    local used=0
+    for word in "${COMP_WORDS[@]:1}"; do
+      if [[ "$word" == "$opt" ]]; then
+        used=1
+        break
+      fi
+    done
+    [[ $used -eq 0 ]] && filtered_opts+=("$opt")
   done
 
   # 시스템에 등록된 서비스 목록을 동적으로 추출 (Extract registered services dynamically)
@@ -55,7 +61,7 @@ _remove_service_completion() {
   # '-' 또는 '--'를 입력하지 않고 <TAB> 만 입력해도 옵션과 서비스명이 추천되도록 처리
   # Recommend options and service names even if <TAB> is pressed without '-' or '--'
   if [[ ${cur} == * ]] ; then
-    COMPREPLY=( $(compgen -W "${opts} ${services}" -- "${cur}") )
+    COMPREPLY=( $(compgen -W "${filtered_opts[*]} ${services}" -- "${cur}") )
     # 파일/경로 파라미터가 있을 경우를 위해 bash 내장 파일 자동완성 추가 
     # Add built-in file completion fallback
     COMPREPLY+=($(compgen -f -d -- "${cur}"))
