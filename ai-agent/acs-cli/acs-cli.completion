@@ -52,11 +52,11 @@ _acs_cli_get_home() {
 }
 
 ##
-# 지정된 대상(skill | rule)에 존재하는 카테고리 이름 목록을 조회합니다.
+# 지정된 대상(skill | rule)에 존재하는 카테고리 이름 목록을 'skill-', 'rule-' 접두사를 제외하고 조회합니다.
 #
 # @param $1 {string} 대상 종류 (skill | rule | all)
 #
-# @return 줄바꿈으로 구분된 카테고리 이름 목록
+# @return 줄바꿈으로 구분된 논리 카테고리 이름 목록 (예: my-category)
 ##
 _acs_cli_get_categories() {
   local target="${1:-all}"
@@ -64,28 +64,32 @@ _acs_cli_get_categories() {
   acs_home="$(_acs_cli_get_home)"
   [[ -n "$acs_home" && -d "$acs_home" ]] || return 0
 
-  local -a search_roots=()
-  case "$target" in
-    skill)
-      search_roots=("${acs_home}/skills")
-      ;;
-    rule)
-      search_roots=("${acs_home}/rules")
-      ;;
-    all|*)
-      search_roots=("${acs_home}/skills" "${acs_home}/rules")
-      ;;
-  esac
-
   local -a cats=()
-  local root dir
-  for root in "${search_roots[@]}"; do
-    [[ -d "$root" ]] || continue
-    for dir in "${root}"/*; do
-      [[ -d "$dir" ]] || continue
-      cats+=("$(basename "$dir")")
-    done
-  done
+  local dir bname
+
+  if [[ "$target" == "skill" || "$target" == "all" ]]; then
+    if [[ -d "${acs_home}/skills" ]]; then
+      for dir in "${acs_home}/skills"/*; do
+        [[ -d "$dir" ]] || continue
+        bname="$(basename "$dir")"
+        if [[ "$bname" == skill-* ]]; then
+          cats+=("${bname#skill-}")
+        fi
+      done
+    fi
+  fi
+
+  if [[ "$target" == "rule" || "$target" == "all" ]]; then
+    if [[ -d "${acs_home}/rules" ]]; then
+      for dir in "${acs_home}/rules"/*; do
+        [[ -d "$dir" ]] || continue
+        bname="$(basename "$dir")"
+        if [[ "$bname" == rule-* ]]; then
+          cats+=("${bname#rule-}")
+        fi
+      done
+    fi
+  fi
 
   if (( ${#cats[@]} > 0 )); then
     printf "%s\n" "${cats[@]}" | sort -u
@@ -96,7 +100,7 @@ _acs_cli_get_categories() {
 # 특정 카테고리 내에 존재하는 스킬 또는 규칙의 이름 목록을 조회합니다. (remove, list 용)
 #
 # @param $1 {string} 대상 종류 (skill | rule)
-# @param $2 {string} 카테고리 이름
+# @param $2 {string} 논리 카테고리 이름 (예: my-category)
 #
 # @return 줄바꿈으로 구분된 스킬/규칙 이름 목록
 ##
@@ -111,7 +115,8 @@ _acs_cli_get_names_in_category() {
   local entry bname
 
   if [[ "$target" == "skill" ]]; then
-    local skills_dir="${acs_home}/skills/${category}/.agents/skills"
+    local logical_cat="${category#skill-}"
+    local skills_dir="${acs_home}/skills/skill-${logical_cat}/.agents/skills"
     if [[ -d "$skills_dir" ]]; then
       for entry in "${skills_dir}"/*; do
         [[ -e "$entry" || -L "$entry" ]] || continue
@@ -119,7 +124,8 @@ _acs_cli_get_names_in_category() {
       done
     fi
   elif [[ "$target" == "rule" ]]; then
-    local rules_dir="${acs_home}/rules/${category}/.agents/rules"
+    local logical_cat="${category#rule-}"
+    local rules_dir="${acs_home}/rules/rule-${logical_cat}/.agents/rules"
     if [[ -d "$rules_dir" ]]; then
       for entry in "${rules_dir}"/*; do
         [[ -e "$entry" || -L "$entry" ]] || continue
@@ -191,7 +197,7 @@ _acs_cli_complete_csv() {
 
 ##
 # 'add' 명령어의 '--name' 자동완성을 처리합니다.
-# - 후보 추천은 '{category}/{name}' 형태로 표시합니다. (현재 대상 카테고리는 제외)
+# - 후보 추천은 'skill-', 'rule-' 접두사가 제외된 '{category}/{name}' 형태로 표시합니다. (현재 대상 카테고리는 제외)
 # - 후보가 1개로 확정(선택)되면 해당 항목의 **전체 파일/디렉토리 경로**로 COMPREPLY를 설정합니다.
 #
 # @param $1 {string} 대상 종류 (skill | rule)
@@ -213,32 +219,38 @@ _acs_cli_complete_add_name() {
 
   local -a short_keys=()
   local -a full_paths=()
-  local cat_dir src_cat entry bname rule_name
+  local cat_dir dir_bname src_logical_cat entry bname rule_name
 
   if [[ "$target" == "skill" ]]; then
+    local exclude_logical="${exclude_cat#skill-}"
     local skills_root="${acs_home}/skills"
     if [[ -d "$skills_root" ]]; then
       for cat_dir in "${skills_root}"/*; do
         [[ -d "$cat_dir" ]] || continue
-        src_cat="$(basename "$cat_dir")"
-        [[ "$src_cat" != "$exclude_cat" ]] || continue
+        dir_bname="$(basename "$cat_dir")"
+        [[ "$dir_bname" == skill-* ]] || continue
+        src_logical_cat="${dir_bname#skill-}"
+        [[ "$src_logical_cat" != "$exclude_logical" ]] || continue
         [[ -d "${cat_dir}/.agents/skills" ]] || continue
 
         for entry in "${cat_dir}/.agents/skills"/*; do
           [[ -e "$entry" || -L "$entry" ]] || continue
           bname="$(basename "$entry")"
-          short_keys+=("${src_cat}/${bname}")
+          short_keys+=("${src_logical_cat}/${bname}")
           full_paths+=("${cat_dir}/.agents/skills/${bname}")
         done
       done
     fi
   elif [[ "$target" == "rule" ]]; then
+    local exclude_logical="${exclude_cat#rule-}"
     local rules_root="${acs_home}/rules"
     if [[ -d "$rules_root" ]]; then
       for cat_dir in "${rules_root}"/*; do
         [[ -d "$cat_dir" ]] || continue
-        src_cat="$(basename "$cat_dir")"
-        [[ "$src_cat" != "$exclude_cat" ]] || continue
+        dir_bname="$(basename "$cat_dir")"
+        [[ "$dir_bname" == rule-* ]] || continue
+        src_logical_cat="${dir_bname#rule-}"
+        [[ "$src_logical_cat" != "$exclude_logical" ]] || continue
         [[ -d "${cat_dir}/.agents/rules" ]] || continue
 
         for entry in "${cat_dir}/.agents/rules"/*; do
@@ -251,7 +263,7 @@ _acs_cli_complete_add_name() {
           else
             continue
           fi
-          short_keys+=("${src_cat}/${rule_name}")
+          short_keys+=("${src_logical_cat}/${rule_name}")
           full_paths+=("${cat_dir}/.agents/rules/${bname}")
         done
       done

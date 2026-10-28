@@ -6,10 +6,11 @@ AI-Agent Customization System에서 사용하는 **스킬(`skill`)**과 **규칙
 
 ## ✨ 주요 특징
 
-1. **카테고리 기반 AI-Agent 커스터마이징 표준 경로 관리**
+1. **카테고리 기반 AI-Agent 커스터마이징 표준 경로 관리 (`skill-` / `rule-` 식별 접두사 적용)**
    * 환경변수 `AI_AGENT_CUSTOMIZATION_HOME` (또는 `--home <경로>` 옵션) 하위에 카테고리별 `.agents` 탐색 구조를 자동으로 구성하고 관리합니다.
-   * **Skill 경로 규격**: `${AI_AGENT_CUSTOMIZATION_HOME}/skills/${CATEGORY}/.agents/skills/${NAME}/SKILL.md`
-   * **Rule 경로 규격**: `${AI_AGENT_CUSTOMIZATION_HOME}/rules/${CATEGORY}/.agents/rules/${NAME}.md`
+   * Antigravity App 2.x에 워크스페이스 폴더로 추가했을 때 일반 개발 프로젝트 폴더와 명확히 구분되도록 실제 디렉토리명에 `skill-` 및 `rule-` 접두사를 자동 부여합니다. (단, CLI `--category` 입력 및 자동완성 추천 시에는 `skill-`, `rule-`가 제외된 논리 카테고리 이름을 그대로 사용합니다.)
+   * **Skill 경로 규격**: `${AI_AGENT_CUSTOMIZATION_HOME}/skills/skill-${CATEGORY}/.agents/skills/${NAME}/SKILL.md`
+   * **Rule 경로 규격**: `${AI_AGENT_CUSTOMIZATION_HOME}/rules/rule-${CATEGORY}/.agents/rules/${NAME}.md`
 2. **일원화된 옵션 체계 (`--category`, `--name`) 및 초기 템플릿 자동 생성 (`create`)**
    * `create`, `remove`, `add`, `list` 모든 명령어가 `--category`와 `--name` 옵션 체계를 일관되게 사용합니다.
    * **전역 스킬 이름 중복 검증 (`create skill`)**: Antigravity App 2.x에서 서로 다른 카테고리에 동일한 이름의 스킬이 있으면 1개만 로딩되는 문제를 방지하기 위해, 스킬 생성 시 전체 카테고리(`skills/*/.agents/skills/*` 디렉토리명 및 `SKILL.md` 내 `name:` 속성)를 전수 검사하여 이미 사용 중인 이름이면 생성을 차단하고 종료합니다.
@@ -92,10 +93,10 @@ acs-cli create rule --category java --name javadoc-spec
 ### 2. 기존 스킬/규칙을 다른 카테고리에 심볼릭 링크로 참조 추가 (`add`)
 ```bash
 # <TAB> 입력 시 'bash/bash-scripts'로 추천되며, 선택 시 전체 경로로 치환됨
-acs-cli add skill --category devops --name "${AI_AGENT_CUSTOMIZATION_HOME}/skills/bash/.agents/skills/bash-scripts"
+acs-cli add skill --category devops --name "${AI_AGENT_CUSTOMIZATION_HOME}/skills/skill-bash/.agents/skills/bash-scripts"
 
 # <TAB> 입력 시 'java/javadoc-spec'으로 추천되며, 선택 시 전체 파일 경로로 치환됨
-acs-cli add rule --category spring --name "${AI_AGENT_CUSTOMIZATION_HOME}/rules/java/.agents/rules/javadoc-spec.md"
+acs-cli add rule --category spring --name "${AI_AGENT_CUSTOMIZATION_HOME}/rules/rule-java/.agents/rules/javadoc-spec.md"
 ```
 
 ### 3. 트리(`├──`, `└──`) 구조로 스킬 및 규칙 조회 (`list`)
@@ -115,17 +116,17 @@ acs-cli list
 
 출력 예시:
 ```text
-/home/parkjunhong/dev/ai-agents/skills/bash
+/home/parkjunhong/dev/ai-agents/skills/skill-bash
 └── bash-scripts
     ├── SKILL.md
     └── scripts/
         └── lint.sh
-/home/parkjunhong/dev/ai-agents/skills/devops
-└── bash-scripts -> /home/parkjunhong/dev/ai-agents/skills/bash/.agents/skills/bash-scripts
+/home/parkjunhong/dev/ai-agents/skills/skill-devops
+└── bash-scripts -> /home/parkjunhong/dev/ai-agents/skills/skill-bash/.agents/skills/bash-scripts
     ├── SKILL.md
     └── scripts/
         └── lint.sh
-/home/parkjunhong/dev/ai-agents/rules/java
+/home/parkjunhong/dev/ai-agents/rules/rule-java
 └── javadoc-spec.md
 ```
 

@@ -74,19 +74,20 @@ help() {
 
 📝 설명 (Description):
   지정된 카테고리에 새로운 AI-Agent 스킬(Skill) 또는 규칙(Rule)을 생성합니다.
+  - 실제 생성되는 카테고리 디렉토리명은 식별이 용이하도록 'skill-<카테고리>' 또는 'rule-<카테고리>'가 됩니다.
   - Skill 생성 시: 전체 카테고리를 검사하여 동일한 스킬 이름(--name)이 이미 사용 중이면 생성을 차단하고 종료합니다.
   - Rule 생성 시 : Antigravity 2.x에서 자동 로딩되도록 'trigger: always_on' YAML Frontmatter가 포함된 템플릿을 생성합니다.
 
 ⚙️  옵션 (Options):
-  --category <CATEGORY>     생성할 스킬/규칙의 카테고리 이름 (필수)
+  --category <CATEGORY>     생성할 스킬/규칙의 논리 카테고리 이름 (필수, 'skill-'/'rule-' 접두사 제외 입력)
   --name <NAME>             생성할 스킬/규칙의 이름 (필수, 규칙의 경우 .md 확장자 생략 가능)
   --home <DIR>              AI-Agent 커스터마이징 루트 경로 지정 (미지정 시 \$AI_AGENT_CUSTOMIZATION_HOME 사용)
   --force                   동일 카테고리 내 기존 항목 덮어쓰기 (단, 다른 카테고리에 이미 존재하는 스킬 이름은 덮어쓰기 불가)
   --help                    create 서브커맨드 도움말 출력
 
 📂 생성 경로 규격:
-  - skill : \${AI_AGENT_CUSTOMIZATION_HOME}/skills/\${CATEGORY}/.agents/skills/\${NAME}/SKILL.md
-  - rule  : \${AI_AGENT_CUSTOMIZATION_HOME}/rules/\${CATEGORY}/.agents/rules/\${NAME}.md
+  - skill : \${AI_AGENT_CUSTOMIZATION_HOME}/skills/skill-\${CATEGORY}/.agents/skills/\${NAME}/SKILL.md
+  - rule  : \${AI_AGENT_CUSTOMIZATION_HOME}/rules/rule-\${CATEGORY}/.agents/rules/\${NAME}.md
 
 EOF
       ;;
@@ -103,6 +104,7 @@ EOF
 📝 설명 (Description):
   지정된 카테고리에서 특정 스킬/규칙(--name 지정 시, 콤마 다중 지정 가능)을 삭제하거나,
   카테고리 전체(--name 생략 시, 콤마 다중 지정 가능)를 삭제합니다.
+  - '--category'에는 'skill-'/'rule-' 접두사가 제외된 카테고리 이름을 입력합니다.
   - '--category'에 여러 카테고리를 콤마(,)로 지정한 경우 '--name'은 사용할 수 없으며 카테고리들을 일괄 삭제합니다.
   - 특정 스킬/규칙 삭제 후 해당 카테고리에 더 이상 스킬/규칙이 남아 있지 않으면 카테고리 디렉토리도 자동으로 함께 삭제합니다.
   - 다중 입력된 삭제 대상 정보를 별도 라인으로 출력하고 [y/n] 확인을 1회 요청합니다 (--force 지정 시 즉시 삭제).
@@ -127,10 +129,10 @@ EOF
 📝 설명 (Description):
   이미 존재하는 스킬 또는 규칙(--name)을 지정된 카테고리(--category)에 심볼릭 링크로 추가(참조)합니다.
   Bash 자동완성(<TAB>)을 통해 '{category}/{name}' 형태로 추천받고 선택 시 전체 파일/디렉토리 경로로 자동 변환됩니다.
-  대상 카테고리 디렉토리가 존재하지 않는 경우 자동으로 생성합니다.
+  대상 카테고리 디렉토리('skill-<카테고리>' 또는 'rule-<카테고리>')가 존재하지 않는 경우 자동으로 생성합니다.
 
 ⚙️  옵션 (Options):
-  --category <CATEGORY>     심볼릭 링크가 생성될 대상 카테고리 이름 (필수)
+  --category <CATEGORY>     심볼릭 링크가 생성될 대상 카테고리 이름 (필수, 'skill-'/'rule-' 접두사 제외 입력)
   --name <PATH_OR_REF>      참조할 원본 스킬 디렉토리 또는 규칙 파일의 전체 경로 (필수, '{category}/{name}' 형식도 지원)
   --home <DIR>              AI-Agent 커스터마이징 루트 경로 지정 (미지정 시 \$AI_AGENT_CUSTOMIZATION_HOME 사용)
   --force                   동일 이름의 항목이 이미 존재할 때 기존 항목을 교체
@@ -180,14 +182,14 @@ EOF
   --help                    전체 도움말 또는 서브커맨드별 도움말 출력
 
 📂 관리 경로 구조 (Directory Layout):
-  - Skill : \${AI_AGENT_CUSTOMIZATION_HOME}/skills/\${CATEGORY}/.agents/skills/\${NAME}/SKILL.md
-  - Rule  : \${AI_AGENT_CUSTOMIZATION_HOME}/rules/\${CATEGORY}/.agents/rules/\${NAME}.md
+  - Skill : \${AI_AGENT_CUSTOMIZATION_HOME}/skills/skill-\${CATEGORY}/.agents/skills/\${NAME}/SKILL.md
+  - Rule  : \${AI_AGENT_CUSTOMIZATION_HOME}/rules/rule-\${CATEGORY}/.agents/rules/\${NAME}.md
 
 💡 예시 (Examples):
   $FILENAME create skill --category bash --name bash-scripts
   $FILENAME create rule  --category java --name javadoc-guide
-  $FILENAME add    skill --category devops --name \${AI_AGENT_CUSTOMIZATION_HOME}/skills/bash/.agents/skills/bash-scripts
-  $FILENAME add    rule  --category spring --name \${AI_AGENT_CUSTOMIZATION_HOME}/rules/java/.agents/rules/javadoc-guide.md
+  $FILENAME add    skill --category devops --name \${AI_AGENT_CUSTOMIZATION_HOME}/skills/skill-bash/.agents/skills/bash-scripts
+  $FILENAME add    rule  --category spring --name \${AI_AGENT_CUSTOMIZATION_HOME}/rules/rule-java/.agents/rules/javadoc-guide.md
   $FILENAME list   skill --category bash,devops
   $FILENAME remove skill --category bash --name skill-a,skill-b
   $FILENAME remove skill --category bash,devops
@@ -269,6 +271,47 @@ validate_identifier() {
 }
 
 ##
+# 카테고리 이름에서 'skill-' 또는 'rule-' 접두사가 포함되어 있으면 제거하여 논리 카테고리명으로 정규화합니다.
+#
+# @param $1 {string} 대상 종류 (skill | rule)
+# @param $2 {string} 입력된 카테고리 문자열
+#
+# @return 접두사가 제거된 논리 카테고리명 출력
+##
+normalize_category_name() {
+  local kind="$1"
+  local raw_cat="$2"
+
+  if [[ "$kind" == "skill" && "$raw_cat" == skill-* ]]; then
+    printf "%s\n" "${raw_cat#skill-}"
+  elif [[ "$kind" == "rule" && "$raw_cat" == rule-* ]]; then
+    printf "%s\n" "${raw_cat#rule-}"
+  else
+    printf "%s\n" "$raw_cat"
+  fi
+}
+
+##
+# 논리 카테고리명을 실제 디스크에 생성될 디렉토리명('skill-<category>' 또는 'rule-<category>')으로 변환합니다.
+#
+# @param $1 {string} 대상 종류 (skill | rule)
+# @param $2 {string} 논리 카테고리명
+#
+# @return 실제 카테고리 디렉토리명 출력
+##
+to_physical_category_dir_name() {
+  local kind="$1"
+  local logical_cat
+  logical_cat="$(normalize_category_name "$kind" "$2")"
+
+  if [[ "$kind" == "skill" ]]; then
+    printf "skill-%s\n" "$logical_cat"
+  else
+    printf "rule-%s\n" "$logical_cat"
+  fi
+}
+
+##
 # 규칙(rule) 이름에서 .md 또는 .MD 확장자가 포함되어 있으면 제거하여 정규화합니다.
 #
 # @param $1 {string} 원본 이름 문자열
@@ -292,7 +335,7 @@ normalize_rule_name() {
 # @param $1 {string} 콤마로 구분된 입력 문자열
 # @param $2 {string} 옵션 라벨 (category | name)
 # @param $3 {string} 서브커맨드 이름
-# @param $4 {string} 규칙 이름 정규화 여부 ('rule' 이면 .md/.MD 제거, 기본값: '')
+# @param $4 {string} 정규화 모드 ('rule-name' | 'skill-cat' | 'rule-cat' | '')
 #
 # @return 줄바꿈으로 구분된 고유 항목 목록
 ##
@@ -317,9 +360,17 @@ split_csv_unique() {
   local part item existing found
   for part in "${parts[@]}"; do
     item="$part"
-    if [[ "$norm_mode" == "rule" ]]; then
-      item="$(normalize_rule_name "$item")"
-    fi
+    case "$norm_mode" in
+      rule-name)
+        item="$(normalize_rule_name "$item")"
+        ;;
+      skill-cat)
+        item="$(normalize_category_name "skill" "$item")"
+        ;;
+      rule-cat)
+        item="$(normalize_category_name "rule" "$item")"
+        ;;
+    esac
     validate_identifier "$item" "$label" "$subcmd"
 
     found="false"
@@ -392,7 +443,7 @@ confirm_yes_no() {
 #
 # @param $1 {string} 루트 경로 (acs_home)
 # @param $2 {string} 검증할 스킬 이름 (target_name)
-# @param $3 {string} 생성하려는 카테고리 이름 (target_category)
+# @param $3 {string} 생성하려는 논리 카테고리 이름 (target_category)
 # @param $4 {string} 강제 덮어쓰기 여부 (force: true | false)
 #
 # @return 중복이 없으면 0, 이미 사용 중이면 에러 메시지 출력 후 종료(die)
@@ -406,10 +457,11 @@ validate_skill_name_unique() {
   local skills_root="${acs_home}/skills"
   [[ -d "$skills_root" ]] || return 0
 
-  local cat_dir existing_cat entry existing_dir_name skill_md fm_name
+  local cat_dir existing_cat_dir existing_logical_cat entry existing_dir_name skill_md fm_name
   for cat_dir in "${skills_root}"/*; do
     [[ -d "$cat_dir" ]] || continue
-    existing_cat="$(basename "$cat_dir")"
+    existing_cat_dir="$(basename "$cat_dir")"
+    existing_logical_cat="$(normalize_category_name "skill" "$existing_cat_dir")"
     [[ -d "${cat_dir}/.agents/skills" ]] || continue
 
     for entry in "${cat_dir}/.agents/skills"/*; do
@@ -418,10 +470,10 @@ validate_skill_name_unique() {
 
       # 1) 스킬 디렉토리(또는 심볼릭 링크) 이름이 동일한 경우
       if [[ "$existing_dir_name" == "$target_name" ]]; then
-        if [[ "$existing_cat" == "$target_category" && "$force" == "true" ]]; then
+        if [[ "$existing_logical_cat" == "$target_category" && "$force" == "true" ]]; then
           continue
         fi
-        die "스킬 이름 '${target_name}'은(는) 이미 사용 중입니다. (카테고리: ${existing_cat}, 경로: ${entry})" "$LINENO" "create"
+        die "스킬 이름 '${target_name}'은(는) 이미 사용 중입니다. (카테고리: ${existing_logical_cat}, 경로: ${entry})" "$LINENO" "create"
       fi
 
       # 2) SKILL.md 파일 내 YAML Frontmatter의 'name:' 필드값이 동일한 경우
@@ -446,10 +498,10 @@ validate_skill_name_unique() {
         ' "$skill_md" 2>/dev/null || true)"
 
         if [[ -n "$fm_name" && "$fm_name" == "$target_name" ]]; then
-          if [[ "$existing_cat" == "$target_category" && "$force" == "true" ]]; then
+          if [[ "$existing_logical_cat" == "$target_category" && "$force" == "true" ]]; then
             continue
           fi
-          die "스킬 이름 '${target_name}'은(는) 이미 사용 중입니다. (카테고리: ${existing_cat}, SKILL.md 내 name 속성 일치: ${skill_md})" "$LINENO" "create"
+          die "스킬 이름 '${target_name}'은(는) 이미 사용 중입니다. (카테고리: ${existing_logical_cat}, SKILL.md 내 name 속성 일치: ${skill_md})" "$LINENO" "create"
         fi
       fi
     done
@@ -458,6 +510,7 @@ validate_skill_name_unique() {
 
 ##
 # 새로운 스킬(Skill) 또는 규칙(Rule)을 생성합니다.
+# 실제 생성되는 카테고리 디렉토리명은 'skill-<category>' 또는 'rule-<category>'가 됩니다.
 #
 # @param $@ {array} create 서브커맨드 인자 목록
 #
@@ -525,8 +578,12 @@ cmd_create() {
   done
 
   [[ -n "$target" ]] || die "생성할 대상('skill' 또는 'rule')을 지정해야 합니다." "$LINENO" "create"
+  category="$(normalize_category_name "$target" "$category")"
   validate_identifier "$category" "category" "create"
   validate_identifier "$name" "name" "create"
+
+  local phys_cat
+  phys_cat="$(to_physical_category_dir_name "$target" "$category")"
 
   local acs_home
   acs_home="$(resolve_acs_home "$cli_home" "create")"
@@ -534,7 +591,7 @@ cmd_create() {
   if [[ "$target" == "skill" ]]; then
     validate_skill_name_unique "$acs_home" "$name" "$category" "$force"
 
-    local skill_dir="${acs_home}/skills/${category}/.agents/skills/${name}"
+    local skill_dir="${acs_home}/skills/${phys_cat}/.agents/skills/${name}"
     local skill_file="${skill_dir}/SKILL.md"
 
     if [[ -L "$skill_dir" ]]; then
@@ -560,7 +617,7 @@ Provide step-by-step instructions and guidelines for the **${name}** skill (Cate
 EOF
 
     echo "✅ [CREATE:SKILL] 스킬이 생성되었습니다."
-    echo "   - 카테고리 : ${category}"
+    echo "   - 카테고리 : ${category} (${phys_cat})"
     echo "   - 스킬 이름: ${name}"
     echo "   - 스킬 폴더: ${skill_dir}"
     echo "   - 스킬 파일: ${skill_file}"
@@ -570,7 +627,7 @@ EOF
     rule_name="$(normalize_rule_name "$name")"
     validate_identifier "$rule_name" "name" "create"
 
-    local rules_dir="${acs_home}/rules/${category}/.agents/rules"
+    local rules_dir="${acs_home}/rules/${phys_cat}/.agents/rules"
     local rule_file="${rules_dir}/${rule_name}.md"
 
     if [[ -e "$rule_file" || -L "$rule_file" ]]; then
@@ -596,7 +653,7 @@ Define the guidelines, coding standards, and constraints for **${rule_name}** (C
 EOF
 
     echo "✅ [CREATE:RULE] 규칙이 생성되었습니다."
-    echo "   - 카테고리 : ${category}"
+    echo "   - 카테고리 : ${category} (${phys_cat})"
     echo "   - 규칙 이름: ${rule_name}"
     echo "   - 규칙 파일: ${rule_file}"
   fi
@@ -676,11 +733,14 @@ cmd_remove() {
   [[ -n "$target" ]] || die "삭제할 대상('skill' 또는 'rule')을 지정해야 합니다." "$LINENO" "remove"
   [[ -n "$category" ]] || die "'--category' 옵션 값이 비어 있습니다." "$LINENO" "remove"
 
+  local cat_norm_mode="skill-cat"
+  [[ "$target" == "rule" ]] && cat_norm_mode="rule-cat"
+
   local -a categories=()
   local item_line
   while IFS= read -r item_line; do
     [[ -n "$item_line" ]] && categories+=("$item_line")
-  done < <(split_csv_unique "$category" "category" "remove" "")
+  done < <(split_csv_unique "$category" "category" "remove" "$cat_norm_mode")
 
   if (( ${#categories[@]} > 1 )) && [[ -n "$name" ]]; then
     die "'--category'에 여러 카테고리를 지정한 경우 '--name' 옵션을 함께 사용할 수 없습니다." "$LINENO" "remove"
@@ -694,12 +754,13 @@ cmd_remove() {
 
   # 1. '--name'이 생략된 경우: 1개 또는 여러 개의 카테고리 자체 삭제
   if [[ -z "$name" ]]; then
-    local cat cat_dir
+    local cat phys_cat cat_dir
     for cat in "${categories[@]}"; do
+      phys_cat="$(to_physical_category_dir_name "$target" "$cat")"
       if [[ "$target" == "skill" ]]; then
-        cat_dir="${acs_home}/skills/${cat}"
+        cat_dir="${acs_home}/skills/${phys_cat}"
       else
-        cat_dir="${acs_home}/rules/${cat}"
+        cat_dir="${acs_home}/rules/${phys_cat}"
       fi
       if [[ ! -d "$cat_dir" && ! -L "$cat_dir" ]]; then
         die "삭제할 카테고리가 존재하지 않습니다: ${cat_dir}" "$LINENO" "remove"
@@ -710,11 +771,12 @@ cmd_remove() {
       echo "⚠️  다음 ${target_label} 카테고리(총 ${#categories[@]}개)를 삭제하려고 합니다:"
       local items_dir entry item_bname link_dest
       for cat in "${categories[@]}"; do
+        phys_cat="$(to_physical_category_dir_name "$target" "$cat")"
         if [[ "$target" == "skill" ]]; then
-          cat_dir="${acs_home}/skills/${cat}"
+          cat_dir="${acs_home}/skills/${phys_cat}"
           items_dir="${cat_dir}/.agents/skills"
         else
-          cat_dir="${acs_home}/rules/${cat}"
+          cat_dir="${acs_home}/rules/${phys_cat}"
           items_dir="${cat_dir}/.agents/rules"
         fi
 
@@ -755,10 +817,11 @@ cmd_remove() {
     fi
 
     for cat in "${categories[@]}"; do
+      phys_cat="$(to_physical_category_dir_name "$target" "$cat")"
       if [[ "$target" == "skill" ]]; then
-        cat_dir="${acs_home}/skills/${cat}"
+        cat_dir="${acs_home}/skills/${phys_cat}"
       else
-        cat_dir="${acs_home}/rules/${cat}"
+        cat_dir="${acs_home}/rules/${phys_cat}"
       fi
       rm -rf "$cat_dir"
       echo "🗑️  [REMOVE:CATEGORY] '${cat}' 카테고리가 삭제되었습니다: ${cat_dir}"
@@ -768,9 +831,12 @@ cmd_remove() {
 
   # 2. '--name'이 지정된 경우: 단일 카테고리 내 1개 또는 여러 개의 스킬/규칙 삭제
   local single_cat="${categories[0]}"
+  local single_phys_cat
+  single_phys_cat="$(to_physical_category_dir_name "$target" "$single_cat")"
+
   local -a names=()
   local norm_flag=""
-  [[ "$target" == "rule" ]] && norm_flag="rule"
+  [[ "$target" == "rule" ]] && norm_flag="rule-name"
 
   while IFS= read -r item_line; do
     [[ -n "$item_line" ]] && names+=("$item_line")
@@ -779,17 +845,17 @@ cmd_remove() {
   if [[ "$target" == "skill" ]]; then
     local sname skill_dir
     for sname in "${names[@]}"; do
-      skill_dir="${acs_home}/skills/${single_cat}/.agents/skills/${sname}"
+      skill_dir="${acs_home}/skills/${single_phys_cat}/.agents/skills/${sname}"
       if [[ ! -e "$skill_dir" && ! -L "$skill_dir" ]]; then
         die "삭제할 스킬이 존재하지 않습니다: ${skill_dir}" "$LINENO" "remove"
       fi
     done
 
     if [[ "$force" != "true" ]]; then
-      echo "⚠️  '${single_cat}' 카테고리에서 다음 스킬(총 ${#names[@]}개)을 삭제하려고 합니다:"
+      echo "⚠️  '${single_cat}' (${single_phys_cat}) 카테고리에서 다음 스킬(총 ${#names[@]}개)을 삭제하려고 합니다:"
       local item_type link_target
       for sname in "${names[@]}"; do
-        skill_dir="${acs_home}/skills/${single_cat}/.agents/skills/${sname}"
+        skill_dir="${acs_home}/skills/${single_phys_cat}/.agents/skills/${sname}"
         item_type="일반 디렉토리 (원본 삭제)"
         if [[ -L "$skill_dir" ]]; then
           link_target="$(readlink "$skill_dir" || true)"
@@ -805,7 +871,7 @@ cmd_remove() {
     fi
 
     for sname in "${names[@]}"; do
-      skill_dir="${acs_home}/skills/${single_cat}/.agents/skills/${sname}"
+      skill_dir="${acs_home}/skills/${single_phys_cat}/.agents/skills/${sname}"
       if [[ -L "$skill_dir" ]]; then
         rm -f "$skill_dir"
       else
@@ -814,7 +880,7 @@ cmd_remove() {
       echo "🗑️  [REMOVE:SKILL] 스킬이 삭제되었습니다: ${skill_dir}"
     done
 
-    local category_dir="${acs_home}/skills/${single_cat}"
+    local category_dir="${acs_home}/skills/${single_phys_cat}"
     local skills_dir="${category_dir}/.agents/skills"
     local remaining_count=0
     local entry
@@ -832,17 +898,17 @@ cmd_remove() {
   elif [[ "$target" == "rule" ]]; then
     local rname rule_file
     for rname in "${names[@]}"; do
-      rule_file="${acs_home}/rules/${single_cat}/.agents/rules/${rname}.md"
+      rule_file="${acs_home}/rules/${single_phys_cat}/.agents/rules/${rname}.md"
       if [[ ! -e "$rule_file" && ! -L "$rule_file" ]]; then
         die "삭제할 규칙 파일이 존재하지 않습니다: ${rule_file}" "$LINENO" "remove"
       fi
     done
 
     if [[ "$force" != "true" ]]; then
-      echo "⚠️  '${single_cat}' 카테고리에서 다음 규칙(총 ${#names[@]}개)을 삭제하려고 합니다:"
+      echo "⚠️  '${single_cat}' (${single_phys_cat}) 카테고리에서 다음 규칙(총 ${#names[@]}개)을 삭제하려고 합니다:"
       local item_type link_target
       for rname in "${names[@]}"; do
-        rule_file="${acs_home}/rules/${single_cat}/.agents/rules/${rname}.md"
+        rule_file="${acs_home}/rules/${single_phys_cat}/.agents/rules/${rname}.md"
         item_type="일반 파일 (원본 삭제)"
         if [[ -L "$rule_file" ]]; then
           link_target="$(readlink "$rule_file" || true)"
@@ -858,12 +924,12 @@ cmd_remove() {
     fi
 
     for rname in "${names[@]}"; do
-      rule_file="${acs_home}/rules/${single_cat}/.agents/rules/${rname}.md"
+      rule_file="${acs_home}/rules/${single_phys_cat}/.agents/rules/${rname}.md"
       rm -f "$rule_file"
       echo "🗑️  [REMOVE:RULE] 규칙이 삭제되었습니다: ${rule_file}"
     done
 
-    local category_dir="${acs_home}/rules/${single_cat}"
+    local category_dir="${acs_home}/rules/${single_phys_cat}"
     local rules_dir="${category_dir}/.agents/rules"
     local remaining_count=0
     local entry bname
@@ -952,8 +1018,12 @@ cmd_add() {
   done
 
   [[ -n "$target" ]] || die "추가할 대상('skill' 또는 'rule')을 지정해야 합니다." "$LINENO" "add"
+  category="$(normalize_category_name "$target" "$category")"
   validate_identifier "$category" "category" "add"
   [[ -n "$name_arg" ]] || die "'--name' 옵션 값이 비어 있습니다." "$LINENO" "add"
+
+  local phys_cat
+  phys_cat="$(to_physical_category_dir_name "$target" "$category")"
 
   local acs_home
   acs_home="$(resolve_acs_home "$cli_home" "add")"
@@ -961,9 +1031,11 @@ cmd_add() {
   if [[ "$target" == "skill" ]]; then
     local resolved_input="$name_arg"
     if [[ ! -d "$resolved_input" && "$resolved_input" == */* && "$resolved_input" != /* ]]; then
-      local src_cat="${resolved_input%%/*}"
+      local src_cat_raw="${resolved_input%%/*}"
+      local src_cat_phys
+      src_cat_phys="$(to_physical_category_dir_name "skill" "$src_cat_raw")"
       local src_skill="${resolved_input#*/}"
-      local candidate_dir="${acs_home}/skills/${src_cat}/.agents/skills/${src_skill}"
+      local candidate_dir="${acs_home}/skills/${src_cat_phys}/.agents/skills/${src_skill}"
       if [[ -d "$candidate_dir" ]]; then
         resolved_input="$candidate_dir"
       fi
@@ -978,7 +1050,7 @@ cmd_add() {
     skill_name="$(basename "$abs_src_dir")"
     validate_identifier "$skill_name" "name" "add"
 
-    local skills_parent="${acs_home}/skills/${category}/.agents/skills"
+    local skills_parent="${acs_home}/skills/${phys_cat}/.agents/skills"
     local link_path="${skills_parent}/${skill_name}"
 
     mkdir -p "$skills_parent"
@@ -1002,7 +1074,7 @@ cmd_add() {
     ln -s "$abs_src_dir" "$link_path"
 
     echo "🔗 [ADD:SKILL] 스킬 심볼릭 링크가 추가되었습니다."
-    echo "   - 카테고리 : ${category}"
+    echo "   - 카테고리 : ${category} (${phys_cat})"
     echo "   - 스킬 이름: ${skill_name}"
     echo "   - 링크 경로: ${link_path}"
     echo "   - 원본 경로: ${abs_src_dir}"
@@ -1010,10 +1082,12 @@ cmd_add() {
   elif [[ "$target" == "rule" ]]; then
     local resolved_input="$name_arg"
     if [[ ! -f "$resolved_input" && "$resolved_input" == */* && "$resolved_input" != /* ]]; then
-      local src_cat="${resolved_input%%/*}"
+      local src_cat_raw="${resolved_input%%/*}"
+      local src_cat_phys
+      src_cat_phys="$(to_physical_category_dir_name "rule" "$src_cat_raw")"
       local src_rule
       src_rule="$(normalize_rule_name "${resolved_input#*/}")"
-      local candidate_file="${acs_home}/rules/${src_cat}/.agents/rules/${src_rule}.md"
+      local candidate_file="${acs_home}/rules/${src_cat_phys}/.agents/rules/${src_rule}.md"
       if [[ -f "$candidate_file" ]]; then
         resolved_input="$candidate_file"
       fi
@@ -1028,7 +1102,7 @@ cmd_add() {
     rule_name="$(normalize_rule_name "$(basename "$abs_src_file")")"
     validate_identifier "$rule_name" "name" "add"
 
-    local rules_parent="${acs_home}/rules/${category}/.agents/rules"
+    local rules_parent="${acs_home}/rules/${phys_cat}/.agents/rules"
     local link_path="${rules_parent}/${rule_name}.md"
 
     mkdir -p "$rules_parent"
@@ -1048,7 +1122,7 @@ cmd_add() {
     ln -s "$abs_src_file" "$link_path"
 
     echo "🔗 [ADD:RULE] 규칙 심볼릭 링크가 추가되었습니다."
-    echo "   - 카테고리 : ${category}"
+    echo "   - 카테고리 : ${category} (${phys_cat})"
     echo "   - 규칙 이름: ${rule_name}"
     echo "   - 링크 경로: ${link_path}"
     echo "   - 원본 경로: ${abs_src_file}"
@@ -1113,17 +1187,19 @@ render_dir_tree() {
 # 단일 스킬 카테고리의 트리 구조를 출력합니다.
 #
 # @param $1 {string} 루트 경로 (acs_home)
-# @param $2 {string} 카테고리 이름
+# @param $2 {string} 논리 카테고리 이름
 # @param $3 {string} 콤마로 구분된 스킬 이름 필터 (선택)
 #
 # @return 0
 ##
 print_skill_category_tree() {
   local acs_home="$1"
-  local category="$2"
+  local logical_cat="$2"
   local filter_names_csv="${3:-}"
 
-  local cat_root="${acs_home}/skills/${category}"
+  local phys_cat
+  phys_cat="$(to_physical_category_dir_name "skill" "$logical_cat")"
+  local cat_root="${acs_home}/skills/${phys_cat}"
   local skills_dir="${cat_root}/.agents/skills"
 
   if [[ ! -d "$cat_root" ]]; then
@@ -1137,7 +1213,7 @@ print_skill_category_tree() {
       [[ -n "$sname" ]] || continue
       target_skill="${skills_dir}/${sname}"
       if [[ ! -e "$target_skill" && ! -L "$target_skill" ]]; then
-        die "카테고리 '${category}'에 '${sname}' 스킬이 존재하지 않습니다: ${target_skill}" "$LINENO" "list"
+        die "카테고리 '${logical_cat}' (${phys_cat})에 '${sname}' 스킬이 존재하지 않습니다: ${target_skill}" "$LINENO" "list"
       fi
       skill_entries+=("$target_skill")
     done < <(split_csv_unique "$filter_names_csv" "name" "list" "")
@@ -1191,17 +1267,19 @@ print_skill_category_tree() {
 # 단일 규칙 카테고리의 트리 구조를 출력합니다. (방식 B: rule-1.md 단일 라인)
 #
 # @param $1 {string} 루트 경로 (acs_home)
-# @param $2 {string} 카테고리 이름
+# @param $2 {string} 논리 카테고리 이름
 # @param $3 {string} 콤마로 구분된 규칙 이름 필터 (선택)
 #
 # @return 0
 ##
 print_rule_category_tree() {
   local acs_home="$1"
-  local category="$2"
+  local logical_cat="$2"
   local filter_names_csv="${3:-}"
 
-  local cat_root="${acs_home}/rules/${category}"
+  local phys_cat
+  phys_cat="$(to_physical_category_dir_name "rule" "$logical_cat")"
+  local cat_root="${acs_home}/rules/${phys_cat}"
   local rules_dir="${cat_root}/.agents/rules"
 
   if [[ ! -d "$cat_root" ]]; then
@@ -1215,10 +1293,10 @@ print_rule_category_tree() {
       [[ -n "$rname" ]] || continue
       target_rule="${rules_dir}/${rname}.md"
       if [[ ! -e "$target_rule" && ! -L "$target_rule" ]]; then
-        die "카테고리 '${category}'에 '${rname}' 규칙이 존재하지 않습니다: ${target_rule}" "$LINENO" "list"
+        die "카테고리 '${logical_cat}' (${phys_cat})에 '${rname}' 규칙이 존재하지 않습니다: ${target_rule}" "$LINENO" "list"
       fi
       rule_entries+=("$target_rule")
-    done < <(split_csv_unique "$filter_names_csv" "name" "list" "rule")
+    done < <(split_csv_unique "$filter_names_csv" "name" "list" "rule-name")
   elif [[ -d "$rules_dir" ]]; then
     local entry bname
     for entry in "${rules_dir}"/*; do
@@ -1277,12 +1355,15 @@ print_list_by_kind() {
   local category_csv="${3:-}"
   local name_csv="${4:-}"
 
+  local cat_norm_mode="skill-cat"
+  [[ "$kind" == "rule" ]] && cat_norm_mode="rule-cat"
+
   if [[ -n "$category_csv" ]]; then
     local -a req_categories=()
     local cat_item
     while IFS= read -r cat_item; do
       [[ -n "$cat_item" ]] && req_categories+=("$cat_item")
-    done < <(split_csv_unique "$category_csv" "category" "list" "")
+    done < <(split_csv_unique "$category_csv" "category" "list" "$cat_norm_mode")
 
     for cat_item in "${req_categories[@]}"; do
       if [[ "$kind" == "skill" ]]; then
@@ -1307,10 +1388,17 @@ print_list_by_kind() {
   fi
 
   local -a categories=()
-  local cat_dir
+  local cat_dir bname
   for cat_dir in "${kind_root}"/*; do
     [[ -d "$cat_dir" ]] || continue
-    categories+=("$(basename "$cat_dir")")
+    bname="$(basename "$cat_dir")"
+    if [[ "$kind" == "skill" ]]; then
+      [[ "$bname" == skill-* ]] || continue
+      categories+=("${bname#skill-}")
+    else
+      [[ "$bname" == rule-* ]] || continue
+      categories+=("${bname#rule-}")
+    fi
   done
 
   if (( ${#categories[@]} == 0 )); then
@@ -1401,11 +1489,14 @@ cmd_list() {
   fi
 
   if [[ -n "$category" ]]; then
+    local cat_norm_mode="skill-cat"
+    [[ "$target" == "rule" ]] && cat_norm_mode="rule-cat"
+
     local -a parsed_cats=()
     local c_line
     while IFS= read -r c_line; do
       [[ -n "$c_line" ]] && parsed_cats+=("$c_line")
-    done < <(split_csv_unique "$category" "category" "list" "")
+    done < <(split_csv_unique "$category" "category" "list" "$cat_norm_mode")
 
     if (( ${#parsed_cats[@]} > 1 )) && [[ -n "$name" ]]; then
       die "'--category'에 여러 카테고리를 지정한 경우 '--name' 옵션을 함께 사용할 수 없습니다." "$LINENO" "list"
