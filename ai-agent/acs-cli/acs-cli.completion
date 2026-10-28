@@ -139,6 +139,57 @@ _acs_cli_get_names_in_category() {
 }
 
 ##
+# 콤마(,)로 구분된 다중 입력('<입력>,<입력>') 자동완성을 수행합니다.
+# 이미 앞부분에 입력된 항목은 추천 목록에서 자동으로 제외합니다.
+#
+# @param $1 {string} 줄바꿈으로 구분된 전체 후보 목록 문자열
+# @param $2 {string} 현재 입력 중인 값 ($cur 또는 값 부분)
+# @param $3 {string} 접두사 (기본값: '', '--category=*' 등 인라인 완성 시 사용)
+#
+# @return COMPREPLY 배열 설정
+##
+_acs_cli_complete_csv() {
+  local candidates_str="$1"
+  local cur_val="$2"
+  local opt_prefix="${3:-}"
+
+  [[ -n "$candidates_str" ]] || return 0
+
+  local candidate
+  if [[ "$cur_val" == *,* ]]; then
+    local already_prefix="${cur_val%,*}"
+    local last_part="${cur_val##*,}"
+
+    local IFS=','
+    local -a used_items=()
+    read -r -a used_items <<< "$already_prefix"
+
+    local used is_used
+    while IFS= read -r candidate; do
+      [[ -n "$candidate" ]] || continue
+      is_used="false"
+      if (( ${#used_items[@]} > 0 )); then
+        for used in "${used_items[@]}"; do
+          if [[ "$candidate" == "$used" ]]; then
+            is_used="true"
+            break
+          fi
+        done
+      fi
+      [[ "$is_used" == "false" ]] || continue
+
+      if [[ "$candidate" == "$last_part"* ]]; then
+        COMPREPLY+=("${opt_prefix}${already_prefix},${candidate}")
+      fi
+    done <<< "$candidates_str"
+  else
+    while IFS= read -r candidate; do
+      [[ -n "$candidate" ]] && COMPREPLY+=("${opt_prefix}${candidate}")
+    done < <(compgen -W "$candidates_str" -- "$cur_val")
+  fi
+}
+
+##
 # 'add' 명령어의 '--name' 자동완성을 처리합니다.
 # - 후보 추천은 '{category}/{name}' 형태로 표시합니다. (현재 대상 카테고리는 제외)
 # - 후보가 1개로 확정(선택)되면 해당 항목의 **전체 파일/디렉토리 경로**로 COMPREPLY를 설정합니다.
@@ -382,11 +433,16 @@ _acs_cli_completion() {
       ;;
     --category=*)
       local cat_part="${cur#--category=}"
-      local cat_list candidate
+      local cat_list
       cat_list="$(_acs_cli_get_categories "$active_target")"
-      while IFS= read -r candidate; do
-        [[ -n "$candidate" ]] && COMPREPLY+=("--category=${candidate}")
-      done < <(compgen -W "$cat_list" -- "$cat_part")
+      if [[ "$subcmd" == "remove" || "$subcmd" == "list" ]]; then
+        _acs_cli_complete_csv "$cat_list" "$cat_part" "--category="
+      else
+        local candidate
+        while IFS= read -r candidate; do
+          [[ -n "$candidate" ]] && COMPREPLY+=("--category=${candidate}")
+        done < <(compgen -W "$cat_list" -- "$cat_part")
+      fi
       return 0
       ;;
     --name=*)
@@ -394,11 +450,10 @@ _acs_cli_completion() {
       if [[ "$subcmd" == "add" ]]; then
         _acs_cli_complete_add_name "$active_target" "$category_val" "$name_part" "--name="
       elif [[ "$subcmd" == "remove" || "$subcmd" == "list" ]]; then
-        local name_list candidate
+        [[ "$category_val" != *,* ]] || return 0
+        local name_list
         name_list="$(_acs_cli_get_names_in_category "$active_target" "$category_val")"
-        while IFS= read -r candidate; do
-          [[ -n "$candidate" ]] && COMPREPLY+=("--name=${candidate}")
-        done < <(compgen -W "$name_list" -- "$name_part")
+        _acs_cli_complete_csv "$name_list" "$name_part" "--name="
       fi
       return 0
       ;;
@@ -413,16 +468,21 @@ _acs_cli_completion() {
     --category)
       local cat_list
       cat_list="$(_acs_cli_get_categories "$active_target")"
-      COMPREPLY=( $(compgen -W "$cat_list" -- "$cur") )
+      if [[ "$subcmd" == "remove" || "$subcmd" == "list" ]]; then
+        _acs_cli_complete_csv "$cat_list" "$cur" ""
+      else
+        COMPREPLY=( $(compgen -W "$cat_list" -- "$cur") )
+      fi
       return 0
       ;;
     --name)
       if [[ "$subcmd" == "add" ]]; then
         _acs_cli_complete_add_name "$active_target" "$category_val" "$cur" ""
       elif [[ "$subcmd" == "remove" || "$subcmd" == "list" ]]; then
+        [[ "$category_val" != *,* ]] || return 0
         local name_list
         name_list="$(_acs_cli_get_names_in_category "$active_target" "$category_val")"
-        COMPREPLY=( $(compgen -W "$name_list" -- "$cur") )
+        _acs_cli_complete_csv "$name_list" "$cur" ""
       fi
       return 0
       ;;
@@ -443,8 +503,18 @@ _acs_cli_completion() {
   fi
 
   # (2) --category 입력 완료 후, 아직 --name이 입력되지 않은 경우:
-  #     기본적으로 --name을 제안하며, remove는 카테고리 단독 삭제가 가능하므로 --force도 함께 제안
+  #     - 만약 --category에 콤마(,)로 여러 카테고리가 지정된 경우:
+  #       '--name'은 허용하지 않으므로 remove는 '--force'만 제안하고, list는 <TAB 지원 끝>
+  #     - 단일 카테고리인 경우:
+  #       '--name'을 제안하며, remove는 카테고리 단독 삭제도 가능하므로 '--force'를 함께 제안
   if [[ "$has_name" == "false" ]]; then
+    if [[ "$category_val" == *,* ]]; then
+      if [[ "$subcmd" == "remove" ]]; then
+        COMPREPLY=( $(compgen -W "--force" -- "$cur") )
+      fi
+      return 0
+    fi
+
     next_opts+=("--name")
     if [[ "$subcmd" == "remove" ]]; then
       next_opts+=("--force")

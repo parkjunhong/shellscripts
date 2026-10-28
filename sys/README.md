@@ -11,8 +11,8 @@
 | 도구명 | Canonical 경로 | 주요 기능 및 특징 | Bash 자동완성 | 개별 문서 |
 | :--- | :--- | :--- | :---: | :---: |
 | **cat-cli** | [`cat-cli/`](cat-cli/cat-cli) | PATH에 등록된 명령어의 실제 실행 파일 소스를 찾아 `cat`으로 내용 출력 | ✅ 지원 | [상세보기](cat-cli/README.md) |
-| **copy-suffix** | [`copy-suffix/`](copy-suffix/copy-suffix) | 날짜(`-d`), 시각(`-t`) 또는 사용자 접미사를 파일명 앞/뒤에 결합하여 스냅샷 백업 | ✅ 지원 | [상세보기](copy-suffix/README.md) |
-| **disk-size** | [`disk-size/`](disk-size/disk-size) | 디렉토리 및 파일 점유 용량 고속 배치 측정, 용량별 정렬(`-sa`, `-sd`), 재귀 탐색 | ✅ 지원 (성능 최적화) | [상세보기](disk-size/README.md) |
+| **copy-suffix** | [`copy-suffix/`](copy-suffix/copy-suffix) | 날짜(`--date`), 시각(`--time`) 또는 사용자 접미사를 파일명 앞/뒤에 결합하여 스냅샷 백업 | ✅ 지원 | [상세보기](copy-suffix/README.md) |
+| **disk-size** | [`disk-size/`](disk-size/disk-size) | 디렉토리 및 파일 점유 용량 고속 배치 측정, 용량별 정렬(`--sort-asc`, `--sort-desc`), 재귀 탐색 | ✅ 지원 (성능 최적화) | [상세보기](disk-size/README.md) |
 | **remove-service** | [`remove-service/`](remove-service/remove-service) | systemd/sysvinit 서비스 중지, 비활성화, 유닛 파일 삭제 및 데몬 상태 완전 초기화 | ✅ 지원 | [상세보기](remove-service/README.md) |
 | **ren-files** | [`ren-files/`](ren-files/ren-files) | `sed` 확장 정규표현식(ERE) 그룹 캡처 및 후방 참조를 통한 파일명 일괄 변경 | ✅ 지원 | [상세보기](ren-files/README.md) |
 | **sys-info** | [`sys-info/`](sys-info/sys-info) | 호스트, CPU, 메모리 요약 및 디스크 사용량 필터링·정렬 표 대시보드 출력 | ✅ 지원 | [상세보기](sys-info/README.md) |
