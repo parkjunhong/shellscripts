@@ -312,6 +312,43 @@ to_physical_category_dir_name() {
 }
 
 ##
+# 이미 존재하는 카테고리 디렉토리를 탐색하여 실제 디렉토리명을 반환합니다.
+# 'skill-'/'rule-' 접두사가 있는 디렉토리와 접두사가 없는 기존 디렉토리를 모두 지원합니다.
+#
+# @param $1 {string} 루트 경로 (acs_home)
+# @param $2 {string} 대상 종류 (skill | rule)
+# @param $3 {string} 입력된 카테고리명
+#
+# @return 실제 카테고리 디렉토리명 (basename) 출력
+##
+resolve_existing_category_dir_name() {
+  local acs_home="$1"
+  local kind="$2"
+  local raw_cat="$3"
+
+  local base_root="${acs_home}/skills"
+  [[ "$kind" == "rule" ]] && base_root="${acs_home}/rules"
+
+  if [[ -d "${base_root}/${raw_cat}" || -L "${base_root}/${raw_cat}" ]]; then
+    printf "%s\n" "$raw_cat"
+    return 0
+  fi
+
+  local logical_cat
+  logical_cat="$(normalize_category_name "$kind" "$raw_cat")"
+  local prefixed_cat
+  prefixed_cat="$(to_physical_category_dir_name "$kind" "$logical_cat")"
+
+  if [[ -d "${base_root}/${prefixed_cat}" || -L "${base_root}/${prefixed_cat}" ]]; then
+    printf "%s\n" "$prefixed_cat"
+  elif [[ -d "${base_root}/${logical_cat}" || -L "${base_root}/${logical_cat}" ]]; then
+    printf "%s\n" "$logical_cat"
+  else
+    printf "%s\n" "$prefixed_cat"
+  fi
+}
+
+##
 # 규칙(rule) 이름에서 .md 또는 .MD 확장자가 포함되어 있으면 제거하여 정규화합니다.
 #
 # @param $1 {string} 원본 이름 문자열
@@ -756,7 +793,7 @@ cmd_remove() {
   if [[ -z "$name" ]]; then
     local cat phys_cat cat_dir
     for cat in "${categories[@]}"; do
-      phys_cat="$(to_physical_category_dir_name "$target" "$cat")"
+      phys_cat="$(resolve_existing_category_dir_name "$acs_home" "$target" "$cat")"
       if [[ "$target" == "skill" ]]; then
         cat_dir="${acs_home}/skills/${phys_cat}"
       else
@@ -771,7 +808,7 @@ cmd_remove() {
       echo "⚠️  다음 ${target_label} 카테고리(총 ${#categories[@]}개)를 삭제하려고 합니다:"
       local items_dir entry item_bname link_dest
       for cat in "${categories[@]}"; do
-        phys_cat="$(to_physical_category_dir_name "$target" "$cat")"
+        phys_cat="$(resolve_existing_category_dir_name "$acs_home" "$target" "$cat")"
         if [[ "$target" == "skill" ]]; then
           cat_dir="${acs_home}/skills/${phys_cat}"
           items_dir="${cat_dir}/.agents/skills"
@@ -817,7 +854,7 @@ cmd_remove() {
     fi
 
     for cat in "${categories[@]}"; do
-      phys_cat="$(to_physical_category_dir_name "$target" "$cat")"
+      phys_cat="$(resolve_existing_category_dir_name "$acs_home" "$target" "$cat")"
       if [[ "$target" == "skill" ]]; then
         cat_dir="${acs_home}/skills/${phys_cat}"
       else
@@ -832,7 +869,7 @@ cmd_remove() {
   # 2. '--name'이 지정된 경우: 단일 카테고리 내 1개 또는 여러 개의 스킬/규칙 삭제
   local single_cat="${categories[0]}"
   local single_phys_cat
-  single_phys_cat="$(to_physical_category_dir_name "$target" "$single_cat")"
+  single_phys_cat="$(resolve_existing_category_dir_name "$acs_home" "$target" "$single_cat")"
 
   local -a names=()
   local norm_flag=""
@@ -1022,18 +1059,18 @@ cmd_add() {
   validate_identifier "$category" "category" "add"
   [[ -n "$name_arg" ]] || die "'--name' 옵션 값이 비어 있습니다." "$LINENO" "add"
 
-  local phys_cat
-  phys_cat="$(to_physical_category_dir_name "$target" "$category")"
-
   local acs_home
   acs_home="$(resolve_acs_home "$cli_home" "add")"
+
+  local phys_cat
+  phys_cat="$(resolve_existing_category_dir_name "$acs_home" "$target" "$category")"
 
   if [[ "$target" == "skill" ]]; then
     local resolved_input="$name_arg"
     if [[ ! -d "$resolved_input" && "$resolved_input" == */* && "$resolved_input" != /* ]]; then
       local src_cat_raw="${resolved_input%%/*}"
       local src_cat_phys
-      src_cat_phys="$(to_physical_category_dir_name "skill" "$src_cat_raw")"
+      src_cat_phys="$(resolve_existing_category_dir_name "$acs_home" "skill" "$src_cat_raw")"
       local src_skill="${resolved_input#*/}"
       local candidate_dir="${acs_home}/skills/${src_cat_phys}/.agents/skills/${src_skill}"
       if [[ -d "$candidate_dir" ]]; then
@@ -1084,7 +1121,7 @@ cmd_add() {
     if [[ ! -f "$resolved_input" && "$resolved_input" == */* && "$resolved_input" != /* ]]; then
       local src_cat_raw="${resolved_input%%/*}"
       local src_cat_phys
-      src_cat_phys="$(to_physical_category_dir_name "rule" "$src_cat_raw")"
+      src_cat_phys="$(resolve_existing_category_dir_name "$acs_home" "rule" "$src_cat_raw")"
       local src_rule
       src_rule="$(normalize_rule_name "${resolved_input#*/}")"
       local candidate_file="${acs_home}/rules/${src_cat_phys}/.agents/rules/${src_rule}.md"
@@ -1198,7 +1235,7 @@ print_skill_category_tree() {
   local filter_names_csv="${3:-}"
 
   local phys_cat
-  phys_cat="$(to_physical_category_dir_name "skill" "$logical_cat")"
+  phys_cat="$(resolve_existing_category_dir_name "$acs_home" "skill" "$logical_cat")"
   local cat_root="${acs_home}/skills/${phys_cat}"
   local skills_dir="${cat_root}/.agents/skills"
 
@@ -1278,7 +1315,7 @@ print_rule_category_tree() {
   local filter_names_csv="${3:-}"
 
   local phys_cat
-  phys_cat="$(to_physical_category_dir_name "rule" "$logical_cat")"
+  phys_cat="$(resolve_existing_category_dir_name "$acs_home" "rule" "$logical_cat")"
   local cat_root="${acs_home}/rules/${phys_cat}"
   local rules_dir="${cat_root}/.agents/rules"
 
@@ -1392,13 +1429,7 @@ print_list_by_kind() {
   for cat_dir in "${kind_root}"/*; do
     [[ -d "$cat_dir" ]] || continue
     bname="$(basename "$cat_dir")"
-    if [[ "$kind" == "skill" ]]; then
-      [[ "$bname" == skill-* ]] || continue
-      categories+=("${bname#skill-}")
-    else
-      [[ "$bname" == rule-* ]] || continue
-      categories+=("${bname#rule-}")
-    fi
+    categories+=("$bname")
   done
 
   if (( ${#categories[@]} == 0 )); then

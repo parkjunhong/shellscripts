@@ -72,9 +72,7 @@ _acs_cli_get_categories() {
       for dir in "${acs_home}/skills"/*; do
         [[ -d "$dir" ]] || continue
         bname="$(basename "$dir")"
-        if [[ "$bname" == skill-* ]]; then
-          cats+=("${bname#skill-}")
-        fi
+        cats+=("${bname#skill-}")
       done
     fi
   fi
@@ -84,9 +82,7 @@ _acs_cli_get_categories() {
       for dir in "${acs_home}/rules"/*; do
         [[ -d "$dir" ]] || continue
         bname="$(basename "$dir")"
-        if [[ "$bname" == rule-* ]]; then
-          cats+=("${bname#rule-}")
-        fi
+        cats+=("${bname#rule-}")
       done
     fi
   fi
@@ -117,6 +113,9 @@ _acs_cli_get_names_in_category() {
   if [[ "$target" == "skill" ]]; then
     local logical_cat="${category#skill-}"
     local skills_dir="${acs_home}/skills/skill-${logical_cat}/.agents/skills"
+    if [[ ! -d "$skills_dir" && -d "${acs_home}/skills/${logical_cat}/.agents/skills" ]]; then
+      skills_dir="${acs_home}/skills/${logical_cat}/.agents/skills"
+    fi
     if [[ -d "$skills_dir" ]]; then
       for entry in "${skills_dir}"/*; do
         [[ -e "$entry" || -L "$entry" ]] || continue
@@ -126,6 +125,9 @@ _acs_cli_get_names_in_category() {
   elif [[ "$target" == "rule" ]]; then
     local logical_cat="${category#rule-}"
     local rules_dir="${acs_home}/rules/rule-${logical_cat}/.agents/rules"
+    if [[ ! -d "$rules_dir" && -d "${acs_home}/rules/${logical_cat}/.agents/rules" ]]; then
+      rules_dir="${acs_home}/rules/${logical_cat}/.agents/rules"
+    fi
     if [[ -d "$rules_dir" ]]; then
       for entry in "${rules_dir}"/*; do
         [[ -e "$entry" || -L "$entry" ]] || continue
@@ -228,7 +230,6 @@ _acs_cli_complete_add_name() {
       for cat_dir in "${skills_root}"/*; do
         [[ -d "$cat_dir" ]] || continue
         dir_bname="$(basename "$cat_dir")"
-        [[ "$dir_bname" == skill-* ]] || continue
         src_logical_cat="${dir_bname#skill-}"
         [[ "$src_logical_cat" != "$exclude_logical" ]] || continue
         [[ -d "${cat_dir}/.agents/skills" ]] || continue
@@ -248,7 +249,6 @@ _acs_cli_complete_add_name() {
       for cat_dir in "${rules_root}"/*; do
         [[ -d "$cat_dir" ]] || continue
         dir_bname="$(basename "$cat_dir")"
-        [[ "$dir_bname" == rule-* ]] || continue
         src_logical_cat="${dir_bname#rule-}"
         [[ "$src_logical_cat" != "$exclude_logical" ]] || continue
         [[ -d "${cat_dir}/.agents/rules" ]] || continue
