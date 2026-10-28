@@ -52,7 +52,7 @@ _acs_cli_get_home() {
 }
 
 ##
-# 지정된 대상(skill | rule | all)에 존재하는 카테고리 이름 목록을 조회합니다.
+# 지정된 대상(skill | rule)에 존재하는 카테고리 이름 목록을 조회합니다.
 #
 # @param $1 {string} 대상 종류 (skill | rule | all)
 #
@@ -93,66 +93,42 @@ _acs_cli_get_categories() {
 }
 
 ##
-# 지정된 대상(skill | rule | all)과 카테고리에 존재하는 항목(스킬/규칙) 이름 목록을 조회합니다.
+# 특정 카테고리 내에 존재하는 스킬 또는 규칙의 이름 목록을 조회합니다. (remove, list 용)
 #
-# @param $1 {string} 대상 종류 (skill | rule | all)
-# @param $2 {string} 카테고리 이름 (빈 문자열이면 모든 카테고리 탐색)
+# @param $1 {string} 대상 종류 (skill | rule)
+# @param $2 {string} 카테고리 이름
 #
 # @return 줄바꿈으로 구분된 스킬/규칙 이름 목록
 ##
-_acs_cli_get_item_names() {
-  local target="${1:-all}"
-  local category="${2:-}"
+_acs_cli_get_names_in_category() {
+  local target="$1"
+  local category="$2"
   local acs_home
   acs_home="$(_acs_cli_get_home)"
-  [[ -n "$acs_home" && -d "$acs_home" ]] || return 0
+  [[ -n "$acs_home" && -d "$acs_home" && -n "$category" ]] || return 0
 
   local -a names=()
-  local cat_dir entry bname
+  local entry bname
 
-  if [[ "$target" == "skill" || "$target" == "all" ]]; then
-    local skills_root="${acs_home}/skills"
-    if [[ -d "$skills_root" ]]; then
-      local -a skill_cats=()
-      if [[ -n "$category" ]]; then
-        skill_cats=("${skills_root}/${category}")
-      else
-        for cat_dir in "${skills_root}"/*; do
-          [[ -d "$cat_dir" ]] && skill_cats+=("$cat_dir")
-        done
-      fi
-      for cat_dir in "${skill_cats[@]}"; do
-        [[ -d "${cat_dir}/.agents/skills" ]] || continue
-        for entry in "${cat_dir}/.agents/skills"/*; do
-          [[ -e "$entry" || -L "$entry" ]] || continue
-          names+=("$(basename "$entry")")
-        done
+  if [[ "$target" == "skill" ]]; then
+    local skills_dir="${acs_home}/skills/${category}/.agents/skills"
+    if [[ -d "$skills_dir" ]]; then
+      for entry in "${skills_dir}"/*; do
+        [[ -e "$entry" || -L "$entry" ]] || continue
+        names+=("$(basename "$entry")")
       done
     fi
-  fi
-
-  if [[ "$target" == "rule" || "$target" == "all" ]]; then
-    local rules_root="${acs_home}/rules"
-    if [[ -d "$rules_root" ]]; then
-      local -a rule_cats=()
-      if [[ -n "$category" ]]; then
-        rule_cats=("${rules_root}/${category}")
-      else
-        for cat_dir in "${rules_root}"/*; do
-          [[ -d "$cat_dir" ]] && rule_cats+=("$cat_dir")
-        done
-      fi
-      for cat_dir in "${rule_cats[@]}"; do
-        [[ -d "${cat_dir}/.agents/rules" ]] || continue
-        for entry in "${cat_dir}/.agents/rules"/*; do
-          [[ -e "$entry" || -L "$entry" ]] || continue
-          bname="$(basename "$entry")"
-          if [[ "$bname" == *.md ]]; then
-            names+=("${bname%.md}")
-          elif [[ "$bname" == *.MD ]]; then
-            names+=("${bname%.MD}")
-          fi
-        done
+  elif [[ "$target" == "rule" ]]; then
+    local rules_dir="${acs_home}/rules/${category}/.agents/rules"
+    if [[ -d "$rules_dir" ]]; then
+      for entry in "${rules_dir}"/*; do
+        [[ -e "$entry" || -L "$entry" ]] || continue
+        bname="$(basename "$entry")"
+        if [[ "$bname" == *.md ]]; then
+          names+=("${bname%.md}")
+        elif [[ "$bname" == *.MD ]]; then
+          names+=("${bname%.MD}")
+        fi
       done
     fi
   fi
@@ -163,27 +139,128 @@ _acs_cli_get_item_names() {
 }
 
 ##
-# 파일 또는 디렉토리 경로 자동 완성을 수행합니다.
+# 'add' 명령어의 '--name' 자동완성을 처리합니다.
+# - 후보 추천은 '{category}/{name}' 형태로 표시합니다. (현재 대상 카테고리는 제외)
+# - 후보가 1개로 확정(선택)되면 해당 항목의 **전체 파일/디렉토리 경로**로 COMPREPLY를 설정합니다.
+#
+# @param $1 {string} 대상 종류 (skill | rule)
+# @param $2 {string} 심볼릭 링크가 생성될 대상 카테고리 (자기 자신 제외용)
+# @param $3 {string} 현재 입력 중인 단어 ($cur 또는 값 부분)
+# @param $4 {string} 접두사 (기본값: '', '--name=*' 형태일 때 '--name=')
+#
+# @return COMPREPLY 배열 설정
+##
+_acs_cli_complete_add_name() {
+  local target="$1"
+  local exclude_cat="$2"
+  local cur_val="$3"
+  local prefix="${4:-}"
+
+  local acs_home
+  acs_home="$(_acs_cli_get_home)"
+  [[ -n "$acs_home" && -d "$acs_home" ]] || return 0
+
+  local -a short_keys=()
+  local -a full_paths=()
+  local cat_dir src_cat entry bname rule_name
+
+  if [[ "$target" == "skill" ]]; then
+    local skills_root="${acs_home}/skills"
+    if [[ -d "$skills_root" ]]; then
+      for cat_dir in "${skills_root}"/*; do
+        [[ -d "$cat_dir" ]] || continue
+        src_cat="$(basename "$cat_dir")"
+        [[ "$src_cat" != "$exclude_cat" ]] || continue
+        [[ -d "${cat_dir}/.agents/skills" ]] || continue
+
+        for entry in "${cat_dir}/.agents/skills"/*; do
+          [[ -e "$entry" || -L "$entry" ]] || continue
+          bname="$(basename "$entry")"
+          short_keys+=("${src_cat}/${bname}")
+          full_paths+=("${cat_dir}/.agents/skills/${bname}")
+        done
+      done
+    fi
+  elif [[ "$target" == "rule" ]]; then
+    local rules_root="${acs_home}/rules"
+    if [[ -d "$rules_root" ]]; then
+      for cat_dir in "${rules_root}"/*; do
+        [[ -d "$cat_dir" ]] || continue
+        src_cat="$(basename "$cat_dir")"
+        [[ "$src_cat" != "$exclude_cat" ]] || continue
+        [[ -d "${cat_dir}/.agents/rules" ]] || continue
+
+        for entry in "${cat_dir}/.agents/rules"/*; do
+          [[ -e "$entry" || -L "$entry" ]] || continue
+          bname="$(basename "$entry")"
+          if [[ "$bname" == *.md ]]; then
+            rule_name="${bname%.md}"
+          elif [[ "$bname" == *.MD ]]; then
+            rule_name="${bname%.MD}"
+          else
+            continue
+          fi
+          short_keys+=("${src_cat}/${rule_name}")
+          full_paths+=("${cat_dir}/.agents/rules/${bname}")
+        done
+      done
+    fi
+  fi
+
+  local total="${#short_keys[@]}"
+  (( total > 0 )) || return 0
+
+  # 이미 전체 경로('/...')로 치환된 상태에서 다시 <TAB>을 누른 경우 전체 경로 기준으로 매칭 유지
+  if [[ "$cur_val" == /* ]]; then
+    local idx
+    for (( idx=0; idx < total; idx++ )); do
+      if [[ "${full_paths[idx]}" == "$cur_val"* ]]; then
+        COMPREPLY+=("${prefix}${full_paths[idx]}")
+      fi
+    done
+    return 0
+  fi
+
+  # '{category}/{name}' 기준으로 현재 입력값과 매칭되는 후보 탐색
+  local -a matched_indices=()
+  local idx
+  for (( idx=0; idx < total; idx++ )); do
+    if [[ "${short_keys[idx]}" == "$cur_val"* ]]; then
+      matched_indices+=("$idx")
+    fi
+  done
+
+  if (( ${#matched_indices[@]} == 1 )); then
+    # 단일 후보로 선택(확정)된 경우 전체 파일/디렉토리 경로로 즉시 치환
+    local sel_idx="${matched_indices[0]}"
+    COMPREPLY=( "${prefix}${full_paths[sel_idx]}" )
+  elif (( ${#matched_indices[@]} > 1 )); then
+    # 복수 후보가 존재하는 경우 '{category}/{name}' 형태로 추천 목록 제시
+    local m_idx
+    for m_idx in "${matched_indices[@]}"; do
+      COMPREPLY+=("${prefix}${short_keys[m_idx]}")
+    done
+  fi
+}
+
+##
+# 디렉토리 경로 자동 완성을 수행합니다. (--home 옵션용)
 #
 # @param $1 {string} 현재 입력 중인 경로 문자열
-# @param $2 {string} 출력 접두사 (예: '', '--directory=', '--file=')
-# @param $3 {string} 모드 ('dir' 이면 디렉토리만, 'file' 이면 파일/디렉토리 모두)
+# @param $2 {string} 출력 접두사 (기본값: '', '--home=*' 완성 시 '--home=')
 #
 # @return COMPREPLY 배열 및 compopt 설정
 ##
-_acs_cli_complete_path() {
+_acs_cli_complete_dir() {
   local path_cur="$1"
   local opt_prefix="${2:-}"
-  local mode="${3:-file}"
-  local compgen_flag="-f"
-  [[ "$mode" == "dir" ]] && compgen_flag="-d"
-
   local candidate
+
   if [[ -z "$opt_prefix" ]]; then
     compopt -o filenames 2>/dev/null || true
     while IFS= read -r candidate; do
       [[ -n "$candidate" ]] && COMPREPLY+=("$candidate")
-    done < <(compgen "$compgen_flag" -- "$path_cur")
+    done < <(compgen -d -- "$path_cur")
     if (( ${#COMPREPLY[@]} == 1 )) && [[ -d "${COMPREPLY[0]}" ]]; then
       compopt -o nospace 2>/dev/null || true
     fi
@@ -191,17 +268,13 @@ _acs_cli_complete_path() {
     compopt -o nospace 2>/dev/null || true
     while IFS= read -r candidate; do
       [[ -n "$candidate" ]] || continue
-      if [[ -d "$candidate" ]]; then
-        COMPREPLY+=("${opt_prefix}${candidate%/}/")
-      else
-        COMPREPLY+=("${opt_prefix}${candidate}")
-      fi
-    done < <(compgen "$compgen_flag" -- "$path_cur")
+      COMPREPLY+=("${opt_prefix}${candidate%/}/")
+    done < <(compgen -d -- "$path_cur")
   fi
 }
 
 ##
-# acs-cli 명령어에 대한 Bash 자동 완성 처리 함수
+# acs-cli 명령어에 대한 단계별(Sequential State Machine) Bash 자동 완성 처리 함수
 #
 # @param $1 {string} 명령어 이름 (Command name)
 # @param $2 {string} 현재 커서에서 완성 중인 단어 (Current word)
@@ -215,46 +288,102 @@ _acs_cli_completion() {
   cur="${COMP_WORDS[COMP_CWORD]:-}"
   prev="${COMP_WORDS[COMP_CWORD-1]:-}"
 
-  local -a subcommands=("create" "remove" "add" "list" "--help")
-  local -a targets=("skill" "rule")
-
-  # 1. 첫 번째 인자(서브커맨드) 자동 완성
+  # 1단계: acs-cli <TAB> -> 서브커맨드 제안
   if (( COMP_CWORD == 1 )); then
-    COMPREPLY=( $(compgen -W "${subcommands[*]}" -- "$cur") )
+    local -a subcommands=("add" "create" "list" "remove")
+    if [[ "$cur" == -* ]]; then
+      COMPREPLY=( $(compgen -W "--help" -- "$cur") )
+    else
+      COMPREPLY=( $(compgen -W "${subcommands[*]}" -- "$cur") )
+    fi
     return 0
   fi
 
   local subcmd="${COMP_WORDS[1]:-}"
   case "$subcmd" in
-    create|remove|add|list)
+    add|create|list|remove)
       ;;
     *)
       return 0
       ;;
   esac
 
-  # 현재 커맨드 라인에서 이미 지정된 target(skill|rule) 및 --category 감지
+  # 현재 커맨드 라인(COMP_CWORD 이전 토큰들) 상태 스캔
   local active_target=""
-  local active_category=""
+  local has_category="false"
+  local category_val=""
+  local has_name="false"
+  local name_val=""
+  local has_home="false"
+  local has_force="false"
+  local has_help="false"
+
   local i tok
-  for (( i=2; i < ${#COMP_WORDS[@]}; i++ )); do
-    (( i != COMP_CWORD )) || continue
+  for (( i=2; i < COMP_CWORD; i++ )); do
     tok="${COMP_WORDS[i]}"
-    if [[ -z "$active_target" && ( "$tok" == "skill" || "$tok" == "rule" ) ]]; then
-      active_target="$tok"
-    elif [[ "$tok" == "--category" && $((i + 1)) -lt ${#COMP_WORDS[@]} ]]; then
-      active_category="${COMP_WORDS[i+1]}"
-    elif [[ "$tok" == --category=* ]]; then
-      active_category="${tok#--category=}"
-    fi
+    case "$tok" in
+      skill|rule)
+        [[ -z "$active_target" ]] && active_target="$tok"
+        ;;
+      --help)
+        has_help="true"
+        ;;
+      --force)
+        has_force="true"
+        ;;
+      --home)
+        has_home="true"
+        ((i++)) || true
+        ;;
+      --home=*)
+        has_home="true"
+        ;;
+      --category)
+        has_category="true"
+        if (( i + 1 < COMP_CWORD )); then
+          category_val="${COMP_WORDS[i+1]}"
+          ((i++)) || true
+        fi
+        ;;
+      --category=*)
+        has_category="true"
+        category_val="${tok#--category=}"
+        ;;
+      --name)
+        has_name="true"
+        if (( i + 1 < COMP_CWORD )); then
+          name_val="${COMP_WORDS[i+1]}"
+          ((i++)) || true
+        fi
+        ;;
+      --name=*)
+        has_name="true"
+        name_val="${tok#--name=}"
+        ;;
+    esac
   done
 
-  # 2. '--옵션=값' 형태의 인라인 자동 완성 처리
+  # '--help' 또는 '--force'가 이미 입력된 경우: <TAB 지원 끝>
+  if [[ "$has_help" == "true" || "$has_force" == "true" ]]; then
+    return 0
+  fi
+
+  # 2단계: acs-cli <subcmd> <TAB> (아직 skill|rule이 선택되지 않은 상태)
+  if [[ -z "$active_target" ]]; then
+    COMPREPLY=( $(compgen -W "skill rule --help" -- "$cur") )
+    return 0
+  fi
+
+  # '--옵션=값' 형태의 인라인 입력 처리
   case "$cur" in
+    --home=*)
+      _acs_cli_complete_dir "${cur#--home=}" "--home="
+      return 0
+      ;;
     --category=*)
       local cat_part="${cur#--category=}"
       local cat_list candidate
-      cat_list="$(_acs_cli_get_categories "${active_target:-all}")"
+      cat_list="$(_acs_cli_get_categories "$active_target")"
       while IFS= read -r candidate; do
         [[ -n "$candidate" ]] && COMPREPLY+=("--category=${candidate}")
       done < <(compgen -W "$cat_list" -- "$cat_part")
@@ -262,107 +391,75 @@ _acs_cli_completion() {
       ;;
     --name=*)
       local name_part="${cur#--name=}"
-      local name_list candidate
-      name_list="$(_acs_cli_get_item_names "${active_target:-all}" "$active_category")"
-      while IFS= read -r candidate; do
-        [[ -n "$candidate" ]] && COMPREPLY+=("--name=${candidate}")
-      done < <(compgen -W "$name_list" -- "$name_part")
-      return 0
-      ;;
-    --directory=*)
-      _acs_cli_complete_path "${cur#--directory=}" "--directory=" "dir"
-      return 0
-      ;;
-    --file=*)
-      _acs_cli_complete_path "${cur#--file=}" "--file=" "file"
-      return 0
-      ;;
-    --home=*)
-      _acs_cli_complete_path "${cur#--home=}" "--home=" "dir"
+      if [[ "$subcmd" == "add" ]]; then
+        _acs_cli_complete_add_name "$active_target" "$category_val" "$name_part" "--name="
+      elif [[ "$subcmd" == "remove" || "$subcmd" == "list" ]]; then
+        local name_list candidate
+        name_list="$(_acs_cli_get_names_in_category "$active_target" "$category_val")"
+        while IFS= read -r candidate; do
+          [[ -n "$candidate" ]] && COMPREPLY+=("--name=${candidate}")
+        done < <(compgen -W "$name_list" -- "$name_part")
+      fi
       return 0
       ;;
   esac
 
-  # 3. 직전 단어(prev)가 값을 요구하는 옵션인 경우 처리
+  # 직전 단어(prev)가 옵션 키(--home, --category, --name)인 경우 값 제안
   case "$prev" in
+    --home)
+      _acs_cli_complete_dir "$cur" ""
+      return 0
+      ;;
     --category)
       local cat_list
-      cat_list="$(_acs_cli_get_categories "${active_target:-all}")"
+      cat_list="$(_acs_cli_get_categories "$active_target")"
       COMPREPLY=( $(compgen -W "$cat_list" -- "$cur") )
       return 0
       ;;
     --name)
-      if [[ "$subcmd" == "remove" || "$subcmd" == "list" ]]; then
+      if [[ "$subcmd" == "add" ]]; then
+        _acs_cli_complete_add_name "$active_target" "$category_val" "$cur" ""
+      elif [[ "$subcmd" == "remove" || "$subcmd" == "list" ]]; then
         local name_list
-        name_list="$(_acs_cli_get_item_names "${active_target:-all}" "$active_category")"
+        name_list="$(_acs_cli_get_names_in_category "$active_target" "$category_val")"
         COMPREPLY=( $(compgen -W "$name_list" -- "$cur") )
       fi
       return 0
       ;;
-    --directory|--home)
-      _acs_cli_complete_path "$cur" "" "dir"
-      return 0
-      ;;
-    --file)
-      _acs_cli_complete_path "$cur" "" "file"
-      return 0
-      ;;
   esac
 
-  # 4. 서브커맨드별 사용 가능한 옵션 목록 구성
-  local -a cmd_opts=()
-  case "$subcmd" in
-    create)
-      cmd_opts=("--category" "--name" "--home" "--force" "--help")
-      ;;
-    remove)
-      cmd_opts=("--category" "--name" "--home" "--force" "--help")
-      ;;
-    add)
-      if [[ "$active_target" == "skill" ]]; then
-        cmd_opts=("--category" "--directory" "--name" "--home" "--force" "--help")
-      elif [[ "$active_target" == "rule" ]]; then
-        cmd_opts=("--category" "--file" "--name" "--home" "--force" "--help")
-      else
-        cmd_opts=("--category" "--directory" "--file" "--name" "--home" "--force" "--help")
-      fi
-      ;;
-    list)
-      cmd_opts=("--category" "--name" "--home" "--help")
-      ;;
-  esac
+  # 3단계 이후: 순차적 옵션 제안 (Step-by-Step)
+  local -a next_opts=()
 
-  # 이미 사용된 옵션은 후보에서 제외
-  local -a avail_opts=()
-  local opt used_token already_used
-  for opt in "${cmd_opts[@]}"; do
-    already_used=false
-    for (( i=2; i < ${#COMP_WORDS[@]}; i++ )); do
-      (( i != COMP_CWORD )) || continue
-      used_token="${COMP_WORDS[i]%%=*}"
-      if [[ "$used_token" == "$opt" ]]; then
-        already_used=true
-        break
-      fi
-    done
-    [[ "$already_used" == false ]] && avail_opts+=("$opt")
-  done
-
-  # 아직 target(skill|rule)이 지정되지 않은 상태라면 target도 후보에 포함
-  local -a candidates=()
-  if [[ -z "$active_target" ]]; then
-    if [[ "$cur" == -* ]]; then
-      candidates=("${avail_opts[@]}")
-    elif [[ "$subcmd" == "list" ]]; then
-      candidates=("${targets[@]}" "${avail_opts[@]}")
-    else
-      candidates=("${targets[@]}" "--help")
+  # (1) 아직 --category가 입력되지 않은 경우: --category, --help 제안
+  #     단, 환경변수 AI_AGENT_CUSTOMIZATION_HOME이 없고 --home도 미입력 상태면 --home 추가 제안
+  if [[ "$has_category" == "false" ]]; then
+    next_opts+=("--category" "--help")
+    if [[ -z "${AI_AGENT_CUSTOMIZATION_HOME:-}" && "$has_home" == "false" ]]; then
+      next_opts+=("--home")
     fi
-  else
-    candidates=("${avail_opts[@]}")
+    COMPREPLY=( $(compgen -W "${next_opts[*]}" -- "$cur") )
+    return 0
   fi
 
-  COMPREPLY=( $(compgen -W "${candidates[*]}" -- "$cur") )
+  # (2) --category 입력 완료 후, 아직 --name이 입력되지 않은 경우:
+  #     기본적으로 --name을 제안하며, remove는 카테고리 단독 삭제가 가능하므로 --force도 함께 제안
+  if [[ "$has_name" == "false" ]]; then
+    next_opts+=("--name")
+    if [[ "$subcmd" == "remove" ]]; then
+      next_opts+=("--force")
+    fi
+    COMPREPLY=( $(compgen -W "${next_opts[*]}" -- "$cur") )
+    return 0
+  fi
+
+  # (3) --category와 --name이 모두 입력 완료된 경우:
+  #     list는 <TAB 지원 끝>, add/create/remove는 --force 제안
+  if [[ "$subcmd" == "list" ]]; then
+    return 0
+  fi
+
+  COMPREPLY=( $(compgen -W "--force" -- "$cur") )
   return 0
 }
 
