@@ -19,12 +19,12 @@
 
 | 옵션 | 필수 여부 | 설명 |
 | :--- | :---: | :--- |
-| `-d <directory>` | 선택 | Git 프로젝트들이 위치한 상위 디렉토리 경로 (기본값: 현재 디렉토리 `$PWD`) |
-| `-m <message>` | 선택 | 일괄 커밋 및 푸시에 사용할 커밋 메시지 |
-| `-p <project ...>` | 선택 | 처리할 대상 프로젝트 이름(접두사) 목록 |
-| `-s <source-branch>` | 선택 | 병합할 소스 브랜치 이름 (`-t`와 함께 사용) |
-| `-t <target-branch>` | 선택 | 병합할 타겟 브랜치 이름 |
-| `-h`, `--help` | 선택 | 도움말 출력 |
+| `--dir <directory>` | 선택 | Git 프로젝트들이 위치한 상위 디렉토리 경로 (기본값: 현재 디렉토리 `$PWD`) |
+| `--message <message>` | 선택 | 일괄 커밋 및 푸시에 사용할 커밋 메시지 |
+| `--projects <project ...>` | 선택 | 처리할 대상 프로젝트 이름(접두사) 목록 |
+| `--source <source-branch>` | 선택 | 병합할 소스 브랜치 이름 (`--target`과 함께 사용) |
+| `--target <target-branch>` | 선택 | 병합할 타겟 브랜치 이름 |
+| `--help` | 선택 | 도움말 출력 |
 
 ---
 
@@ -32,10 +32,10 @@
 
 ```bash
 # 1) 현재 경로 하위 모든 프로젝트의 변경사항을 일괄 커밋 및 푸시
-./git-push-all -m "chore: 공통 의존성 버전 업데이트"
+./git-push-all --message "chore: 공통 의존성 버전 업데이트"
 
 # 2) 특정 접두사('service-') 프로젝트들을 커밋/푸시한 뒤 'main' 브랜치로 병합
-./git-push-all -d ~/workspace -p service- -m "release: v1.2.0" -s develop -t main
+./git-push-all --dir ~/workspace --projects service- --message "release: v1.2.0" --source develop --target main
 ```
 
 ---

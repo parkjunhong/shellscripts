@@ -32,11 +32,11 @@ help(){
 	fi
 	echo
 	echo "Usage:"
-	echo "$FILENAME -f|--file <filepath> <column_index...>"
+	echo "$FILENAME --file <filepath> <column_index...>"
 	echo
 	echo "Options:"
-	echo " -f | --file: 검증 대상 CSV 파일 경로"
-	echo " -h | --help: 도움말 출력"
+	echo " --file: 검증 대상 CSV 파일 경로"
+	echo " --help: 도움말 출력"
 	echo
 	echo "Arguments:"
 	echo " column_index...: 검증할 컬럼 인덱스 목록 (0부터 시작하는 숫자)"
@@ -47,11 +47,11 @@ INDICE=()
 while [ ! -z "$1" ];
 do
 	case "$1" in
-		-f | --file)
+		--file)
 			shift
 			FILE="$1"
 			;;
-		-h | --help)
+		--help)
 			help
 			exit 0
 			;;

@@ -23,24 +23,24 @@
 ## ⚙️ 파라미터 명세
 
 ```bash
-scp-dir -H <대상호스트> -s <소스경로> -d <원격대상경로> [옵션...]
+scp-dir --host <대상호스트> --src <소스경로> --dest <원격대상경로> [옵션...]
 ```
 
 ### 필수 옵션
 | 옵션 | 설명 |
 | :--- | :--- |
-| `-H`, `--host <host>` | 대상 원격 서버 호스트 (IP 주소 또는 도메인) |
-| `-s`, `--src`, `--source <src>` | 전송할 로컬 원본 파일 또는 디렉토리 경로 |
-| `-d`, `--dest`, `--destination <dest>` | 원격 서버 대상 디렉토리 경로 |
+| `--host <host>` | 대상 원격 서버 호스트 (IP 주소 또는 도메인) |
+| `--src, --source <src>` | 전송할 로컬 원본 파일 또는 디렉토리 경로 |
+| `--dest, --destination <dest>` | 원격 서버 대상 디렉토리 경로 |
 
 ### 선택 옵션
 | 옵션 | 기본값 | 설명 |
 | :--- | :---: | :--- |
-| `-u`, `--user`, `--username <user>` | `$USER` | 원격 서버 사용자 계정 (생략 시 현재 셸 사용자) |
-| `-p`, `--port <port>` | `22` | 원격 SSH 포트 번호 (1 ~ 65535) |
-| `-P`, `-i`, `--passwd`, `--password <pwd>` | - | 원격 서버 접속 비밀번호 (생략 시 대화형 마스킹 입력) |
-| `-o`, `--ssh-option <option>` | - | ssh/scp 추가 옵션 (예: `-o "ConnectTimeout=10"`) |
-| `-h`, `--help` | - | 도움말 메시지 출력 및 종료 |
+| `--user, --username <user>` | `$USER` | 원격 서버 사용자 계정 (생략 시 현재 셸 사용자) |
+| `--port <port>` | `22` | 원격 SSH 포트 번호 (1 ~ 65535) |
+| `--passwd, --password <pwd>` | - | 원격 서버 접속 비밀번호 (생략 시 대화형 마스킹 입력) |
+| `--ssh-option <option>` | - | ssh/scp 추가 옵션 (예: `--ssh-option "ConnectTimeout=10"`) |
+| `--help` | - | 도움말 메시지 출력 및 종료 |
 
 ---
 
@@ -48,16 +48,16 @@ scp-dir -H <대상호스트> -s <소스경로> -d <원격대상경로> [옵션..
 
 ```bash
 # 1) 기본 전송 (비밀번호 대화형 마스킹 입력)
-./scp-dir -H 192.168.1.100 -s ./my-app -d /opt/deploy
+./scp-dir --host 192.168.1.100 --src ./my-app --dest /opt/deploy
 
 # 2) 원격 사용자 및 포트 지정 전송
-./scp-dir -u deployer -H 192.168.1.100 -p 2222 -s ./config.json -d /etc/my-app/
+./scp-dir --user deployer --host 192.168.1.100 --port 2222 --src ./config.json --dest /etc/my-app/
 
 # 3) 비밀번호 파라미터 직접 지정 전송
-./scp-dir -u root -H 10.0.0.5 -P "mypassword" -s ./dist/ -d /var/www/html/
+./scp-dir --user root --host 10.0.0.5 --passwd "mypassword" --src ./dist/ --dest /var/www/html/
 
 # 4) SSH 연결 타임아웃 옵션 추가 전송
-./scp-dir -H 192.168.1.50 -s ./archive.tar.gz -d /data/backup/ -o "ConnectTimeout=5"
+./scp-dir --host 192.168.1.50 --src ./archive.tar.gz --dest /data/backup/ --ssh-option "ConnectTimeout=5"
 ```
 
 ---

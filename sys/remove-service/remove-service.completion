@@ -33,7 +33,7 @@ _remove_service_completion() {
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
   # 기본 지원 옵션들
-  local all_opts=("-h" "--help")
+  local all_opts=("--help")
   local filtered_opts=()
   for opt in "${all_opts[@]}"; do
     local used=0

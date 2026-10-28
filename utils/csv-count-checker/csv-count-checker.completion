@@ -31,19 +31,19 @@ _csv_count_checker_completion() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  opts="-c --count -d --delim -f --file -h --help -n --number"
+  opts="--count --delim --file --help --number"
 
   case "${prev}" in
-    -f|--file)
+    --file)
       compopt -o default 2>/dev/null || true
       COMPREPLY=()
       return 0
       ;;
-    -d|--delim)
+    --delim)
       COMPREPLY=( $(compgen -W '"," "|" "\\t" ";"' -- "${cur}") )
       return 0
       ;;
-    -c|--count|-n|--number)
+    --count|--number)
       return 0
       ;;
     *)

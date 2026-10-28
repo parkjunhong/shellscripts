@@ -28,7 +28,7 @@ _sys_info_completion() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  all_opts=(--exclude-fs -f --exclude-mnt -m --sort-key --sort-dir --help -h)
+  all_opts=(--exclude-fs --exclude-mnt --sort-key --sort-dir --help)
 
   # 사용된 단일 옵션 확인 (중복 방지 대상만)
   used_opts=()
@@ -36,14 +36,14 @@ _sys_info_completion() {
     case "$word" in
       --sort-key) used_opts+=("--sort-key") ;;
       --sort-dir) used_opts+=("--sort-dir") ;;
-      -h|--help) used_opts+=("-h" "--help") ;;
+      --help) used_opts+=("--help") ;;
     esac
   done
 
   remaining_opts=()
   for opt in "${all_opts[@]}"; do
     case "$opt" in
-      --sort-key|--sort-dir|--help|-h)
+      --sort-key|--sort-dir|--help)
         [[ ! " ${used_opts[*]} " =~ $opt ]] && remaining_opts+=("$opt")
         ;;
       *) remaining_opts+=("$opt") ;;  # 중복 허용
@@ -51,14 +51,14 @@ _sys_info_completion() {
   done
 
   # 자동완성: 값 추천
-  if [[ "$prev" == "--exclude-fs" || "$prev" == "-f" ]]; then
+  if [[ "$prev" == "--exclude-fs" ]]; then
     local fs_list
     fs_list=$(df -h | awk 'NR>1 { print $1 }' | sort -u)
     COMPREPLY=( $(compgen -W "$fs_list" -- "$cur") )
     return 0
   fi
 
-  if [[ "$prev" == "--exclude-mnt" || "$prev" == "-m" ]]; then
+  if [[ "$prev" == "--exclude-mnt" ]]; then
     local mnt_list
     mnt_list=$(df -h | awk 'NR>1 { print $6 }' | sort -u)
     COMPREPLY=( $(compgen -W "$mnt_list" -- "$cur") )

@@ -33,7 +33,7 @@ _replace_codeblock() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  opts="--target-dir --target-name --before --after --dry-run --diff-only --rollback"
+  opts="--target-dir --target-name --before --after --dry-run --diff-only --rollback --help"
 
   case "$prev" in
     --target-dir)

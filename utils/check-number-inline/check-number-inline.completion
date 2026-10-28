@@ -31,10 +31,10 @@ _check_number_inline_completion() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  opts="-f --file -h --help"
+  opts="--file --help"
 
   case "${prev}" in
-    -f|--file)
+    --file)
       compopt -o default 2>/dev/null || true
       COMPREPLY=()
       return 0

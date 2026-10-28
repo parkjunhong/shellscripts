@@ -38,12 +38,12 @@ help(){
   echo
   # TODO: Usage 내용 작성
   echo "[사용법]"
-  echo "./$FILENAME [-h|--help] [-r|--repository] <원격 git 저장소> [-b|--branch] <원격 git 브랜치>"
+  echo "./$FILENAME [--help] --repository <원격 git 저장소> [--branch <원격 git 브랜치>]"
   echo
   echo "[옵션]"
-  echo " -b | --branch    : 연결할 원격 git 브랜치 이름입니다."
-  echo " -r | --repository: 연결할 원격 git 저장소 주소 또는 로컬 경로입니다."
-  echo " -h | --help      : 도움말을 출력합니다."
+  echo "  --branch     : 연결할 원격 git 브랜치 이름입니다."
+  echo "  --repository : 연결할 원격 git 저장소 주소 또는 로컬 경로입니다."
+  echo "  --help       : 도움말을 출력합니다."
 }
 
 ##
@@ -87,15 +87,15 @@ REMOTE_BRANCH="master"
 while [ ! -z "${1:-}" ];
 do
   case "$1" in
-    -b | --branch)
+    --branch)
       shift
       REMOTE_BRANCH="$1"
       ;;
-    -r | --repository)
+    --repository)
       shift
       REMOTE_GIT_REPO="$1"
       ;;
-    -h | --help)
+    --help)
       help "" ""
       exit 0
       ;;

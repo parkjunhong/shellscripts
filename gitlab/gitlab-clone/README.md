@@ -20,15 +20,15 @@ GitLab REST API(v4)를 활용하여 **특정 GitLab 그룹 및 모든 하위 서
 
 ## ⚙️ 파라미터 명세
 
-| 옵션 | 단축 옵션 | 필수 여부 | 설명 |
-| :--- | :---: | :---: | :--- |
-| `--url <gitlab-url>` | `-u` | **필수** | GitLab 서비스 URL (예: `https://gitlab.example.com`) |
-| `--group <group-path>` | `-g` | **필수** | 복제할 GitLab 대상 그룹 경로 (예: `my-group` 또는 `parent/child`) |
-| `--token <pat>` | `-t` | **필수** | GitLab API 조회 및 저장소 복제용 Personal Access Token (`read_api`, `read_repository` 권한) |
-| `--name <custom-name>` | `-n` | 선택 | 클론 디렉토리의 최상위 그룹 폴더명을 대체할 이름 |
-| `--exclude <sub1,sub2>` | `-x` | 선택 | 복제에서 제외할 서브그룹(Subgroup) 이름 목록 (콤마(`,`)로 구분) |
-| `--dir <target-dir>` | `-d` | 선택 | 프로젝트를 복제할 대상 최상위 디렉토리 (기본값: 현재 경로, 지정 시 해당 경로가 존재해야 함) |
-| `--help` | `-h` | 선택 | 도움말을 출력하고 종료합니다. |
+| 옵션 | 필수 여부 | 설명 |
+| :--- | :---: | :--- |
+| `--url <gitlab-url>` | **필수** | GitLab 서비스 URL (예: `https://gitlab.example.com`) |
+| `--group <group-path>` | **필수** | 복제할 GitLab 대상 그룹 경로 (예: `my-group` 또는 `parent/child`) |
+| `--token <pat>` | **필수** | GitLab API 조회 및 저장소 복제용 Personal Access Token (`read_api`, `read_repository` 권한) |
+| `--name <custom-name>` | 선택 | 클론 디렉토리의 최상위 그룹 폴더명을 대체할 이름 |
+| `--exclude <sub1,sub2>` | 선택 | 복제에서 제외할 서브그룹(Subgroup) 이름 목록 (콤마(`,`)로 구분) |
+| `--dir <target-dir>` | 선택 | 프로젝트를 복제할 대상 최상위 디렉토리 (기본값: 현재 경로, 지정 시 해당 경로가 존재해야 함) |
+| `--help` | 선택 | 도움말을 출력하고 종료합니다. |
 
 ---
 

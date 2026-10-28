@@ -42,14 +42,13 @@ help(){
     echo "================================================================================"
   fi  
   echo  
-  echo "사용법: ./$FILENAME <directory> -s[a|d]r"
+  echo "사용법: ./$FILENAME [옵션] [directory]"
   echo ""
   echo "[옵션]"
-  echo " -s: 정렬 (Sort)."
-  echo "    + a: 오름차순 (asc)"
-  echo "    + d: 내림차순 (desc)"
-  echo " -r: 하위 디렉토리 반복 탐색 활성화 (Recursive)."
-  echo " -h, --help: 이 도움말을 표시하고 종료합니다."
+  echo " --sort-asc  : 파일 크기 기준 오름차순(Ascending) 정렬"
+  echo " --sort-desc : 파일 크기 기준 내림차순(Descending) 정렬"
+  echo " --recursive : 하위 디렉토리 반복 탐색 활성화 (Recursive)"
+  echo " --help      : 이 도움말을 표시하고 종료합니다."
 }
 
 trap 'help "스크립트 실행 중 오류가 발생했습니다." "$LINENO"' ERR
@@ -60,49 +59,22 @@ SORT="N"
 
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
+    --help)
+      help "" ""
+      exit 0
+      ;;
+    --sort-asc)
+      SORT="A"
+      ;;
+    --sort-desc)
+      SORT="D"
+      ;;
+    --recursive)
+      RECUR=1
+      ;;
     -*)
-      if [[ "-" == "$1" ]]; then
-        help "잘못된 옵션입니다. arg=$1" "$LINENO"
-        exit 1
-      fi
-      
-      opt="${1#-}"
-      len=${#opt} 
-      idx=0
-      while [[ $idx -lt $len ]]; do
-        case ${opt:${idx}:1} in 
-          h)
-            help "" ""
-            exit 0
-            ;;
-          r)
-            RECUR=1
-            ;;
-          s)
-            if [[ $((idx + 1)) -lt $len ]]; then
-              case ${opt:$((idx + 1)):1} in 
-                a)
-                  SORT="A"
-                  idx=$((idx + 1))
-                  ;;
-                d)
-                  SORT="D"
-                  idx=$((idx + 1))
-                  ;;
-                *)
-                  ;;
-              esac
-            fi
-            ;;
-          *)
-            if [[ "$1" == "--help" ]]; then
-              help "" ""
-              exit 0
-            fi
-            ;;
-        esac
-        idx=$((idx + 1))
-      done
+      help "잘못된 옵션입니다. arg=$1" "$LINENO"
+      exit 1
       ;;
     *)
       DIR="$1"

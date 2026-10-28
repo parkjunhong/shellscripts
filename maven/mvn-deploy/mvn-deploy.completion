@@ -34,13 +34,13 @@ _mvn_deploy_sh() {
   local seen_dd="false"
 
   opts=(
-    "-U" "--update-snapshots"
-    "-s" "--skip-tests"
+    "--update-snapshots"
+    "--skip-tests"
     "--maven"
     "--settings"
     "--profile"
     "--dry-run"
-    "-h" "--help"
+    "--help"
     "--"
   )
 
@@ -52,7 +52,7 @@ _mvn_deploy_sh() {
   # 이미 입력된 옵션 기록 (반복 가능 옵션은 제외하고 재제안 방지)
   for w in "${COMP_WORDS[@]}"; do
     case "$w" in
-      -U|--update-snapshots|-s|--skip-tests|--maven|--settings|--profile|--dry-run|-h|--help|--)
+      --update-snapshots|--skip-tests|--maven|--settings|--profile|--dry-run|--help|--)
         used["$w"]=1
         ;;
       *)

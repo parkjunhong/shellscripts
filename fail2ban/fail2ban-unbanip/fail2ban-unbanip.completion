@@ -37,14 +37,14 @@ _fail2ban_unbanip_completion() {
 
   # 스크립트 지원 옵션 목록 정의 (대화형 전환으로 --jail, --ip 제거)
   # Define supported options list
-  opts="-h --help"
+  opts="--help"
 
   # 이미 입력된 단일 사용 옵션 필터링하여 중복 추천 방지 / Filter out already entered options
   available_opts=""
   for opt in $opts; do
     is_used=0
     for word in "${COMP_WORDS[@]:1}"; do
-      if [[ "$word" == "-h" || "$word" == "--help" ]]; then
+      if [[ "$word" == "--help" ]]; then
         is_used=1
         break
       fi

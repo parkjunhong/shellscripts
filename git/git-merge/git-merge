@@ -43,13 +43,13 @@ help(){
   fi  
   echo  
   echo "[사용법]"
-  echo "$FILENAME -s <source> -t <target> [-l]"
+  echo "$FILENAME [--source <source>] [--target <target>] [--local-source]"
   echo
   echo "[파라미터]"
-  echo " -s | --source      : 소스 브랜치. 미지정 시 자동으로 검색하여 선택할 수 있습니다."
-  echo " -t | --target      : 타겟 브랜치. 미지정 시 자동으로 검색하여 선택할 수 있습니다."
-  echo " -l | --local-source: 소스 브랜치가 로컬에만 존재하는 경우 사용 (Source 브랜치의 git pull 생략)."
-  echo " -h | --help        : 도움말 및 사용법 출력"
+  echo "  --source      : 소스 브랜치. 미지정 시 자동으로 검색하여 선택할 수 있습니다."
+  echo "  --target      : 타겟 브랜치. 미지정 시 자동으로 검색하여 선택할 수 있습니다."
+  echo "  --local-source: 소스 브랜치가 로컬에만 존재하는 경우 사용 (Source 브랜치의 git pull 생략)."
+  echo "  --help        : 도움말 및 사용법 출력"
 }
 
 SOURCE=""
@@ -59,18 +59,18 @@ LOCAL_SOURCE=0
 while [ "$1" != "" ];
 do
   case "$1" in
-    -s | --source)
+    --source)
       shift
       SOURCE="$1"
       ;;
-    -t | --target)
+    --target)
       shift
       TARGET="$1"
       ;;
-    -l | --local-source)
+    --local-source)
       LOCAL_SOURCE=1
       ;;
-    -h | --help)
+    --help)
       help
       exit 0
       ;;

@@ -15,14 +15,14 @@
 
 ## ⚙️ 파라미터 명세
 
-| 파라미터 | 단축 옵션 | 필수 여부 | 기본값 | 설명 |
-| :--- | :---: | :---: | :---: | :--- |
-| `--url <url>` | `-u` | **필수** | - | Maven 저장소 루트 URL (예: `http://nexus.local:8081`) |
-| `--releases <path>` | `-r` | **필수** | - | 릴리즈 아티팩트 저장소 경로 (예: `repository/maven-releases`) |
-| `--snapshots <path>` | `-s` | **필수** | - | 스냅샷 아티팩트 저장소 경로 (예: `repository/maven-snapshots`) |
-| `--m2_dir <path>` | `-m` | **필수** | - | 업로드 대상 의존성 파일들이 위치한 로컬 디렉토리 경로 |
-| `--run` | - | 선택 | 비활성 | 실제 아티팩트 업로드를 수행합니다. (미지정 시 파라미터 검증만 수행) |
-| `--help` | `-h` | 선택 | - | 사용법 및 옵션 도움말을 출력합니다. |
+| 파라미터 | 필수 여부 | 기본값 | 설명 |
+| :--- | :---: | :---: | :--- |
+| `--url <url>` | **필수** | - | Maven 저장소 루트 URL (예: `http://nexus.local:8081`) |
+| `--releases <path>` | **필수** | - | 릴리즈 아티팩트 저장소 경로 (예: `repository/maven-releases`) |
+| `--snapshots <path>` | **필수** | - | 스냅샷 아티팩트 저장소 경로 (예: `repository/maven-snapshots`) |
+| `--m2_dir <path>` | **필수** | - | 업로드 대상 의존성 파일들이 위치한 로컬 디렉토리 경로 |
+| `--run` | 선택 | 비활성 | 실제 아티팩트 업로드를 수행합니다. (미지정 시 파라미터 검증만 수행) |
+| `--help` | 선택 | - | 사용법 및 옵션 도움말을 출력합니다. |
 
 ---
 
@@ -31,19 +31,19 @@
 ### 1. 설정값 검증 (Dry-run 성격의 브리핑)
 ```bash
 upload-mvn-dependencies \
-  -u http://192.168.0.10:8081 \
-  -r repository/maven-releases \
-  -s repository/maven-snapshots \
-  -m ~/.m2/repository
+  --url http://192.168.0.10:8081 \
+  --releases repository/maven-releases \
+  --snapshots repository/maven-snapshots \
+  --m2_dir ~/.m2/repository
 ```
 
 ### 2. 실제 의존성 일괄 업로드 실행
 ```bash
 upload-mvn-dependencies \
-  -u http://192.168.0.10:8081 \
-  -r repository/maven-releases \
-  -s repository/maven-snapshots \
-  -m ~/.m2/repository \
+  --url http://192.168.0.10:8081 \
+  --releases repository/maven-releases \
+  --snapshots repository/maven-snapshots \
+  --m2_dir ~/.m2/repository \
   --run
 ```
 

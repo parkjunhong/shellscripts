@@ -31,15 +31,15 @@ _autotail_completion() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  opts="-f --file -n --lines -h --help"
+  opts="--file --lines --help"
 
   case "${prev}" in
-    -f|--file)
+    --file)
       compopt -o default 2>/dev/null || true
       COMPREPLY=()
       return 0
       ;;
-    -n|--lines)
+    --lines)
       COMPREPLY=( $(compgen -W "10 20 50 100 200 500" -- "${cur}") )
       return 0
       ;;

@@ -15,11 +15,11 @@ N=10
 while [ ! -z "$1" ];
 do
   case "$1" in
-    -h|--help)
-      echo "Usage: autotail -f <filename> [-n <init line count>]"
+    --help)
+      echo "Usage: autotail --file <filename> [--lines <init line count>]"
       exit 0
       ;;
-    -f|--file)
+    --file)
       shift
 
       if [ -z "$1" ];
@@ -29,7 +29,7 @@ do
       fi
       FILE="$1"
       ;;
-    -n|--lines)
+    --lines)
       shift
 
       if [[ ! $1 =~ ^[0-9]+$ ]];

@@ -21,7 +21,7 @@ let UUID_MAX_COUNT=1
 while [ ! -z "$1" ];
 do
   case "$1" in
-    -h|--help)
+    --help)
       help
       exit 0
       ;;

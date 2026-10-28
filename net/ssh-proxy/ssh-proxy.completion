@@ -55,7 +55,7 @@ _ssh_proxy_completion() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  local opts="--service-add --service-delete --service-list --service-file -nj --no-jump -h --help"
+  local opts="--service-add --service-delete --service-list --service-file --no-jump --help"
 
   case "$prev" in
     --service-delete)

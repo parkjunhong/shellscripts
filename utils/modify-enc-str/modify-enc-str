@@ -32,16 +32,16 @@ help(){
     fi  
     echo
     echo "Usage:"
-    echo "$FILENAME [-d|--dir] <dir> [-f|--files] <pattern> [-o|--old] <old plain string> [-n|--new] <new plain string> [-c|--cipher] <function script file> [-h|--help]"
+    echo "$FILENAME --dir <dir> --files <pattern> --old <old plain string> --new <new plain string> --cipher <function script file> [--help]"
     echo
     echo "Options:"
-    echo " -d | --dir   : a directory to search files."
-    echo " -f | --files : file names to to search. separated by comma(,) for multi patterns. Support only '*', no regex."
-    echo " -h | --help  : show help messages."
-    echo " -n | --new   : New string"
-    echo " -o | --old   : Old string"
-	echo " -c | --cipher: encrypt or decript script file."
-	echo "                - MUST HAVE only 1 argument, plain or encrypted text."
+    echo " --dir   : a directory to search files."
+    echo " --files : file names to to search. separated by comma(,) for multi patterns. Support only '*', no regex."
+    echo " --help  : show help messages."
+    echo " --new   : New string"
+    echo " --old   : Old string"
+	echo " --cipher: encrypt or decript script file."
+	echo "           - MUST HAVE only 1 argument, plain or encrypted text."
 }
 
 
@@ -57,7 +57,11 @@ CIPHER=""
 while [ ! -z "$1" ];
 do
 	case "$1" in
-		-c | --cipher)
+		--help)
+			help
+			exit 0
+			;;
+		--cipher)
 			shift
 			if [ -z "$1" ] || ( [ ! -f "$1" ] && [ -z $(command -v "$1") ] ) ;then
 				help "Invalid a cipher script file."
@@ -65,7 +69,7 @@ do
 			fi
 			CIPHER="$1"
 			;;
-		-d | --dir)
+		--dir)
 			shift
 			if [ -z "$1" ] || [ ! -d "$1" ];then
 				help "Invalid a directory." 
@@ -73,11 +77,11 @@ do
 			fi
 			TARGET="$1"
 			;;
-		-f | --files)
+		--files)
 			shift
 			FILES=( $(echo $1 | sed -e 's/,/ /g') )
 			;;
-		-o | --old)
+		--old)
 			shift
 			if [ -z "$1" ];then
 				help "Invalid a old string"
@@ -85,7 +89,7 @@ do
 			fi
 			OLD_STR_P="$1"
 			;;
-		-n | --new)
+		--new)
 			shift
 			if [ -z "$1" ];then
 				help "Invalid new string"

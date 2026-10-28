@@ -33,7 +33,7 @@ _disk_size_completion() {
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
   # 기본 지원 옵션 목록
-  local all_opts=("-h" "--help" "-r" "-sa" "-sd")
+  local all_opts=("--help" "--recursive" "--sort-asc" "--sort-desc")
 
   # 1. 이미 디렉토리 인자가 입력되었는지 확인 (현재 커서 단어 이전까지 분석)
   local has_dir=0
@@ -56,12 +56,9 @@ _disk_size_completion() {
         used=1
         break
       fi
-      if [[ "$word" == -* && "$word" != "--help" ]]; then
-        case "$opt" in
-          -r) [[ "$word" == *r* ]] && used=1 ;;
-          -sa) [[ "$word" == *sa* || "$word" == *sd* ]] && used=1 ;;
-          -sd) [[ "$word" == *sa* || "$word" == *sd* ]] && used=1 ;;
-        esac
+      if [[ ( "$opt" == "--sort-asc" && "$word" == "--sort-desc" ) || ( "$opt" == "--sort-desc" && "$word" == "--sort-asc" ) ]]; then
+        used=1
+        break
       fi
     done
     [[ $used -eq 0 ]] && filtered_opts+=("$opt")

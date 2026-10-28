@@ -37,17 +37,17 @@ help(){
     fi  
     echo
     echo "Usage:"
-    echo "./upload-mvn-dependencies [-h|--help] [-u|--url] <url> [-r|--releases] <releases_path> [-s|--snapshots] <snapshots_path>  [-m|--m2_dir] <maven_repo_dir> [--run] " 
+    echo "./upload-mvn-dependencies [--help] --url <url> --releases <releases_path> --snapshots <snapshots_path> --m2_dir <maven_repo_dir> [--run]" 
     echo
     echo "Arguments:"
-    echo " -u | --url      : maven repository url. e.g.) http://local-maven"
-    echo " -r | --releases : url path for releases of maven repository. e.g.) repository/maven-releases"
-    echo " -s | --snapshots: url path for snapshots or maven repository. e.g.) repository/maven-snapshots"
-    echo " -m | --m2_dir   : a directory that contains maven dependency files."
+    echo " --url      : maven repository url. e.g.) http://local-maven"
+    echo " --releases : url path for releases of maven repository. e.g.) repository/maven-releases"
+    echo " --snapshots: url path for snapshots or maven repository. e.g.) repository/maven-snapshots"
+    echo " --m2_dir   : a directory that contains maven dependency files."
 	echo
 	echo "Options:"
-	echo " -h | --help     : show this messages."
-	echo " --run           : execute to upload dependency files to maven repository."
+	echo " --help     : show this messages."
+	echo " --run      : execute to upload dependency files to maven repository."
 }
 
 NEXUS_URL=""
@@ -58,19 +58,19 @@ M2_REPO=""
 while [ ! -z "$1" ];
 do
 	case "$1" in
-		-u | --url)
+		--url)
 			shift
 			NEXUS_URL="$1"
 			;;
-		-r | --releases)
+		--releases)
 			shift
 			NEXUS_PATH_RELEASES="$1"
 			;;
-		-s | --snapshots)
+		--snapshots)
 			shift
 			NEXUS_PATH_SNAPSHOTS="$1"
 			;;
-		-m | --m2_dir)
+		--m2_dir)
 			shift
 			if [ ! -d "$1" ];then
 				help "invalid maven repository directory. input=$1"
@@ -78,7 +78,7 @@ do
 			fi
 			M2_REPO="$1"
 			;;
-		-h | --help)
+		--help)
 			help
 			exit 0
 			;;

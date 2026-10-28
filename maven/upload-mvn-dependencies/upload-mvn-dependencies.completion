@@ -58,18 +58,18 @@ _uploadmvndependencies-add_if_new(){
 }
 
 _uploadmvndependencies-add_default_options(){
-	declare -A ARG
-	ARG["-u"]="--url"
-	ARG["-r"]="--releases"
-	ARG["-s"]="--snapshots"
-	ARG["-m"]="--m2_dir"
-	ARG["-h"]="--help"
-
-	local _keys=(${!ARG[@]})
-
-	for key in ${_keys[@]}
-	do
-		_uploadmvndependencies-add_if_new "$key" "${ARG[$key]}"
+	local opts=("--url" "--releases" "--snapshots" "--m2_dir" "--run" "--help")
+	for opt in "${opts[@]}"; do
+		local found=0
+		for word in "${COMP_WORDS[@]}"; do
+			if [ "$word" = "$opt" ]; then
+				found=1
+				break
+			fi
+		done
+		if [ $found -eq 0 ]; then
+			COMPREPLY+=("$opt")
+		fi
 	done
 }
 
@@ -78,23 +78,23 @@ _uploadmvndependencies-add_default_options(){
 _uploadmvndependencies-handle_current(){
 	_uploadmvndependencies-log "in '_uploadmvndependencies-handle_current' " $@
 	case "$1" in
-		-u | --u*)
-			COMPREPLY+=("-u")
+		--u*)
+			COMPREPLY+=("--url")
 			;;
-		-r | --re*)
-			COMPREPLY+=("-r")
+		--re*)
+			COMPREPLY+=("--releases")
 			;;
-		-s | --s*)
-			COMPREPLY+=("-s")
+		--s*)
+			COMPREPLY+=("--snapshots")
 			;;
-		-m | --m*)
-			COMPREPLY+=("-m")
-			;;
-		-h | --h*)
-			COMPREPLY+=("-h")
+		--m*)
+			COMPREPLY+=("--m2_dir")
 			;;
 		--ru*)
 			COMPREPLY+=("--run")
+			;;
+		--h*)
+			COMPREPLY+=("--help")
 			;;
 		*)
 			_uploadmvndependencies-add_default_options
@@ -107,16 +107,7 @@ _uploadmvndependencies-handle_current(){
 _uploadmvndependencies-handle_previous(){
 	_uploadmvndependencies-log "in '_uploadmvndependencies-handle_previous' \$1: $1, \$2:$2"
 	case "$2" in
-		-u | --u*)
-			_uploadmvndependencies-handle_current "$1"
-			;;
-		-r | --re*)
-			_uploadmvndependencies-handle_current "$1"
-			;;
-		-s | --s*)
-			_uploadmvndependencies-handle_current "$1" 
-			;;
-		-m | --m*)
+		--url|--releases|--snapshots|--m2_dir)
 			_uploadmvndependencies-handle_current "$1"
 			;;
 		*)

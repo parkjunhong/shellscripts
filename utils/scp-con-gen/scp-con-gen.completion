@@ -76,7 +76,7 @@ _scp-con-gen-log(){
 }
 
 _scp-con-gen-load-options(){
-	echo "-user -pwd -host -port -file -dir -help"
+	echo "--user --password --host --port --file --dir --help"
 }
 
 # $1: argument
@@ -131,7 +131,7 @@ _scp-con-gen-handle-cli(){
 			;;
 		*)
 			case "$3" in
-				-user | -pwd | -host | -port | -file | -dir)
+				--user | --password | --host | --port | --file | --dir)
 					# input a value
 					;;
 				*)

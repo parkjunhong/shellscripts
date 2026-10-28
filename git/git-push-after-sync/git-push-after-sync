@@ -42,12 +42,12 @@ help(){
   fi  
   echo  
   echo "사용법:"
-  echo "  $FILENAME -s <소스_디렉토리> -t <대상_디렉토리>"
+  echo "  $FILENAME --source <소스_디렉토리> --target <대상_디렉토리>"
   echo "옵션:"
-  echo "  -s, --source  : 변경을 감지하고 복사할 원본 디렉토리"
-  echo "  -t, --target  : 복사된 파일이 위치하며 git 연동이 설정된 대상 디렉토리"
-  echo "  -m, --message : 'git commit' 메시지"
-  echo "  -h, --help    : 도움말 출력"
+  echo "  --source  : 변경을 감지하고 복사할 원본 디렉토리"
+  echo "  --target  : 복사된 파일이 위치하며 git 연동이 설정된 대상 디렉토리"
+  echo "  --message : 'git commit' 메시지"
+  echo "  --help    : 도움말 출력"
 }
 
 ##
@@ -232,10 +232,10 @@ main() {
   
   while [[ "$#" -gt 0 ]]; do
     case $1 in
-      -s|--source) source_dir="$2"; shift 2 ;;
-      -t|--target) target_dir="$2"; shift 2 ;;
-      -m|--message) commit_msg="$2"; shift 2 ;;
-      -h|--help) help; exit 0 ;;
+      --source) source_dir="$2"; shift 2 ;;
+      --target) target_dir="$2"; shift 2 ;;
+      --message) commit_msg="$2"; shift 2 ;;
+      --help) help; exit 0 ;;
       *) help "알 수 없는 파라미터입니다: $1" "${BASH_LINENO[0]}"; exit 1 ;;
     esac
   done

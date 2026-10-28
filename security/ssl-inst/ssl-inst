@@ -20,14 +20,15 @@ help() {
   echo ""
   echo "설명: Let's Encrypt / SSL 인증서를 다운로드하여 Java 및 IDE Cacerts에 추가합니다."
   echo ""
-  echo "사용법: $0 -server <서버 주소> -alias <alias 이름> [-cacerts_files <파일1,파일2,...>]"
+  echo "사용법: $0 --server <서버 주소> --alias <alias 이름> [--cacerts-files <파일1,파일2,...>]"
   echo ""
   echo "필수 인자:"
-  echo "  -server <서버 주소>: Let's Encrypt 인증서를 발급받을 서버 주소 (예: example.com)"
-  echo "  -alias <별칭>: 적용할 인증서 별칭"
+  echo "  --server <서버 주소>: Let's Encrypt 인증서를 발급받을 서버 주소 (예: example.com)"
+  echo "  --alias <별칭>: 적용할 인증서 별칭"
   echo ""
   echo "선택적 인자:"
-  echo "  -cacerts_files <파일1,파일2,...>: 콤마(,)로 구분된 추가할 cacerts 파일 경로 목록"
+  echo "  --cacerts-files <파일1,파일2,...>: 콤마(,)로 구분된 추가할 cacerts 파일 경로 목록"
+  echo "  --help: 도움말 출력"
   echo ""
   echo "참고:"
   echo "  - Java cacerts 파일은 $JAVA_HOME/lib/security/cacerts 에 위치합니다. JAVA_HOME 환경변수가 설정되지 않은 경우, java 명령어를 찾아서 자동으로 경로를 추적합니다."
@@ -47,20 +48,20 @@ STOREPASS="changeit"
 # === 명령줄 인자 처리 ===
 while [[ $# -gt 0 ]]; do
   case $1 in
-    -server)
+    --server)
       SERVER="$2"
       CERT_FILE="$2-cert.crt"
       shift 2
       ;;
-    -alias)
+    --alias)
       ALIAS="$2"
       shift 2     
       ;;
-    -cacerts_files)
+    --cacerts-files)
       CACERTS_FILES="$2"
       shift 2
       ;;
-    -h|--help) # help 옵션 추가
+    --help) # help 옵션 추가
       help
       ;;
     *)

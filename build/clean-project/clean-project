@@ -45,10 +45,10 @@ help(){
     echo "================================================================================"
   fi  
   echo  
-  echo "사용법: ./$FILENAME -d <디렉토리경로> [옵션]"
+  echo "사용법: ./$FILENAME --directory <디렉토리경로> [옵션]"
   echo "옵션:"
-  echo "  -d, --directory <경로>    탐색을 시작할 기준 디렉토리 경로 (필수)"
-  echo "  -h, --help                이 도움말을 표시하고 종료합니다."
+  echo "  --directory <경로>    탐색을 시작할 기준 디렉토리 경로 (필수)"
+  echo "  --help                이 도움말을 표시하고 종료합니다."
 }
 
 ##
@@ -200,11 +200,11 @@ TARGET_DIRECTORY=""
 
 while [[ "$#" -gt 0 ]]; do
   case $1 in
-    -h|--help)
+    --help)
       help "" ""
       exit 0
       ;;
-    -d|--directory)
+    --directory)
       TARGET_DIRECTORY="$2"
       shift 2
       ;;
@@ -218,7 +218,7 @@ while [[ "$#" -gt 0 ]]; do
 done
 
 if [[ -z "${TARGET_DIRECTORY}" ]]; then
-  die "-d 또는 --directory 옵션을 사용하여 디렉토리 경로를 입력해야 합니다."
+  die "--directory 옵션을 사용하여 디렉토리 경로를 입력해야 합니다."
 fi
 
 clean_build_dirs "${TARGET_DIRECTORY}"

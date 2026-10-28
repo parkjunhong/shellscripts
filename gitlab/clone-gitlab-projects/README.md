@@ -18,12 +18,12 @@
 
 ## ⚙️ 파라미터 명세
 
-| 옵션 | 단축 옵션 | 필수 여부 | 설명 |
-| :--- | :---: | :---: | :--- |
-| `--group <group-path>` | `-g` | **필수** | 복제할 GitLab 대상 그룹 경로 (예: `my-security`, `devops/backend`) |
-| `--name <custom-name>` | `-n` | 선택 | 클론 디렉토리의 최상위 그룹 폴더명을 대체할 사용자 정의 이름 |
-| `--dir <target-dir>` | `-d` | 선택 | 프로젝트를 복제할 대상 최상위 디렉토리 경로 (기본값: 현재 작업 디렉토리) |
-| `--help` | `-h` | 선택 | 도움말을 출력하고 종료합니다. |
+| 옵션 | 필수 여부 | 설명 |
+| :--- | :---: | :--- |
+| `--group <group-path>` | **필수** | 복제할 GitLab 대상 그룹 경로 (예: `my-security`, `devops/backend`) |
+| `--name <custom-name>` | 선택 | 클론 디렉토리의 최상위 그룹 폴더명을 대체할 사용자 정의 이름 |
+| `--dir <target-dir>` | 선택 | 프로젝트를 복제할 대상 최상위 디렉토리 경로 (기본값: 현재 작업 디렉토리) |
+| `--help` | 선택 | 도움말을 출력하고 종료합니다. |
 
 > **참고**: 스크립트 사용 전 [`clone-gitlab-projects`](./clone-gitlab-projects)의 `main()` 함수 내 `gitlab_url` 및 `gitlab_pat` 변수에 접속할 GitLab 서버 주소와 Personal Access Token을 설정해야 합니다.
 

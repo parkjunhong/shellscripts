@@ -19,15 +19,15 @@
 
 ## ⚙️ 파라미터 명세
 
-| 파라미터 | 단축 옵션 | 필수 여부 | 기본값 | 설명 |
-| :--- | :---: | :---: | :---: | :--- |
-| `--source <파일>` | `-s` | **필수** | - | 비교 기준이 되는 원본 파일 경로 |
-| `--file <패턴>` | `-f` | **필수** | - | 검색할 대상 파일명 또는 패턴 (예: `*.yml`, `application-*`) |
-| `--directory <디렉토리>` | `-d` | 선택 | `.` (현재 디렉토리) | 비교 대상을 탐색할 기준 디렉토리 |
-| `--copy-content` | - | 선택 | 비활성 | 내용이 다른 대상 파일의 내용을 기준 파일 내용으로 덮어씁니다. |
-| `--no-ne-files` | - | 선택 | 비활성 | 동일하지 않은 파일 목록 출력을 보고서에서 제외합니다. |
-| `--dry-run` | - | 선택 | 비활성 | 실제 비교 및 파일 복사 과정을 가상으로 시뮬레이션합니다. |
-| `--help` | `-h` | 선택 | - | 도움말 메시지를 표시합니다. |
+| 파라미터 | 필수 여부 | 기본값 | 설명 |
+| :--- | :---: | :---: | :--- |
+| `--source <파일>` | **필수** | - | 비교 기준이 되는 원본 파일 경로 |
+| `--file <패턴>` | **필수** | - | 검색할 대상 파일명 또는 패턴 (예: `*.yml`, `application-*`) |
+| `--directory <디렉토리>` | 선택 | `.` (현재 디렉토리) | 비교 대상을 탐색할 기준 디렉토리 |
+| `--copy-content` | 선택 | 비활성 | 내용이 다른 대상 파일의 내용을 기준 파일 내용으로 덮어씁니다. |
+| `--no-ne-files` | 선택 | 비활성 | 동일하지 않은 파일 목록 출력을 보고서에서 제외합니다. |
+| `--dry-run` | 선택 | 비활성 | 실제 비교 및 파일 복사 과정을 가상으로 시뮬레이션합니다. |
+| `--help` | 선택 | - | 도움말 메시지를 표시합니다. |
 
 ---
 
@@ -35,17 +35,17 @@
 
 ### 1. 기준 설정 파일과 하위 설정 파일 비교
 ```bash
-diff-file -s ./config-template.yml -f "config.yml" -d /opt/services
+diff-file --source ./config-template.yml --file "config.yml" --directory /opt/services
 ```
 
 ### 2. 가상 시뮬레이션(Dry-run) 실행
 ```bash
-diff-file -s ./standard-env.sh -f "env.sh" -d . --copy-content --dry-run
+diff-file --source ./standard-env.sh --file "env.sh" --directory . --copy-content --dry-run
 ```
 
 ### 3. 내용이 다른 파일들을 기준 파일로 일괄 동기화
 ```bash
-diff-file -s ./standard-env.sh -f "env.sh" -d /data/projects --copy-content
+diff-file --source ./standard-env.sh --file "env.sh" --directory /data/projects --copy-content
 ```
 
 ---

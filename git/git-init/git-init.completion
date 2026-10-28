@@ -32,17 +32,17 @@ _git_init_completion() {
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
   # 명령어 옵션 목록 설정 / Set command options list
-  opts="-b --branch -r --repository -h --help"
+  opts="--branch --repository --help"
 
   case "${prev}" in
-    -b|--branch)
+    --branch)
       local branches
       # 로컬 브랜치 목록 제안 / Suggest local branch list
       branches=$(git branch 2>/dev/null | sed -e 's/*//' | tr -d ' ' || true)
       COMPREPLY=( $(compgen -W "${branches}" -- "${cur}") )
       return 0
       ;;
-    -r|--repository)
+    --repository)
       # 파라미터가 경로일 경우 파일/디렉토리 추천 / Recommend files/directories if parameter is a path
       COMPREPLY=( $(compgen -f -d -- "${cur}") )
       return 0

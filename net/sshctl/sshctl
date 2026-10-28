@@ -77,14 +77,14 @@ help() {
 사용법 (Usage):
   sshctl [global-options]               # 기본: 전체 목록에서 선택 후 접속
   sshctl [global-options] <expr>        # expr 로 필터링 후 선택/접속
-  sshctl [global-options] <expr> -n|--number <N>
-  sshctl [global-options] -n|--number <N> [expr]
-  sshctl [global-options] -l|--list-all [expr]
-  sshctl [global-options] -a|--add-connection
-  sshctl [global-options] -m|--modify-connection [expr]
-  sshctl [global-options] -d|--delete-connection [expr]
-  sshctl [global-options] -mg|--move-group [expr]
-  sshctl [global-options] -mc|--modify-credential [expr]
+  sshctl [global-options] <expr> --number <N>
+  sshctl [global-options] --number <N> [expr]
+  sshctl [global-options] --list-all [expr]
+  sshctl [global-options] --add-connection
+  sshctl [global-options] --modify-connection [expr]
+  sshctl [global-options] --delete-connection [expr]
+  sshctl [global-options] --move-group [expr]
+  sshctl [global-options] --modify-credential [expr]
 
 Global options:
   --config <file>
@@ -95,37 +95,37 @@ Global options:
     - '민감정보'(username, credential) 암/복호화에 사용될 OpenSSH private key 경로를 지정합니다.
     - 지정하지 않으면 기본값(${MASTERKEY_DEFAULT})을 사용합니다.
 
-  -s, --show-credential
+  --show-credential
     - 목록/미리보기에서 credential 값을 평문으로 출력합니다.
     - 기본값은 항상 "****************" (16개 별표)로 마스킹합니다.
 
-  -n, --number <N>
+  --number <N>
     - 바로 접속 기능에서 사용할 번호(#)를 지정합니다.
     - 이 옵션은 connect 동작에서만 유효하며, 목록을 출력하지 않고 N번째 항목으로 바로 접속합니다.
-    - 다른 모드 옵션(-l/-a/-m/-d/-mg/-mc)과는 함께 사용할 수 없습니다.
+    - 다른 모드 옵션(--list-all/--add-connection/--modify-connection/--delete-connection/--move-group/--modify-credential)과는 함께 사용할 수 없습니다.
 
 Commands:
-  -l, --list-all [expr]
+  --list-all [expr]
     - SSH connection 목록을 조회합니다.
     - 검색식 expr 이 있는 경우, expr 에 해당하는 connection 만 필터링합니다.
 
-  -a, --add-connection
+  --add-connection
     - 새로운 SSH connection 정보를 추가합니다 (interactive).
     - auth_type 이 'key' 인 경우, key path 는 입력값 그대로 저장됩니다. 접속 시점에 ~, \$VAR, \${VAR} 만 해석합니다.
     - auth_type 이 'password' 인 경우, connection 저장 후 sshpass 가 없으면 자동 설치를 시도합니다.
 
-  -m, --modify-connection [expr]
+  --modify-connection [expr]
     - 검색식 expr 으로 connection 을 고른 뒤, 선택된 connection 을 수정합니다.
     - 수정 후 결과 connection 1건을 표 형태로 보여줍니다.
 
-  -d, --delete-connection [expr]
+  --delete-connection [expr]
     - 검색식 expr 으로 connection 을 고른 뒤, 삭제 대상 connection 1건을 표로 출력합니다.
     - 사용자가 y/yes 로 확인하면 실제로 삭제합니다.
 
-  -mg, --move-group [expr]
+  --move-group [expr]
     - 검색식 expr 으로 connection 을 고른 뒤, 그룹(group) 값을 변경합니다.
 
-  -mc, --modify-credential [expr]
+  --modify-credential [expr]
     - 검색식 expr 으로 password 방식 connection 목록을 고른 뒤, 번호(#)를 콤마(,)로 여러 개 선택합니다.
       - 'credential' 정보는 평문(plain text)로 보여줍니다.
     - 입력한 새 password(credential)를 선택된 여러 connection에 일괄 적용합니다.
@@ -136,8 +136,8 @@ Commands:
      - 전체 connection 목록에서 번호(#)를 선택해 접속합니다.
 
   2) sshctl <expr>
-     - (선택) -n|--number <N> 을 함께 주면, 목록을 보여주지 않고 N번째 항목으로 바로 접속합니다.
-       예: sshctl mycom -n 2 / sshctl -n 2 mycom
+     - (선택) --number <N> 을 함께 주면, 목록을 보여주지 않고 N번째 항목으로 바로 접속합니다.
+       예: sshctl mycom --number 2 / sshctl --number 2 mycom
 
      - <expr> 이 "-" 로 시작하는 옵션이 아니면 검색식으로 간주합니다.
      - expr 으로 필터링 후, 번호(#)를 선택해 접속합니다.
@@ -3174,28 +3174,28 @@ main() {
         arg_masterkey="$1"
         shift
         ;;
-      -s|--show-credential)
+      --show-credential)
         SHOW_CREDENTIAL="true"
         shift
         ;;
-      -n|--number)
+      --number)
         shift || true
         if [[ $# -eq 0 ]]; then
-          echo "[ERROR] --number|-n 옵션에는 숫자 값이 필요합니다." >&2
+          echo "[ERROR] --number 옵션에는 숫자 값이 필요합니다." >&2
           exit 1
         fi
         if ! [[ "$1" =~ ^[0-9]+$ ]]; then
-          echo "[ERROR] --number|-n 값은 숫자여야 합니다: $1" >&2
+          echo "[ERROR] --number 값은 숫자여야 합니다: $1" >&2
           exit 1
         fi
         if [[ -n "${CONNECT_NUMBER:-}" ]]; then
-          echo "[ERROR] --number|-n 옵션은 1회만 사용할 수 있습니다." >&2
+          echo "[ERROR] --number 옵션은 1회만 사용할 수 있습니다." >&2
           exit 1
         fi
         CONNECT_NUMBER="$1"
         shift
         ;;
-      -h|--help)
+      --help)
         show_help="true"
         shift
         ;;
@@ -3280,22 +3280,22 @@ main() {
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --list|-l|--list-all)
+      --list|--list-all)
         mode="list"; mode_token="$1"; ((mode_count+=1))
         ;;
-      --add-connection|-a)
+      --add-connection)
         mode="add"; mode_token="$1"; ((mode_count+=1))
         ;;
-      --modify-connection|-m)
+      --modify-connection)
         mode="modify"; mode_token="$1"; ((mode_count+=1))
         ;;
-      --delete-connection|-d)
+      --delete-connection)
         mode="delete"; mode_token="$1"; ((mode_count+=1))
         ;;
-      --move-group|-mg)
+      --move-group)
         mode="move-group"; mode_token="$1"; ((mode_count+=1))
         ;;
-      --modify-credential|-mc)
+      --modify-credential)
         mode="modify-credential"; mode_token="$1"; ((mode_count+=1))
         ;;
       --version)

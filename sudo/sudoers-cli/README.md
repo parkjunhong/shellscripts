@@ -27,15 +27,15 @@
 
 ## ⚙️ 파라미터 명세
 
-| 파라미터 | 단축 옵션 | 필수 여부 | 기본값 | 설명 |
-| :--- | :---: | :---: | :---: | :--- |
-| `--user <계정명>` | `-u` | 조건부 필수 | - | 권한을 부여할 대상 시스템 계정 (계정 또는 그룹 중 택 1 필수) |
-| `--group <그룹명>` | `-g` | 조건부 필수 | - | 권한을 부여할 대상 시스템 그룹 (계정 또는 그룹 중 택 1 필수) |
-| `--host <호스트>` | `-H` | 선택 | `ALL` | 명령어 실행을 허용할 호스트 (예: `ALL`, `localhost`, `web-01`) |
-| `--runas <사용자>` | `-r` | 선택 | `ALL` | 명령 실행 시 차용할 권한 (예: `ALL`, `root`, `tomcat:was`) |
-| `--option <옵션>` | `-o` | 선택 | `NONE` | Sudoers 태그 옵션 (예: `NOPASSWD`, `NOEXEC`, `SETENV` 등 콤마 구분) |
-| `[명령어1] [명령어2]...` | - | **필수** | - | 실행을 허용할 명령어 목록 (절대 경로, 바이너리명 또는 `ALL`) |
-| `--help` | `-h` | 선택 | - | 도움말 메시지를 표시합니다. |
+| 파라미터 | 필수 여부 | 기본값 | 설명 |
+| :--- | :---: | :---: | :--- |
+| `--user <계정명>` | 조건부 필수 | - | 권한을 부여할 대상 시스템 계정 (계정 또는 그룹 중 택 1 필수) |
+| `--group <그룹명>` | 조건부 필수 | - | 권한을 부여할 대상 시스템 그룹 (계정 또는 그룹 중 택 1 필수) |
+| `--host <호스트>` | 선택 | `ALL` | 명령어 실행을 허용할 호스트 (예: `ALL`, `localhost`, `web-01`) |
+| `--runas <사용자>` | 선택 | `ALL` | 명령 실행 시 차용할 권한 (예: `ALL`, `root`, `tomcat:was`) |
+| `--option <옵션>` | 선택 | `NONE` | Sudoers 태그 옵션 (예: `NOPASSWD`, `NOEXEC`, `SETENV` 등 콤마 구분) |
+| `[명령어1] [명령어2]...` | **필수** | - | 실행을 허용할 명령어 목록 (절대 경로, 바이너리명 또는 `ALL`) |
+| `--help` | 선택 | - | 도움말 메시지를 표시합니다. |
 
 ---
 
@@ -43,17 +43,17 @@
 
 ### 1. 특정 계정에 비밀번호 면제(`NOPASSWD`) 명령어 권한 부여
 ```bash
-sudoers-cli -u devuser -o NOPASSWD /usr/bin/systemctl /usr/bin/cat
+sudoers-cli --user devuser --option NOPASSWD /usr/bin/systemctl /usr/bin/cat
 ```
 
 ### 2. 특정 그룹에 호스트 및 복수 옵션(`NOPASSWD,NOEXEC`) 적용
 ```bash
-sudoers-cli -g devops -H web-server-01 -o NOPASSWD,NOEXEC /usr/bin/systemctl
+sudoers-cli --group devops --host web-server-01 --option NOPASSWD,NOEXEC /usr/bin/systemctl
 ```
 
 ### 3. 특정 계정에 전역 관리자 권한(`ALL`) 부여
 ```bash
-sudoers-cli -u admin ALL
+sudoers-cli --user admin ALL
 ```
 
 ---

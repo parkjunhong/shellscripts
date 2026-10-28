@@ -7,28 +7,28 @@
 ## ✨ 주요 특징
 
 - **자동 타임스탬프 결합**:
-  - `-d, --date`: 현재 날짜(`YYYYMMDD`)를 접미사로 자동 부착 (예: `app.conf` &rarr; `app-20261027.conf`)
-  - `-t, --time`: 현재 시각(`YYYYMMDDHHMMSS`)까지 상세 타임스탬프 부착
-  - `-s, --suffix`: 사용자가 지정한 임의의 문자열 접미사 부착
-- **확장자 위치 제어 (`-e, --ext`)**:
+  - `--date`: 현재 날짜(`YYYYMMDD`)를 접미사로 자동 부착 (예: `app.conf` &rarr; `app-20261027.conf`)
+  - `--time`: 현재 시각(`YYYYMMDDHHMMSS`)까지 상세 타임스탬프 부착
+  - `--suffix`: 사용자가 지정한 임의의 문자열 접미사 부착
+- **확장자 위치 제어 (`--ext`)**:
   - 기본: 확장자 앞 결합 (`filename-<suffix>.ext`)
-  - `-e` 지정: 확장자 뒤 결합 (`filename.ext-<suffix>`)
-- **출력 디렉토리 자동 생성 (`-o, --output`)**: 백업 파일이 저장될 대상 디렉토리를 지정할 수 있으며 미존재 시 대화형으로 생성합니다.
+  - `--ext` 지정: 확장자 뒤 결합 (`filename.ext-<suffix>`)
+- **출력 디렉토리 자동 생성 (`--output`)**: 백업 파일이 저장될 대상 디렉토리를 지정할 수 있으며 미존재 시 대화형으로 생성합니다.
 - **지능형 Bash 자동완성**: 디렉토리 및 파일, 전용 옵션을 자동으로 완성합니다.
 
 ---
 
 ## ⚙️ 파라미터 명세
 
-| 파라미터 | 단축 옵션 | 필수 여부 | 기본값 | 설명 |
-| :--- | :---: | :---: | :---: | :--- |
-| `<filename>` | - | **필수** | - | 백업/복제할 원본 파일 경로 |
-| `--date` | `-d` | 선택 | 기본값 | 현재 날짜(`YYYYMMDD`) 접미사 부착 |
-| `--time` | `-t` | 선택 | - | 현재 날짜 및 시각(`YYYYMMDDHHMMSS`) 접미사 부착 |
-| `--suffix <문자열>` | `-s` | 선택 | - | 사용자가 직접 정의한 접미사 (지정 시 `-d`/`-t` 무시) |
-| `--ext` | `-e` | 선택 | 비활성 | 확장자 뒤에 접미사 부착 (`<name>.<ext>-<suffix>`) |
-| `--output <디렉토리>` | `-o` | 선택 | 동일 경로 | 복사본이 생성될 목적지 디렉토리 경로 |
-| `--help` | `-h` | 선택 | - | 도움말 메시지를 표시합니다. |
+| 파라미터 | 필수 여부 | 기본값 | 설명 |
+| :--- | :---: | :---: | :--- |
+| `<filename>` | **필수** | - | 백업/복제할 원본 파일 경로 |
+| `--date` | 선택 | 기본값 | 현재 날짜(`YYYYMMDD`) 접미사 부착 |
+| `--time` | 선택 | - | 현재 날짜 및 시각(`YYYYMMDDHHMMSS`) 접미사 부착 |
+| `--suffix <문자열>` | 선택 | - | 사용자가 직접 정의한 접미사 (지정 시 `--date`/`--time` 무시) |
+| `--ext` | 선택 | 비활성 | 확장자 뒤에 접미사 부착 (`<name>.<ext>-<suffix>`) |
+| `--output <디렉토리>` | 선택 | 동일 경로 | 복사본이 생성될 목적지 디렉토리 경로 |
+| `--help` | 선택 | - | 도움말 메시지를 표시합니다. |
 
 ---
 
@@ -36,19 +36,19 @@
 
 ### 1. 설정 파일에 오늘 날짜를 붙여 복제
 ```bash
-copy-suffix -d ./nginx.conf
+copy-suffix --date ./nginx.conf
 # 결과: ./nginx-20261027.conf
 ```
 
 ### 2. 백업 디렉토리에 상세 타임스탬프를 확장자 뒤에 붙여 백업
 ```bash
-copy-suffix -t -e ./application.yml -o /data/backup
+copy-suffix --time --ext ./application.yml --output /data/backup
 # 결과: /data/backup/application.yml-20261027134500
 ```
 
 ### 3. 사용자 정의 접미사 부착
 ```bash
-copy-suffix -s "backup-v1" ./service.sh
+copy-suffix --suffix "backup-v1" ./service.sh
 # 결과: ./service-backup-v1.sh
 ```
 

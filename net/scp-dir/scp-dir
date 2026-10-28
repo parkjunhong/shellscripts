@@ -60,34 +60,34 @@ help() {
   cat << EOF
 
 사용법 (Usage):
-  $FILENAME -H <대상호스트> -s <소스경로> -d <원격대상경로> [옵션...]
+  $FILENAME --host <대상호스트> --src <소스경로> --dest <원격대상경로> [옵션...]
 
 설명 (Description):
   'sshpass' 도구를 이용하여 비밀번호 기반 SSH 인증을 자동화하고,
   원격 서버에 대상 디렉토리를 자동 생성한 후 로컬 파일 또는 디렉토리를 안전하게 복사(SCP)합니다.
 
 필수 옵션 (Required Options):
-  -H, --host <host>                대상 원격 서버 호스트 (IP 또는 도메인)
-  -s, --src, --source <src>        전송할 로컬 원본 파일 또는 디렉토리 경로
-  -d, --dest, --destination <dest> 원격 서버 대상 디렉토리 경로
+  --host <host>                대상 원격 서버 호스트 (IP 또는 도메인)
+  --src, --source <src>        전송할 로컬 원본 파일 또는 디렉토리 경로
+  --dest, --destination <dest> 원격 서버 대상 디렉토리 경로
 
 선택 옵션 (Optional Options):
-  -u, --user, --username <user>    원격 서버 사용자 계정 (기본값: 현재 로컬 사용자 '${USER:-whoami}')
-  -p, --port <port>                원격 SSH 포트 번호 (기본값: 22)
-  -P, -i, --passwd, --password <passwd>
-                                   원격 서버 접속 비밀번호 (생략 시 대화형 마스킹 입력 프롬프트 제공)
-  -o, --ssh-option <option>        ssh/scp 추가 옵션 (예: -o "ConnectTimeout=10")
-  -h, --help                       이 도움말 출력 및 종료
+  --user, --username <user>    원격 서버 사용자 계정 (기본값: 현재 로컬 사용자 '${USER:-whoami}')
+  --port <port>                원격 SSH 포트 번호 (기본값: 22)
+  --passwd, --password <passwd>
+                               원격 서버 접속 비밀번호 (생략 시 대화형 마스킹 입력 프롬프트 제공)
+  --ssh-option <option>        ssh/scp 추가 옵션 (예: --ssh-option "ConnectTimeout=10")
+  --help                       이 도움말 출력 및 종료
 
 예시 (Examples):
   # 1) 기본 전송 (비밀번호 대화형 마스킹 입력)
-  $FILENAME -H 192.168.1.100 -s ./my-app -d /opt/deploy
+  $FILENAME --host 192.168.1.100 --src ./my-app --dest /opt/deploy
 
   # 2) 원격 사용자 및 포트 지정 전송
-  $FILENAME -u deployer -H 192.168.1.100 -p 2222 -s ./config.json -d /etc/my-app/
+  $FILENAME --user deployer --host 192.168.1.100 --port 2222 --src ./config.json --dest /etc/my-app/
 
   # 3) 비밀번호 옵션 지정 전송
-  $FILENAME -u root -H 10.0.0.5 -P "mypassword" -s ./dist -d /var/www/html/
+  $FILENAME --user root --host 10.0.0.5 --passwd "mypassword" --src ./dist --dest /var/www/html/
 EOF
 }
 
@@ -171,9 +171,9 @@ main() {
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      -H|--host)
+      --host)
         if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == -* ]]; then
-          help "'-H|--host' 옵션 뒤에 대상 호스트를 지정해야 합니다." "$LINENO"
+          help "'--host' 옵션 뒤에 대상 호스트를 지정해야 합니다." "$LINENO"
           exit 1
         fi
         host="$2"
@@ -183,9 +183,9 @@ main() {
         host="${1#*=}"
         shift
         ;;
-      -u|--user|--username)
+      --user|--username)
         if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == -* ]]; then
-          help "'-u|--user' 옵션 뒤에 사용자 계정을 지정해야 합니다." "$LINENO"
+          help "'--user' 옵션 뒤에 사용자 계정을 지정해야 합니다." "$LINENO"
           exit 1
         fi
         user="$2"
@@ -195,9 +195,9 @@ main() {
         user="${1#*=}"
         shift
         ;;
-      -p|--port)
+      --port)
         if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == -* ]]; then
-          help "'-p|--port' 옵션 뒤에 포트 번호를 지정해야 합니다." "$LINENO"
+          help "'--port' 옵션 뒤에 포트 번호를 지정해야 합니다." "$LINENO"
           exit 1
         fi
         port="$2"
@@ -207,7 +207,7 @@ main() {
         port="${1#*=}"
         shift
         ;;
-      -P|-i|--passwd|--password)
+      --passwd|--password)
         if [[ $# -lt 2 || -z "${2:-}" ]]; then
           help "비밀번호 옵션 뒤에 유효한 비밀번호를 지정해야 합니다." "$LINENO"
           exit 1
@@ -219,9 +219,9 @@ main() {
         passwd="${1#*=}"
         shift
         ;;
-      -s|--src|--source)
+      --src|--source)
         if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == -* ]]; then
-          help "'-s|--src' 옵션 뒤에 전송할 원본 파일/디렉토리 경로를 지정해야 합니다." "$LINENO"
+          help "'--src' 옵션 뒤에 전송할 원본 파일/디렉토리 경로를 지정해야 합니다." "$LINENO"
           exit 1
         fi
         src="$2"
@@ -231,9 +231,9 @@ main() {
         src="${1#*=}"
         shift
         ;;
-      -d|--dest|--destination)
+      --dest|--destination)
         if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == -* ]]; then
-          help "'-d|--dest' 옵션 뒤에 원격 대상 디렉토리 경로를 지정해야 합니다." "$LINENO"
+          help "'--dest' 옵션 뒤에 원격 대상 디렉토리 경로를 지정해야 합니다." "$LINENO"
           exit 1
         fi
         dest="$2"
@@ -243,15 +243,15 @@ main() {
         dest="${1#*=}"
         shift
         ;;
-      -o|--ssh-option)
+      --ssh-option)
         if [[ $# -lt 2 || -z "${2:-}" ]]; then
-          help "'-o|--ssh-option' 옵션 뒤에 ssh 옵션을 지정해야 합니다." "$LINENO"
+          help "'--ssh-option' 옵션 뒤에 ssh 옵션을 지정해야 합니다." "$LINENO"
           exit 1
         fi
         extra_ssh_opts+=("-o" "$2")
         shift 2
         ;;
-      -h|--help)
+      --help)
         help "" ""
         exit 0
         ;;

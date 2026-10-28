@@ -21,15 +21,15 @@ Java 런타임의 기본 TrustStore(`$JAVA_HOME/lib/security/cacerts`) 및 지�
 ## ⚙️ 파라미터 명세
 
 ```bash
-ssl-del -server <서버 주소> -alias <별칭> [-cacerts_files <파일1,파일2,...>]
+ssl-del --server <서버 주소> --alias <별칭> [--cacerts-files <파일1,파일2,...>]
 ```
 
 | 파라미터 | 필수 여부 | 설명 |
 | :--- | :---: | :--- |
-| `-server <서버 주소>` | **필수** | 대상 서버 도메인 또는 호스트명 (예: `example.com`) |
-| `-alias <별칭>` | **필수** | TrustStore에서 삭제할 인증서 별칭(Alias) |
-| `-cacerts_files <경로목록>` | 선택 | 기본 Java 외에 추가로 인증서를 삭제할 cacerts 파일 경로 (콤마 구분) |
-| `-h`, `--help` | 선택 | 도움말 메시지 출력 및 종료 |
+| `--server <서버 주소>` | **필수** | 대상 서버 도메인 또는 호스트명 (예: `example.com`) |
+| `--alias <별칭>` | **필수** | TrustStore에서 삭제할 인증서 별칭(Alias) |
+| `--cacerts-files <경로목록>` | 선택 | 기본 Java 외에 추가로 인증서를 삭제할 cacerts 파일 경로 (콤마 구분) |
+| `--help` | 선택 | 도움말 메시지 출력 및 종료 |
 
 > **참고**: Java 시스템 영역 Keystore 수정을 위해 스크립트 실행 시 내부적으로 `sudo` 권한을 요청합니다.
 
@@ -39,13 +39,13 @@ ssl-del -server <서버 주소> -alias <별칭> [-cacerts_files <파일1,파일2
 
 ```bash
 # 1) 기본 Java TrustStore에서 특정 인증서 삭제
-sudo ./ssl-del -server mycompany.com -alias mycompany.com
+sudo ./ssl-del --server mycompany.com --alias mycompany.com
 
 # 2) Java TrustStore와 함께 IDE cacerts 파일에서도 일괄 삭제
 sudo ./ssl-del \
-  -server mycompany.com \
-  -alias mycompany.com \
-  -cacerts_files ~/.local/share/JetBrains/cacerts,/opt/custom/cacerts
+  --server mycompany.com \
+  --alias mycompany.com \
+  --cacerts-files ~/.local/share/JetBrains/cacerts,/opt/custom/cacerts
 ```
 
 ---

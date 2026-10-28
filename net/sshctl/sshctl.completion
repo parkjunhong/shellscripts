@@ -70,7 +70,7 @@ _sshctl_completion() {
   cur="$2"
   prev="$3"
 
-  # --- Mode Options (mutual exclusive; long+short) ---
+  # --- Mode Options (mutual exclusive; long only) ---
   # 상호 배타적 모드 옵션: 한 번만 사용 가능
   local mode_opts_all=(
     --add-connection
@@ -79,35 +79,26 @@ _sshctl_completion() {
     --delete-connection
     --move-group
     --list-all
-    -a
-    -m
-    -mc
-    -d
-    -mg
-    -l
   )
 
-  # --- Global options (unique; long+short) ---
+  # --- Global options (unique; long only) ---
   # 전역 옵션: 항상 사용 가능하나, 동일 역할 옵션은 1회만
   local global_opts_all=(
     --config
     --masterkey
     --help
-    -h
   )
 
-  # --- Sub option: only valid when list-all/-l is used ---
-  # --list-all/-l 사용 시에만 의미 있는 옵션
+  # --- Sub option: only valid when list-all is used ---
+  # --list-all 사용 시에만 의미 있는 옵션
   local list_sub_opts_all=(
     --show-credential
-    -s
   )
 
   # --- Connect sub option: direct connect by number (connect only) ---
   # 접속(connect) 전용 옵션: 검색 결과의 N번째(#)로 바로 접속
   local connect_sub_opts_all=(
     --number
-    -n
   )
 
   # --------------------------------------
@@ -115,7 +106,7 @@ _sshctl_completion() {
   #         If previous token expects a file/dir path
   # --------------------------------------
   case "$prev" in
-    --number|-n)
+    --number)
       # 숫자 자동완성: 전체 connections 개수(설정 파일 기준)만큼 1..N
       local config_file_num
       config_file_num="${HOME}/.sshctl/configuration.conf"
@@ -177,33 +168,33 @@ _sshctl_completion() {
   for w in "${COMP_WORDS[@]:1}"; do
     case "$w" in
       # 모드 옵션 (long/short)
-      --add-connection|-a|\
-      --modify-connection|-m|\
-      --modify-credential|-mc|\
-      --delete-connection|-d|\
-      --move-group|-mg|\
-      --list-all|-l)
+      --add-connection|\
+      --modify-connection|\
+      --modify-credential|\
+      --delete-connection|\
+      --move-group|\
+      --list-all)
         mode_used=1
-        [[ "$w" == "--list-all" || "$w" == "-l" ]] && listall_used=1
-        [[ "$w" == "--modify-connection" || "$w" == "-m" ]] && modify_used=1
-        [[ "$w" == "--modify-credential" || "$w" == "-mc" ]] && modify_cred_used=1
+        [[ "$w" == "--list-all" ]] && listall_used=1
+        [[ "$w" == "--modify-connection" ]] && modify_used=1
+        [[ "$w" == "--modify-credential" ]] && modify_cred_used=1
         ;;
-      # 전역 옵션 (long/short)
+      # 전역 옵션
       --config)
         used_config=1
         ;;
       --masterkey)
         used_masterkey=1
         ;;
-      --help|-h)
+      --help)
         used_help=1
         ;;
-      # sub option (long/short)
-      --show-credential|-s)
+      # sub option
+      --show-credential)
         used_show_credential=1
         ;;
-      # connect sub option (long/short)
-      --number|-n)
+      # connect sub option
+      --number)
         used_number=1
         ;;
     esac
@@ -216,13 +207,13 @@ _sshctl_completion() {
   local candidates=()
 
   # (A) Mode options: 아무 모드도 아직 선택되지 않은 경우에만 제안
-  #     suggest all mode options (long+short) only when none is used yet
+  #     suggest all mode options only when none is used yet
   if (( mode_used == 0 && used_number == 0 )); then
     if (( used_show_credential == 1 )); then
       local opt
       for opt in "${mode_opts_all[@]}"; do
         case "$opt" in
-          --modify-credential|-mc) continue ;;
+          --modify-credential) continue ;;
         esac
         candidates+=( "$opt" )
       done

@@ -36,17 +36,18 @@ usage(){
 	echo "Change filenames using a regular expression (sed)"
 	echo
 	echo "[Usage]"
-	echo "ren-files -d <directory> -i <input regex> -o <output regex> -f"
+	echo "ren-files --dir <directory> --input <input regex> --output <output regex> [--force]"
 	echo
 	echo "[Parameters]"
-	echo " -d: directory"
-	echo " -i: 'sed' regex for input filename(s)."
-	echo " -o: 'sed' regex for output filename(s)."
-	echo " -f: (optional) rename forcely."
+	echo " --dir   : directory"
+	echo " --input : 'sed' regex for input filename(s)."
+	echo " --output: 'sed' regex for output filename(s)."
+	echo " --force : (optional) rename forcely."
+	echo " --help  : display this help message."
 	echo
 	echo "[Examples]"
 	echo " before: a-b.txt, a-c.txt, b-c.txt"
-	echo " [command] ren-files -d . -i '(a)-(.+)' -o '\2-\1'"
+	echo " [command] ren-files --dir . --input '(a)-(.+)' --output '\2-\1'"
 	echo " after: b-a.txt, c-a.txt, b-c.txt"
 	echo
 }
@@ -59,26 +60,26 @@ FORCE=0
 while [ "$1" != "" ];
 do
 	case $1 in
-		-h | --help)
+		--help)
 			usage
 			exit 0
 			;;
 		# directory
-		-d)
+		--dir)
 			shift
 			dir="$1"
 			;;
 		# delete forecely
-		-f)
+		--force)
 			FORCE=1
 			;;
 		# regex for target files
-		-i)
+		--input)
 			shift
 			regex_input="$1"
 			;;
 		# regex for outpt files
-		-o)
+		--output)
 			shift
 			regex_output="$1"
 			;;

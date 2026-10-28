@@ -12,8 +12,8 @@
   - 메모리 정보: Total, Usage, Shared, Free, Buffer/Cache, Available 메모리 실시간 측정
 - **디스크 사용량 정밀 테이블 출력**:
   - Filesystem, Size, Used, Avail, Use%, Mounted on 상세 출력
-  - 특정 파일시스템 제외 필터링 (`-f, --exclude-fs`)
-  - 특정 마운트 경로 제외 필터링 (`-m, --exclude-mnt`)
+  - 특정 파일시스템 제외 필터링 (`--exclude-fs`)
+  - 특정 마운트 경로 제외 필터링 (`--exclude-mnt`)
   - 파일시스템(`fs`) 또는 마운트 경로(`mnt`) 기준 오름차순/내림차순 정렬 지원
 - **지능형 Bash 자동완성**: 마운트 지점 및 파일시스템 이름, 정렬 옵션을 실시간으로 감지하여 자동완성합니다.
 
@@ -21,13 +21,13 @@
 
 ## ⚙️ 파라미터 명세
 
-| 파라미터 | 단축 옵션 | 필수 여부 | 기본값 | 설명 |
-| :--- | :---: | :---: | :---: | :--- |
-| `--exclude-fs <문자열>` | `-f` | 선택 | - | Filesystem 컬럼에서 제외할 문자열 (다중 지정 가능) |
-| `--exclude-mnt <문자열>` | `-m` | 선택 | - | Mounted on 컬럼에서 제외할 문자열 (다중 지정 가능) |
-| `--sort-key <fs\|mnt>` | - | 선택 | - | 디스크 정렬 기준 (`fs`: 파일시스템, `mnt`: 마운트 지점) |
-| `--sort-dir <asc\|desc>` | - | 선택 | `asc` | 정렬 방향 (`asc`: 오름차순, `desc`: 내림차순) |
-| `--help` | `-h` | 선택 | - | 도움말 메시지를 표시합니다. |
+| 파라미터 | 필수 여부 | 기본값 | 설명 |
+| :--- | :---: | :---: | :--- |
+| `--exclude-fs <문자열>` | 선택 | - | Filesystem 컬럼에서 제외할 문자열 (다중 지정 가능) |
+| `--exclude-mnt <문자열>` | 선택 | - | Mounted on 컬럼에서 제외할 문자열 (다중 지정 가능) |
+| `--sort-key <fs\|mnt>` | 선택 | - | 디스크 정렬 기준 (`fs`: 파일시스템, `mnt`: 마운트 지점) |
+| `--sort-dir <asc\|desc>` | 선택 | `asc` | 정렬 방향 (`asc`: 오름차순, `desc`: 내림차순) |
+| `--help` | 선택 | - | 도움말 메시지를 표시합니다. |
 
 ---
 
@@ -40,7 +40,7 @@ sys-info
 
 ### 2. 가상 파일시스템(tmpfs, overlay)을 제외하고 마운트 지점 기준 내림차순 정렬
 ```bash
-sys-info -f tmpfs -f overlay --sort-key mnt --sort-dir desc
+sys-info --exclude-fs tmpfs --exclude-fs overlay --sort-key mnt --sort-dir desc
 ```
 
 ---

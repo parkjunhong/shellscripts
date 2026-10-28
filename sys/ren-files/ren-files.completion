@@ -31,15 +31,15 @@ _ren_files_completion() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  opts="-d -f -h --help -i -o"
+  opts="--dir --force --help --input --output"
 
   case "${prev}" in
-    -d)
+    --dir)
       compopt -o dirnames 2>/dev/null || true
       COMPREPLY=()
       return 0
       ;;
-    -i|-o)
+    --input|--output)
       return 0
       ;;
     *)

@@ -19,16 +19,15 @@ usage() {
   fi
   echo "[Usage]"
   echo
-  echo "  $SCRIPT_NAME -u <user.name> -e <user.email>"
   echo "  $SCRIPT_NAME --username <user.name> --useremail <user.email>"
-  echo "  $SCRIPT_NAME -h | --help"
+  echo "  $SCRIPT_NAME --help"
   echo
   echo "[Parameter]"
-  echo "  -u, --username   : user.name"
-  echo "  -e, --useremail  : user.email"
+  echo "  --username   : user.name"
+  echo "  --useremail  : user.email"
   echo
   echo "[Option]"
-  echo "  -h, --help       : 도움말"
+  echo "  --help       : 도움말"
   echo
 }
 
@@ -55,17 +54,17 @@ EMAIL=""
 # 파라미터 읽기
 while [ $# -gt 0 ]; do
   case "$1" in
-    -u|--username)
+    --username)
       need_arg "$1" "${2:-}"
       NAME="$2"
       shift 2
       ;;
-    -e|--useremail)
+    --useremail)
       need_arg "$1" "${2:-}"
       EMAIL="$2"
       shift 2
       ;;
-    -h|--help)
+    --help)
       usage "--help"
       exit 0
       ;;
@@ -84,7 +83,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$NAME" ] && [ -z "$EMAIL" ]; then
-  die "최소 하나의 옵션(-u 또는 -e)이 필요합니다."
+  die "최소 하나의 옵션(--username 또는 --useremail)이 필요합니다."
 fi
 
 # git 존재 여부 확인

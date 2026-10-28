@@ -35,13 +35,14 @@ help(){
 
 	echo
 	echo "[Usage]"
-	echo "git-pull-all -p <project ...> -d <directory> -l <level>"
+	echo "git-pull-all --projects <project ...> --dir <directory> --level <level>"
 	echo
 	echo "[Parameters]"
-	echo " -d: directory. If '-p' does not occurs, you can set a directory without '-d'."
-	echo "     If '-p' occurs, you must use '-d' to set a directory."
-	echo " -l: level. Indicates a depth which you should go down a directory where projects are."
-	echo " -p: projects. You can set project one or more if use '-p' once."
+	echo " --dir     : directory. If '--projects' does not occur, you can set a directory without '--dir'."
+	echo "             If '--projects' occurs, you must use '--dir' to set a directory."
+	echo " --level   : level. Indicates a depth which you should go down a directory where projects are."
+	echo " --projects: projects. You can set project one or more if use '--projects' once."
+	echo " --help    : show help message."
 	echo
 }
 
@@ -52,7 +53,7 @@ LEVEL=0
 while [ ! -z "$1" ];
 do
 	case "$1" in
-		-d | --dir)
+		--dir)
 			shift
 			if [ ! -d "$1" ];then
 				help "Invalid 'directory'. input=$1" $LINENO
@@ -60,11 +61,11 @@ do
 			fi
 			DIR="$1"
 			;;
-		-h | --help)
+		--help)
 			help 
 			exit 0
 			;;
-		-l | --level)
+		--level)
 			shift
 			if ! [[ "$1" =~ [0-9]+ ]];then
 				help "Invalid 'level'. input=$1" $LINENO
@@ -72,7 +73,7 @@ do
 			fi
 			LEVEL=$1
 			;;
-		-p)
+		--projects)
 			shift
 			PROJECTS+=("$1")
 			PRJ_FLAG=1

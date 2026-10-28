@@ -30,7 +30,7 @@ _clone_gitlab_projects_completions() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  opts="-g --group -d --dir -n --name -h --help"
+  opts="--group --dir --name --help"
 
   # 이미 입력된 옵션 확인
   local entered_opts=""
@@ -50,15 +50,15 @@ _clone_gitlab_projects_completions() {
 
   # 이전 파라미터(prev)에 따른 컨텍스트 대응
   case "${prev}" in
-    -g|--group)
+    --group)
       # 그룹 경로 입력 대기 (추천 없음)
       return 0
       ;;
-    -n|--name)
+    --name)
       # 클론 디렉토리 상위 그롭 대체 입력 대기 (추천 없음)
       return 0
       ;;
-    -d|--dir)
+    --dir)
       # 파라미터가 파일/경로인 경우 디렉토리 전용 자동완성
       compopt -o dirnames
       COMPREPLY=( $(compgen -d -- "${cur}") )

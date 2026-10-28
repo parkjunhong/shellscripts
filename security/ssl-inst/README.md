@@ -17,22 +17,22 @@
 5. **임시 파일 안전 정리**
    * 작업 완료 또는 오류 시 다운로드된 임시 인증서 파일을 자동으로 안전하게 삭제합니다.
 6. **지능형 Bash 자동 완성 (`ssl-inst.completion`)**
-   * `-server`에 입력된 도메인명을 기반으로 `-alias` 추천, `/etc/hosts` 호스트 제안, 콤마 분리 파일 경로 자동 완성을 제공합니다.
+   * `--server`에 입력된 도메인명을 기반으로 `--alias` 추천, `/etc/hosts` 호스트 제안, 콤마 분리 파일 경로 자동 완성을 제공합니다.
 
 ---
 
 ## ⚙️ 파라미터 명세
 
 ```bash
-ssl-inst -server <서버 주소> -alias <별칭> [-cacerts_files <파일1,파일2,...>]
+ssl-inst --server <서버 주소> --alias <별칭> [--cacerts-files <파일1,파일2,...>]
 ```
 
 | 파라미터 | 필수 여부 | 설명 |
 | :--- | :---: | :--- |
-| `-server <서버 주소>` | **필수** | 인증서를 다운로드할 대상 서버 도메인 (예: `auth.example.com`) |
-| `-alias <별칭>` | **필수** | TrustStore에 등록할 고유 별칭(Alias) 이름 |
-| `-cacerts_files <경로목록>` | 선택 | 추가로 인증서를 등록할 cacerts 파일 경로 목록 (콤마 구분) |
-| `-h`, `--help` | 선택 | 도움말 메시지 출력 및 종료 |
+| `--server <서버 주소>` | **필수** | 인증서를 다운로드할 대상 서버 도메인 (예: `auth.example.com`) |
+| `--alias <별칭>` | **필수** | TrustStore에 등록할 고유 별칭(Alias) 이름 |
+| `--cacerts-files <경로목록>` | 선택 | 추가로 인증서를 등록할 cacerts 파일 경로 목록 (콤마 구분) |
+| `--help` | 선택 | 도움말 메시지 출력 및 종료 |
 
 > **참고**: Java 시스템 영역 Keystore 수정을 위해 스크립트 실행 시 내부적으로 `sudo` 권한을 요청합니다.
 
@@ -42,13 +42,13 @@ ssl-inst -server <서버 주소> -alias <별칭> [-cacerts_files <파일1,파일
 
 ```bash
 # 1) 원격 서버 인증서를 기본 Java TrustStore에 등록
-sudo ./ssl-inst -server auth.example.com -alias auth.example.com
+sudo ./ssl-inst --server auth.example.com --alias auth.example.com
 
 # 2) Java TrustStore 및 IDE cacerts 파일에 동시 등록
 sudo ./ssl-inst \
-  -server api.example.com \
-  -alias api.example.com \
-  -cacerts_files ~/.local/share/JetBrains/cacerts
+  --server api.example.com \
+  --alias api.example.com \
+  --cacerts-files ~/.local/share/JetBrains/cacerts
 ```
 
 ---

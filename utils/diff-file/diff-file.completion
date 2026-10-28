@@ -36,25 +36,25 @@ _diff_file_completion() {
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
   # 스크립트 지원 기본 옵션들 / Command options list
-  opts="-h --help -d --directory -s --source -f --file --copy-content --no-ne-files --dry-run"
+  opts="--help --directory --source --file --copy-content --no-ne-files --dry-run"
 
   # 이전 파라미터에 따른 동적 컨텍스트 분기 / Branching dynamic context based on previous parameter
   case "${prev}" in
-    -d|--directory)
+    --directory)
       # 디렉토리 전용 추천 (공백 추가 방지 및 ~ 확장 지원)
       # Suggest directories only (delegate to Bash built-in)
       compopt -o dirnames 2>/dev/null || true
       COMPREPLY=()
       return 0
       ;;
-    -s|--source)
+    --source)
       # 파일/디렉토리 일반 추천
       # Suggest files and directories natively
       compopt -o default 2>/dev/null || true
       COMPREPLY=()
       return 0
       ;;
-    -f|--file)
+    --file)
       # 파일 패턴 입력 구간은 자동완성 차단 / Block auto-completion for raw pattern input
       return 0
       ;;

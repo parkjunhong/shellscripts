@@ -31,20 +31,19 @@ help(){
     fi
     echo
     echo "[Usage]"
-    echo "git-tags.sh <directory> -b <branch> [-m <tag message>] [-t <tag type>] [ --prefix <tag prefix>] [--suffix <tag suffix>] "
+    echo "git-tags.sh <directory> --branch <branch> [--message <tag message>] [--type <tag type>] [--prefix <tag prefix>] [--suffix <tag suffix>]"
     echo
     echo "[Parameters]"
     echo " directory: directory that contains git projects."
     echo
 	echo "[Options]"
-	echo " -b | --branch : branchname"
-	echo " -h | --help   : show help message."
-	echo " -m | --message: tag message"
-	echo " -p | --prefix : tag name prefix. If empty, set a project directory as a prefix."
-	echo " -s | --suffix : tag name suffix. "
-	echo " -t | --type   : tag type. default is 'release'"
+	echo " --branch : branchname"
+	echo " --help   : show help message."
+	echo " --message: tag message"
+	echo " --prefix : tag name prefix. If empty, set a project directory as a prefix."
+	echo " --suffix : tag name suffix."
+	echo " --type   : tag type. default is 'release'"
 }
-
 
 DIR="."
 BRANCH=""
@@ -55,27 +54,27 @@ SUFFIX=""
 while [ ! -z "$1" ];
 do
 	case "$1" in
-		-b | --branch)
+		--branch)
 			shift
 			BRANCH="$1"
 			;;
-		-h | --help)
+		--help)
 			help
 			exit 0
 			;;
-		-m | --message)
+		--message)
 			shift
 			MSG="$1"
 			;;
-		-p | --prefix)
+		--prefix)
 			shift
 			PREFIX="$1"
 			;;
-		-s | --suffix)
+		--suffix)
 			shift
 			SUFFIX="$1"
 			;;
-		-t | --type)
+		--type)
 			shift
 			TYPE="$1"
 			;;

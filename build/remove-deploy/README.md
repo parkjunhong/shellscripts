@@ -16,10 +16,10 @@
 
 ## ⚙️ 파라미터 명세
 
-| 파라미터 | 단축 옵션 | 필수 여부 | 설명 |
-| :--- | :---: | :---: | :--- |
-| `--directory <경로>` | `-d` | **필수** | 탐색 및 정리를 시작할 기준 루트 디렉토리 경로 |
-| `--help` | `-h` | 선택 | 도구 사용법 및 도움말을 출력합니다. |
+| 파라미터 | 필수 여부 | 설명 |
+| :--- | :---: | :--- |
+| `--directory <경로>` | **필수** | 탐색 및 정리를 시작할 기준 루트 디렉토리 경로 |
+| `--help` | 선택 | 도구 사용법 및 도움말을 출력합니다. |
 
 ---
 
@@ -27,14 +27,12 @@
 
 ### 1. 대상 디렉토리 하위 배포 폴더 일괄 정리
 ```bash
-remove-deploy -d /home/user/workspace/microservices
-# 또는
 remove-deploy --directory /home/user/workspace/microservices
 ```
 
 ### 2. 현재 작업 경로 기준 실행
 ```bash
-remove-deploy -d .
+remove-deploy --directory .
 ```
 
 ---

@@ -136,10 +136,10 @@ _ssl_del_completion() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  local opts="-server -alias -cacerts_files -h --help"
+  local opts="--server --alias --cacerts-files --help"
 
   case "$prev" in
-    -alias)
+    --alias)
       local aliases
       aliases="$(_ssl_del_get_aliases)"
       if [[ -n "$aliases" ]]; then
@@ -147,7 +147,7 @@ _ssl_del_completion() {
         return 0
       fi
       ;;
-    -server)
+    --server)
       local hosts
       hosts="$(_ssl_del_get_known_hosts)"
       if [[ -n "$hosts" ]]; then
@@ -155,7 +155,7 @@ _ssl_del_completion() {
         return 0
       fi
       ;;
-    -cacerts_files)
+    --cacerts-files)
       _ssl_del_complete_comma_files "${cur}"
       return 0
       ;;

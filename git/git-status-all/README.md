@@ -18,10 +18,10 @@
 
 | 옵션 | 필수 여부 | 설명 |
 | :--- | :---: | :--- |
-| `-d <directory>` | 선택 | Git 프로젝트들이 위치한 상위 디렉토리 경로 (기본값: 현재 디렉토리 `$PWD`) |
-| `-p <project ...>` | 선택 | 조회할 대상 프로젝트 이름(접두사) 목록 |
-| `-v` | 선택 | 축약(`--short --branch`) 대신 상세 `git status` 메시지 출력 |
-| `-h`, `--help` | 선택 | 도움말 출력 |
+| `--dir <directory>` | 선택 | Git 프로젝트들이 위치한 상위 디렉토리 경로 (기본값: 현재 디렉토리 `$PWD`) |
+| `--projects <project ...>` | 선택 | 조회할 대상 프로젝트 이름(접두사) 목록 |
+| `--verbose` | 선택 | 축약(`--short --branch`) 대신 상세 `git status` 메시지 출력 |
+| `--help` | 선택 | 도움말 출력 |
 
 ---
 
@@ -32,7 +32,7 @@
 ./git-status-all
 
 # 2) ~/workspace 하위 'api-' 접두사 프로젝트들의 상세 상태 조회
-./git-status-all -d ~/workspace -p api- -v
+./git-status-all --dir ~/workspace --projects api- --verbose
 ```
 
 ---

@@ -57,12 +57,12 @@ help(){
   echo "  --sort        정렬 기준 및 방식 지정 (local, remote, pid)"
   echo "                - 오름차순(기본): local, local/a, remote/a, pid/a"
   echo "                - 내림차순      : local/d, remote/d, pid/d"
-  echo "  -h, --help    이 도움말을 표시하고 종료합니다."
+  echo "  --help        이 도움말을 표시하고 종료합니다."
 }
 
 trap 'help "스크립트 실행 중 오류가 발생했습니다." "$LINENO"' ERR
 
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+if [[ "${1:-}" == "--help" ]]; then
   help "" ""
   exit 0
 fi

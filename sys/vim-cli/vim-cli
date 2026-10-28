@@ -40,11 +40,11 @@ help(){
     echo "================================================================================"
   fi  
   echo  
-  echo "사용법: ./$FILENAME [-v] <command>"
+  echo "사용법: ./$FILENAME [--verbose] <command>"
   echo ""
   echo "[옵션 (Options)]"
-  echo "  -v            명령어의 전체 경로(Full path)를 출력합니다."
-  echo "  -h, --help    이 도움말을 표시하고 종료합니다."
+  echo "  --verbose     명령어의 전체 경로(Full path)를 출력합니다."
+  echo "  --help        이 도움말을 표시하고 종료합니다."
 }
 
 trap 'help "스크립트 실행 중 오류가 발생했습니다." "$LINENO"' ERR
@@ -59,11 +59,11 @@ VERBOSE=0
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    -h|--help)
+    --help)
       help "" ""
       exit 0
       ;;  
-    -v)
+    --verbose)
       VERBOSE=1
       ;;
     -*)

@@ -79,7 +79,7 @@ _validatecsv-log(){
 }
 
 _validatecsv-load-options(){
-	echo "--count --delim --empty --help --file --quotechar -c -d -e -f -q"
+	echo "--count --delim --empty --help --file --quotechar --verbose"
 }
 
 # $1: argument
@@ -134,23 +134,23 @@ _validatecsv-handle-cli(){
 			;;
 		*)
 			case "$3" in
-				--count | -c)
+				--count)
 					# input a count of splitted data
 					COMPREPLY+=( $(compgen -W "1.input 2.a_count_of 3.splitted_data") )
 					;;
-				--delim | -d)
+				--delim)
 					# input a delimiter
 					COMPREPLY+=( $(compgen -W "1.input 2.a_delimiter") )
 					;;
-				--file | -f)
+				--file)
 					# input file
 					list-dir "$2"
 					;;
-				--empty | -e)
+				--empty)
 					# input a string means 'empty value'
 					COMPREPLY+=( $(compgen -W "1.input 2.a_string_for 3.'empty_value'") )
 					;;
-				--quotechar | -q)
+				--quotechar)
 					# input a char for 'quoted'
 					COMPREPLY+=( $(compgen -W "1.input 2.a_char_for 3.'quoted'") )
 					;;

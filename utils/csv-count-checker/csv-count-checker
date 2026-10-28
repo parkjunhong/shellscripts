@@ -34,14 +34,14 @@ help(){
 	fi
 	echo
 	echo "Usage:"
-	echo "csv-count-checker [-h|--help] [-f|--file] <source-file> [-d|--delim] <delimeter> [-c|--count] <expected data count> [-n|--number] <check line number>"
+	echo "csv-count-checker [--help] --file <source-file> --delim <delimeter> --count <expected data count> [--number <check line number>]"
 	echo
 	echo "Options:"
-	echo " -c | --count : expected data count"
-	echo " -d | --delim : csv data delimeter"
-	echo " -f | --file  : source filepath"
-	echo " -h | --help  : show help messages."
-	echo " -n | --number: check line number count."
+	echo " --count : expected data count"
+	echo " --delim : csv data delimeter"
+	echo " --file  : source filepath"
+	echo " --help  : show help messages."
+	echo " --number: check line number count."
 }
 
 _COUNT=-1
@@ -52,7 +52,7 @@ _NUM=-1
 while [ ! -z "$1" ];
 do
 	case "$1" in
-		-c | --count)
+		--count)
 			shift
 			if ! [[ $1 =~ ^[0-9]+$ ]];then
 				help "Invalid 'data' count: $1" $LINENO
@@ -60,7 +60,7 @@ do
 			fi
 			_COUNT=$1
 			;;
-		-d | --delim)
+		--delim)
 			shift
 			if [ -z "$1" ];then
 				help "Invalid 'delimeter: $1" $LINENO
@@ -68,7 +68,7 @@ do
 			fi
 			_DELIM="$1"
 			;;
-		-f | --file)
+		--file)
 			shift
 			if [ ! -f "$1" ];then
 				help "Invalid 'source' filepath: $1" $LINENO
@@ -77,11 +77,11 @@ do
 			_FILE="$1"
 			_REC_FILE="$1.checkcount-$(date +'%Y%m%d%H%M')"
 			;;
-		-h | --help)
+		--help)
 			help
 			exit 0
 			;;
-		-n | --number)
+		--number)
 			shift
 			if ! [[ $1 =~ ^[0-9]+$ ]];then
 				help "Invalid 'line' number: $1" $LINENO

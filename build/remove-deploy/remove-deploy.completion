@@ -36,11 +36,11 @@ _remove_deploy_completion() {
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
   # 기본 지원 옵션들 (Default options)
-  opts="-h --help -d --directory"
+  opts="--help --directory"
 
-  # -d 또는 --directory 옵션 다음에는 반드시 디렉토리만 추천되도록 처리
-  # Recommend only directories after -d or --directory
-  if [[ "${prev}" == "-d" || "${prev}" == "--directory" ]]; then
+  # --directory 옵션 다음에는 반드시 디렉토리만 추천되도록 처리
+  # Recommend only directories after --directory
+  if [[ "${prev}" == "--directory" ]]; then
     COMPREPLY=( $(compgen -d -- "${cur}") )
     return 0
   fi

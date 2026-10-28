@@ -47,14 +47,14 @@ _sna_files_completion() {
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
-    opts="-d --input-dir -t --file-ext -s --target-str -p --content-position -c --content-str -f --content-file -x --excluded-dir -h --help"
+    opts="--input-dir --file-ext --target-str --content-position --content-str --content-file --excluded-dir --help"
 
     used_opts=""
 
-    # 이미 사용한 옵션 확인 (`-d`, `--input-dir`, `-x`, `--excluded-dir`는 여러 번 가능하므로 제외)
+    # 이미 사용한 옵션 확인 (`--input-dir`, `--excluded-dir`는 여러 번 가능하므로 제외)
     for word in "${COMP_WORDS[@]}"; do
         case "$word" in
-            -t|--file-ext|-s|--target-str|-p|--content-position|-c|--content-str|-f|--content-file|-h|--help)
+            --file-ext|--target-str|--content-position|--content-str|--content-file|--help)
                 used_opts+=" $word "
                 ;;
         esac
@@ -64,7 +64,7 @@ _sna_files_completion() {
     if [[ $COMP_CWORD -eq 1 ]]; then
         available_opts=""
         for opt in $opts; do
-            if [[ "$used_opts" != *" $opt "* || "$opt" == "-d" || "$opt" == "--input-dir" || "$opt" == "-x" || "$opt" == "--excluded-dir" ]]; then
+            if [[ "$used_opts" != *" $opt "* || "$opt" == "--input-dir" || "$opt" == "--excluded-dir" ]]; then
                 available_opts+="$opt "
             fi
         done
@@ -73,18 +73,18 @@ _sna_files_completion() {
     fi
 
     case "$prev" in
-        -d|--input-dir|-x|--excluded-dir)
-            # -d, --input-dir, -x, --excluded-dir 옵션 후에는 디렉토리 자동 완성
+        --input-dir|--excluded-dir)
+            # --input-dir, --excluded-dir 옵션 후에는 디렉토리 자동 완성
             COMPREPLY=( $(compgen -d -- "$cur") )
             return 0
             ;;
-        -f|--content-file)
-            # -f, --content-file 옵션 후에는 파일 자동 완성
+        --content-file)
+            # --content-file 옵션 후에는 파일 자동 완성
             COMPREPLY=( $(compgen -f -- "$cur") )
             return 0
             ;;
-        -p|--content-position)
-            # -p, --content-position 옵션 후에는 "top" 또는 "bottom" 자동 완성
+        --content-position)
+            # --content-position 옵션 후에는 "top" 또는 "bottom" 자동 완성
             COMPREPLY=( $(compgen -W "top bottom" -- "$cur") )
             return 0
             ;;

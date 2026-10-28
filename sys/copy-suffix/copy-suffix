@@ -17,21 +17,21 @@ help(){
 	echo "$1"
 	echo 
 	echo "Usage:"
-	echo " copy-suffix [-d|-t] [-e] <filename> [-s <suffix>] [-o <outputdir>]"
+	echo " copy-suffix [--date|--time] [--ext] <filename> [--suffix <suffix>] [--output <outputdir>]"
 	echo
 	echo "[Parameters]"
-	echo " filename     : absolute/relative filepath."
-	echo " -o | --output: Output directory."
-	echo " -s | --suffix: user define suffix."
-	echo "                If set this, ignore [-d|-t] option."
+	echo " filename : absolute/relative filepath."
+	echo " --output : Output directory."
+	echo " --suffix : user define suffix."
+	echo "            If set this, ignore [--date|--time] option."
 	echo
 	echo "[Options]"
-	echo " -d | --date: (optional) Add current 'date' string."
-	echo "               e.g.) copy-suffix abc.txt -d -> abc-20200114.txt"
-	echo " -e | --ext : (optional) Add a suffix to end of a filename."
-	echo "              e.g.) cpsuffix  abc.txt -e -d -> abc.txt-20200114"
-	echo " -t | --time: (optional) Add current 'time' string."
-	echo "               e.g.) copy-suffix abc.txt -t -> abc-20200114191212.txt"
+	echo " --date   : (optional) Add current 'date' string."
+	echo "            e.g.) copy-suffix abc.txt --date -> abc-20200114.txt"
+	echo " --ext    : (optional) Add a suffix to end of a filename."
+	echo "            e.g.) copy-suffix abc.txt --ext --date -> abc.txt-20200114"
+	echo " --time   : (optional) Add current 'time' string."
+	echo "            e.g.) copy-suffix abc.txt --time -> abc-20200114191212.txt"
 	echo
 }
 
@@ -42,24 +42,24 @@ then
 fi
 
 ARG_FILEPATH=""
-ARG_FLAG="-d"
+ARG_FLAG="--date"
 ARG_EXT=0
 ARG_OUTPUT=""
 ARG_SUFFIX=""
 while [ "$1" != "" ];
 do
 	case $1 in
-		-h | --help | "/h" | "/help")
+		--help)
 			help
 			exit 0
 			;;
-		-d | --date)
-			ARG_FLAG="-d"
+		--date)
+			ARG_FLAG="--date"
 			;;
-		-e | --ext)
+		--ext)
 			ARG_EXT=1
 			;;
-		-o | --output)
+		--output)
 			shift
 			if [ -f "$1" ];
 			then
@@ -93,12 +93,12 @@ do
 				ARG_OUTPUT="$1"
 			fi
 			;;
-		-s | --suffix)
+		--suffix)
 			shift
 			ARG_SUFFIX="$1"
 			;;
-		-t | --time)
-			ARG_FLAG="-t"
+		--time)
+			ARG_FLAG="--time"
 			;;
 		*)
 			if [ -f "$1" ];
@@ -274,10 +274,10 @@ suffix_after(){
 if [ -z "${ARG_SUFFIX}" ];
 then
 	case ${ARG_FLAG} in
-    	-d | --date)
+    	--date)
 			SUFFIX=$(date -d'today' '+%Y%m%d')
 	        ;;
-    	-t | --time)
+    	--time)
 			SUFFIX=$(date -d'today' '+%Y%m%d%H24%M%S')
 	        ;;
     	*)

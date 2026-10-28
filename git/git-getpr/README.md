@@ -17,15 +17,15 @@
 
 ## ⚙️ 파라미터 명세
 
-| 옵션 | 단축 옵션 | 필수 여부 | 설명 |
-| :--- | :---: | :---: | :--- |
-| `--git-url <url>` | `-g` | 선택* | Git 서비스 기본 URL (`https://...`, 미입력 시 `GIT_GETPR_GIT_URL` 환경변수 사용) |
-| `--project <path>` | `-p` | **필수** | Git 서비스 내 프로젝트 경로 (예: `parkjunhong/shellscripts`) |
-| `--resource-type <type>` | `-t` | **필수** | 다운로드할 리소스 유형 (`directory`/`d`: 디렉토리, `file`/`f`: 단일 파일) |
-| `--resource <path>` | `-r` | **필수** | 저장소 내 다운로드할 대상의 상대 경로 |
-| `--branch <branch>` | `-b` | 선택 | 대상 브랜치 이름 (기본값: `main`, 실패 시 `master` 자동 재시도) |
-| `--output-path <path>` | `-o` | 선택 | 로컬에 저장할 경로 (기본값: 현재 디렉토리 하위에 리소스의 마지막 이름) |
-| `--help` | `-h` | 선택 | 도움말 출력 |
+| 옵션 | 필수 여부 | 설명 |
+| :--- | :---: | :--- |
+| `--git-url <url>` | 선택* | Git 서비스 기본 URL (`https://...`, 미입력 시 `GIT_GETPR_GIT_URL` 환경변수 사용) |
+| `--project <path>` | **필수** | Git 서비스 내 프로젝트 경로 (예: `parkjunhong/shellscripts`) |
+| `--resource-type <type>` | **필수** | 다운로드할 리소스 유형 (`directory`/`d`: 디렉토리, `file`/`f`: 단일 파일) |
+| `--resource <path>` | **필수** | 저장소 내 다운로드할 대상의 상대 경로 |
+| `--branch <branch>` | 선택 | 대상 브랜치 이름 (기본값: `main`, 실패 시 `master` 자동 재시도) |
+| `--output-path <path>` | 선택 | 로컬에 저장할 경로 (기본값: 현재 디렉토리 하위에 리소스의 마지막 이름) |
+| `--help` | 선택 | 도움말 출력 |
 
 ---
 

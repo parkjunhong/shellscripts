@@ -31,20 +31,20 @@ _modify_enc_str_completion() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  opts="-c --cipher -d --dir -f --files -h --help -n --new -o --old"
+  opts="--cipher --dir --files --help --new --old"
 
   case "${prev}" in
-    -c|--cipher)
+    --cipher)
       compopt -o default 2>/dev/null || true
       COMPREPLY=()
       return 0
       ;;
-    -d|--dir)
+    --dir)
       compopt -o dirnames 2>/dev/null || true
       COMPREPLY=()
       return 0
       ;;
-    -f|--files|-o|--old|-n|--new)
+    --files|--old|--new)
       return 0
       ;;
     *)

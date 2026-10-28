@@ -30,8 +30,8 @@ _gitlab_clone_completions() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  # 잔여 파라미터 추천 목록에 -n 및 --name 추가 / Added -n and --name to available options
-  opts="-u --url -g --group -n --name -x --exclude -t --token -d --dir -h --help"
+  # 잔여 파라미터 추천 목록에 --name 추가 / Added --name to available options
+  opts="--url --group --name --exclude --token --dir --help"
 
   # 이미 입력된 옵션 확인 / Check already entered options
   local entered_opts=""
@@ -51,27 +51,27 @@ _gitlab_clone_completions() {
 
   # 이전 파라미터(prev)에 따른 컨텍스트 대응 / Context response according to previous parameter (prev)
   case "${prev}" in
-    -u|--url)
+    --url)
       # URL 입력 대기 (추천 없음) / Waiting for URL input (No recommendations)
       return 0
       ;;
-    -g|--group)
+    --group)
       # 그룹 경로 입력 대기 (추천 없음) / Waiting for group path input (No recommendations)
       return 0
       ;;
-    -t|--token)
+    --token)
       # Token 입력 대기 (추천 없음) / Waiting for token input (No recommendations)
       return 0
       ;;
-    -n|--name)
+    --name)
       # 클론 그룹 대체 이름 입력 대기 (추천 없음) / Waiting for custom clone group name (No recommendations)
       return 0
       ;;
-    -x|--exclude)
+    --exclude)
       # 제외할 서브그룹 이름 입력 대기 (추천 없음) / Waiting for excluded subgroups input (No recommendations)
       return 0
       ;;
-    -d|--dir)
+    --dir)
       # 파라미터가 파일/경로인 경우 디렉토리 전용 자동완성 / Directory-only autocompletion for file/path parameters
       compopt -o dirnames
       COMPREPLY=( $(compgen -d -- "${cur}") )

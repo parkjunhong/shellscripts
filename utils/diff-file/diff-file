@@ -45,19 +45,19 @@ help(){
     echo "================================================================================"
   fi  
   echo  
-  echo "사용법: ./$FILENAME -s <기준파일> -f <검색패턴> [옵션]"
+  echo "사용법: ./$FILENAME --source <기준파일> --file <검색패턴> [옵션]"
   echo ""
   echo "[설명]"
   echo "  기준 파일과 대상 디렉토리 하위 파일들의 내용을 정규화하여 비교 보고서를 생성합니다."
   echo ""
   echo "[옵션 (Options)]"
-  echo "  -d, --directory <디렉토리>  검색 대상 디렉토리 (기본값: 현재 디렉토리 '.')"
-  echo "  -s, --source <파일>         비교 기준이 되는 파일 경로 (필수)"
-  echo "  -f, --file <패턴>           검색 대상 파일명 또는 패턴 (예: \"*.yml\", \"application-*\") (필수)"
-  echo "      --copy-content          내용이 다른 대상 파일의 내용을 기준 파일 내용으로 복사/변경합니다."
-  echo "      --no-ne-files           동일하지 않은 파일 목록 정보는 보고서에서 제외합니다."
-  echo "      --dry-run               실제 비교 및 복사 수행 과정을 가상으로 출력합니다."
-  echo "  -h, --help                  이 도움말을 출력하고 종료합니다."
+  echo "  --directory <디렉토리>  검색 대상 디렉토리 (기본값: 현재 디렉토리 '.')"
+  echo "  --source <파일>         비교 기준이 되는 파일 경로 (필수)"
+  echo "  --file <패턴>           검색 대상 파일명 또는 패턴 (예: \"*.yml\", \"application-*\") (필수)"
+  echo "  --copy-content          내용이 다른 대상 파일의 내용을 기준 파일 내용으로 복사/변경합니다."
+  echo "  --no-ne-files           동일하지 않은 파일 목록 정보는 보고서에서 제외합니다."
+  echo "  --dry-run               실제 비교 및 복사 수행 과정을 가상으로 출력합니다."
+  echo "  --help                  이 도움말을 출력하고 종료합니다."
 }
 
 # 전역 변수 선언 (메인 스코프에서는 local 키워드를 일절 사용하지 않음)
@@ -546,15 +546,15 @@ trap cleanup EXIT
 # 파라미터 파싱 (전역 스코프 - local 키워드 미사용)
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
-    -h|--help)
+    --help)
       help "" ""
       exit 0
       ;;
-    -d|--directory)
+    --directory)
       shift; TARGET_DIR="${1:-.}" ;;
-    -s|--source)
+    --source)
       shift; SOURCE_FILE="${1:-}" ;;
-    -f|--file)
+    --file)
       shift; FILE_PATTERN="${1:-}" ;;
     --copy-content)
       COPY_CONTENT=1 ;;

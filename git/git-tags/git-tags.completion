@@ -58,19 +58,18 @@ _git_tags-add_if_new(){
 }
 
 _git_tags-add_default_options(){
-	declare -A ARG
-	ARG["-b"]="--branch"
-	ARG["-h"]="--help"
-	ARG["-m"]="--message"
-	ARG["-t"]="--type"
-	ARG["-p"]="--prefix"
-	ARG["-s"]="--suffix"
-
-	local _keys=(${!ARG[@]})
-
-	for key in ${_keys[@]}
-	do
-		_git_tags-add_if_new "$key" "${ARG[$key]}"
+	local opts=("--branch" "--help" "--message" "--type" "--prefix" "--suffix")
+	for opt in "${opts[@]}"; do
+		local found=0
+		for word in "${COMP_WORDS[@]}"; do
+			if [ "$word" = "$opt" ]; then
+				found=1
+				break
+			fi
+		done
+		if [ $found -eq 0 ]; then
+			COMPREPLY+=("$opt")
+		fi
 	done
 }
 
@@ -79,22 +78,22 @@ _git_tags-add_default_options(){
 _git_tags-handle_current(){
 	_git_tags-log "in '_git_tags-handle_current' " $@
 	case "$1" in
-		-b | --b*)
+		--b*)
 			COMPREPLY+=("--branch")
 			;;
-		-h | --h*)
+		--h*)
 			COMPREPLY+=("--help")
 			;;
-		-m | --m*)
+		--m*)
 			COMPREPLY+=("--message")
 			;;
-		-t | --t*)
+		--t*)
 			COMPREPLY+=("--type")
 			;;
-		-p | --p*)
+		--p*)
 			COMPREPLY+=("--prefix")
 			;;
-		-s | --s*)
+		--s*)
 			COMPREPLY+=("--suffix")
 			;;
 		*)
@@ -108,19 +107,19 @@ _git_tags-handle_current(){
 _git_tags-handle_previous(){
 	_git_tags-log "in '_git_tags-handle_previous' \$1: $1, \$2:$2"
 	case "$2" in
-		-b | --b*)
+		--b*)
 			_git_tags-handle_current "$1"
 			;;
-		-m | --m*)
+		--m*)
 			_git_tags-handle_current "$1"
 			;;
-		-t | --t*)
+		--t*)
 			_git_tags-handle_current "$1" 
 			;;
-		-p | --p*)
+		--p*)
 			_git_tags-handle_current "$1"
 			;;
-		-s | --s*)
+		--s*)
 			_git_tags-handle_current "$1"
 			;;
 		*)

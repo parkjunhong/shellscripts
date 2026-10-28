@@ -46,10 +46,10 @@ help(){
   echo "사용법: ./$FILENAME [옵션]"
   echo ""
   echo "[옵션 (Options)]"
-  echo "  -h, --help                  도움말 메시지를 출력하고 종료합니다."
-  echo "  -d, --dry-run               실제 시스템에 반영하지 않고 예정된 구성을 출력합니다."
-  echo "  -a, --add-vlan-networks     추가할 대상 VLAN 대역 (CIDR, 콤마 구분)"
-  echo "  -r, --remove-vlan-networks  제거할 대상 VLAN 대역 (CIDR, 콤마 구분)"
+  echo "  --help                  도움말 메시지를 출력하고 종료합니다."
+  echo "  --dry-run               실제 시스템에 반영하지 않고 예정된 구성을 출력합니다."
+  echo "  --add-vlan-networks     추가할 대상 VLAN 대역 (CIDR, 콤마 구분)"
+  echo "  --remove-vlan-networks  제거할 대상 VLAN 대역 (CIDR, 콤마 구분)"
   echo ""
   echo "[설명]"
   echo "  본 스크립트는 서버가 속한 물리 인터페이스를 자동 식별하고,"
@@ -921,15 +921,15 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -h|--help)
+    --help)
       help "" ""
       exit 0
       ;;
-    -d|--dry-run)
+    --dry-run)
       DRY_RUN=true
       shift
       ;;
-    -a|--add-vlan-networks)
+    --add-vlan-networks)
       HAS_A_FLAG=true
       if [[ -n "${2:-}" && "$2" != -* ]]; then
         ADD_VLAN_INPUT="$2"
@@ -938,7 +938,7 @@ while [[ $# -gt 0 ]]; do
         shift 1
       fi
       ;;
-    -r|--remove-vlan-networks)
+    --remove-vlan-networks)
       HAS_R_FLAG=true
       if [[ -n "${2:-}" && "$2" != -* ]]; then
         REMOVE_VLAN_INPUT="$2"

@@ -31,10 +31,10 @@ _gz_ext_latest_completion() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  opts="-b -h --help"
+  opts="--backup --help"
 
   case "${prev}" in
-    -b)
+    --backup)
       compopt -o dirnames 2>/dev/null || true
       COMPREPLY=()
       return 0

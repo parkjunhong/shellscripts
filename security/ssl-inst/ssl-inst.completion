@@ -96,15 +96,15 @@ _ssl_inst_completion() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  local opts="-server -alias -cacerts_files -h --help"
+  local opts="--server --alias --cacerts-files --help"
 
   case "$prev" in
-    -alias)
-      # 커맨드라인에 이미 입력된 -server 값이 있다면 해당 호스트/도메인명을 별칭 후보로 제안
+    --alias)
+      # 커맨드라인에 이미 입력된 --server 값이 있다면 해당 호스트/도메인명을 별칭 후보로 제안
       local server_val=""
       local i
       for ((i=1; i<COMP_CWORD; i++)); do
-        if [[ "${COMP_WORDS[i]}" == "-server" && $((i+1)) -lt ${#COMP_WORDS[@]} ]]; then
+        if [[ "${COMP_WORDS[i]}" == "--server" && $((i+1)) -lt ${#COMP_WORDS[@]} ]]; then
           server_val="${COMP_WORDS[i+1]}"
           break
         fi
@@ -116,7 +116,7 @@ _ssl_inst_completion() {
       COMPREPLY=( $(compgen -W "${candidates}" -- "${cur}") )
       return 0
       ;;
-    -server)
+    --server)
       local hosts
       hosts="$(_ssl_inst_get_known_hosts)"
       if [[ -n "$hosts" ]]; then
@@ -124,7 +124,7 @@ _ssl_inst_completion() {
         return 0
       fi
       ;;
-    -cacerts_files)
+    --cacerts-files)
       _ssl_inst_complete_comma_files "${cur}"
       return 0
       ;;

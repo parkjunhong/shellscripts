@@ -15,11 +15,11 @@
 
 ## ⚙️ 파라미터 명세
 
-| 옵션 | 단축 옵션 | 필수 여부 | 설명 |
-| :--- | :---: | :---: | :--- |
-| `--username <user.name>` | `-u` | 선택* | 설정할 Git `user.name` (`-u` 또는 `-e` 중 최소 1개 필수) |
-| `--useremail <user.email>` | `-e` | 선택* | 설정할 Git `user.email` (`-u` 또는 `-e` 중 최소 1개 필수) |
-| `--help` | `-h` | 선택 | 도움말 출력 |
+| 옵션 | 필수 여부 | 설명 |
+| :--- | :---: | :--- |
+| `--username <user.name>` | 선택* | 설정할 Git `user.name` (`--username` 또는 `--useremail` 중 최소 1개 필수) |
+| `--useremail <user.email>` | 선택* | 설정할 Git `user.email` (`--username` 또는 `--useremail` 중 최소 1개 필수) |
+| `--help` | 선택 | 도움말 출력 |
 
 ---
 
@@ -30,7 +30,7 @@
 ./git-config --username "Junhong Park" --useremail "parkjunhong77@gmail.com"
 
 # 2) 현재 저장소의 이메일만 변경
-./git-config -e "parkjunhong77@gmail.com"
+./git-config --useremail "parkjunhong77@gmail.com"
 ```
 
 ---

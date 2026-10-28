@@ -57,7 +57,7 @@ help(){
   echo "  5. IP 차단 해제 후 해당 Jail의 최신 상태 정보를 출력합니다."
   echo ""
   echo "[옵션 (Options)]"
-  echo "  -h, --help        도움말을 출력하고 종료합니다."
+  echo "  --help            도움말을 출력하고 종료합니다."
 }
 
 trap 'help "스크립트 실행 중 예기치 않은 오류가 발생했습니다." "$LINENO"' ERR
@@ -411,7 +411,7 @@ execute_unban_ips() {
 main() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      -h|--help)
+      --help)
         help "" ""
         exit 0
         ;;

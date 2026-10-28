@@ -32,7 +32,7 @@ _git_merge_completion() {
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
   # 명령어 옵션 목록 / Command options
-  opts="-s --source -t --target -l --local-source -h --help"
+  opts="--source --target --local-source --help"
 
   # 로컬 브랜치 목록 동적 추출 / Get dynamic local git branches
   branches=$(git branch 2>/dev/null | sed -e 's/*//' | tr -d ' ')
@@ -40,7 +40,7 @@ _git_merge_completion() {
   # 이전 파라미터가 source/target 인 경우, 파일/경로 대신 브랜치 목록 추천
   # Suggest branch names if the previous parameter is for source or target
   case "${prev}" in
-    -s|--source|-t|--target)
+    --source|--target)
       COMPREPLY=( $(compgen -W "${branches}" -- "${cur}") )
       return 0
       ;;

@@ -43,23 +43,23 @@ help(){
 	fi
 	echo
 	echo "Usage:"
-	echo "validate-csv [-h|--help] --file <filepath> --delim <delimiter> --quotechar <quote char> --empty <empty value> --count <count> --verbose"
+	echo "validate-csv [--help] --file <filepath> --delim <delimiter> --quotechar <quote char> --empty <empty value> --count <count> --verbose"
 	echo
 	echo "Options:"
-	echo " -c | --count     : count of data"
-	echo " -d | --delim     : line count to copy"
-	echo " -d | --empty     : a string if a value between a delimiter and a delimiter is empty."
-	echo "                    default: \"$EMPTY_VALUE\""
-	echo " -h | --help      : show help messages"
-	echo " -f | --file      : input filepath"
-	echo " -q | --quotechar : quoted character. default: double quoted ($QUOTECHAR)."
-	echo " -v | --verbose   : show error message."
+	echo " --count     : count of data"
+	echo " --delim     : delimiter of columns"
+	echo " --empty     : a string if a value between a delimiter and a delimiter is empty."
+	echo "               default: \"$EMPTY_VALUE\""
+	echo " --help      : show help messages"
+	echo " --file      : input filepath"
+	echo " --quotechar : quoted character. default: double quoted ($QUOTECHAR)."
+	echo " --verbose   : show error message."
 }
 
 while [ ! -z "$1" ];
 do
 	case "$1" in
-		-c | --count)
+		--count)
 			shift
 			if ! [[ $1 =~ [0-9]+ ]];then
 				help "Invalid 'line' count: $1" $LINENO
@@ -67,11 +67,11 @@ do
 			fi
             DATA_COUNT=$1
             ;;
-		-d | --delim)
+		--delim)
 			shift
 			DELIMITER="$1"
 			;;
-		-e | --empty)
+		--empty)
 			shift
 			if [ -z "$1" ];then
 				help "Invalid 'empty value'. input: $1" $LINENO
@@ -79,7 +79,7 @@ do
 			fi
 			EMPTY_VALUE="$1"
 			;;
-		-f | --file)
+		--file)
 			shift
 			if [ ! -f "$1" ];then
 				help "Invalid 'input file': filepath: $1" $LINENO
@@ -88,11 +88,11 @@ do
 			INPUT_FILE="$1"
 			RESULT_FILE="$1.validated"
 			;;
-		-h | --help)
+		--help)
 			help
 			exit 0
 			;;
-		-q | --quotechar)
+		--quotechar)
 			shift
 			if [ -z "$1" ] || [ "${#1}" -ne 1 ];then
 				help "Invalid 'quote char'. input: $1" $LINENO
@@ -100,7 +100,7 @@ do
 			fi
 			QUOTECHAR="$1"
 			;;
-		-v | --verbose)
+		--verbose)
 			VERBOSE=1
 			;;
 		*)

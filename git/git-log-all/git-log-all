@@ -8,13 +8,14 @@ help(){
 	fi
     echo
 	echo "[Usage]"
-    echo "git-log-all -p <project ...> -d <directory> -v"
+    echo "git-log-all --projects <project ...> --dir <directory> --verbose"
 	echo
 	echo "[Parameters]"
-	echo " -d: directory. If '-p' does not occurs, you can set a directory without '-d'."
-    echo "     If '-p' occurs, you must use '-d' to set a directory."
-	echo " -p: projects. You can set project one or more if use '-p' once."
-	echo " -v: show normal status message."
+	echo " --dir     : directory. If '--projects' does not occur, you can set a directory without '--dir'."
+    echo "             If '--projects' occurs, you must use '--dir' to set a directory."
+	echo " --projects: projects. You can set project one or more if use '--projects' once."
+	echo " --verbose : show normal status message."
+	echo " --help    : show help message."
 }
 
 PARAMS="--abbrev-commit --pretty=oneline"
@@ -24,19 +25,19 @@ DIR="$PWD"
 while [ ! -z "$1" ];
 do
 	case "$1" in
-		-v)
+		--verbose)
 			PARAMS=""
 			;;
-		-p)
+		--projects)
 			shift
 			PROJECTS+=("$1")
 			PRJ_FLAG=1
 			;;
-		-d)
+		--dir)
 			shift
 			DIR=$1
 			;;
-		-h | --help)
+		--help)
 			help
 			exit 0
 			;;

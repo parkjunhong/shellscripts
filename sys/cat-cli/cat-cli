@@ -17,16 +17,16 @@ VERBOSE=0
 while [ "$1" != "" ];
 do
 	case $1 in
-		-h | --help)
+		--help)
 			echo
-			echo "cat-cli [-v] <command>"
+			echo "cat-cli [--verbose] <command>"
 			echo
 			echo "[Options]"
-			echo " -v : show a fullpath of a command."
+			echo " --verbose : show a fullpath of a command."
 			
 			exit 0
 			;;	
-		-v)
+		--verbose)
 			VERBOSE=1
 			;;
 		*)

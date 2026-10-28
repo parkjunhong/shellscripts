@@ -15,7 +15,7 @@ Linux 배포판(NetworkManager, Netplan, systemd-networkd, systemd 서비스) �
    * 현재 트래픽이 나가는 기본 게이트웨이 및 물리 인터페이스를 자동 감지하여 라우팅 대상을 정밀하게 산출합니다.
 3. **영구(Permanent) 저장 및 즉시 반영**
    * 재부팅 후에도 설정이 영구 보존되도록 각 OS/배포판의 네트워크 설정 파일에 기록하며, 현재 커널 라우팅 테이블에도 즉시 반영합니다.
-4. **시뮬레이션 모드 (`-d`, `--dry-run`)**
+4. **시뮬레이션 모드 (`--dry-run`)**
    * 실제 시스템 네트워크 설정을 변경하기 전에 적용 예정인 인터페이스, 게이트웨이, 라우팅 명령어를 미리 안전하게 확인할 수 있습니다.
 5. **지능형 Bash 자동 완성 (`add-vlan-routes.completion`)**
    * 옵션 및 네트워크 대역 파라미터 자동 완성을 제공합니다.
@@ -28,12 +28,12 @@ Linux 배포판(NetworkManager, Netplan, systemd-networkd, systemd 서비스) �
 add-vlan-routes [옵션]
 ```
 
-| 옵션 | 단축형 | 필수 여부 | 설명 |
-| :--- | :---: | :---: | :--- |
-| `--add-vlan-networks <CIDR>` | `-a` | 선택 | 추가할 대상 VLAN 네트워크 대역 (콤마(`,`) 구분 다중 지정 가능) |
-| `--remove-vlan-networks <CIDR>` | `-r` | 선택 | 제거할 대상 VLAN 네트워크 대역 (콤마(`,`) 구분 다중 지정 가능) |
-| `--dry-run` | `-d` | 선택 | 시스템 구성을 변경하지 않고 작업 계획만 시뮬레이션 출력 |
-| `--help` | `-h` | 선택 | 도움말 메시지 출력 및 종료 |
+| 옵션 | 필수 여부 | 설명 |
+| :--- | :---: | :--- |
+| `--add-vlan-networks <CIDR>` | 선택 | 추가할 대상 VLAN 네트워크 대역 (콤마(`,`) 구분 다중 지정 가능) |
+| `--remove-vlan-networks <CIDR>` | 선택 | 제거할 대상 VLAN 네트워크 대역 (콤마(`,`) 구분 다중 지정 가능) |
+| `--dry-run` | 선택 | 시스템 구성을 변경하지 않고 작업 계획만 시뮬레이션 출력 |
+| `--help` | 선택 | 도움말 메시지 출력 및 종료 |
 
 ---
 
@@ -41,7 +41,7 @@ add-vlan-routes [옵션]
 
 ```bash
 # 1) VLAN 정적 라우팅 추가 시뮬레이션 (Dry-Run)
-./add-vlan-routes --dry-run -a 192.168.100.0/24,10.50.0.0/16
+./add-vlan-routes --dry-run --add-vlan-networks 192.168.100.0/24,10.50.0.0/16
 
 # 2) 단일 VLAN 대역 영구 정적 라우팅 추가
 sudo ./add-vlan-routes -a 192.168.100.0/24

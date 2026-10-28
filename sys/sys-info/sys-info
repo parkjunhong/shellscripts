@@ -17,14 +17,14 @@ help() {
 디스크 사용량 정보를 출력합니다.
 
 옵션:
-  -f, --exclude-fs <문자열>     Filesystem 컬럼에서 제외할 문자열 (여러 번 사용 가능)
-  -m, --exclude-mnt <문자열>    Mounted on 컬럼에서 제외할 문자열 (여러 번 사용 가능)
+      --exclude-fs <문자열>     Filesystem 컬럼에서 제외할 문자열 (여러 번 사용 가능)
+      --exclude-mnt <문자열>    Mounted on 컬럼에서 제외할 문자열 (여러 번 사용 가능)
       --sort-key <fs|mnt>       정렬 기준. fs=Filesystem, mnt=Mounted on
       --sort-dir <asc|desc>     정렬 방향. asc=오름차순, desc=내림차순
-  -h, --help                    도움말 출력
+      --help                    도움말 출력
 
 예시:
-  $(basename "$0") -f tmpfs --sort-key fs --sort-dir desc
+  $(basename "$0") --exclude-fs tmpfs --sort-key fs --sort-dir desc
 EOF
 }
 
@@ -38,11 +38,11 @@ max_fs_length=0
 # 파라미터 파싱
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -f|--exclude-fs)
+    --exclude-fs)
       exclude_fs_list+=("$2")
       shift 2
       ;;
-    -m|--exclude-mnt)
+    --exclude-mnt)
       exclude_mnt_list+=("$2")
       shift 2
       ;;
@@ -54,7 +54,7 @@ while [[ $# -gt 0 ]]; do
       sort_dir="$2"
       shift 2
       ;;
-    -h|--help)
+    --help)
       help
       exit 0
       ;;

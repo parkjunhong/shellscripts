@@ -18,17 +18,17 @@ help(){
 
         echo
         echo "Usage:"
-        echo "gz-ext-latest [-h|--help] [-b <backup-dir>] <gz-directory>"
+        echo "gz-ext-latest [--help] [--backup <backup-dir>] <gz-directory>"
         echo
         echo "Arguments"
-        echo " -b <backup-dir>: (optional) gz files backup directory."
-        echo " -h, --help     : show help messages."
+        echo " --backup <backup-dir>: (optional) gz files backup directory."
+        echo " --help               : show help messages."
 }
 
 while [ ! -z "$1" ];
 do
         case $1 in
-                -b)
+                --backup)
                         shift
                         if [ -f "$1" ];
                         then
@@ -38,7 +38,7 @@ do
                         
                         BACKUP_DIR="$1"
                         ;;
-                -h|--help)
+                --help)
                         help
                         exit 0
                         ;;

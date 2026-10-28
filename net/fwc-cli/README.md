@@ -37,7 +37,7 @@ fwc-cli [옵션]
 | `--clear-all` | 선택 | 대상 Zone에 등록된 모든 규칙 항목을 일괄 삭제 (가장 먼저 수행) |
 | `--add-<항목>=<값>` | 선택 | 지정된 Zone에 규칙 추가 (콤마(`,`) 구분 다중 값 지원) |
 | `--remove-<항목>[=<값>]` | 선택 | 지정된 Zone에서 규칙 삭제 (값 생략 시 해당 항목의 모든 규칙 일괄 삭제) |
-| `-h`, `--help` | 선택 | 도움말 메시지 출력 및 종료 |
+| `--help` | 선택 | 도움말 메시지 출력 및 종료 |
 
 > **지원 항목 목록**: `sources`, `services`, `ports`, `protocols`, `forward-ports`, `source-ports`, `icmp-blocks`, `rich-rules`, `interfaces`
 

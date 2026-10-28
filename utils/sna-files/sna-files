@@ -15,20 +15,21 @@
 
 # 도움말 함수 정의
 help() {
-  echo "사용법: $(basename $0) -d <디렉토리> -t <확장자> -s <문자열> [-p <위치>] (-c <추가_문자열> | -f <추가_파일>) [-x <제외_디렉토리>]"
+  echo "사용법: $(basename $0) --input-dir <디렉토리> --file-ext <확장자> --target-str <문자열> [--content-position <위치>] (--content-str <추가_문자열> | --content-file <추가_파일>) [--excluded-dir <제외_디렉토리>]"
   echo ""
   echo "Parameters:"
-  echo "  -d, --input-dir <디렉토리>: 검색할 디렉토리 (필수, 여러 개 가능)"
-  echo "  -t, --file-ext <확장자>: 검색할 파일 확장자 (필수)"
-  echo "  -s, --target-str <문자열>: 찾을 문자열 (필수)"
-  echo "  -p, --content-position <위치>: 추가할 위치 (옵션, 기본값: top, 'top' 또는 'bottom')"
-  echo "  -c, --content-str <추가_문자열>: 찾는 문자열이 없을 경우 추가할 문자열"
-  echo "  -f, --content-file <추가_파일>: 찾는 문자열이 없을 경우 추가할 파일 내용"
-  echo "  -x, --excluded-dir <제외_디렉토리>: 검색에서 제외할 디렉토리 (옵션, 여러 개 가능)"
+  echo "  --input-dir <디렉토리>: 검색할 디렉토리 (필수, 여러 개 가능)"
+  echo "  --file-ext <확장자>: 검색할 파일 확장자 (필수)"
+  echo "  --target-str <문자열>: 찾을 문자열 (필수)"
+  echo "  --content-position <위치>: 추가할 위치 (옵션, 기본값: top, 'top' 또는 'bottom')"
+  echo "  --content-str <추가_문자열>: 찾는 문자열이 없을 경우 추가할 문자열"
+  echo "  --content-file <추가_파일>: 찾는 문자열이 없을 경우 추가할 파일 내용"
+  echo "  --excluded-dir <제외_디렉토리>: 검색에서 제외할 디렉토리 (옵션, 여러 개 가능)"
+  echo "  --help: 이 도움말을 표시합니다."
   echo ""
   echo "Constraints:"
-  echo "  - '-c'와 '-f' 둘 중 하나는 필수 (둘 다 입력 불가, 둘 다 없으면 오류)."
-  echo "  - '-p'가 없으면 기본값은 'top'."
+  echo "  - '--content-str'와 '--content-file' 둘 중 하나는 필수 (둘 다 입력 불가, 둘 다 없으면 오류)."
+  echo "  - '--content-position'이 없으면 기본값은 'top'."
   exit 1
 }
 
@@ -38,35 +39,35 @@ position="top"  # ❗ 기본값을 `top`으로 설정
 # 파라미터 처리 (확장 옵션 지원)
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -d|--input-dir)
+    --input-dir)
       directories+=("$(realpath "$2")")
       shift 2
       ;;
-    -t|--file-ext)
+    --file-ext)
       ext="$2"
       shift 2
       ;;
-    -s|--target-str)
+    --target-str)
       search_string="$2"
       shift 2
       ;;
-    -p|--content-position)
+    --content-position)
       position="$2"
       shift 2
       ;;
-    -c|--content-str)
+    --content-str)
       add_string="$2"
       shift 2
       ;;
-    -f|--content-file)
+    --content-file)
       add_file="$2"
       shift 2
       ;;
-    -x|--excluded-dir)
+    --excluded-dir)
       exclude_dirs+=("$(realpath "$2")")
       shift 2
       ;;
-    -h|--help)
+    --help)
       help
       ;;
     *)

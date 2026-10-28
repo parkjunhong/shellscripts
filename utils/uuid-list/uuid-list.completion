@@ -30,10 +30,10 @@ _uuid_list_completion() {
   COMPREPLY=()
   cur="${COMP_WORDS[COMP_CWORD]}"
 
-  opts="-h --help 1 5 10 20 50 100"
+  opts="--help 1 5 10 20 50 100"
 
   if [[ "${cur}" == -* ]]; then
-    COMPREPLY=( $(compgen -W "-h --help" -- "${cur}") )
+    COMPREPLY=( $(compgen -W "--help" -- "${cur}") )
   else
     COMPREPLY=( $(compgen -W "1 5 10 20 50 100" -- "${cur}") )
   fi

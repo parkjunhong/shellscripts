@@ -43,7 +43,7 @@ help(){
   echo "사용법: ./$FILENAME [옵션] <서비스이름>"
   echo "예시: ./$FILENAME nginx"
   echo "옵션:"
-  echo "  -h, --help    이 도움말을 표시하고 종료합니다."
+  echo "  --help        이 도움말을 표시하고 종료합니다."
 }
 
 log() {
@@ -88,7 +88,7 @@ SERVICE_NAME=""
 # 파라미터 파싱
 while [[ "$#" -gt 0 ]]; do
   case $1 in
-    -h|--help)
+    --help)
       help
       exit 0
       ;;

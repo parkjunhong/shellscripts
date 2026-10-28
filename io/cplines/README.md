@@ -22,16 +22,16 @@
 ## ⚙️ 파라미터 명세
 
 ```bash
-cplines -s <소스파일> -d <대상파일> -l <시작행번호> -c <복사할행개수>
+cplines --src <소스파일> --dst <대상파일> --linenumber <시작행번호> --count <복사할행개수>
 ```
 
-| 옵션 | 단축형 | 필수 여부 | 설명 |
-| :--- | :---: | :---: | :--- |
-| `--src <file>` | `-s` | **필수** | 원본 파일 경로 |
-| `--dst <file>` | `-d` | **필수** | 추출된 데이터가 저장될 대상 파일 경로 |
-| `--linenumber <num>` | `-l` | **필수** | 복사를 시작할 라인 번호 (1부터 시작하는 양의 정수) |
-| `--count <num>` | `-c` | **필수** | 복사할 총 라인 개수 (양의 정수) |
-| `--help` | `-h` | 선택 | 도움말 메시지 출력 및 종료 |
+| 옵션 | 필수 여부 | 설명 |
+| :--- | :---: | :--- |
+| `--src <file>` | **필수** | 원본 파일 경로 |
+| `--dst <file>` | **필수** | 추출된 데이터가 저장될 대상 파일 경로 |
+| `--linenumber <num>` | **필수** | 복사를 시작할 라인 번호 (1부터 시작하는 양의 정수) |
+| `--count <num>` | **필수** | 복사할 총 라인 개수 (양의 정수) |
+| `--help` | 선택 | 도움말 메시지 출력 및 종료 |
 
 ---
 
@@ -39,7 +39,7 @@ cplines -s <소스파일> -d <대상파일> -l <시작행번호> -c <복사할�
 
 ```bash
 # 1) 100번째 줄부터 500줄을 추출하여 new_data.log로 복사
-./cplines -s big_access.log -d new_data.log -l 100 -c 500
+./cplines --src big_access.log --dst new_data.log --linenumber 100 --count 500
 
 # 2) 대용량 CSV 파일의 10,001번째 레코드부터 1,000개 샘플링
 ./cplines --src dataset.csv --dst sample.csv --linenumber 10001 --count 1000

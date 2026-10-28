@@ -8,15 +8,16 @@ help(){
 	fi
 	echo
 	echo "[Usage]"
-	echo "git-push-all -m <commit message> -s <merge source> -t <merge target> -p <project ...> -d <directory>"
+	echo "git-push-all --message <commit message> --source <merge source> --target <merge target> --projects <project ...> --dir <directory>"
 	echo
 	echo "[Parameters]"
-	echo " -d: directory. If '-p' does not occur, you can set a directory without '-d'."
-	echo "     If '-p' occurs, you must use '-d' to set a directory."
-	echo " -m: commit message"
-	echo " -p: projects. You can set project one or more if use '-p' once."
-	echo " -s: merge source branch"
-	echo " -t: merge target branch"
+	echo " --dir     : directory. If '--projects' does not occur, you can set a directory without '--dir'."
+	echo "             If '--projects' occurs, you must use '--dir' to set a directory."
+	echo " --message : commit message"
+	echo " --projects: projects. You can set project one or more if use '--projects' once."
+	echo " --source  : merge source branch"
+	echo " --target  : merge target branch"
+	echo " --help    : show help message"
 	echo
 }
 
@@ -29,28 +30,28 @@ DIR="$PWD"
 while [ ! -z "$1" ];
 do
 	case "$1" in
-		-d)
+		--dir)
 			shift
 			DIR=$1
 			;;	
-		-m)
+		--message)
 			shift
 			MSG=$1
 			;;
-		-p)
+		--projects)
 			shift
 			PROJECTS+=("$1")
 			PRJ_FLAG=1
 			;;
-		-s)
+		--source)
 			shift
 			MERGE_SRC=$1
 			;;
-		-t)
+		--target)
 			shift
 			MERGE_TGT=$1
 			;;
-		-h | --help)
+		--help)
 			help 
 			exit 0
 			;;

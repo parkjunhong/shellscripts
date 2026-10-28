@@ -57,7 +57,7 @@ help(){
   echo "  --remove-<항목>[=<값>]       지정된 zone에서 규칙 삭제 (콤마 구분). 값 생략 시 해당 항목의 모든 규칙 삭제"
   echo "                               지원항목: sources, services, ports, protocols, forward-ports, source-ports,"
   echo "                                         icmp-blocks, rich-rules, interfaces"
-  echo "  -h, --help                   도움말 출력"
+  echo "  --help                       도움말 출력"
 }
 
 ##
@@ -417,7 +417,7 @@ while [[ "$#" -gt 0 ]]; do
     --remove-interfaces) REM_ALL_INTERFACES="true"; has_modification="true"; shift ;;
     --remove-interfaces=*) parse_and_store "${1#*=}" "REM_INTERFACES"; has_modification="true"; shift ;;
     
-    -h|--help) help; exit 0 ;;
+    --help) help; exit 0 ;;
     *) help "알 수 없는 옵션입니다: $1" "$LINENO"; exit 1 ;;
   esac
 done

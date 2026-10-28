@@ -53,7 +53,7 @@ _fwc_cli_completion() {
   done
 
   if [[ -z "$active_zone" ]]; then
-    opts="--zone= --active-zone --active-zone= --reload -h --help"
+    opts="--zone= --active-zone --active-zone= --reload --help"
   else
     opts="--zone= --active-zone --active-zone= --reload --permanent --clear-all \
           --add-sources= --add-services= --add-ports= --add-protocols= \

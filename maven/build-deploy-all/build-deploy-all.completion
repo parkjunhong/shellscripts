@@ -67,10 +67,10 @@ _build_deploy_all_completion() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  opts="-p --profile -d -t --test -u -h --help"
+  opts="--profile --deploy --test --update --help"
 
   case "${prev}" in
-    -p|--profile)
+    --profile)
       local profiles
       profiles=$(_blddeployall_read_profiles)
       COMPREPLY=( $(compgen -W "${profiles}" -- "${cur}") )

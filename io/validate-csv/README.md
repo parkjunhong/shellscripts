@@ -22,18 +22,18 @@ CSV 데이터 파일 내 모든 레코드의 컬럼 개수가 규격과 일치�
 ## ⚙️ 파라미터 명세
 
 ```bash
-validate-csv -f <CSV파일> -d <구분자> -c <기준컬럼개수> [옵션...]
+validate-csv --file <CSV파일> --delim <구분자> --count <기준컬럼개수> [옵션...]
 ```
 
-| 옵션 | 단축형 | 필수 여부 | 기본값 | 설명 |
-| :--- | :---: | :---: | :---: | :--- |
-| `--file <file>` | `-f` | **필수** | - | 검증할 대상 CSV 파일 경로 |
-| `--delim <char>` | `-d` | **필수** | - | 컬럼 구분자 (예: `,`, `\t`, `\|`) |
-| `--count <num>` | `-c` | **필수** | - | 각 레코드가 가져야 하는 정확한 컬럼 개수 |
-| `--quotechar <char>` | `-q` | 선택 | `"` | 따옴표 이스케이프 문자 |
-| `--empty <str>` | `-e` | 선택 | `__EMPTY__` | 빈 컬럼 식별용 대체 문자열 |
-| `--verbose` | `-v` | 선택 | 비활성 | 오류 발생 라인을 터미널에 실시간 출력 |
-| `--help` | `-h` | 선택 | - | 도움말 메시지 출력 및 종료 |
+| 옵션 | 필수 여부 | 기본값 | 설명 |
+| :--- | :---: | :---: | :--- |
+| `--file <file>` | **필수** | - | 검증할 대상 CSV 파일 경로 |
+| `--delim <char>` | **필수** | - | 컬럼 구분자 (예: `,`, `\t`, `\|`) |
+| `--count <num>` | **필수** | - | 각 레코드가 가져야 하는 정확한 컬럼 개수 |
+| `--quotechar <char>` | 선택 | `"` | 따옴표 이스케이프 문자 |
+| `--empty <str>` | 선택 | `__EMPTY__` | 빈 컬럼 식별용 대체 문자열 |
+| `--verbose` | 선택 | 비활성 | 오류 발생 라인을 터미널에 실시간 출력 |
+| `--help` | 선택 | - | 도움말 메시지 출력 및 종료 |
 
 ---
 
@@ -41,10 +41,10 @@ validate-csv -f <CSV파일> -d <구분자> -c <기준컬럼개수> [옵션...]
 
 ```bash
 # 1) 기본 5개 컬럼 CSV 파일 정합성 검증
-./validate-csv -f customers.csv -d "," -c 5
+./validate-csv --file customers.csv --delim "," --count 5
 
 # 2) 파이프(|) 구분자 데이터 검증 및 실시간 오류 라인 출력
-./validate-csv -f dump.dat -d "|" -c 12 --verbose
+./validate-csv --file dump.dat --delim "|" --count 12 --verbose
 
 # 3) 검증 실패 시 생성된 에러 로그 파일 확인
 cat customers.csv.validated

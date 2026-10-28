@@ -42,11 +42,11 @@ _git_push_after_sync_completion() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
   
-  opts="-s --source -t --target -h --help"
+  opts="--source --target --message --help"
 
   # 디렉토리 경로 입력 지원
   case "${prev}" in
-    -s|--source|-t|--target)
+    --source|--target)
       compopt -o dirnames
       COMPREPLY=( $(compgen -d -- "${cur}") )
       return 0

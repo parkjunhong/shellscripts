@@ -75,15 +75,15 @@ _scp_dir_completion() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  local opts="-H --host -u --user --username -p --port -P -i --passwd --password -s --src --source -d --dest --destination -o --ssh-option -h --help"
+  local opts="--host --user --username --port --passwd --password --src --source --dest --destination --ssh-option --help"
 
   case "$prev" in
-    -s|--src|--source)
+    --src|--source)
       # 로컬 파일 및 디렉토리 자동 완성
       COMPREPLY=( $(compgen -f -- "${cur}") )
       return 0
       ;;
-    -H|--host)
+    --host)
       # 알려진 호스트 목록 자동 완성
       local hosts
       hosts="$(_scp_dir_get_known_hosts)"
@@ -92,12 +92,12 @@ _scp_dir_completion() {
         return 0
       fi
       ;;
-    -p|--port)
+    --port)
       # 기본 SSH 포트 제안
       COMPREPLY=( $(compgen -W "22 2222" -- "${cur}") )
       return 0
       ;;
-    -u|--user|--username)
+    --user|--username)
       # 로컬 사용자 목록 제안
       if command -v getent >/dev/null 2>&1; then
         local users
@@ -106,7 +106,7 @@ _scp_dir_completion() {
         return 0
       fi
       ;;
-    -P|-i|--passwd|--password)
+    --passwd|--password)
       # 비밀번호는 보안상 자동완성하지 않음
       return 0
       ;;

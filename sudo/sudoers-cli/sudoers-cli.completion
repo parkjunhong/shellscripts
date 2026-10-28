@@ -28,26 +28,26 @@ _sudoers_cli_completion() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  opts="-u --user -g --group -H --host -r --runas -o --option -h --help"
+  opts="--user --group --host --runas --option --help"
 
   case "${prev}" in
-    -u|--user)
+    --user)
       COMPREPLY=( $(compgen -W "$(cut -d: -f1 /etc/passwd 2>/dev/null)" -- "${cur}") )
       return 0
       ;;
-    -g|--group)
+    --group)
       COMPREPLY=( $(compgen -W "$(cut -d: -f1 /etc/group 2>/dev/null)" -- "${cur}") )
       return 0
       ;;
-    -H|--host)
+    --host)
       COMPREPLY=( $(compgen -W "ALL localhost" -- "${cur}") )
       return 0
       ;;
-    -r|--runas)
+    --runas)
       COMPREPLY=( $(compgen -W "ALL $(cut -d: -f1 /etc/passwd 2>/dev/null)" -- "${cur}") )
       return 0
       ;;
-    -o|--option)
+    --option)
       # 일반 권한 배포를 위한 'NONE' 옵션 키워드 자동완성 추가
       COMPREPLY=( $(compgen -W "NOPASSWD PASSWD NOEXEC EXEC SETENV NOSETENV LOG_INPUT NOLOG_INPUT NONE" -- "${cur}") )
       return 0
@@ -58,20 +58,20 @@ _sudoers_cli_completion() {
   local word
   for word in "${COMP_WORDS[@]}"; do
     case "$word" in
-      -u|--user|-g|--group)
-        opts=$(echo "$opts" | sed -e 's/ -u / /g' -e 's/ --user / /g' -e 's/ -g / /g' -e 's/ --group / /g')
+      --user|--group)
+        opts=$(echo "$opts" | sed -e 's/ --user / /g' -e 's/ --group / /g')
         ;;
-      -H|--host)
-        opts=$(echo "$opts" | sed -e 's/ -H / /g' -e 's/ --host / /g')
+      --host)
+        opts=$(echo "$opts" | sed -e 's/ --host / /g')
         ;;
-      -r|--runas)
-        opts=$(echo "$opts" | sed -e 's/ -r / /g' -e 's/ --runas / /g')
+      --runas)
+        opts=$(echo "$opts" | sed -e 's/ --runas / /g')
         ;;
-      -o|--option)
-        opts=$(echo "$opts" | sed -e 's/ -o / /g' -e 's/ --option / /g')
+      --option)
+        opts=$(echo "$opts" | sed -e 's/ --option / /g')
         ;;
-      -h|--help)
-        opts=$(echo "$opts" | sed -e 's/ -h / /g' -e 's/ --help / /g')
+      --help)
+        opts=$(echo "$opts" | sed -e 's/ --help / /g')
         ;;
     esac
   done

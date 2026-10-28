@@ -65,12 +65,12 @@ _git_getpr_completion() {
       done
       
       case "$word" in
-        -g|--git-url) has_g=1; val_g="$temp_val" ;;
-        -p|--project) has_p=1; val_p="$temp_val" ;;
-        -b|--branch) has_b=1; val_b="$temp_val" ;;
-        -t|--resource-type) has_t=1; val_t="$temp_val" ;;
-        -r|--resource) has_r=1; val_r="$temp_val" ;;
-        -o|--output-path) has_o=1; val_o="$temp_val" ;;
+        --git-url) has_g=1; val_g="$temp_val" ;;
+        --project) has_p=1; val_p="$temp_val" ;;
+        --branch) has_b=1; val_b="$temp_val" ;;
+        --resource-type) has_t=1; val_t="$temp_val" ;;
+        --resource) has_r=1; val_r="$temp_val" ;;
+        --output-path) has_o=1; val_o="$temp_val" ;;
       esac
       
       # 해당 옵션의 값이 현재 커서 위치까지 이어져 있다면, 이를 '활성 옵션'으로 지정
@@ -107,7 +107,7 @@ _git_getpr_completion() {
   # ====================================================================
   if [[ -n "$active_flag" ]]; then
     case "$active_flag" in
-      -g|--git-url)
+      --git-url)
         compopt -o nospace 2>/dev/null
         if [[ -n "$GIT_GETPR_GIT_URL" ]]; then
           IFS=',' read -ra URLS <<< "$GIT_GETPR_GIT_URL"
@@ -123,11 +123,11 @@ _git_getpr_completion() {
         fi
         return 0
         ;;
-      -p|--project)
+      --project)
         COMPREPLY=()
         return 0
         ;;
-      -b|--branch)
+      --branch)
         local remote_url=""
         if [[ $has_g -eq 1 && -n "$val_g" ]]; then
           remote_url="${val_g%/}/${val_p#/}"
@@ -147,15 +147,15 @@ _git_getpr_completion() {
         fi
         return 0
         ;;
-      -t|--resource-type)
+      --resource-type)
         _set_compreply "directory d file f"
         return 0
         ;;
-      -r|--resource)
+      --resource)
         COMPREPLY=()
         return 0
         ;;
-      -o|--output-path)
+      --output-path)
         compopt -o nospace 2>/dev/null
         COMPREPLY=( $(compgen -f -d -- "$bash_cur") )
         return 0
@@ -169,17 +169,17 @@ _git_getpr_completion() {
   local opts=""
   
   if [[ $has_o -eq 0 && $has_r -eq 1 ]]; then
-    opts="-o --output-path"
+    opts="--output-path"
   elif [[ $has_r -eq 0 && $has_t -eq 1 ]]; then
-    opts="-r --resource"
+    opts="--resource"
   elif [[ $has_t -eq 0 && $has_b -eq 1 ]]; then
-    opts="-t --resource-type"
+    opts="--resource-type"
   elif [[ $has_b -eq 0 && $has_p -eq 1 ]]; then
-    opts="-b --branch"
+    opts="--branch"
   elif [[ $has_p -eq 0 && $has_g -eq 1 ]]; then
-    opts="-p --project"
+    opts="--project"
   elif [[ $has_g -eq 0 ]]; then
-    opts="-g --git-url"
+    opts="--git-url"
   fi
 
   # 플래그 제안 시에는 콜론 버그가 발생하지 않으므로 기본 bash_cur 사용

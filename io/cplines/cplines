@@ -36,14 +36,14 @@ help(){
 	fi
 	echo
 	echo "Usage:"
-	echo "cplines [-h|--help] --src <source-file> --dst <destination-file> --linenumber <line number to begin to copy> --count <line count to copy>"
+	echo "cplines [--help] --src <source-file> --dst <destination-file> --linenumber <line number to begin to copy> --count <line count to copy>"
 	echo
 	echo "Options:"
-	echo " -c | --count : line count to copy"
-	echo " -d | --dst   : destination filepath"
-	echo " -h | --help  : show help messages."
-	echo " -l | --linenumber: line number to begin to copy"
-	echo " -s | --src   : source filepath"
+	echo " --count     : line count to copy"
+	echo " --dst       : destination filepath"
+	echo " --help      : show help messages."
+	echo " --linenumber: line number to begin to copy"
+	echo " --src       : source filepath"
 }
 
 LINENUMBER=-1
@@ -53,7 +53,7 @@ SRC=""
 while [ ! -z "$1" ];
 do
 	case "$1" in
-		-c | --count)
+		--count)
 			shift
 			if ! [[ $1 =~ [0-9]+ ]];then
 				help "Invalid 'line' count: $1" $LINENO
@@ -61,7 +61,7 @@ do
 			fi
 			COUNT=$1
 			;;
-		-d | --dst)
+		--dst)
 			shift
 			if [ -d "$1" ];then
 				help "Invalid 'destination'. May a directory: $1" $LINENO
@@ -79,11 +79,11 @@ do
 			fi
 			DST="$1"
 			;;
-		-h | --help)
+		--help)
 			help
 			exit 0
 			;;
-		-l | --linenumber)
+		--linenumber)
 			shift
 			if ! [[ $1 =~ [0-9]+ ]];then
 				help "Invalid 'line' offset: $1" $LINENO
@@ -91,7 +91,7 @@ do
 			fi
 			LINENUMBER=$1
 			;;
-		-s | --src)
+		--src)
 			shift
 			if [ ! -f "$1" ];then
 				help "Invalid 'source' filepath: $1" $LINENO

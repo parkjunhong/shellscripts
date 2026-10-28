@@ -76,7 +76,7 @@ _ssh-con-gen-log(){
 }
 
 _ssh-con-gen-load-options(){
-	echo "-user -pwd -host -port -file -title -help"
+	echo "--user --password --host --port --file --title --help"
 }
 
 # $1: argument
@@ -131,7 +131,7 @@ _ssh-con-gen-handle-cli(){
 			;;
 		*)
 			case "$3" in
-				-user | -pwd | -host | -port | -file | -title)
+				--user | --password | --host | --port | --file | --title)
 					# input a value
 					;;
 				*)

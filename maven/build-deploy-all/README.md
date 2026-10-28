@@ -15,14 +15,14 @@
 
 ## ⚙️ 파라미터 명세
 
-| 파라미터 | 단축 옵션 | 필수 여부 | 기본값 | 설명 |
-| :--- | :---: | :---: | :---: | :--- |
-| `--profile <name>` | `-p` | **필수** | - | Maven 빌드 프로파일 이름 (하위 프로젝트 공통 적용) |
-| `-d` | - | 선택 | 비활성 | 빌드 완료 후 프로젝트별 배포 스크립트(`deploy.sh`)를 실행합니다. |
-| `--test` | `-t` | 선택 | 비활성 | 단위 테스트(JUnit)를 실행합니다. (기본은 테스트 건너뜀) |
-| `-u` | - | 선택 | 비활성 | 빌드 전 각 프로젝트에서 `git pull`을 수행합니다. |
-| `--help` | `-h` | 선택 | - | 사용법 및 옵션 도움말을 출력합니다. |
-| `[DIR]` | - | 선택 | `$PWD` | 탐색할 프로젝트 상위 디렉토리 경로 (미지정 시 현재 디렉토리) |
+| 파라미터 | 필수 여부 | 기본값 | 설명 |
+| :--- | :---: | :---: | :--- |
+| `--profile <name>` | **필수** | - | Maven 빌드 프로파일 이름 (하위 프로젝트 공통 적용) |
+| `--deploy` | 선택 | 비활성 | 빌드 완료 후 프로젝트별 배포 스크립트(`deploy.sh`)를 실행합니다. |
+| `--test` | 선택 | 비활성 | 단위 테스트(JUnit)를 실행합니다. (기본은 테스트 건너뜀) |
+| `--update` | 선택 | 비활성 | 빌드 전 각 프로젝트에서 `git pull`을 수행합니다. |
+| `--help` | 선택 | - | 사용법 및 옵션 도움말을 출력합니다. |
+| `[DIR]` | 선택 | `$PWD` | 탐색할 프로젝트 상위 디렉토리 경로 (미지정 시 현재 디렉토리) |
 
 ---
 
@@ -30,17 +30,17 @@
 
 ### 1. 현재 디렉토리 하위 모든 Maven 프로젝트 일괄 빌드
 ```bash
-build-deploy-all -p local
+build-deploy-all --profile local
 ```
 
 ### 2. 특정 디렉토리 지정 및 git pull 최신화 후 빌드
 ```bash
-build-deploy-all -p dev -u /home/user/workspace/microservices
+build-deploy-all --profile dev --update /home/user/workspace/microservices
 ```
 
 ### 3. 소스 최신화, 단위 테스트 실행, 빌드 후 배포까지 일괄 수행
 ```bash
-build-deploy-all -p prod -u -t -d
+build-deploy-all --profile prod --update --test --deploy
 ```
 
 ---

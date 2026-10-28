@@ -36,7 +36,7 @@ _install_docker_completion() {
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
   # 지원하는 Long 옵션 목록 정의 / Define supported long options list
-  opts="--pkg-mgr -h --help"
+  opts="--pkg-mgr --help"
 
   # 이전 인자 컨텍스트에 따른 동적 자동완성 제어 / Dynamic completion based on previous context
   case "${prev}" in

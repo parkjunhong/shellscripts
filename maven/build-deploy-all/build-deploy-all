@@ -21,15 +21,15 @@ help(){
 	fi
 	echo
 	echo "[Usage]"
-	echo "build-deploy-all -p <profile> [-d] [-t] [-u] [-h|--help] [DIR]"
+	echo "build-deploy-all --profile <profile> [--deploy] [--test] [--update] [--help] [DIR]"
 	echo
 	echo "[Parameters]"
-	echo " -p, --profile <profile> : Maven profile (Required)"
-	echo " -d                      : (Optional) deploy after build"
-	echo " -t, --test              : (Optional) run Unit Tests"
-	echo " -u                      : (Optional) update codes using 'git pull'"
-	echo " -h, --help              : (Optional) show this help message"
-	echo " DIR                     : (Optional) target directory containing sub-projects (default: \$PWD)"
+	echo " --profile <profile> : Maven profile (Required)"
+	echo " --deploy            : (Optional) deploy after build"
+	echo " --test              : (Optional) run Unit Tests"
+	echo " --update            : (Optional) update codes using 'git pull'"
+	echo " --help              : (Optional) show this help message"
+	echo " DIR                 : (Optional) target directory containing sub-projects (default: \$PWD)"
 	echo
 }
 PROFILE=""
@@ -40,20 +40,20 @@ DIR="$PWD"
 while [ ! -z "$1" ];
 do
 	case "$1" in
-		-p | --profile)
+		--profile)
 			shift
 			PROFILE=$1
 			;;
-		-d)
+		--deploy)
 			DEPLOY=1
 			;;
-		-u)
+		--update)
 			GIT_PULL="true"
 			;;
-		-t | --test)
+		--test)
 			TEST="false"
 			;;
-		-h | --help)
+		--help)
 			help
 			exit 0
 			;;

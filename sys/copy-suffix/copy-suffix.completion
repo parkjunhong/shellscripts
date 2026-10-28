@@ -31,15 +31,15 @@ _copy_suffix_completion() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  opts="-d --date -e --ext -h --help -o --output -s --suffix -t --time"
+  opts="--date --ext --help --output --suffix --time"
 
   case "${prev}" in
-    -o|--output)
+    --output)
       compopt -o dirnames 2>/dev/null || true
       COMPREPLY=()
       return 0
       ;;
-    -s|--suffix)
+    --suffix)
       return 0
       ;;
     *)

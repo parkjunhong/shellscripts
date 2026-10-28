@@ -46,25 +46,25 @@ help(){
 	fi
 	echo
 	echo "Usage:"
-	echo "csv-column-required.sh [-h|--help] --file <filepath> --delim <delimiter> --quotechar <quote char> --empty <empty value> --count <column count> --read-count <read count> --clmn-names <column names> --verbose"
+	echo "csv-column-required.sh [--help] --file <filepath> --delim <delimiter> --quotechar <quote char> --empty <empty value> --count <column count> --read-count <read count> --clmn-names <column names> --verbose"
 	echo
 	echo "Options:"
-	echo " -c | --count     : count of column"
-	echo " -d | --delim     : a delimiter of column"
-	echo " -e | --empty     : a string if a value between a delimiter and a delimiter is empty."
-	echo "                    default: \"$EMPTY_VALUE\""
-	echo " -h | --help      : show help messages"
-	echo " -f | --file      : input filepath"
-	echo " -n | --clmn-names: column name list. separated by comma(,)."
-	echo " -q | --quotechar : quoted character. default: double quoted ($QUOTECHAR)."
-	echo " -r | --read-count: read lines."
-	echo " -v | --verbose   : show error message."
+	echo " --count     : count of column"
+	echo " --delim     : a delimiter of column"
+	echo " --empty     : a string if a value between a delimiter and a delimiter is empty."
+	echo "               default: \"$EMPTY_VALUE\""
+	echo " --help      : show help messages"
+	echo " --file      : input filepath"
+	echo " --clmn-names: column name list. separated by comma(,)."
+	echo " --quotechar : quoted character. default: double quoted ($QUOTECHAR)."
+	echo " --read-count: read lines."
+	echo " --verbose   : show error message."
 }
 
 while [ ! -z "$1" ];
 do
 	case "$1" in
-		-c | --count)
+		--count)
 			shift
 			if ! [[ $1 =~ [0-9]+ ]];then
 				help "Invalid 'line' count: $1" $LINENO
@@ -72,11 +72,11 @@ do
 			fi
             COLUMN_COUNT=$1
             ;;
-		-d | --delim)
+		--delim)
 			shift
 			DELIMITER="$1"
 			;;
-		-e | --empty)
+		--empty)
 			shift
 			if [ -z "$1" ];then
 				help "Invalid 'empty value'. input: $1" $LINENO
@@ -84,7 +84,7 @@ do
 			fi
 			EMPTY_VALUE="$1"
 			;;
-		-f | --file)
+		--file)
 			shift
 			if [ ! -f "$1" ];then
 				help "Invalid 'input file': filepath: $1" $LINENO
@@ -93,15 +93,15 @@ do
 			INPUT_FILE="$1"
 			RESULT_FILE="$1.validated"
 			;;
-		-h | --help)
+		--help)
 			help
 			exit 0
 			;;
-		-n | --clmn-names)
+		--clmn-names)
 			shift
 			IFS="," read -ra CLMN_NAMES <<< "$1"
 			;;
-		-q | --quotechar)
+		--quotechar)
 			shift
 			if [ -z "$1" ] || [ "${#1}" -ne 1 ];then
 				help "Invalid 'quote char'. input: $1" $LINENO
@@ -109,7 +109,7 @@ do
 			fi
 			QUOTECHAR="$1"
 			;;
-		-r | --read-count)
+		--read-count)
 			shift
 			if ! [[ $1 =~ [0-9]+ ]];then
 				help "Invalid 'line' count: $1" $LINENO
@@ -117,7 +117,7 @@ do
 			fi
             READ_COUNT=$1
             ;;
-		-v | --verbose)
+		--verbose)
 			VERBOSE=1
 			;;
 		*)

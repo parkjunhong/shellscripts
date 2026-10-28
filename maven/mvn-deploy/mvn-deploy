@@ -55,19 +55,19 @@ Default Goals:
   -e clean deploy
 
 Options:
-  -U, --update-snapshots   스냅샷 업데이트 (mvn -U)
-  -s, --skip-tests         테스트 생략 (mvn -DskipTests)
+      --update-snapshots   스냅샷 업데이트 (mvn -U)
+      --skip-tests         테스트 생략 (mvn -DskipTests)
       --maven <path>       Maven 실행 파일 경로 또는 명령어 (기본: mvn)
       --settings <path>    settings.xml 경로 (mvn -s <path>)
       --profile <name>     활성화할 프로파일 (mvn -P <name>) (반복 가능)
       --dry-run            실행하지 않고 명령만 출력
-  -h, --help               도움말 출력
+      --help               도움말 출력
 
 Examples:
   ./mvn-deploy
-  ./mvn-deploy -U -s
+  ./mvn-deploy --update-snapshots --skip-tests
   ./mvn-deploy --settings ~/.m2/settings.xml --profile prod
-  ./mvn-deploy -U -- --batch-mode -Drevision=1.2.3
+  ./mvn-deploy --update-snapshots -- --batch-mode -Drevision=1.2.3
 EOF
 }
 
@@ -108,11 +108,11 @@ EXTRA_ARGS=()
 parse_args() {
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      -U|--update-snapshots)
+      --update-snapshots)
         UPDATE_SNAPSHOTS="true"
         shift
         ;;
-      -s|--skip-tests)
+      --skip-tests)
         SKIP_TESTS="true"
         shift
         ;;
@@ -144,7 +144,7 @@ parse_args() {
         DRY_RUN="true"
         shift
         ;;
-      -h|--help)
+      --help)
         help
         exit 0
         ;;

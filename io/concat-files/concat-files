@@ -39,10 +39,10 @@ help(){
 	echo "concat-files [-h|--help] --src <source-files> --dst <destination-file> --r <removed strings>"
 	echo
 	echo "Options:"
-	echo " -d | --dst   : (m) destination filepath"
-	echo " -h | --help  : show help messages."
-	echo " -r | --remove: (o) remove lines that contain a string."
-	echo " -s | --src   : (m) source filepath"
+	echo " --dst   : (m) destination filepath"
+	echo " --help  : show help messages."
+	echo " --remove: (o) remove lines that contain a string."
+	echo " --src   : (m) source filepath"
 	echo
 	echo "e.g.:"
 	echo "concat-files --src a.txt b.txt c.txt --dst result.txt "
@@ -54,19 +54,19 @@ REM=""
 while [ ! -z "$1" ];
 do
 	case "$1" in
-		-h | --help)
+		--help)
 			help
 			exit 0
 			;;
-		-d | --dst )
+		--dst)
 			shift
 			DST="$1"
 			;;
-		-r | --remove)
+		--remove)
 			shift
 			REM="$1"
 			;;
-		-s | --src )
+		--src)
 			shift
 			if [ ! -f "$1" ];then
 				help "올바른 파일 경로가 아닙니다: 입력=$1" $LINENO

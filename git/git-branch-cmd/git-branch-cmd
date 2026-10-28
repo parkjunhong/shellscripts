@@ -67,7 +67,7 @@ help(){
   echo "      --show-default-branch      원격 저장소의 기본 브랜치 정보를 조회합니다."
   echo ""
   echo "      --dry-run                  실제로 명령어를 실행하지 않고 실행될 명령어만 출력합니다."
-  echo "  -h, --help                     이 도움말을 표시하고 종료합니다."
+  echo "      --help                     이 도움말을 표시하고 종료합니다."
 }
 
 trap 'help "스크립트 실행 중 오류가 발생했습니다." "$LINENO"' ERR
@@ -106,7 +106,7 @@ RESOLVED_PAT=""
 # 인자 파싱
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
-    -h|--help)
+    --help)
       help "" ""
       exit 0
       ;;

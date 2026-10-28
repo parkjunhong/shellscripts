@@ -20,46 +20,47 @@ help(){
 	echo "Create a shell file to send a target server using 'ssh', 'scp' & 'sshpass'."
 	echo 
 	echo "Usage:"
-	echo " $FILENAME -user <username> -pwd <password> -host <host> -port <port> -dir <remote dir> -file <filename>"
+	echo " $FILENAME --user <username> --password <password> --host <host> --port <port> --dir <remote dir> --file <filename>"
 	echo
 	echo "Parameter:"
-	echo " -user: username"
-	echo " -pwd : password. if password contains '!', wrap with single quotation."
-	echo " -host: ssh host or domain name"
-	echo " -port: ssh port"
-	echo " -dir : remote directory to install files"
-	echo " -file: filename"
+	echo " --user    : username"
+	echo " --password: password. if password contains '!', wrap with single quotation."
+	echo " --host    : ssh host or domain name"
+	echo " --port    : ssh port"
+	echo " --dir     : remote directory to install files"
+	echo " --file    : filename"
+	echo " --help    : show help message"
 }
 
 
 while [ ! -z "$1" ];
 do
 	case "$1" in
-		-user | --username)
+		--user | --username)
 			shift
 			username="$1"
 			;;
-		-pwd | --password)
+		--password)
 			shift
 			password="$1"
 			;;
-		-host)
+		--host)
 			shift
 			host="$1"
 			;;
-		-port)
+		--port)
 			shift
 			port="$1"
 			;;
-		-dir)
+		--dir)
 			shift
 			dir="$1"
 			;;
-		-file)
+		--file)
 			shift
 			filename="$1"
 			;;
-		-help)
+		--help)
 			help
 			exit 0
 			;;

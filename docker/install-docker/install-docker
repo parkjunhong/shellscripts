@@ -445,7 +445,7 @@ main() {
         esac
         shift 2
         ;;
-      -h|--help)
+      --help)
         help "" ""
         exit 0
         ;;
