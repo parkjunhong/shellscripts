@@ -18,7 +18,8 @@
 | [**`maven/`**](file:///home/parkjunhong/dev/bashshell-projects/github/shellscripts/maven/README.md) | Apache Maven 빌드 오케스트레이션, 버전 스위칭 및 사설 저장소 배포 | `build-mvn-package`, `build-deploy-all`, `mvn-deploy`, `update-mvn-config`, `upload-mvn-dependencies` |
 | [**`io/`**](file:///home/parkjunhong/dev/bashshell-projects/github/shellscripts/io/README.md) | 파일 병합, 라인 추출, CSV 유효성 검증 및 I/O 처리 도구 | `validate-csv`, `csv-column-required`, `concat-files`, `cplines` |
 | [**`sudo/`**](file:///home/parkjunhong/dev/bashshell-projects/github/shellscripts/sudo/README.md) | Sudoers 정책 생성·병합 및 visudo 사전 검증 관리 도구 | `sudoers-cli` |
-| [**`sys/**`](file:///home/parkjunhong/dev/bashshell-projects/github/shellscripts/sys/README.md) | 시스템 진단, 디스크 용량 초고속 분석, 백업 및 서비스 완전 삭제 | `disk-size`, `sys-info`, `remove-service`, `copy-suffix`, `vim-cli` 등 |
+| [**`sys/`**](file:///home/parkjunhong/dev/bashshell-projects/github/shellscripts/sys/README.md) | 시스템 진단, 디스크 용량 초고속 분석, 백업 및 서비스 완전 삭제 | `disk-size`, `sys-info`, `remove-service`, `copy-suffix`, `vim-cli` 등 |
+| [**`ai-agent/`**](file:///home/parkjunhong/dev/bashshell-projects/github/shellscripts/ai-agent/README.md) | AI-Agent 스킬(`skill`) 및 규칙(`rule`) 생성·참조·관리 도구 | `acs-cli` |
 
 ---
 

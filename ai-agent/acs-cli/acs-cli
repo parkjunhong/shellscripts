@@ -1,0 +1,1055 @@
+#!/usr/bin/env bash
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : acs-cli: AI-Agent Customization System CLI (Skill & Rule Manager)
+# @license : Apache License 2.0
+# @since : 2026-10-28
+# @desc : support RHEL 8+, Oracle Linux 8+, Ubuntu 20.04+, RockyOS 8+, CentOS 7+
+# @installation :
+# 1. insert 'source <path>/acs-cli.completion' into ~/.bashrc or ~/.bash_profile for a personal usage.
+# 2. copy the completion file to /usr/share/bash-completion/completions/acs-cli (1st) or /etc/bash_completion.d/acs-cli.completion (2nd) for all users.
+# =======================================
+
+set -Eeuo pipefail
+
+readonly FILENAME="$(basename "$0")"
+
+##
+# 오류 원인 및 콜스택 진단 정보를 표준 에러(stderr)로 출력합니다.
+#
+# @param $1 {string} 오류 원인 메시지
+# @param $2 {number} 오류 발생 행 번호
+#
+# @return 없음
+##
+print_error_box() {
+  local cause="${1:-}"
+  local line="${2:-unknown}"
+  [[ -n "$cause" ]] || return 0
+
+  local indent=10
+  local formatl=" - %-${indent}s: %s\n"
+  local formatr=" - %${indent}s: %s\n"
+  echo >&2
+  echo "================================================================================" >&2
+  printf "$formatl" "filename" "$FILENAME" >&2
+  printf "$formatl" "line" "$line" >&2
+  printf "$formatl" "callstack" "" >&2
+  local idx=1
+  local func
+  for func in "${FUNCNAME[@]:2}"; do
+    printf "$formatr" "[${idx}]" "$func" >&2
+    ((idx++)) || true
+  done
+  printf "$formatl" "cause" "$cause" >&2
+  echo "================================================================================" >&2
+}
+
+##
+# 전체 사용법 또는 서브커맨드별 도움말을 출력합니다.
+#
+# @param $1 {string} 오류 원인 메시지 (선택)
+# @param $2 {number} 오류 발생 라인 번호 (선택)
+# @param $3 {string} 서브커맨드 이름 (create | remove | add | list | empty)
+#
+# @return 없음
+##
+help() {
+  local cause="${1:-}"
+  local line="${2:-unknown}"
+  local subcmd="${3:-}"
+
+  if [[ -n "$cause" ]]; then
+    print_error_box "$cause" "$line"
+  fi
+
+  case "$subcmd" in
+    create)
+      cat <<EOF
+
+📖 "AI-Agent Customization System CLI"
+
+📦 사용법 (Usage - create):
+  $FILENAME create skill --category <카테고리> --name <이름> [--home <경로>] [--force]
+  $FILENAME create rule  --category <카테고리> --name <이름> [--home <경로>] [--force]
+  $FILENAME create --help
+
+📝 설명 (Description):
+  지정된 카테고리에 새로운 AI-Agent 스킬(Skill) 또는 규칙(Rule)을 생성합니다.
+  기본 디렉토리 구조를 자동으로 생성하며, 에이전트 탐색 표준에 맞는 초기 마크다운 템플릿을 작성합니다.
+
+⚙️  옵션 (Options):
+  --category <CATEGORY>     생성할 스킬/규칙의 카테고리 이름 (필수)
+  --name <NAME>             생성할 스킬/규칙의 이름 (필수, 규칙의 경우 .md 확장자 생략 가능)
+  --home <DIR>              AI-Agent 커스터마이징 루트 경로 지정 (미지정 시 \$AI_AGENT_CUSTOMIZATION_HOME 사용)
+  --force                   동일 이름의 스킬/규칙이 이미 존재할 때 확인 없이 덮어쓰기
+  --help                    create 서브커맨드 도움말 출력
+
+📂 생성 경로 규격:
+  - skill : \${AI_AGENT_CUSTOMIZATION_HOME}/skills/\${CATEGORY}/.agents/skills/\${NAME}/SKILL.md
+  - rule  : \${AI_AGENT_CUSTOMIZATION_HOME}/rules/\${CATEGORY}/.agents/rules/\${NAME}.md
+
+EOF
+      ;;
+    remove)
+      cat <<EOF
+
+📖 "AI-Agent Customization System CLI"
+
+🗑️  사용법 (Usage - remove):
+  $FILENAME remove skill --category <카테고리> --name <이름> [--home <경로>] [--force]
+  $FILENAME remove rule  --category <카테고리> --name <이름> [--home <경로>] [--force]
+  $FILENAME remove --help
+
+📝 설명 (Description):
+  지정된 카테고리에서 스킬(Skill) 또는 규칙(Rule)을 삭제합니다.
+  대상 항목이 심볼릭 링크(add로 추가된 참조)인 경우 원본을 보존하고 링크만 제거하며,
+  일반 디렉토리/파일(create로 생성된 항목)인 경우 실제 디렉토리/파일을 삭제합니다.
+
+⚙️  옵션 (Options):
+  --category <CATEGORY>     삭제할 스킬/규칙의 카테고리 이름 (필수)
+  --name <NAME>             삭제할 스킬/규칙의 이름 (필수)
+  --home <DIR>              AI-Agent 커스터마이징 루트 경로 지정 (미지정 시 \$AI_AGENT_CUSTOMIZATION_HOME 사용)
+  --force                   삭제 확인 프롬프트(y/N) 없이 즉시 삭제 수행
+  --help                    remove 서브커맨드 도움말 출력
+
+EOF
+      ;;
+    add)
+      cat <<EOF
+
+📖 "AI-Agent Customization System CLI"
+
+🔗 사용법 (Usage - add):
+  $FILENAME add skill --category <카테고리> --directory <디렉토리_경로> [--name <별칭>] [--home <경로>] [--force]
+  $FILENAME add rule  --category <카테고리> --file <파일_경로> [--name <별칭>] [--home <경로>] [--force]
+  $FILENAME add --help
+
+📝 설명 (Description):
+  외부에 이미 존재하는 스킬 디렉토리(--directory) 또는 규칙 파일(--file)을
+  지정된 카테고리(--category) 하위에 심볼릭 링크(Symbolic Link)로 추가하여 참조합니다.
+  카테고리 디렉토리가 존재하지 않는 경우 자동으로 생성합니다.
+
+⚙️  옵션 (Options):
+  --category <CATEGORY>     참조를 추가할 대상 카테고리 이름 (필수)
+  --directory <DIR>         [skill 전용] 참조할 원본 스킬 디렉토리 경로 (필수)
+  --file <FILE>             [rule 전용] 참조할 원본 규칙 마크다운 파일 경로 (필수)
+  --name <NAME>             링크 생성 시 사용할 이름 지정 (선택, 미지정 시 원본 디렉토리/파일명 사용)
+  --home <DIR>              AI-Agent 커스터마이징 루트 경로 지정 (미지정 시 \$AI_AGENT_CUSTOMIZATION_HOME 사용)
+  --force                   동일 이름의 항목이 이미 존재할 때 기존 항목을 교체
+  --help                    add 서브커맨드 도움말 출력
+
+EOF
+      ;;
+    list)
+      cat <<EOF
+
+📖 "AI-Agent Customization System CLI"
+
+📋 사용법 (Usage - list):
+  $FILENAME list [skill|rule] [--category <카테고리>] [--name <이름>] [--home <경로>]
+  $FILENAME list --help
+
+📝 설명 (Description):
+  관리 중인 AI-Agent 스킬(Skill) 및 규칙(Rule)의 카테고리별 목록과 참조(심볼릭 링크) 상태를 조회합니다.
+  대상을 생략하면 skill과 rule 전체를 조회하며, --category와 --name으로 세부 필터링이 가능합니다.
+
+⚙️  옵션 (Options):
+  --category <CATEGORY>     특정 카테고리만 필터링하여 조회 (선택)
+  --name <NAME>             특정 이름(또는 부분 문자열)과 일치하는 항목만 필터링하여 조회 (선택)
+  --home <DIR>              AI-Agent 커스터마이징 루트 경로 지정 (미지정 시 \$AI_AGENT_CUSTOMIZATION_HOME 사용)
+  --help                    list 서브커맨드 도움말 출력
+
+EOF
+      ;;
+    *)
+      cat <<EOF
+
+📖 "AI-Agent Customization System CLI"
+
+🛠️  사용법 (Usage):
+  $FILENAME <command> <target> [options...]
+  $FILENAME --help
+
+📌 서브커맨드 (Subcommands):
+  create   skill|rule       새로운 스킬(SKILL.md) 또는 규칙(<NAME>.md) 생성
+  remove   skill|rule       기존 스킬 또는 규칙(원본 또는 심볼릭 링크) 삭제
+  add      skill|rule       외부 스킬 디렉토리 또는 규칙 파일을 심볼릭 링크로 카테고리에 추가(참조)
+  list     [skill|rule]     등록된 스킬/규칙 목록 및 심볼릭 링크 참조 현황 조회
+
+🌐 전역 옵션 및 환경 변수 (Global Options & Environment):
+  --home <DIR>              루트 경로 직접 지정 (기본값: \$AI_AGENT_CUSTOMIZATION_HOME 환경변수)
+  --help                    전체 도움말 또는 서브커맨드별 도움말 출력
+
+📂 관리 경로 구조 (Directory Layout):
+  - Skill : \${AI_AGENT_CUSTOMIZATION_HOME}/skills/\${CATEGORY}/.agents/skills/\${NAME}/SKILL.md
+  - Rule  : \${AI_AGENT_CUSTOMIZATION_HOME}/rules/\${CATEGORY}/.agents/rules/\${NAME}.md
+
+💡 예시 (Examples):
+  $FILENAME create skill --category bash --name bash-scripts
+  $FILENAME create rule  --category java --name javadoc-guide
+  $FILENAME add    skill --category bash --directory /path/to/my-skill
+  $FILENAME add    rule  --category java --file /path/to/my-rule.md
+  $FILENAME list   skill --category bash
+  $FILENAME remove skill --category bash --name bash-scripts
+
+EOF
+      ;;
+  esac
+}
+
+##
+# 에러 박스와 서브커맨드 도움말을 출력한 뒤 비정상 종료(exit 1)합니다.
+#
+# @param $1 {string} 오류 원인 메시지
+# @param $2 {number} 오류 발생 행 번호
+# @param $3 {string} 서브커맨드 이름 (선택)
+#
+# @return 없음 (exit 1)
+##
+die() {
+  local cause="${1:-알 수 없는 오류가 발생했습니다.}"
+  local line="${2:-unknown}"
+  local subcmd="${3:-}"
+  help "$cause" "$line" "$subcmd" >&2
+  exit 1
+}
+
+##
+# 경로를 절대 경로로 변환합니다. (심볼릭 링크를 풀지 않는 정규화 또는 실제 경로 해석)
+#
+# @param $1 {string} 대상 경로
+# @param $2 {string} 모드 (resolve: 심볼릭 링크 최종 대상 해석, physical: 부모 디렉토리만 해석)
+#
+# @return 정규화된 절대 경로 문자열 출력
+##
+resolve_abs_path() {
+  local target_path="$1"
+  local mode="${2:-resolve}"
+
+  if [[ "$mode" == "resolve" ]]; then
+    if command -v realpath >/dev/null 2>&1; then
+      realpath "$target_path"
+      return 0
+    elif command -v readlink >/dev/null 2>&1; then
+      readlink -f "$target_path"
+      return 0
+    fi
+  fi
+
+  local dir_part base_part
+  if [[ -d "$target_path" ]]; then
+    (cd "$target_path" && pwd -P)
+  else
+    dir_part="$(dirname "$target_path")"
+    base_part="$(basename "$target_path")"
+    (cd "$dir_part" && printf "%s/%s\n" "$(pwd -P)" "$base_part")
+  fi
+}
+
+##
+# 카테고리명 또는 항목 이름에 허용되지 않는 문자(/, .. 등)가 포함되어 있는지 검증합니다.
+#
+# @param $1 {string} 검증할 식별자 문자열
+# @param $2 {string} 항목 라벨 (예: category, name)
+# @param $3 {string} 서브커맨드 이름
+#
+# @return 유효하면 0, 유효하지 않으면 die 호출
+##
+validate_identifier() {
+  local value="$1"
+  local label="$2"
+  local subcmd="$3"
+
+  if [[ -z "$value" ]]; then
+    die "'--${label}' 값이 비어 있습니다." "$LINENO" "$subcmd"
+  fi
+  if [[ "$value" == *"/"* || "$value" == "." || "$value" == ".." ]]; then
+    die "'--${label}' 값에는 경로 구분자('/')나 상대 경로('.', '..')를 사용할 수 없습니다: ${value}" "$LINENO" "$subcmd"
+  fi
+}
+
+##
+# 규칙(rule) 이름에서 .md 또는 .MD 확장자가 포함되어 있으면 제거하여 정규화합니다.
+#
+# @param $1 {string} 원본 이름 문자열
+#
+# @return 확장자가 제거된 이름 출력
+##
+normalize_rule_name() {
+  local raw_name="$1"
+  if [[ "$raw_name" == *.md ]]; then
+    printf "%s\n" "${raw_name%.md}"
+  elif [[ "$raw_name" == *.MD ]]; then
+    printf "%s\n" "${raw_name%.MD}"
+  else
+    printf "%s\n" "$raw_name"
+  fi
+}
+
+##
+# AI_AGENT_CUSTOMIZATION_HOME 루트 디렉토리를 확인하고 반환합니다.
+#
+# @param $1 {string} CLI '--home' 옵션으로 전달된 경로 (빈 문자열 가능)
+# @param $2 {string} 현재 서브커맨드 이름
+#
+# @return 유효한 루트 디렉토리 절대 경로 출력
+##
+resolve_acs_home() {
+  local cli_home="${1:-}"
+  local subcmd="${2:-}"
+  local effective_home=""
+
+  if [[ -n "$cli_home" ]]; then
+    effective_home="$cli_home"
+  elif [[ -n "${AI_AGENT_CUSTOMIZATION_HOME:-}" ]]; then
+    effective_home="${AI_AGENT_CUSTOMIZATION_HOME}"
+  else
+    die "환경변수 'AI_AGENT_CUSTOMIZATION_HOME'이 설정되어 있지 않습니다. 환경변수를 설정하거나 '--home <경로>' 옵션을 지정해 주세요." "$LINENO" "$subcmd"
+  fi
+
+  # 끝에 붙은 슬래시 제거 (루트 '/' 제외)
+  if [[ "$effective_home" != "/" ]]; then
+    effective_home="${effective_home%/}"
+  fi
+
+  printf "%s\n" "$effective_home"
+}
+
+##
+# 새로운 스킬(Skill) 또는 규칙(Rule)을 생성합니다.
+#
+# @param $@ {array} create 서브커맨드 인자 목록
+#
+# @return 0 (성공 시)
+##
+cmd_create() {
+  local target=""
+  local category=""
+  local name=""
+  local cli_home=""
+  local force="false"
+
+  while (( $# > 0 )); do
+    case "$1" in
+      --help)
+        help "" "" "create"
+        return 0
+        ;;
+      skill|rule)
+        if [[ -z "$target" ]]; then
+          target="$1"
+          shift
+        else
+          die "대상(skill|rule)이 중복 지정되었습니다: $1" "$LINENO" "create"
+        fi
+        ;;
+      --category)
+        [[ $# -ge 2 ]] || die "'--category' 옵션에 값이 필요합니다." "$LINENO" "create"
+        category="$2"
+        shift 2
+        ;;
+      --category=*)
+        category="${1#--category=}"
+        shift
+        ;;
+      --name)
+        [[ $# -ge 2 ]] || die "'--name' 옵션에 값이 필요합니다." "$LINENO" "create"
+        name="$2"
+        shift 2
+        ;;
+      --name=*)
+        name="${1#--name=}"
+        shift
+        ;;
+      --home)
+        [[ $# -ge 2 ]] || die "'--home' 옵션에 경로가 필요합니다." "$LINENO" "create"
+        cli_home="$2"
+        shift 2
+        ;;
+      --home=*)
+        cli_home="${1#--home=}"
+        shift
+        ;;
+      --force)
+        force="true"
+        shift
+        ;;
+      -*)
+        die "알 수 없는 옵션입니다: $1 (Long Option만 지원합니다)" "$LINENO" "create"
+        ;;
+      *)
+        die "알 수 없는 인자입니다: $1" "$LINENO" "create"
+        ;;
+    esac
+  done
+
+  [[ -n "$target" ]] || die "생성할 대상('skill' 또는 'rule')을 지정해야 합니다." "$LINENO" "create"
+  validate_identifier "$category" "category" "create"
+  validate_identifier "$name" "name" "create"
+
+  local acs_home
+  acs_home="$(resolve_acs_home "$cli_home" "create")"
+
+  if [[ "$target" == "skill" ]]; then
+    local skill_dir="${acs_home}/skills/${category}/.agents/skills/${name}"
+    local skill_file="${skill_dir}/SKILL.md"
+
+    if [[ -e "$skill_dir" || -L "$skill_dir" ]]; then
+      if [[ "$force" != "true" ]]; then
+        die "이미 존재하는 스킬 경로입니다: ${skill_dir} (덮어쓰려면 '--force' 옵션을 사용하세요)" "$LINENO" "create"
+      fi
+      if [[ -L "$skill_dir" ]]; then
+        rm -f "$skill_dir"
+      fi
+    fi
+
+    mkdir -p "$skill_dir"
+    cat <<EOF > "$skill_file"
+---
+name: ${name}
+description: >-
+  Describe what the ${name} skill does and when the agent should activate it.
+---
+
+# ${name}
+
+Provide step-by-step instructions and guidelines for the **${name}** skill (Category: \`${category}\`).
+
+## Instructions
+
+1. Describe the workflow steps clearly.
+2. Add helper scripts under \`scripts/\` or reference documents under \`references/\` if needed.
+EOF
+
+    echo "✅ [CREATE:SKILL] 스킬이 생성되었습니다."
+    echo "   - 카테고리 : ${category}"
+    echo "   - 스킬 이름: ${name}"
+    echo "   - 스킬 폴더: ${skill_dir}"
+    echo "   - 스킬 파일: ${skill_file}"
+
+  elif [[ "$target" == "rule" ]]; then
+    local rule_name
+    rule_name="$(normalize_rule_name "$name")"
+    validate_identifier "$rule_name" "name" "create"
+
+    local rules_dir="${acs_home}/rules/${category}/.agents/rules"
+    local rule_file="${rules_dir}/${rule_name}.md"
+
+    if [[ -e "$rule_file" || -L "$rule_file" ]]; then
+      if [[ "$force" != "true" ]]; then
+        die "이미 존재하는 규칙 파일입니다: ${rule_file} (덮어쓰려면 '--force' 옵션을 사용하세요)" "$LINENO" "create"
+      fi
+      rm -f "$rule_file"
+    fi
+
+    mkdir -p "$rules_dir"
+    cat <<EOF > "$rule_file"
+# ${rule_name} Rule
+
+Define the guidelines, coding standards, and constraints for **${rule_name}** (Category: \`${category}\`).
+
+## Guidelines
+
+- Specify mandatory rules and constraints here.
+EOF
+
+    echo "✅ [CREATE:RULE] 규칙이 생성되었습니다."
+    echo "   - 카테고리 : ${category}"
+    echo "   - 규칙 이름: ${rule_name}"
+    echo "   - 규칙 파일: ${rule_file}"
+  fi
+}
+
+##
+# 기존 스킬(Skill) 또는 규칙(Rule)을 삭제합니다.
+#
+# @param $@ {array} remove 서브커맨드 인자 목록
+#
+# @return 0 (성공 시)
+##
+cmd_remove() {
+  local target=""
+  local category=""
+  local name=""
+  local cli_home=""
+  local force="false"
+
+  while (( $# > 0 )); do
+    case "$1" in
+      --help)
+        help "" "" "remove"
+        return 0
+        ;;
+      skill|rule)
+        if [[ -z "$target" ]]; then
+          target="$1"
+          shift
+        else
+          die "대상(skill|rule)이 중복 지정되었습니다: $1" "$LINENO" "remove"
+        fi
+        ;;
+      --category)
+        [[ $# -ge 2 ]] || die "'--category' 옵션에 값이 필요합니다." "$LINENO" "remove"
+        category="$2"
+        shift 2
+        ;;
+      --category=*)
+        category="${1#--category=}"
+        shift
+        ;;
+      --name)
+        [[ $# -ge 2 ]] || die "'--name' 옵션에 값이 필요합니다." "$LINENO" "remove"
+        name="$2"
+        shift 2
+        ;;
+      --name=*)
+        name="${1#--name=}"
+        shift
+        ;;
+      --home)
+        [[ $# -ge 2 ]] || die "'--home' 옵션에 경로가 필요합니다." "$LINENO" "remove"
+        cli_home="$2"
+        shift 2
+        ;;
+      --home=*)
+        cli_home="${1#--home=}"
+        shift
+        ;;
+      --force)
+        force="true"
+        shift
+        ;;
+      -*)
+        die "알 수 없는 옵션입니다: $1 (Long Option만 지원합니다)" "$LINENO" "remove"
+        ;;
+      *)
+        die "알 수 없는 인자입니다: $1" "$LINENO" "remove"
+        ;;
+    esac
+  done
+
+  [[ -n "$target" ]] || die "삭제할 대상('skill' 또는 'rule')을 지정해야 합니다." "$LINENO" "remove"
+  validate_identifier "$category" "category" "remove"
+  validate_identifier "$name" "name" "remove"
+
+  local acs_home
+  acs_home="$(resolve_acs_home "$cli_home" "remove")"
+
+  if [[ "$target" == "skill" ]]; then
+    local skill_dir="${acs_home}/skills/${category}/.agents/skills/${name}"
+
+    if [[ ! -e "$skill_dir" && ! -L "$skill_dir" ]]; then
+      die "삭제할 스킬이 존재하지 않습니다: ${skill_dir}" "$LINENO" "remove"
+    fi
+
+    local item_type="일반 디렉토리 (원본 삭제)"
+    if [[ -L "$skill_dir" ]]; then
+      local link_target
+      link_target="$(readlink "$skill_dir" || true)"
+      item_type="심볼릭 링크 (원본 보존: ${link_target})"
+    fi
+
+    if [[ "$force" != "true" ]]; then
+      echo "⚠️  다음 스킬을 삭제하시겠습니까?"
+      echo "   - 카테고리 : ${category}"
+      echo "   - 스킬 이름: ${name}"
+      echo "   - 대상 경로: ${skill_dir}"
+      echo "   - 항목 유형: ${item_type}"
+      local answer=""
+      read -r -p "삭제를 진행하시겠습니까? [y/N]: " answer
+      if [[ ! "$answer" =~ ^[Yy]$ ]]; then
+        echo "🚫 삭제 작업이 취소되었습니다."
+        return 0
+      fi
+    fi
+
+    if [[ -L "$skill_dir" ]]; then
+      rm -f "$skill_dir"
+    else
+      rm -rf "$skill_dir"
+    fi
+
+    echo "🗑️  [REMOVE:SKILL] 스킬이 삭제되었습니다: ${skill_dir}"
+
+  elif [[ "$target" == "rule" ]]; then
+    local rule_name
+    rule_name="$(normalize_rule_name "$name")"
+    validate_identifier "$rule_name" "name" "remove"
+
+    local rule_file="${acs_home}/rules/${category}/.agents/rules/${rule_name}.md"
+
+    if [[ ! -e "$rule_file" && ! -L "$rule_file" ]]; then
+      die "삭제할 규칙 파일이 존재하지 않습니다: ${rule_file}" "$LINENO" "remove"
+    fi
+
+    local item_type="일반 파일 (원본 삭제)"
+    if [[ -L "$rule_file" ]]; then
+      local link_target
+      link_target="$(readlink "$rule_file" || true)"
+      item_type="심볼릭 링크 (원본 보존: ${link_target})"
+    fi
+
+    if [[ "$force" != "true" ]]; then
+      echo "⚠️  다음 규칙을 삭제하시겠습니까?"
+      echo "   - 카테고리 : ${category}"
+      echo "   - 규칙 이름: ${rule_name}"
+      echo "   - 대상 경로: ${rule_file}"
+      echo "   - 항목 유형: ${item_type}"
+      local answer=""
+      read -r -p "삭제를 진행하시겠습니까? [y/N]: " answer
+      if [[ ! "$answer" =~ ^[Yy]$ ]]; then
+        echo "🚫 삭제 작업이 취소되었습니다."
+        return 0
+      fi
+    fi
+
+    rm -f "$rule_file"
+    echo "🗑️  [REMOVE:RULE] 규칙이 삭제되었습니다: ${rule_file}"
+  fi
+}
+
+##
+# 외부에 존재하는 스킬 디렉토리(--directory) 또는 규칙 파일(--file)을
+# 지정된 카테고리(--category)에 심볼릭 링크로 추가합니다.
+#
+# @param $@ {array} add 서브커맨드 인자 목록
+#
+# @return 0 (성공 시)
+##
+cmd_add() {
+  local target=""
+  local category=""
+  local src_directory=""
+  local src_file=""
+  local custom_name=""
+  local cli_home=""
+  local force="false"
+
+  while (( $# > 0 )); do
+    case "$1" in
+      --help)
+        help "" "" "add"
+        return 0
+        ;;
+      skill|rule)
+        if [[ -z "$target" ]]; then
+          target="$1"
+          shift
+        else
+          die "대상(skill|rule)이 중복 지정되었습니다: $1" "$LINENO" "add"
+        fi
+        ;;
+      --category)
+        [[ $# -ge 2 ]] || die "'--category' 옵션에 값이 필요합니다." "$LINENO" "add"
+        category="$2"
+        shift 2
+        ;;
+      --category=*)
+        category="${1#--category=}"
+        shift
+        ;;
+      --directory)
+        [[ $# -ge 2 ]] || die "'--directory' 옵션에 디렉토리 경로가 필요합니다." "$LINENO" "add"
+        src_directory="$2"
+        shift 2
+        ;;
+      --directory=*)
+        src_directory="${1#--directory=}"
+        shift
+        ;;
+      --file)
+        [[ $# -ge 2 ]] || die "'--file' 옵션에 파일 경로가 필요합니다." "$LINENO" "add"
+        src_file="$2"
+        shift 2
+        ;;
+      --file=*)
+        src_file="${1#--file=}"
+        shift
+        ;;
+      --name)
+        [[ $# -ge 2 ]] || die "'--name' 옵션에 값이 필요합니다." "$LINENO" "add"
+        custom_name="$2"
+        shift 2
+        ;;
+      --name=*)
+        custom_name="${1#--name=}"
+        shift
+        ;;
+      --home)
+        [[ $# -ge 2 ]] || die "'--home' 옵션에 경로가 필요합니다." "$LINENO" "add"
+        cli_home="$2"
+        shift 2
+        ;;
+      --home=*)
+        cli_home="${1#--home=}"
+        shift
+        ;;
+      --force)
+        force="true"
+        shift
+        ;;
+      -*)
+        die "알 수 없는 옵션입니다: $1 (Long Option만 지원합니다)" "$LINENO" "add"
+        ;;
+      *)
+        die "알 수 없는 인자입니다: $1" "$LINENO" "add"
+        ;;
+    esac
+  done
+
+  [[ -n "$target" ]] || die "추가할 대상('skill' 또는 'rule')을 지정해야 합니다." "$LINENO" "add"
+  validate_identifier "$category" "category" "add"
+
+  local acs_home
+  acs_home="$(resolve_acs_home "$cli_home" "add")"
+
+  if [[ "$target" == "skill" ]]; then
+    [[ -z "$src_file" ]] || die "'add skill' 명령에는 '--file' 대신 '--directory' 옵션을 사용해야 합니다." "$LINENO" "add"
+    [[ -n "$src_directory" ]] || die "'add skill' 명령에는 '--directory <경로>' 옵션이 필수입니다." "$LINENO" "add"
+    [[ -d "$src_directory" ]] || die "지정한 스킬 디렉토리가 존재하지 않거나 디렉토리가 아닙니다: ${src_directory}" "$LINENO" "add"
+
+    local abs_src_dir
+    abs_src_dir="$(resolve_abs_path "$src_directory" "resolve")"
+
+    local skill_name="$custom_name"
+    if [[ -z "$skill_name" ]]; then
+      skill_name="$(basename "$abs_src_dir")"
+    fi
+    validate_identifier "$skill_name" "name" "add"
+
+    local skills_parent="${acs_home}/skills/${category}/.agents/skills"
+    local link_path="${skills_parent}/${skill_name}"
+
+    if [[ -e "$link_path" || -L "$link_path" ]]; then
+      if [[ "$force" != "true" ]]; then
+        die "해당 카테고리에 이미 동일한 이름의 스킬이 존재합니다: ${link_path} (교체하려면 '--force' 옵션을 사용하세요)" "$LINENO" "add"
+      fi
+      if [[ -L "$link_path" ]]; then
+        rm -f "$link_path"
+      else
+        rm -rf "$link_path"
+      fi
+    fi
+
+    mkdir -p "$skills_parent"
+    ln -s "$abs_src_dir" "$link_path"
+
+    echo "🔗 [ADD:SKILL] 스킬 심볼릭 링크가 추가되었습니다."
+    echo "   - 카테고리 : ${category}"
+    echo "   - 스킬 이름: ${skill_name}"
+    echo "   - 링크 경로: ${link_path}"
+    echo "   - 원본 경로: ${abs_src_dir}"
+    if [[ ! -f "${abs_src_dir}/SKILL.md" && ! -f "${abs_src_dir}/SKILL.MD" ]]; then
+      echo "   ⚠️  참고: 원본 디렉토리 내에 'SKILL.md' 파일이 아직 존재하지 않습니다."
+    fi
+
+  elif [[ "$target" == "rule" ]]; then
+    [[ -z "$src_directory" ]] || die "'add rule' 명령에는 '--directory' 대신 '--file' 옵션을 사용해야 합니다." "$LINENO" "add"
+    [[ -n "$src_file" ]] || die "'add rule' 명령에는 '--file <경로>' 옵션이 필수입니다." "$LINENO" "add"
+    [[ -f "$src_file" ]] || die "지정한 규칙 파일이 존재하지 않거나 일반 파일이 아닙니다: ${src_file}" "$LINENO" "add"
+
+    local abs_src_file
+    abs_src_file="$(resolve_abs_path "$src_file" "resolve")"
+
+    local rule_name="$custom_name"
+    if [[ -z "$rule_name" ]]; then
+      rule_name="$(basename "$abs_src_file")"
+    fi
+    rule_name="$(normalize_rule_name "$rule_name")"
+    validate_identifier "$rule_name" "name" "add"
+
+    local rules_parent="${acs_home}/rules/${category}/.agents/rules"
+    local link_path="${rules_parent}/${rule_name}.md"
+
+    if [[ -e "$link_path" || -L "$link_path" ]]; then
+      if [[ "$force" != "true" ]]; then
+        die "해당 카테고리에 이미 동일한 이름의 규칙 파일이 존재합니다: ${link_path} (교체하려면 '--force' 옵션을 사용하세요)" "$LINENO" "add"
+      fi
+      rm -f "$link_path"
+    fi
+
+    mkdir -p "$rules_parent"
+    ln -s "$abs_src_file" "$link_path"
+
+    echo "🔗 [ADD:RULE] 규칙 심볼릭 링크가 추가되었습니다."
+    echo "   - 카테고리 : ${category}"
+    echo "   - 규칙 이름: ${rule_name}"
+    echo "   - 링크 경로: ${link_path}"
+    echo "   - 원본 경로: ${abs_src_file}"
+  fi
+}
+
+##
+# 특정 타입(skill 또는 rule)의 목록을 탐색하고 포맷팅하여 출력합니다.
+#
+# @param $1 {string} 대상 종류 (skill | rule)
+# @param $2 {string} 루트 경로 (acs_home)
+# @param $3 {string} 카테고리 필터 (빈 문자열이면 전체)
+# @param $4 {string} 이름 필터 (빈 문자열이면 전체)
+#
+# @return 0
+##
+print_list_section() {
+  local kind="$1"
+  local acs_home="$2"
+  local filter_category="${3:-}"
+  local filter_name="${4:-}"
+
+  local base_root=""
+  local sub_rel=""
+  local header_title=""
+
+  if [[ "$kind" == "skill" ]]; then
+    base_root="${acs_home}/skills"
+    sub_rel=".agents/skills"
+    header_title="📘 SKILLS (${base_root})"
+  else
+    base_root="${acs_home}/rules"
+    sub_rel=".agents/rules"
+    header_title="📙 RULES (${base_root})"
+    if [[ -n "$filter_name" ]]; then
+      filter_name="$(normalize_rule_name "$filter_name")"
+    fi
+  fi
+
+  echo "================================================================================"
+  echo "${header_title}"
+  echo "================================================================================"
+
+  if [[ ! -d "$base_root" ]]; then
+    echo "  (디렉토리가 아직 존재하지 않습니다)"
+    echo
+    return 0
+  fi
+
+  local -a categories=()
+  if [[ -n "$filter_category" ]]; then
+    if [[ -d "${base_root}/${filter_category}" ]]; then
+      categories+=("$filter_category")
+    else
+      echo "  (지정한 카테고리 '${filter_category}'가 존재하지 않습니다)"
+      echo
+      return 0
+    fi
+  else
+    local cat_dir
+    for cat_dir in "${base_root}"/*; do
+      [[ -d "$cat_dir" ]] || continue
+      categories+=("$(basename "$cat_dir")")
+    done
+  fi
+
+  if (( ${#categories[@]} == 0 )); then
+    echo "  (등록된 카테고리가 없습니다)"
+    echo
+    return 0
+  fi
+
+  local total_matched=0
+  local cat items_dir entry item_name display_name status_badge detail_info target_dest
+
+  for cat in "${categories[@]}"; do
+    items_dir="${base_root}/${cat}/${sub_rel}"
+    [[ -d "$items_dir" ]] || continue
+
+    local -a matched_entries=()
+    for entry in "${items_dir}"/*; do
+      [[ -e "$entry" || -L "$entry" ]] || continue
+      item_name="$(basename "$entry")"
+
+      if [[ "$kind" == "rule" ]]; then
+        [[ "$item_name" == *.md || "$item_name" == *.MD ]] || continue
+        display_name="$(normalize_rule_name "$item_name")"
+      else
+        display_name="$item_name"
+      fi
+
+      if [[ -n "$filter_name" ]]; then
+        # 정확히 일치하거나 부분 문자열/와일드카드 패턴에 부합하는지 확인
+        if [[ "$display_name" != *"$filter_name"* ]]; then
+          continue
+        fi
+      fi
+
+      matched_entries+=("$entry")
+    done
+
+    if (( ${#matched_entries[@]} == 0 )); then
+      if [[ -n "$filter_category" && -z "$filter_name" ]]; then
+        printf "  📂 [%s] (등록된 항목 없음)\n" "$cat"
+      fi
+      continue
+    fi
+
+    printf "  📂 [%s]\n" "$cat"
+    for entry in "${matched_entries[@]}"; do
+      item_name="$(basename "$entry")"
+      if [[ "$kind" == "rule" ]]; then
+        display_name="$(normalize_rule_name "$item_name")"
+      else
+        display_name="$item_name"
+      fi
+
+      if [[ -L "$entry" ]]; then
+        target_dest="$(readlink "$entry" || true)"
+        if [[ -e "$entry" ]]; then
+          status_badge="[LINK]"
+          detail_info="${entry} -> ${target_dest}"
+        else
+          status_badge="[BROKEN-LINK]"
+          detail_info="${entry} -> ${target_dest} (대상 없음)"
+        fi
+      else
+        status_badge="[LOCAL]"
+        if [[ "$kind" == "skill" ]]; then
+          if [[ -f "${entry}/SKILL.md" ]]; then
+            detail_info="${entry}/SKILL.md"
+          elif [[ -f "${entry}/SKILL.MD" ]]; then
+            detail_info="${entry}/SKILL.MD"
+          else
+            status_badge="[LOCAL:NO-SKILL.md]"
+            detail_info="${entry}"
+          fi
+        else
+          detail_info="${entry}"
+        fi
+      fi
+
+      printf "     - %-24s %-16s %s\n" "$display_name" "$status_badge" "$detail_info"
+      ((total_matched++)) || true
+    done
+  done
+
+  if (( total_matched == 0 )); then
+    echo "  (조건에 일치하는 항목이 없습니다)"
+  fi
+  echo
+}
+
+##
+# 등록된 스킬(Skill) 및 규칙(Rule) 목록을 조회합니다.
+#
+# @param $@ {array} list 서브커맨드 인자 목록
+#
+# @return 0 (성공 시)
+##
+cmd_list() {
+  local target="all"
+  local target_set="false"
+  local category=""
+  local name=""
+  local cli_home=""
+
+  while (( $# > 0 )); do
+    case "$1" in
+      --help)
+        help "" "" "list"
+        return 0
+        ;;
+      skill|rule)
+        if [[ "$target_set" == "false" ]]; then
+          target="$1"
+          target_set="true"
+          shift
+        else
+          die "대상(skill|rule)이 중복 지정되었습니다: $1" "$LINENO" "list"
+        fi
+        ;;
+      --category)
+        [[ $# -ge 2 ]] || die "'--category' 옵션에 값이 필요합니다." "$LINENO" "list"
+        category="$2"
+        shift 2
+        ;;
+      --category=*)
+        category="${1#--category=}"
+        shift
+        ;;
+      --name)
+        [[ $# -ge 2 ]] || die "'--name' 옵션에 값이 필요합니다." "$LINENO" "list"
+        name="$2"
+        shift 2
+        ;;
+      --name=*)
+        name="${1#--name=}"
+        shift
+        ;;
+      --home)
+        [[ $# -ge 2 ]] || die "'--home' 옵션에 경로가 필요합니다." "$LINENO" "list"
+        cli_home="$2"
+        shift 2
+        ;;
+      --home=*)
+        cli_home="${1#--home=}"
+        shift
+        ;;
+      -*)
+        die "알 수 없는 옵션입니다: $1 (Long Option만 지원합니다)" "$LINENO" "list"
+        ;;
+      *)
+        die "알 수 없는 인자입니다: $1" "$LINENO" "list"
+        ;;
+    esac
+  done
+
+  [[ -z "$category" ]] || validate_identifier "$category" "category" "list"
+  [[ -z "$name" ]] || validate_identifier "$name" "name" "list"
+
+  local acs_home
+  acs_home="$(resolve_acs_home "$cli_home" "list")"
+
+  echo
+  echo "🏠 AI_AGENT_CUSTOMIZATION_HOME: ${acs_home}"
+  echo
+
+  if [[ "$target" == "all" || "$target" == "skill" ]]; then
+    print_list_section "skill" "$acs_home" "$category" "$name"
+  fi
+  if [[ "$target" == "all" || "$target" == "rule" ]]; then
+    print_list_section "rule" "$acs_home" "$category" "$name"
+  fi
+}
+
+##
+# 메인 엔트리포인트 함수
+#
+# @param $@ {array} 전체 커맨드라인 인자
+#
+# @return 종료 코드
+##
+main() {
+  if (( $# == 0 )); then
+    help "실행할 명령어(create | remove | add | list)를 지정해 주세요." "$LINENO" "" >&2
+    exit 1
+  fi
+
+  local subcmd="$1"
+  shift
+
+  case "$subcmd" in
+    --help)
+      help "" "" ""
+      return 0
+      ;;
+    create)
+      cmd_create "$@"
+      ;;
+    remove)
+      cmd_remove "$@"
+      ;;
+    add)
+      cmd_add "$@"
+      ;;
+    list)
+      cmd_list "$@"
+      ;;
+    -*)
+      die "알 수 없는 옵션입니다: ${subcmd} (명령어를 먼저 지정하거나 '--help'를 사용하세요)" "$LINENO" ""
+      ;;
+    *)
+      die "지원하지 않는 명령어입니다: ${subcmd} (지원 명령어: create, remove, add, list)" "$LINENO" ""
+      ;;
+  esac
+}
+
+main "$@"
