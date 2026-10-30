@@ -1,26 +1,36 @@
 #!/usr/bin/env bash
 
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title  : redis-search: Advanced Redis querying, regex filtering and cursor scanning CLI tool
+# @license: Apache License 2.0
+# @since  : 2021-04-19
+# @desc   : support macOS 11.2.3, Ubuntu 18.04 or higher, CentOS 7 or higher
+# =======================================
+
 help(){
 	echo
 	echo "Usage:"
-	echo " redis-search <database> <redis commands and its arguments | built-in commands> [{options}]"
+	echo " redis-search <database> <redis-command | built-in-command> [arguments...] [--key] [--help] [--dbinfo]"
 	echo
 	echo "[Options]"
-	echo " --key: Apply when use a built-in command. Print key<tab>value"
+	echo " --key   : Apply when using built-in commands. Print key<tab>value"
+	echo " --dbinfo: Show Redis database info"
+	echo " --help  : Show help messages"
 	echo
-	echo "[Built-in]"
-	echo " __filter_in__ : Retrieve data DO MATCH a Regular Expression."
-	echo "                 e.g) redis-search 4 __filter_in__ XXXXX get"
-	echo " __filter_out__: Retrieve data DO NOT MATCH a Regular Expression."
-	echo "                 e.g) redis-search 4 __filter_out__ XXXXX get"
-	echo " __get_all__   : Retrieve all data using redis commands"
+	echo "[Built-in Commands]"
+	echo " __filter_in__ : Retrieve data matching a regular expression."
+	echo "                 e.g) redis-search 4 __filter_in__ <regex> get"
+	echo " __filter_out__: Retrieve data NOT matching a regular expression."
+	echo "                 e.g) redis-search 4 __filter_out__ <regex> get"
+	echo " __get_all__   : Retrieve all data using redis commands (via scan)"
 	echo "                 e.g) redis-search 1 __get_all__ lrange 0 -1"
-	echo " __get_one__	 : Retrieve one data using redis commands"
+	echo " __get_one__   : Retrieve one data using redis commands"
 	echo "                 e.g) redis-search 1 __get_one__ lrange 0 -1"
 	echo
 	echo "[Arguments]"
-	echo " - database | m: Database number"
-	echo " - commands | m: Redis command"
+	echo " database: Database index number (0-15)"
+	echo " commands: Redis command or built-in command"
 	echo
 }
 
@@ -37,11 +47,11 @@ do
 		--key)
 			KEY=1
 			;;
-		-h | --help | "/h")
-			help "--help"
+		--help)
+			help
 			exit 0
 			;;
-		-d | --dbinfo)
+		--dbinfo)
 			redis_info
 			exit 0
 			;;

@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : Bash completion for 'redis-search'
+# @license  : Apache License 2.0
+# @since    : 2021-04-19
+# =======================================
+
+# Bash Completion Parameter Description
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: an index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+
+_redis_search_complete() {
+  local cur prev
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  local opts="--key --dbinfo --help"
+  local builtins="__filter_in__ __filter_out__ __get_all__ __get_one__"
+
+  if [[ ${cur} == -* ]] ; then
+    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+    return 0
+  fi
+
+  case $COMP_CWORD in
+    1)
+      # Database number (0~15)
+      COMPREPLY=( $(compgen -W "0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15" -- "${cur}") )
+      ;;
+    2)
+      # Command or Built-in command
+      COMPREPLY=( $(compgen -W "${builtins} get mget lrange hgetall smembers zrange keys scan" -- "${cur}") )
+      ;;
+    *)
+      COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+      ;;
+  esac
+}
+
+complete -F _redis_search_complete redis-search
