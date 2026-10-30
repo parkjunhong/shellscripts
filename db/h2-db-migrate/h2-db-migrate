@@ -2,13 +2,10 @@
 
 # =======================================
 # @author   : parkjunhong77@gmail.com
-# @title    : h2-db-migrate
+# @title    : h2-db-migrate: Interactive H2 database version migration and data extract/restore tool
 # @license  : Apache License 2.0
 # @since    : 2026-04-29
 # @desc     : support RHEL 8/9, Oracle Linux 8/9, Ubuntu 22.04/24.04, RockyOS 8/9
-# @installation : 
-#   1. insert 'source <path>/h2-db-migrate.sh' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/h2-db-migrate.sh' into /etc/bashrc for all users.
 # =======================================
 
 FILENAME=$(basename "$0")
@@ -41,7 +38,7 @@ help(){
   echo "사용법: $FILENAME [옵션]"
   echo "이 스크립트는 파라미터 없이 실행 시 대화형 모드(인터랙티브)로 진행됩니다."
   echo "옵션:"
-  echo "  -h,   --help                  도움말 출력"
+  echo "  --help                        도움말 출력"
 }
 
 ##
@@ -161,7 +158,7 @@ execute_restore() {
 # 메인 실행 흐름
 # ==============================================================================
 
-if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+if [[ "$1" == "--help" ]]; then
   help
   exit 0
 fi

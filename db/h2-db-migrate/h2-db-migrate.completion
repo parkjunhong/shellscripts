@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : Bash completion for 'h2-db-migrate'
+# @license  : Apache License 2.0
+# @since    : 2026-04-28
+# @desc     : support RHEL 8/9, Oracle Linux 8/9, Ubuntu 22.04/24.04, RockyOS 8/9
+# =======================================
+
+# Bash Completion Parameter Description
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: an index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+
+_h2_db_migrate_completion() {
+  local cur opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  
+  opts="--help"
+
+  if [[ ${cur} == -* ]] ; then
+    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+    return 0
+  fi
+  
+  return 0
+}
+
+complete -F _h2_db_migrate_completion h2-db-migrate

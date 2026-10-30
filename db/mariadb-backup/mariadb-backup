@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title  : mariadb-backup: Full database backup and retention management for MariaDB
+# @license: Apache License 2.0
+# @since  : 2025-03-10
+# @desc   : support macOS 11.2.3, Ubuntu 18.04 or higher, CentOS 7 or higher
+# =======================================
+
+set -e
+
+# 설정 기본값
+DB_USER=""
+DB_PASSWORD=""
+DB_HOST="localhost"
+BACKUP_DIR=""
+BACKUP_FILE_PATTERN="mariadb_backup_*.sql.gz"
+RETENTION_DAYS=7
+
+##
+# 도움말 출력
+##
+help() {
+  echo "Usage: $(basename "$0") [OPTIONS]"
+  echo ""
+  echo "MariaDB 데이터베이스 전체 백업 및 오래된 백업 보관 주기 관리 도구"
+  echo ""
+  echo "Options:"
+  echo "  --user <username>          MariaDB 사용자 이름 (필수)"
+  echo "  --password <password>      MariaDB 사용자 비밀번호 (환경 변수 또는 옵션)"
+  echo "  --host <hostname>          MariaDB 서버 주소 (기본값: localhost)"
+  echo "  --dir <directory>          백업 파일을 저장할 디렉토리 (필수)"
+  echo "  --file-pattern <pattern>   백업 파일 이름 패턴 (기본값: mariadb_backup_*.sql.gz)"
+  echo "  --retention <days>         백업 파일 보관 기간(일) (기본값: 7)"
+  echo "  --help                     도움말 출력"
+  echo ""
+  exit 1
+}
+
+##
+# 파라미터 처리 (Long Option 전용)
+##
+parse_options() {
+  if [[ $# -eq 0 ]]; then
+    help
+  fi
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+    --user)
+      DB_USER="$2"
+      shift 2
+      ;;
+    --password)
+      DB_PASSWORD="$2"
+      shift 2
+      ;;
+    --host)
+      DB_HOST="$2"
+      shift 2
+      ;;
+    --dir)
+      BACKUP_DIR="$2"
+      shift 2
+      ;;
+    --file-pattern)
+      BACKUP_FILE_PATTERN="$2"
+      shift 2
+      ;;
+    --retention)
+      RETENTION_DAYS="$2"
+      shift 2
+      ;;
+    --help)
+      help
+      ;;
+    *)
+      echo "알 수 없는 옵션: $1"
+      help
+      ;;
+    esac
+  done
+
+  # 필수 파라미터 확인
+  if [[ -z "$DB_USER" || -z "$BACKUP_DIR" ]]; then
+    echo "오류: --user 및 --dir 파라미터는 필수입니다."
+    help
+  fi
+
+  # 백업 디렉토리 존재 확인 및 자동 생성
+  mkdir -p "${BACKUP_DIR}"
+}
+
+##
+# 백업 실행
+##
+backup_mariadb() {
+  local NOW
+  NOW=$(date +"%Y%m%d_%H%M%S")
+  local BACKUP_FILE="${BACKUP_DIR}/mariadb_backup_${NOW}.sql.gz"
+
+  echo "MariaDB 백업 진행 중..."
+  local PWD_OPT=""
+  if [[ -n "$DB_PASSWORD" ]]; then
+    PWD_OPT="--password=${DB_PASSWORD}"
+  fi
+
+  mysqldump -h "${DB_HOST}" -u "${DB_USER}" ${PWD_OPT} --all-databases --events --routines --triggers | gzip > "${BACKUP_FILE}"
+
+  echo "MariaDB 백업 성공: ${BACKUP_FILE}"
+}
+
+##
+# 오래된 백업 파일 삭제
+##
+cleanup_old_backups() {
+  find "${BACKUP_DIR}" -name "${BACKUP_FILE_PATTERN}" -mtime +"${RETENTION_DAYS}" -delete
+  echo "오래된 백업 파일 정리 완료 (보관 기간: ${RETENTION_DAYS}일 초과 삭제)"
+}
+
+# 파라미터 처리
+parse_options "$@"
+
+# 백업 실행
+backup_mariadb
+
+# 오래된 백업 파일 삭제
+cleanup_old_backups
+
+exit 0
