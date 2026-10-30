@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : Bash completion for 'es-search-index'
+# @license  : Apache License 2.0
+# @since    : 2024-06-18
+# =======================================
+
+# Bash Completion Parameter Description
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: an index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+
+_es_search_index_complete() {
+  local cur opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  
+  opts="--host --port --index --gte --lt --props --size --help"
+
+  if [[ ${cur} == -* ]] ; then
+    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+    return 0
+  fi
+  
+  COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+}
+
+complete -F _es_search_index_complete es-search-index
