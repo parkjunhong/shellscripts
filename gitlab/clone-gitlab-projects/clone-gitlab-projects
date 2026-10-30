@@ -163,7 +163,7 @@ parse_arguments() {
   done
 
   if [ -z "$TARGET_GROUP" ]; then
-    help "필수 파라미터가 누락되었습니다: -g/--group" "$LINENO"
+    help "필수 파라미터가 누락되었습니다: --group" "$LINENO"
     exit 1
   fi
 
@@ -190,16 +190,16 @@ main() {
   exec_gitlab_clone=$(ensure_gitlab_clone_integrity)
 
   # Gitlab URL (예: https://gitlab.your-company.com)
-  local gitlab_url=""
-# Gitlab Personal Access Token
-  local gitlab_pat=""
+  local gitlab_url="${GITLAB_URL:-}"
+  # Gitlab Personal Access Token
+  local gitlab_pat="${GITLAB_PAT:-}"
 
   echo "================================================================================" >&2
   echo "▶️  GitLab Clone 프로젝트 작업을 시작합니다." >&2
   echo "================================================================================" >&2
 
   # 특수문자 및 띄어쓰기 방어를 위해 전체 파라미터를 쌍따옴표("$@")로 전달
-  "$exec_gitlab_clone" -u "${gitlab_url}" -t "${gitlab_pat}" "$@"
+  "$exec_gitlab_clone" --url "${gitlab_url}" --token "${gitlab_pat}" "$@"
 }
 
 main "$@"

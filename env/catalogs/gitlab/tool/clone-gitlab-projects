@@ -2,13 +2,13 @@
 
 # =======================================
 # @author : parkjunhong77@gmail.com
-# @title : search files.
+# @title : clone-gitlab-projects
 # @license : Apache License 2.0
 # @since : 2026-07-24
 # @desc : support RHEL 7 or higher, Oracle Linux 7 or higher, Ubuntu 18.04 or higher, RockyOS 8 or higher, CentOS 7 or higher
 # @installation : 
-# 1. insert 'source <path>/<파일명>' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/<파일명>' into /etc/bashrc for all users.
+# 1. insert 'source <path>/clone-gitlab-projects.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/clone-gitlab-projects.completion' into /etc/bashrc for all users.
 # =======================================
 
 set -Eeuo pipefail
@@ -39,13 +39,13 @@ help(){
     echo "================================================================================"
   fi 
   echo 
-  echo "사용법: ./$FILENAME -g <그룹 경로> [-n <대체 이름>] [-d <저장디렉토리>]"
+  echo "사용법: ./$FILENAME --group <그룹 경로> [--name <대체 이름>] [--dir <저장디렉토리>]"
   echo ""
   echo "옵션:"
-  echo "  -g, --group     GitLab 대상 그룹 정보 (예: my-security) (필수)"
-  echo "  -n, --name      클론 디렉토리의 상위 그룹 폴더명을 대체할 이름 (선택)"
-  echo "  -d, --dir       프로젝트를 Clone 할 대상 최상위 디렉토리 (선택, 기본값: 현재 경로)"
-  echo "  -h, --help      도움말 출력"
+  echo "  --group         GitLab 대상 그룹 정보 (예: my-security) (필수)"
+  echo "  --name          클론 디렉토리의 상위 그룹 폴더명을 대체할 이름 (선택)"
+  echo "  --dir           프로젝트를 Clone 할 대상 최상위 디렉토리 (선택, 기본값: 현재 경로)"
+  echo "  --help          도움말 출력"
 }
 
 ##
@@ -146,16 +146,16 @@ parse_arguments() {
 
   while [[ "$#" -gt 0 ]]; do
     case "$1" in
-      -g|--group)
-        if [ -z "${2:-}" ]; then help "-g/--group 대상 그룹 정보가 누락되었습니다." "$LINENO"; exit 1; fi
+      --group)
+        if [ -z "${2:-}" ]; then help "--group 대상 그룹 정보가 누락되었습니다." "$LINENO"; exit 1; fi
         TARGET_GROUP="$2"; shift 2 ;;
-      -n|--name)
-        if [ -z "${2:-}" ]; then help "-n/--name 대체 이름 정보가 누락되었습니다." "$LINENO"; exit 1; fi
+      --name)
+        if [ -z "${2:-}" ]; then help "--name 대체 이름 정보가 누락되었습니다." "$LINENO"; exit 1; fi
         TARGET_NEW_DIR="$2"; shift 2 ;;
-      -d|--dir)
-        if [ -z "${2:-}" ]; then help "-d/--dir 저장 디렉토리 경로가 누락되었습니다." "$LINENO"; exit 1; fi
+      --dir)
+        if [ -z "${2:-}" ]; then help "--dir 저장 디렉토리 경로가 누락되었습니다." "$LINENO"; exit 1; fi
         TARGET_DIR="$2"; shift 2 ;;
-      -h|--help)
+      --help)
         help ""; exit 0 ;;
       *)
         help "지원하지 않는 옵션입니다: $1" "$LINENO"; exit 1 ;;
@@ -163,7 +163,7 @@ parse_arguments() {
   done
 
   if [ -z "$TARGET_GROUP" ]; then
-    help "필수 파라미터가 누락되었습니다: -g/--group" "$LINENO"
+    help "필수 파라미터가 누락되었습니다: --group" "$LINENO"
     exit 1
   fi
 
@@ -190,16 +190,16 @@ main() {
   exec_gitlab_clone=$(ensure_gitlab_clone_integrity)
 
   # Gitlab URL (예: https://gitlab.your-company.com)
-  local gitlab_url="https://gitlab.ymtech.co.kr"
-# Gitlab Personal Access Token
-  local gitlab_pat="612By-zzzFRoNNe4-2BK"
+  local gitlab_url="${GITLAB_URL:-https://gitlab.ymtech.co.kr}"
+  # Gitlab Personal Access Token
+  local gitlab_pat="${GITLAB_PAT:-612By-zzzFRoNNe4-2BK}"
 
   echo "================================================================================" >&2
   echo "▶️  GitLab Clone 프로젝트 작업을 시작합니다." >&2
   echo "================================================================================" >&2
 
   # 특수문자 및 띄어쓰기 방어를 위해 전체 파라미터를 쌍따옴표("$@")로 전달
-  "$exec_gitlab_clone" -u "${gitlab_url}" -t "${gitlab_pat}" "$@"
+  "$exec_gitlab_clone" --url "${gitlab_url}" --token "${gitlab_pat}" "$@"
 }
 
 main "$@"
