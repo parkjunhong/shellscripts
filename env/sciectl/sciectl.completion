@@ -1,0 +1,217 @@
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : sciectl bash completion.
+# @license  : Apache License 2.0
+# @since    : 2026-05-12
+# @desc     : support Ubuntu 24+, Rocky Linux 9+, RHEL 9+, CentOS Stream 9+
+# @installation :
+#   1. insert 'source <path>/sciectl.completion' into ~/.bashrc or ~/.bash_profile for a personal usage.
+#   2. copy the completion file to /usr/share/bash-completion/completions/sciectl (1st) or /etc/bash_completion.d/sciectl.completion (2nd) for all users.
+# =======================================
+
+# =======================================
+# [Bash Completion Parameter Description]
+# 1. COMP_WORDS: an array containing all individual words in the current command line
+#    (현재 커맨드 라인에 입력된 단어들의 배열)
+# 2. COMP_CWORD: an index of the word containing the current cursor position
+#    (현재 커서가 위치한 단어의 인덱스)
+# 3. COMP_LINE: the current command line string
+#    (현재까지 커맨드 라인에 입력된 전체 문자열)
+# 4. COMPREPLY: an array variable from which Bash reads the possible completions
+#    (bash completion이 제안할 단어들의 배열)
+#
+# Arguments of completion function:
+# - $1: name of the command whose arguments are being completed (명령의 이름)
+# - $2: word being completed (현재 커서에서 완성하려고 하는 단어)
+# - $3: word preceding the word being completed (현재 완성하려는 단어의 바로 이전 단어)
+# =======================================
+
+##
+# 콤마(,)로 구분된 다중 값 입력 시 마지막 토큰 기준으로 자동 완성을 수행합니다.
+#
+# @param $1 {string} 후보 단어 목록 (공백 구분)
+# @param $2 {string} 현재 입력 중인 값 부분
+# @param $3 {string} 옵션 접두사 (예: '--catalog=' 또는 '')
+#
+# @return COMPREPLY 배열 설정
+##
+_sciectl_complete_csv_values() {
+  local candidates="$1"
+  local val_cur="$2"
+  local opt_prefix="${3:-}"
+
+  local prefix="$opt_prefix"
+  local target_part="$val_cur"
+  if [[ "$val_cur" == *,* ]]; then
+    prefix="${opt_prefix}${val_cur%,*},"
+    target_part="${val_cur##*,}"
+  fi
+
+  local item
+  while IFS= read -r item; do
+    [[ -n "$item" ]] && COMPREPLY+=("${prefix}${item}")
+  done < <(compgen -W "$candidates" -- "$target_part")
+}
+
+##
+# sciectl 명령어에 대한 Bash 자동 완성 처리 함수
+#
+# @param $1 {string} 명령어 이름 (Command name)
+# @param $2 {string} 현재 커서에서 완성 중인 단어 (Current word)
+# @param $3 {string} 직전 단어 (Previous word)
+#
+# @return COMPREPLY 배열 설정
+##
+_sciectl_completion() {
+  local cur prev
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]:-}"
+  prev="${COMP_WORDS[COMP_CWORD-1]:-}"
+
+  local -a subcommands=("install" "list" "info" "--help")
+  local catalog_candidates="default-server default-devops docker network gitlab ai-agent install-lets-encrypt-certificate"
+  local installer_candidates="temurin-25-jdk update-java-config maven-3.9.15 update-mvn-config htop docker/install-docker"
+  local command_candidates="firewall-cmd-set-priority"
+  local key_candidates="ymtech-internal letsencrypt"
+  local step_candidates="sudoers remove-packages install-packages default-opts custom-installers custom-tools custom-commands ssh-key"
+  local tool_candidates="utils/scriptctl sys/vim-cli sudo/sudoers-cli sys/disk-size maven/build-mvn-package git/git-commit git/git-merge git/git-log-abbr git/git-getpr git/git-branch-cmd git/git-init build/clean-project utils/diff-file docker/install-docker-dev-config docker/setup-compose-service docker/setup-docker-compose docker/dknetcli docker/dkcontls net/fwc-cli net/fwc-docker-policy net/add-vlan-routes net/mtr-netstat-conns gitlab/gitlab-clone gitlab/clone-gitlab-projects ai-agent/acs-cli"
+
+  # 첫 번째 인자 완성
+  if (( COMP_CWORD == 1 )); then
+    if [[ "$cur" == --* ]]; then
+      local -a top_opts=("--catalog" "--tool" "--installer" "--command" "--ssh-key" "--only" "--skip" "--user" "--target" "--local" "--remote" "--yes" "--force" "--dry-run" "--help")
+      COMPREPLY=( $(compgen -W "${top_opts[*]}" -- "$cur") )
+    else
+      COMPREPLY=( $(compgen -W "${subcommands[*]}" -- "$cur") )
+    fi
+    return 0
+  fi
+
+  local subcmd="${COMP_WORDS[1]:-}"
+  if [[ "$subcmd" == --* ]]; then
+    subcmd="install"
+  fi
+
+  case "$subcmd" in
+    install)
+      local -a install_opts=(
+        "--catalog" "--tool" "--installer" "--command" "--ssh-key"
+        "--only" "--skip" "--user" "--target" "--local" "--remote"
+        "--yes" "--force" "--dry-run" "--all" "--add-sudoers"
+        "--remove-packages" "--install-packages" "--custom-tools"
+        "--custom-installers" "--custom-commands" "--no-default-opts" "--help"
+      )
+
+      case "$cur" in
+        --catalog=*)
+          _sciectl_complete_csv_values "$catalog_candidates" "${cur#--catalog=}" "--catalog="
+          return 0
+          ;;
+        --tool=*)
+          _sciectl_complete_csv_values "$tool_candidates" "${cur#--tool=}" "--tool="
+          return 0
+          ;;
+        --installer=*)
+          _sciectl_complete_csv_values "$installer_candidates" "${cur#--installer=}" "--installer="
+          return 0
+          ;;
+        --command=*)
+          _sciectl_complete_csv_values "$command_candidates" "${cur#--command=}" "--command="
+          return 0
+          ;;
+        --ssh-key=*)
+          _sciectl_complete_csv_values "$key_candidates" "${cur#--ssh-key=}" "--ssh-key="
+          return 0
+          ;;
+        --only=*)
+          _sciectl_complete_csv_values "$step_candidates" "${cur#--only=}" "--only="
+          return 0
+          ;;
+        --skip=*)
+          _sciectl_complete_csv_values "$step_candidates" "${cur#--skip=}" "--skip="
+          return 0
+          ;;
+        --target=*)
+          _sciectl_complete_csv_values "local global" "${cur#--target=}" "--target="
+          return 0
+          ;;
+      esac
+
+      case "$prev" in
+        --catalog)
+          _sciectl_complete_csv_values "$catalog_candidates" "$cur" ""
+          return 0
+          ;;
+        --tool)
+          _sciectl_complete_csv_values "$tool_candidates" "$cur" ""
+          return 0
+          ;;
+        --installer)
+          _sciectl_complete_csv_values "$installer_candidates" "$cur" ""
+          return 0
+          ;;
+        --command)
+          _sciectl_complete_csv_values "$command_candidates" "$cur" ""
+          return 0
+          ;;
+        --ssh-key)
+          _sciectl_complete_csv_values "$key_candidates" "$cur" ""
+          return 0
+          ;;
+        --only|--skip)
+          _sciectl_complete_csv_values "$step_candidates" "$cur" ""
+          return 0
+          ;;
+        --target)
+          COMPREPLY=( $(compgen -W "local global" -- "$cur") )
+          return 0
+          ;;
+        --user)
+          COMPREPLY=( $(compgen -u -- "$cur") )
+          return 0
+          ;;
+      esac
+
+      COMPREPLY=( $(compgen -W "${install_opts[*]}" -- "$cur") )
+      return 0
+      ;;
+
+    list)
+      local -a list_opts=("--type" "--local" "--remote" "--help")
+      case "$cur" in
+        --type=*)
+          _sciectl_complete_csv_values "all catalogs installers commands keys" "${cur#--type=}" "--type="
+          return 0
+          ;;
+      esac
+      case "$prev" in
+        --type)
+          COMPREPLY=( $(compgen -W "all catalogs installers commands keys" -- "$cur") )
+          return 0
+          ;;
+      esac
+      COMPREPLY=( $(compgen -W "${list_opts[*]}" -- "$cur") )
+      return 0
+      ;;
+
+    info)
+      local -a info_opts=("--catalog" "--local" "--remote" "--help")
+      case "$cur" in
+        --catalog=*)
+          _sciectl_complete_csv_values "$catalog_candidates" "${cur#--catalog=}" "--catalog="
+          return 0
+          ;;
+      esac
+      case "$prev" in
+        --catalog)
+          _sciectl_complete_csv_values "$catalog_candidates" "$cur" ""
+          return 0
+          ;;
+      esac
+      COMPREPLY=( $(compgen -W "${info_opts[*]}" -- "$cur") )
+      return 0
+      ;;
+  esac
+}
+
+complete -F _sciectl_completion sciectl ./sciectl

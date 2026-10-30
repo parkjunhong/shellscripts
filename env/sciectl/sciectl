@@ -1,0 +1,2507 @@
+#!/usr/bin/env bash
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : sciectl: Script, Command, Installer & Environment Controller
+# @license  : Apache License 2.0
+# @since    : 2026-05-12
+# @desc     : support Ubuntu 24+, Rocky Linux 9+, RHEL 9+, CentOS Stream 9+
+# @installation :
+#   1. insert 'source <path>/sciectl.completion' into ~/.bashrc or ~/.bash_profile for a personal usage.
+#   2. copy the completion file to /usr/share/bash-completion/completions/sciectl (1st) or /etc/bash_completion.d/sciectl.completion (2nd) for all users.
+# =======================================
+
+readonly FILENAME="$(basename "$0")"
+readonly REPO_BASE_URL="${SCIECTL_REPO_URL:-https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main}"
+
+# ==========================================
+# 터미널 출력 색상 정의
+# ==========================================
+if [[ -t 1 ]]; then
+  COLOR_ERROR='\033[1;31m'
+  COLOR_WARN='\033[1;33m'
+  COLOR_INFO='\033[1;32m'
+  COLOR_CYAN='\033[1;36m'
+  COLOR_BOLD='\033[1m'
+  COLOR_NC='\033[0m'
+else
+  COLOR_ERROR=''
+  COLOR_WARN=''
+  COLOR_INFO=''
+  COLOR_CYAN=''
+  COLOR_BOLD=''
+  COLOR_NC=''
+fi
+
+##
+# 오류 메시지를 빨간색으로 출력합니다.
+#
+# @param $* {string} 출력할 메시지
+#
+# @return 표준 출력
+##
+echo_e() {
+  printf "${COLOR_ERROR}%s${COLOR_NC}\n" "$*"
+}
+
+##
+# 경고 메시지를 노란색으로 출력합니다.
+#
+# @param $* {string} 출력할 메시지
+#
+# @return 표준 출력
+##
+echo_w() {
+  printf "${COLOR_WARN}%s${COLOR_NC}\n" "$*"
+}
+
+##
+# 안내 메시지를 녹색으로 출력합니다.
+#
+# @param $* {string} 출력할 메시지
+#
+# @return 표준 출력
+##
+echo_i() {
+  printf "${COLOR_INFO}%s${COLOR_NC}\n" "$*"
+}
+
+# ==========================================
+# 공지사항(Notice) 공유 파이프라인 (부모-자식 공유)
+# ==========================================
+export NOTICE_MESSAGES_TEMP_FILE="/tmp/sciectl_notice_messages_$$.tmp"
+rm -f -- "$NOTICE_MESSAGES_TEMP_FILE"
+touch "$NOTICE_MESSAGES_TEMP_FILE"
+
+##
+# 작업 완료 후 사용자에게 전달할 공지 메시지를 임시 파일에 누적 저장합니다.
+#
+# @param $1 {string} 저장할 메시지
+# @param $2 {string} 중복 허용 여부 (기본값: true / false 지정 시 중복 라인 무시)
+#
+# @return 0
+##
+_add_notice() {
+  local msg="${1:-}"
+  local forced="${2:-true}"
+
+  if [[ -z "$msg" ]]; then
+    return 0
+  fi
+
+  if [[ "$forced" == "false" ]]; then
+    if grep -Fxq "$msg" "$NOTICE_MESSAGES_TEMP_FILE" 2>/dev/null; then
+      return 0
+    fi
+  fi
+
+  echo "$msg" >> "$NOTICE_MESSAGES_TEMP_FILE"
+}
+
+##
+# 저장된 모든 공지 메시지를 출력하고 임시 파일을 정리합니다.
+#
+# @param 없음
+#
+# @return 저장된 메시지 목록 (표준 출력)
+##
+_announce_notices() {
+  if [[ ! -s "$NOTICE_MESSAGES_TEMP_FILE" ]]; then
+    rm -f -- "$NOTICE_MESSAGES_TEMP_FILE"
+    return 0
+  fi
+
+  echo
+  echo "================================================================================"
+  echo "[공지] 작업 완료 후 확인이 필요한 메시지"
+  echo "================================================================================"
+
+  local idx=1
+  local msg=""
+  while IFS= read -r msg || [[ -n "$msg" ]]; do
+    echo_w " [$(printf "%-3d" "$idx")] $msg"
+    ((idx++))
+  done < "$NOTICE_MESSAGES_TEMP_FILE"
+
+  echo "================================================================================"
+  rm -f -- "$NOTICE_MESSAGES_TEMP_FILE"
+}
+
+##
+# 오류 진단 콜스택 박스를 표준 에러(stderr)로 출력합니다.
+#
+# @param $1 {string} 오류 원인 메시지
+# @param $2 {string} 오류 발생 라인 번호
+#
+# @return 없음
+##
+print_error_box() {
+  local cause="${1:-}"
+  local line="${2:-unknown}"
+  [[ -n "$cause" ]] || return 0
+
+  local indent=10
+  local formatl=" - %-${indent}s: %s\n"
+  local formatr=" - %${indent}s: %s\n"
+  echo >&2
+  echo "================================================================================" >&2
+  printf "$formatl" "filename" "$FILENAME" >&2
+  printf "$formatl" "line" "$line" >&2
+  printf "$formatl" "callstack" "" >&2
+  local idx=1
+  local func
+  for func in "${FUNCNAME[@]:2}"; do
+    printf "$formatr" "[${idx}]" "$func" >&2
+    ((idx++))
+  done
+  printf "$formatl" "cause" "$cause" >&2
+  echo "================================================================================" >&2
+}
+
+##
+# 전체 사용법 또는 서브커맨드별 도움말을 출력합니다.
+#
+# @param $1 {string} 오류 원인 메시지 (선택)
+# @param $2 {string} 오류 발생 라인 번호 (선택)
+# @param $3 {string} 서브커맨드 이름 (install | list | info | empty)
+#
+# @return 도움말 출력
+##
+help() {
+  local cause="${1:-}"
+  local line="${2:-unknown}"
+  local subcmd="${3:-}"
+
+  if [[ -n "$cause" ]]; then
+    print_error_box "$cause" "$line"
+  fi
+
+  case "$subcmd" in
+    install)
+      cat <<EOF
+
+📦 사용법 (Usage - install):
+  $FILENAME [install] [options]
+  $FILENAME install --help
+
+📝 설명 (Description):
+  카탈로그(목적별 환경 묶음) 또는 개별 컴포넌트(커스텀 도구, 인스톨러, 커맨드, SSH 키)를
+  리눅스 패키지 매니저(dnf/apt) 방식의 단일 트랜잭션 파이프라인으로 일괄 설치합니다.
+  - '--catalog' 옵션을 생략하고 실행하면 대화형(Interactive) 카탈로그/옵션 선택 메뉴가 실행됩니다.
+  - 여러 카탈로그를 동시에 지정하면 항목을 자동 병합 및 중복 제거하여 한 번에 실행합니다.
+
+⚙️  주요 옵션 (Options - Long Option 전용):
+  --catalog <ID[,ID2...]>       설치할 카탈로그 ID 지정 (복수 지정 또는 콤마 구분 가능)
+  --tool <CAT/NAME[,...]>       특정 커스텀 도구 단독/추가 설치 (예: git/git-commit)
+  --installer <NAME[,...]>      특정 인스톨러 단독/추가 실행 (예: temurin-25-jdk, htop)
+  --command <NAME[,...]>        특정 사후 명령어 단독/추가 실행 (예: firewall-cmd-set-priority)
+  --ssh-key <NAME[,...]>        특정 SSH 공개키 단독/추가 등록 (예: ymtech-internal, letsencrypt)
+  --only <STEPS>                지정한 단계만 선택 실행 (콤마 구분)
+                                (허용값: sudoers,remove-packages,install-packages,default-opts,
+                                 custom-installers,custom-tools,custom-commands,ssh-key)
+  --skip <STEPS>                지정한 단계를 제외하고 실행 (콤마 구분)
+  --user <USERNAME>             sudoers 등록 대상 사용자 계정 지정 (미지정 시 프롬프트 또는 \$USER)
+  --target <local|global>       커스텀 도구 설치 경로 (local: ~/bin, global: /usr/local/bin, 기본값: local)
+  --local                       로컬 저장소 파일 우선 사용
+  --remote                      원격 GitHub 저장소(Raw URL) 강제 사용
+  --yes                         모든 확인 프롬프트(y/n) 자동 승인 (무인 자동화 설치)
+  --force                       기존 설치된 커스텀 도구/자동완성 파일 확인 없이 강제 업데이트
+  --dry-run                     실제 설치 없이 병합된 트랜잭션 실행 계획(Transaction Summary)만 출력
+  --help                        install 서브커맨드 도움말 출력
+
+⚙️  단계별 호환 옵션 (Legacy Step Options):
+  --all                         선택한 카탈로그의 모든 단계 및 기본 환경 설정 적용
+  --add-sudoers                 sudoers 설정 단계만 실행 (--no-default-opts 자동 적용)
+  --remove-packages             불필요 OS 패키지 삭제 단계만 실행 (--no-default-opts 자동 적용)
+  --install-packages            기본 OS 패키지 설치 단계만 실행 (--no-default-opts 자동 적용)
+  --custom-tools                커스텀 도구 설치 단계만 실행 (--no-default-opts 자동 적용)
+  --custom-installers           커스텀 인스톨러 실행 단계만 실행 (--no-default-opts 자동 적용)
+  --custom-commands             커스텀 명령어 실행 단계만 실행 (--no-default-opts 자동 적용)
+  --no-default-opts             기본 환경 3종(~/bin PATH, git 프롬프트, vimrc) 설정 생략
+
+💡 예시 (Examples):
+  $FILENAME
+  $FILENAME install --catalog default-server,docker,network
+  $FILENAME install --catalog default-devops --user parkjunhong --yes
+  $FILENAME install --catalog default-devops --only custom-tools,custom-installers
+  $FILENAME install --installer temurin-25-jdk,htop --tool git/git-commit
+  $FILENAME install --catalog default-server --dry-run
+EOF
+      ;;
+    list)
+      cat <<EOF
+
+📋 사용법 (Usage - list):
+  $FILENAME list [--type <all|catalogs|installers|commands|keys>] [--local|--remote]
+  $FILENAME list --help
+
+📝 설명 (Description):
+  설치 가능한 카탈로그(그룹) 목록 및 개별 인스톨러, 사후 명령어, SSH 공개키 목록을 조회합니다.
+
+⚙️  옵션 (Options):
+  --type <TYPE>     조회할 대상 유형 (기본값: catalogs / 허용값: all, catalogs, installers, commands, keys)
+  --local           로컬 저장소 기준으로 목록 조회
+  --remote          원격 GitHub 저장소 기준으로 목록 조회
+  --help            list 서브커맨드 도움말 출력
+EOF
+      ;;
+    info)
+      cat <<EOF
+
+🔍 사용법 (Usage - info):
+  $FILENAME info --catalog <CATALOG_ID[,ID2...]> [--local|--remote]
+  $FILENAME info --help
+
+📝 설명 (Description):
+  지정한 카탈로그(상속된 상위 카탈로그 포함)에 정의된 OS 패키지, Sudoers 명령어, 커스텀 도구,
+  인스톨러, 사후 명령어, SSH 공개키 상세 내역을 조회합니다.
+
+⚙️  옵션 (Options):
+  --catalog <ID>    상세 정보를 조회할 카탈로그 ID (필수, 콤마 구분 복수 지정 가능)
+  --local           로컬 저장소 기준으로 조회
+  --remote          원격 GitHub 저장소 기준으로 조회
+  --help            info 서브커맨드 도움말 출력
+EOF
+      ;;
+    *)
+      cat <<EOF
+
+🛠️  사용법 (Usage):
+  $FILENAME [command] [options]
+  $FILENAME --help
+
+📝 설명 (Description):
+  sciectl (Script, Command, Installer & Environment Controller)은 리눅스 패키지 매니저(dnf/apt)와
+  동일한 방식으로 목적별 카탈로그(@catalog) 및 개별 도구/인스톨러를 일괄 설치·관리하는 통합 CLI 도구입니다.
+  - 단축 옵션(Short Option)은 지원하지 않으며, 전체 옵션명(Long Option)만 사용 가능합니다.
+  - 인자 없이 '$FILENAME'만 실행하면 대화형(Interactive) 카탈로그 선택 및 설치 모드로 진입합니다.
+
+🧭 명령어 (Commands):
+  install     카탈로그 또는 개별 도구/인스톨러/커맨드/SSH키 설치 (기본 명령어)
+  list        제공되는 카탈로그, 인스톨러, 커맨드, SSH키 목록 조회
+  info        특정 카탈로그의 상속 관계 및 포함 컴포넌트 상세 조회
+
+💡 빠른 시작 예시 (Quick Examples):
+  $FILENAME                                                       # 대화형 카탈로그/옵션 선택 설치
+  $FILENAME list --type all                                       # 전체 카탈로그 및 컴포넌트 목록 조회
+  $FILENAME info --catalog default-devops                         # default-devops 상세 구성 조회
+  $FILENAME install --catalog default-server,docker --yes         # 다중 카탈로그 무인 일괄 설치
+  $FILENAME install --installer temurin-25-jdk --tool net/fwc-cli # 개별 인스톨러/도구 단독 설치
+EOF
+      ;;
+  esac
+}
+
+##
+# 오류 메시지를 출력하고 도움말을 호출한 뒤 스크립트를 종료합니다.
+#
+# @param $1 {string} 발생한 오류 원인 메시지
+# @param $2 {string} 오류가 발생한 라인 번호
+# @param $3 {string} 서브커맨드 이름 (선택)
+#
+# @return 없음 (exit 1)
+##
+error_exit() {
+  help "${1:-알 수 없는 오류}" "${2:-$LINENO}" "${3:-}"
+  rm -f -- "$NOTICE_MESSAGES_TEMP_FILE"
+  exit 1
+}
+
+# ==========================================
+# 전역 상태 및 환경 감지
+# ==========================================
+PKG_MANAGER=""
+PKG_UPDATE_CMD=""
+PKG_INSTALL_CMD=""
+PKG_REMOVE_CMD=""
+
+##
+# OS 패키지 매니저(apt 또는 dnf)를 감지하여 전역 변수를 설정합니다.
+#
+# @param 없음
+#
+# @return 성공 시 0, 미지원 OS 시 exit 1
+##
+_detect_pkg_manager() {
+  if [[ -n "$PKG_MANAGER" ]]; then
+    return 0
+  fi
+  if command -v apt &>/dev/null; then
+    PKG_MANAGER="apt"
+    PKG_UPDATE_CMD="sudo apt update"
+    PKG_INSTALL_CMD="sudo apt install -y"
+    PKG_REMOVE_CMD="sudo apt purge -y"
+  elif command -v dnf &>/dev/null; then
+    PKG_MANAGER="dnf"
+    PKG_UPDATE_CMD="sudo dnf makecache"
+    PKG_INSTALL_CMD="sudo dnf install -y"
+    PKG_REMOVE_CMD="sudo dnf remove -y"
+  else
+    echo_e "[❌] 지원하지 않는 운영체제입니다. (apt 또는 dnf가 필요합니다.)"
+    exit 1
+  fi
+}
+
+##
+# OS별 패키지 매니저를 통해 실제 패키지가 설치되어 있는지 확인합니다.
+#
+# @param $1 {string} 패키지 이름
+#
+# @return 0(설치됨) 또는 1(미설치)
+##
+_is_package_installed() {
+  local pkg_name="$1"
+  _detect_pkg_manager
+  if [[ "$PKG_MANAGER" == "apt" ]]; then
+    dpkg -s "$pkg_name" 2>/dev/null | grep -q "Status: install ok installed"
+  elif [[ "$PKG_MANAGER" == "dnf" ]]; then
+    rpm -q "$pkg_name" &>/dev/null
+  else
+    return 1
+  fi
+}
+
+##
+# curl 명령어가 설치되어 있는지 확인하고 없으면 자동으로 설치합니다.
+#
+# @param 없음
+#
+# @return 0
+##
+_ensure_curl() {
+  if ! command -v curl &>/dev/null; then
+    _detect_pkg_manager
+    $PKG_UPDATE_CMD >/dev/null 2>&1 || true
+    $PKG_INSTALL_CMD curl >/dev/null 2>&1 || true
+  fi
+}
+
+# ==========================================
+# 로컬 저장소 vs 원격 저장소 소스 리졸버
+# ==========================================
+SOURCE_MODE="auto" # auto | local | remote
+LOCAL_REPO_ROOT=""
+
+##
+# 현재 스크립트 위치 기준 로컬 shellscripts 저장소 루트를 탐색합니다.
+#
+# @param 없음
+#
+# @return 0 (발견 시 LOCAL_REPO_ROOT 설정), 1 (미발견)
+##
+_detect_local_repo() {
+  if [[ "$SOURCE_MODE" == "remote" ]]; then
+    LOCAL_REPO_ROOT=""
+    return 1
+  fi
+
+  local script_dir=""
+  if [[ -f "${BASH_SOURCE[0]}" ]]; then
+    script_dir="$(cd -P -- "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P || true)"
+  fi
+
+  local cand=""
+  for cand in "${script_dir}/../.." "${script_dir}/.." "$(pwd -P)"; do
+    if [[ -d "$cand" ]]; then
+      local abs_cand
+      abs_cand="$(cd -P -- "$cand" >/dev/null 2>&1 && pwd -P || true)"
+      if [[ -f "${abs_cand}/env/catalogs/catalogs.ini" ]]; then
+        LOCAL_REPO_ROOT="$abs_cand"
+        return 0
+      fi
+    fi
+  done
+
+  if [[ "$SOURCE_MODE" == "local" ]]; then
+    error_exit "'--local' 옵션이 지정되었으나 로컬 저장소(env/catalogs/catalogs.ini)를 찾을 수 없습니다." "$LINENO"
+  fi
+  return 1
+}
+
+##
+# 저장소 내 상대 경로 파일을 지정된 목적지 파일로 가져옵니다 (로컬 복사 또는 원격 curl 다운로드).
+#
+# @param $1 {string} 저장소 내 상대 경로 또는 전체 URL
+# @param $2 {string} 저장할 로컬 목적지 파일 경로
+#
+# @return 성공 시 0, 실패 시 1
+##
+_fetch_resource() {
+  local rel_or_url="$1"
+  local dest_file="$2"
+
+  if [[ "$rel_or_url" == https://* || "$rel_or_url" == http://* ]]; then
+    _ensure_curl
+    curl -sfLo "$dest_file" "$rel_or_url"
+    return $?
+  fi
+
+  if _detect_local_repo && [[ -f "${LOCAL_REPO_ROOT}/${rel_or_url}" ]]; then
+    cp "${LOCAL_REPO_ROOT}/${rel_or_url}" "$dest_file"
+    return $?
+  fi
+
+  if [[ "$SOURCE_MODE" == "local" ]]; then
+    return 1
+  fi
+
+  _ensure_curl
+  curl -sfLo "$dest_file" "${REPO_BASE_URL}/${rel_or_url}"
+}
+
+##
+# 논리적 도구 식별자(<category>/<name>)를 저장소 상대 경로(<category>/<name>/<name>)로 변환합니다.
+#
+# @param $1 {string} 도구 식별자 (예: git/git-commit)
+#
+# @return 변환된 상대 경로 또는 URL 출력
+##
+_resolve_tool_path() {
+  local item="$1"
+  if [[ "$item" == https://* || "$item" == http://* ]]; then
+    printf '%s\n' "$item"
+    return 0
+  fi
+  # 슬래시가 1개인 경우 (<category>/<name>) -> <category>/<name>/<name>
+  local slash_count="${item//[^\/]/}"
+  if [[ "${#slash_count}" -eq 1 ]]; then
+    local tool_name="${item#*/}"
+    printf '%s/%s\n' "$item" "$tool_name"
+  else
+    printf '%s\n' "$item"
+  fi
+}
+
+##
+# 논리적 인스톨러 식별자(예: temurin-25-jdk 또는 docker/install-docker)를 상대 경로로 변환합니다.
+#
+# @param $1 {string} 인스톨러 식별자
+#
+# @return 변환된 상대 경로 또는 URL 출력
+##
+_resolve_installer_path() {
+  local item="$1"
+  if [[ "$item" == https://* || "$item" == http://* ]]; then
+    printf '%s\n' "$item"
+    return 0
+  fi
+  if [[ "$item" == *"/"* ]]; then
+    _resolve_tool_path "$item"
+    return 0
+  fi
+  local base="${item%.sh}"
+  base="${base#install-}"
+  printf 'env/installers/install-%s.sh\n' "$base"
+}
+
+##
+# 논리적 사후 명령어 식별자(예: firewall-cmd-set-priority)를 상대 경로로 변환합니다.
+#
+# @param $1 {string} 명령어 식별자
+#
+# @return 변환된 상대 경로 또는 URL 출력
+##
+_resolve_command_path() {
+  local item="$1"
+  if [[ "$item" == https://* || "$item" == http://* ]]; then
+    printf '%s\n' "$item"
+    return 0
+  fi
+  if [[ "$item" == *"/"* ]]; then
+    printf '%s\n' "$item"
+    return 0
+  fi
+  local base="${item%.sh}"
+  printf 'env/commands/%s.sh\n' "$base"
+}
+
+##
+# 논리적 SSH 공개키 식별자(예: ymtech-internal) 또는 공개키 문자열을 실제 공개키 문자열로 변환합니다.
+#
+# @param $1 {string} SSH 키 식별자 또는 공개키 원문
+#
+# @return 공개키 문자열 출력 (실패 시 반환코드 1)
+##
+_resolve_ssh_key_content() {
+  local item="$1"
+  if [[ "$item" == ssh-* || "$item" == ecdsa-* ]]; then
+    printf '%s\n' "$item"
+    return 0
+  fi
+  local base="${item%.pub}"
+  local rel_path="env/keys/${base}.pub"
+  local tmp_key
+  tmp_key="$(mktemp /tmp/sciectl_key.XXXXXX)"
+  if _fetch_resource "$rel_path" "$tmp_key"; then
+    local content
+    content="$(grep -v '^[[:space:]]*#' "$tmp_key" | sed '/^[[:space:]]*$/d' | head -n 1)"
+    rm -f -- "$tmp_key"
+    if [[ -n "$content" ]]; then
+      printf '%s\n' "$content"
+      return 0
+    fi
+  fi
+  rm -f -- "$tmp_key"
+  return 1
+}
+
+# ==============================================================================
+# 한글/영문 혼용 문자열의 터미널 출력 너비 계산 및 동적 테이블 유틸리티
+# ==============================================================================
+
+##
+# 문자열의 터미널 출력 너비를 계산합니다 (한글=2, ASCII=1).
+#
+# @param $1 {string} 대상 문자열
+#
+# @return 계산된 너비 숫자 출력
+##
+_get_display_width() {
+  local str="$1"
+  local width=0
+  local i char
+
+  for (( i=0; i<${#str}; i++ )); do
+    char="${str:$i:1}"
+    if [[ "$char" == [a-zA-Z0-9\ \!\@\#\$%\^\&\*\(\)\_\+\-\=\[\]\{\}\;\:\'\"\,\.\<\>\/\?\`\~\|\\] ]]; then
+      ((width++))
+    else
+      ((width+=2))
+    fi
+  done
+  echo "$width"
+}
+
+##
+# 지정된 너비만큼 우측에 공백을 채워 문자열을 출력합니다 (좌측 정렬).
+#
+# @param $1 {string} 대상 문자열
+# @param $2 {number} 목표 너비
+#
+# @return 패딩된 문자열 출력
+##
+_pad_string() {
+  local str="$1"
+  local target_width="$2"
+  local current_width
+  current_width="$(_get_display_width "$str")"
+  local spaces=$(( target_width - current_width ))
+
+  echo -n "$str"
+  local i
+  for (( i=0; i<spaces; i++ )); do
+    echo -n " "
+  done
+}
+
+# ==============================================================================
+# 카탈로그 인덱스(catalogs.ini) 및 매니페스트(*.catalog) 파서
+# ==============================================================================
+declare -a CATALOG_SECTIONS=()
+declare -A CATALOG_TITLE=()
+declare -A CATALOG_DESC=()
+declare -A CATALOG_FILE=()
+
+MAX_ID_WIDTH=10
+MAX_TITLE_WIDTH=4
+MAX_DESC_WIDTH=4
+
+##
+# catalogs.ini 인덱스 파일을 로드하고 파싱합니다.
+#
+# @param 없음
+#
+# @return 성공 시 0, 실패 시 exit 1
+##
+load_catalogs_index() {
+  CATALOG_SECTIONS=()
+  CATALOG_TITLE=()
+  CATALOG_DESC=()
+  CATALOG_FILE=()
+  MAX_ID_WIDTH=10
+  MAX_TITLE_WIDTH=4
+  MAX_DESC_WIDTH=4
+
+  local tmp_ini
+  tmp_ini="$(mktemp /tmp/sciectl_catalogs_ini.XXXXXX)"
+  if ! _fetch_resource "env/catalogs/catalogs.ini" "$tmp_ini"; then
+    rm -f -- "$tmp_ini"
+    error_exit "카탈로그 인덱스 파일(env/catalogs/catalogs.ini)을 불러올 수 없습니다." "$LINENO"
+  fi
+
+  local cur_sec=""
+  local line=""
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="$(echo "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+    [[ -z "$line" || "$line" =~ ^# || "$line" =~ ^\; ]] && continue
+
+    if [[ "$line" =~ ^\[(.*)\]$ ]]; then
+      cur_sec="${BASH_REMATCH[1]}"
+      CATALOG_SECTIONS+=("$cur_sec")
+      local id_w
+      id_w="$(_get_display_width "$cur_sec")"
+      (( id_w > MAX_ID_WIDTH )) && MAX_ID_WIDTH=$id_w
+      continue
+    fi
+
+    if [[ "$line" =~ ^([^=]+)=(.*)$ ]]; then
+      local key="${BASH_REMATCH[1]}"
+      local val="${BASH_REMATCH[2]}"
+      local val_w
+      val_w="$(_get_display_width "$val")"
+
+      case "$key" in
+        title)
+          CATALOG_TITLE["$cur_sec"]="$val"
+          (( val_w > MAX_TITLE_WIDTH )) && MAX_TITLE_WIDTH=$val_w
+          ;;
+        description)
+          CATALOG_DESC["$cur_sec"]="$val"
+          (( val_w > MAX_DESC_WIDTH )) && MAX_DESC_WIDTH=$val_w
+          ;;
+        catalog_file)
+          CATALOG_FILE["$cur_sec"]="$val"
+          ;;
+        catalog_url)
+          CATALOG_FILE["$cur_sec"]="$val"
+          ;;
+      esac
+    fi
+  done < "$tmp_ini"
+
+  rm -f -- "$tmp_ini"
+}
+
+##
+# 카탈로그 목록 테이블의 가로 구분선을 출력합니다.
+#
+# @param 없음
+#
+# @return 구분선 출력
+##
+_print_catalog_border() {
+  local total_len=$(( 16 + MAX_ID_WIDTH + MAX_TITLE_WIDTH + MAX_DESC_WIDTH ))
+  local i
+  for (( i=0; i<total_len; i++ )); do echo -n "-"; done
+  echo
+}
+
+##
+# 카탈로그 목록을 동적 ASCII 테이블로 출력합니다.
+#
+# @param 없음
+#
+# @return 테이블 표준 출력
+##
+show_catalog_table() {
+  echo
+  _print_catalog_border
+  echo -n "|  #  | "
+  _pad_string "카탈로그 ID" "$MAX_ID_WIDTH"
+  echo -n " | "
+  _pad_string "제목" "$MAX_TITLE_WIDTH"
+  echo -n " | "
+  _pad_string "설명" "$MAX_DESC_WIDTH"
+  echo " |"
+  _print_catalog_border
+
+  local idx=1
+  local sec
+  for sec in "${CATALOG_SECTIONS[@]}"; do
+    printf "| %3d | " "$idx"
+    _pad_string "$sec" "$MAX_ID_WIDTH"
+    echo -n " | "
+    _pad_string "${CATALOG_TITLE[$sec]:-}" "$MAX_TITLE_WIDTH"
+    echo -n " | "
+    _pad_string "${CATALOG_DESC[$sec]:-}" "$MAX_DESC_WIDTH"
+    echo " |"
+    ((idx++))
+  done
+  _print_catalog_border
+  echo
+}
+
+# ==============================================================================
+# 트랜잭션 누적 컨테이너 (Merged & Deduplicated Items)
+# ==============================================================================
+declare -a TX_CATALOGS=()
+declare -A TX_SEEN_CATALOG=()
+
+declare -a TX_SUDOERS_CMDS=()
+declare -A TX_SEEN_SUDOERS=()
+
+declare -a TX_REMOVE_PKGS=()
+declare -A TX_SEEN_REMOVE_PKG=()
+
+declare -a TX_INSTALL_PKGS=()
+declare -A TX_SEEN_INSTALL_PKG=()
+
+declare -a TX_CUSTOM_TOOLS=()
+declare -A TX_SEEN_TOOL=()
+
+declare -a TX_CUSTOM_INSTALLERS=()
+declare -A TX_SEEN_INSTALLER=()
+
+declare -a TX_CUSTOM_COMMANDS=()
+declare -A TX_SEEN_COMMAND=()
+
+declare -a TX_SSH_KEYS=()
+declare -A TX_SEEN_SSH_KEY=()
+
+##
+# 콤마(,)로 구분된 문자열을 파싱하여 지정된 트랜잭션 배열에 중복 없이 추가합니다.
+#
+# @param $1 {string} 대상 항목 유형 (sudoers | remove_pkg | install_pkg | tool | installer | command | ssh_key)
+# @param $2 {string} 콤마로 구분된 값 문자열
+#
+# @return 0
+##
+_add_tx_items() {
+  local item_type="$1"
+  local raw_csv="${2:-}"
+  [[ -n "$raw_csv" ]] || return 0
+
+  local -a parts=()
+  IFS=',' read -ra parts <<< "$raw_csv"
+  local part trimmed
+  for part in "${parts[@]}"; do
+    trimmed="$(echo "$part" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+    [[ -n "$trimmed" ]] || continue
+
+    case "$item_type" in
+      sudoers)
+        if [[ -z "${TX_SEEN_SUDOERS[$trimmed]:-}" ]]; then
+          TX_SUDOERS_CMDS+=("$trimmed")
+          TX_SEEN_SUDOERS["$trimmed"]=1
+        fi
+        ;;
+      remove_pkg)
+        if [[ -z "${TX_SEEN_REMOVE_PKG[$trimmed]:-}" ]]; then
+          TX_REMOVE_PKGS+=("$trimmed")
+          TX_SEEN_REMOVE_PKG["$trimmed"]=1
+        fi
+        ;;
+      install_pkg)
+        if [[ -z "${TX_SEEN_INSTALL_PKG[$trimmed]:-}" ]]; then
+          TX_INSTALL_PKGS+=("$trimmed")
+          TX_SEEN_INSTALL_PKG["$trimmed"]=1
+        fi
+        ;;
+      tool)
+        if [[ -z "${TX_SEEN_TOOL[$trimmed]:-}" ]]; then
+          TX_CUSTOM_TOOLS+=("$trimmed")
+          TX_SEEN_TOOL["$trimmed"]=1
+        fi
+        ;;
+      installer)
+        if [[ -z "${TX_SEEN_INSTALLER[$trimmed]:-}" ]]; then
+          TX_CUSTOM_INSTALLERS+=("$trimmed")
+          TX_SEEN_INSTALLER["$trimmed"]=1
+        fi
+        ;;
+      command)
+        if [[ -z "${TX_SEEN_COMMAND[$trimmed]:-}" ]]; then
+          TX_CUSTOM_COMMANDS+=("$trimmed")
+          TX_SEEN_COMMAND["$trimmed"]=1
+        fi
+        ;;
+      ssh_key)
+        if [[ -z "${TX_SEEN_SSH_KEY[$trimmed]:-}" ]]; then
+          TX_SSH_KEYS+=("$trimmed")
+          TX_SEEN_SSH_KEY["$trimmed"]=1
+        fi
+        ;;
+    esac
+  done
+}
+
+##
+# 단일 카탈로그 매니페스트(*.catalog)를 로드하고 INCLUDES 상속을 재귀적으로 병합합니다.
+#
+# @param $1 {string} 카탈로그 ID
+#
+# @return 성공 시 0, 실패 시 exit 1
+##
+resolve_catalog() {
+  local cat_id="$1"
+  [[ -n "$cat_id" ]] || return 0
+
+  # 순환 참조 및 중복 로드 방지
+  if [[ -n "${TX_SEEN_CATALOG[$cat_id]:-}" ]]; then
+    return 0
+  fi
+  TX_SEEN_CATALOG["$cat_id"]=1
+
+  local rel_file="env/catalogs/${cat_id}.catalog"
+  if [[ -n "${CATALOG_FILE[$cat_id]:-}" ]]; then
+    if [[ "${CATALOG_FILE[$cat_id]}" == https://* ]]; then
+      rel_file="${CATALOG_FILE[$cat_id]}"
+    else
+      rel_file="env/catalogs/${CATALOG_FILE[$cat_id]}"
+    fi
+  fi
+
+  local tmp_cat
+  tmp_cat="$(mktemp /tmp/sciectl_cat.XXXXXX)"
+  if ! _fetch_resource "$rel_file" "$tmp_cat"; then
+    rm -f -- "$tmp_cat"
+    error_exit "존재하지 않는 카탈로그이거나 매니페스트를 불러올 수 없습니다: '$cat_id' ($rel_file)" "$LINENO"
+  fi
+
+  local includes_val=""
+  local sudoers_val=""
+  local remove_val=""
+  local install_val=""
+  local tools_val=""
+  local installers_val=""
+  local commands_val=""
+  local ssh_keys_val=""
+
+  local line=""
+  local accumulated=""
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    # 주석 및 빈 줄 제거
+    local stripped
+    stripped="$(echo "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+    [[ -z "$stripped" || "$stripped" =~ ^# ]] && continue
+
+    # 백슬래시(\) 줄 바꿈 연결 지원
+    if [[ "$stripped" == *\\ ]]; then
+      accumulated+="${stripped%\\} "
+      continue
+    else
+      accumulated+="$stripped"
+    fi
+
+    local full_line="$accumulated"
+    accumulated=""
+
+    if [[ "$full_line" =~ ^([^=]+)=(.*)$ ]]; then
+      local key
+      key="$(echo "${BASH_REMATCH[1]}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+      local val
+      val="$(printf '%s' "${BASH_REMATCH[2]}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+
+      case "$key" in
+        INCLUDES)              includes_val+=",$val" ;;
+        NO_PASSWORD_COMMANDS)  sudoers_val+=",$val" ;;
+        REMOVE_PACKAGES)       remove_val+=",$val" ;;
+        INSTALL_PACKAGES)      install_val+=",$val" ;;
+        CUSTOM_TOOLS|URL_CUSTOM_TOOL.*)
+          tools_val+=",$val"
+          ;;
+        CUSTOM_INSTALLERS|URL_CUSTOM_INSTALLER.*)
+          installers_val+=",$val"
+          ;;
+        CUSTOM_COMMANDS|URL_CUSTOM_COMMAND.*)
+          commands_val+=",$val"
+          ;;
+        SSH_KEYS|RSA_PUBLIC_KEY.*)
+          ssh_keys_val+=",$val"
+          ;;
+      esac
+    fi
+  done < "$tmp_cat"
+
+  rm -f -- "$tmp_cat"
+
+  # 1. 상위 카탈로그(INCLUDES)부터 먼저 재귀 병합 (부모가 먼저 설치되도록 순서 보장)
+  if [[ -n "$includes_val" ]]; then
+    local -a inc_arr=()
+    IFS=',' read -ra inc_arr <<< "$includes_val"
+    local inc_id
+    for inc_id in "${inc_arr[@]}"; do
+      inc_id="$(echo "$inc_id" | xargs)"
+      [[ -n "$inc_id" ]] && resolve_catalog "$inc_id"
+    done
+  fi
+
+  # 2. 현재 카탈로그 항목 병합
+  TX_CATALOGS+=("$cat_id")
+  _add_tx_items "sudoers"     "$sudoers_val"
+  _add_tx_items "remove_pkg"  "$remove_val"
+  _add_tx_items "install_pkg" "$install_val"
+  _add_tx_items "tool"        "$tools_val"
+  _add_tx_items "installer"   "$installers_val"
+  _add_tx_items "command"     "$commands_val"
+  _add_tx_items "ssh_key"     "$ssh_keys_val"
+}
+
+# ==============================================================================
+# 대화형(Interactive) 카탈로그 다중 선택 및 단계 선택 UI
+# ==============================================================================
+
+##
+# 대화형으로 1개 이상의 카탈로그를 선택받아 resolve_catalog를 수행합니다.
+#
+# @param 없음
+#
+# @return 선택 완료 시 0, 취소 시 1
+##
+interactive_select_catalogs() {
+  load_catalogs_index
+  local total_items="${#CATALOG_SECTIONS[@]}"
+  local interrupted=0
+
+  while true; do
+    show_catalog_table
+
+    interrupted=0
+    trap 'interrupted=1' SIGINT
+
+    local choice_line=""
+    echo -n "> 🛠️  설치할 카탈로그 번호(또는 ID)를 입력하세요 (복수 선택은 띄어쓰기/콤마 구분, 예: 1 4) [취소: q 또는 Ctrl+C]: " >&2
+    read -r choice_line
+
+    trap - SIGINT
+
+    if (( interrupted == 1 )) || [[ "$choice_line" == "q" || "$choice_line" == "Q" ]]; then
+      echo_w " - [🛑] 카탈로그 선택을 종료합니다." >&2
+      return 1
+    fi
+
+    choice_line="${choice_line//,/ }"
+    local -a tokens=()
+    read -ra tokens <<< "$choice_line"
+    if (( ${#tokens[@]} == 0 )); then
+      echo_w "⚠️  - 번호 또는 카탈로그 ID를 입력해 주세요." >&2
+      continue
+    fi
+
+    local -a picked_ids=()
+    local valid=true
+    local tok
+    for tok in "${tokens[@]}"; do
+      if [[ "$tok" =~ ^[0-9]+$ ]]; then
+        if (( tok < 1 || tok > total_items )); then
+          echo_w "⚠️  - 잘못된 번호입니다 ($tok). 1에서 $total_items 사이의 숫자를 입력해주세요." >&2
+          valid=false
+          break
+        fi
+        picked_ids+=("${CATALOG_SECTIONS[$((tok - 1))]}")
+      else
+        local found=false
+        local sec
+        for sec in "${CATALOG_SECTIONS[@]}"; do
+          if [[ "$sec" == "$tok" ]]; then
+            found=true
+            picked_ids+=("$sec")
+            break
+          fi
+        done
+        if [[ "$found" == false ]]; then
+          echo_w "⚠️  - 알 수 없는 카탈로그 식별자입니다: '$tok'" >&2
+          valid=false
+          break
+        fi
+      fi
+    done
+
+    [[ "$valid" == true ]] || continue
+
+    echo >&2
+    echo "================================================================================" >&2
+    echo -e "▶ 선택하신 카탈로그 (${#picked_ids[@]}개):" >&2
+    local pid
+    for pid in "${picked_ids[@]}"; do
+      echo -e "  - ${COLOR_CYAN}${pid}${COLOR_NC} : ${CATALOG_TITLE[$pid]:-} (${CATALOG_DESC[$pid]:-})" >&2
+    done
+    echo "================================================================================" >&2
+
+    for pid in "${picked_ids[@]}"; do
+      resolve_catalog "$pid"
+    done
+    return 0
+  done
+}
+
+# ==============================================================================
+# 핵심 설치 작업 함수 (7대 메커니즘 + 기본 환경 3종)
+# ==============================================================================
+declare -A EXECUTED_JOB_FLAGS=()
+
+##
+# 사용자의 홈 디렉토리에 bin 디렉토리를 생성하고 PATH 환경변수에 등록합니다.
+#
+# @param 없음
+#
+# @return 진행 상황 메시지 출력
+##
+_setup_home_bin() {
+  local func_name="${FUNCNAME[0]}"
+  [[ "${EXECUTED_JOB_FLAGS[$func_name]:-0}" -eq 1 ]] && return 0
+
+  echo
+  echo "############### $func_name ###############"
+  echo "[✨] $HOME/bin 디렉토리 설정 중..."
+  local bin_dir="$HOME/bin"
+  if [[ ! -d "$bin_dir" ]]; then
+    mkdir -p "$bin_dir" || error_exit "~/bin 디렉토리 생성 실패" "$LINENO"
+    echo_i " - ~/bin 디렉토리를 생성했습니다."
+  fi
+  if [[ -f "$HOME/.bashrc" ]] && ! grep -q "PATH=.*$bin_dir" "$HOME/.bashrc"; then
+    echo "export PATH=\"\$PATH:$bin_dir\"" >> "$HOME/.bashrc" || error_exit "$HOME/.bashrc 파일 수정 실패" "$LINENO"
+    export PATH="$PATH:$bin_dir"
+    echo_i " - $HOME/.bashrc 파일에 PATH 설정('$HOME/bin')을 추가했습니다."
+    _add_notice "### $HOME/bin -> \$PATH 추가 작업 ###" false
+    _add_notice " - 현재 터미널에 즉시 반영하려면 다음 명령을 실행하세요: source ~/.bashrc" false
+  else
+    echo_w " - ~/.bashrc 파일에 이미 PATH 설정이 존재합니다."
+  fi
+
+  EXECUTED_JOB_FLAGS["$func_name"]=1
+}
+
+##
+# .bashrc 파일에 현재 위치의 git branch를 표시하는 프롬프트(PS1) 설정을 추가합니다.
+#
+# @param 없음
+#
+# @return 진행 상황 메시지 출력
+##
+_setup_git_prompt() {
+  local func_name="${FUNCNAME[0]}"
+  [[ "${EXECUTED_JOB_FLAGS[$func_name]:-0}" -eq 1 ]] && return 0
+
+  echo
+  echo "############### $func_name ###############"
+  echo "[✨] git branch 프롬프트 설정 중..."
+  if [[ -f "$HOME/.bashrc" ]] && ! grep -q "parse_git_branch()" "$HOME/.bashrc"; then
+    cat << 'EOF' >> "$HOME/.bashrc" || error_exit "~/.bashrc 파일 수정 실패" "$LINENO"
+
+parse_git_branch() {
+  git branch 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/(\1) /'
+}
+
+PS1='[directory] \[\033[01;31m\]$(parse_git_branch)\[\033[00m\]\[\033[01;34m\]\w\[\033[00m\]\n[\t ] \[\033[01;32m\]\u@\h\[\033[00m\]:$ '
+EOF
+    echo_i " - ~/.bashrc에 git 프롬프트 설정을 추가했습니다."
+  else
+    echo_w " - ~/.bashrc 파일에 이미 git 프롬프트 설정이 존재합니다."
+  fi
+
+  EXECUTED_JOB_FLAGS["$func_name"]=1
+}
+
+##
+# /etc/vim/vimrc (또는 /etc/vimrc) 파일에 커스텀 기본 옵션들을 활성화합니다.
+# (반드시 install_packages 이후에 실행되어 vim 미설치 상태의 파일 누락 문제를 방지합니다.)
+#
+# @param 없음
+#
+# @return 진행 상황 메시지 출력
+##
+_install_vim_options() {
+  local func_name="${FUNCNAME[0]}"
+  [[ "${EXECUTED_JOB_FLAGS[$func_name]:-0}" -eq 1 ]] && return 0
+
+  echo
+  echo "############### $func_name ###############"
+  echo "[✨] vim 환경 설정 중..."
+
+  local vimrc_file="/etc/vim/vimrc"
+  if [[ ! -f "$vimrc_file" && -f "/etc/vimrc" ]]; then
+    vimrc_file="/etc/vimrc"
+  fi
+
+  if [[ -f "$vimrc_file" ]]; then
+    if ! grep -q "\" Custom Settings by setup-env" "$vimrc_file"; then
+      cat << 'EOF' | sudo tee -a "$vimrc_file" > /dev/null
+
+" Custom Settings by setup-env (sciectl)
+set showcmd   " Show (partial) command in status line.
+set ts=2
+set shiftwidth=2
+set paste
+set hlsearch
+set nu
+set expandtab
+EOF
+      echo_i " - [💡] $vimrc_file 파일에 커스텀 설정을 추가했습니다."
+    else
+      echo_w " - $vimrc_file 파일에 이미 커스텀 설정이 존재합니다."
+    fi
+  else
+    echo_w " - [⚠️] vimrc 파일을 찾지 못해 vim 커스텀 설정을 건너뜁니다."
+  fi
+
+  EXECUTED_JOB_FLAGS["$func_name"]=1
+}
+
+##
+# 패키지 삭제/설치가 실제로 필요할 때만 단 1회 OS 패키지 매니저 인덱스를 업데이트합니다.
+#
+# @param 없음
+#
+# @return 성공 시 0, 실패 시 1
+##
+_try_pkg_update() {
+  local func_name="${FUNCNAME[0]}"
+  [[ "${EXECUTED_JOB_FLAGS[$func_name]:-0}" -eq 1 ]] && return 0
+
+  _detect_pkg_manager
+  echo
+  echo "############### $func_name ###############"
+  echo "[✨] 패키지 인덱스 업데이트 중 ($PKG_MANAGER)..."
+
+  if $PKG_UPDATE_CMD; then
+    EXECUTED_JOB_FLAGS["$func_name"]=1
+    return 0
+  else
+    echo_w "⚠️  패키지 인덱스 업데이트에 실패했습니다."
+    return 1
+  fi
+}
+
+##
+# 사용하지 않는 OS 패키지를 일괄 또는 개별 제거합니다.
+#
+# @param 없음
+#
+# @return 0
+##
+remove_packages() {
+  if (( ${#TX_REMOVE_PKGS[@]} == 0 )); then
+    return 0
+  fi
+
+  local func_name="${FUNCNAME[0]}"
+  [[ "${EXECUTED_JOB_FLAGS[$func_name]:-0}" -eq 1 ]] && return 0
+
+  _detect_pkg_manager
+  echo
+  echo "############### $func_name ###############"
+
+  local -a installed_targets=()
+  local pkg
+  for pkg in "${TX_REMOVE_PKGS[@]}"; do
+    if _is_package_installed "$pkg"; then
+      installed_targets+=("$pkg")
+    else
+      echo_w " - '$pkg' 패키지가 시스템에 존재하지 않아 제거를 건너뜁니다."
+    fi
+  done
+
+  if (( ${#installed_targets[@]} > 0 )); then
+    echo "[✨] 불필요 패키지 제거 중: ${installed_targets[*]}"
+    if ! $PKG_REMOVE_CMD "${installed_targets[@]}"; then
+      for pkg in "${installed_targets[@]}"; do
+        $PKG_REMOVE_CMD "$pkg" || _add_notice " - [$func_name] [ERROR] '$pkg' 패키지 제거 실패"
+      done
+    else
+      echo_i " - 패키지 제거 완료: ${installed_targets[*]}"
+    fi
+  fi
+
+  EXECUTED_JOB_FLAGS["$func_name"]=1
+}
+
+##
+# 필요한 OS 패키지를 확인하여 미설치 패키지를 일괄 설치합니다 (실패 시 개별 폴백).
+#
+# @param 없음
+#
+# @return 0
+##
+install_packages() {
+  if (( ${#TX_INSTALL_PKGS[@]} == 0 )); then
+    return 0
+  fi
+
+  local func_name="${FUNCNAME[0]}"
+  [[ "${EXECUTED_JOB_FLAGS[$func_name]:-0}" -eq 1 ]] && return 0
+
+  _detect_pkg_manager
+  echo
+  echo "############### $func_name ###############"
+
+  local -a missing_pkgs=()
+  local pkg
+  for pkg in "${TX_INSTALL_PKGS[@]}"; do
+    if _is_package_installed "$pkg"; then
+      echo_w " - '$pkg' 패키지가 이미 설치되어 있습니다."
+    else
+      missing_pkgs+=("$pkg")
+    fi
+  done
+
+  if (( ${#missing_pkgs[@]} > 0 )); then
+    _try_pkg_update || true
+    echo "[✨] 미설치 패키지 일괄 설치 중 (${#missing_pkgs[@]}개): ${missing_pkgs[*]}"
+    if $PKG_INSTALL_CMD "${missing_pkgs[@]}"; then
+      echo_i " - 패키지 일괄 설치가 완료되었습니다: ${missing_pkgs[*]}"
+    else
+      echo_w " - 일괄 설치 중 일부 오류가 발생하여 개별 설치로 재시도합니다..."
+      for pkg in "${missing_pkgs[@]}"; do
+        if ! _is_package_installed "$pkg"; then
+          if $PKG_INSTALL_CMD "$pkg"; then
+            echo_i " - '$pkg' 설치 완료"
+          else
+            echo_e " - [ERROR] '$pkg' 패키지 설치 실패"
+            _add_notice " - [$func_name] [ERROR] '$pkg' 패키지 설치 실패 (수동 확인 필요)"
+          fi
+        fi
+      done
+    fi
+  fi
+
+  EXECUTED_JOB_FLAGS["$func_name"]=1
+}
+
+##
+# 사용자를 sudoers에 등록하고 NOPASSWD 명령어 목록을 기존 파일과 안전하게 병합/정렬 및 visudo 검증합니다.
+#
+# @param $1 {string} 대상 사용자 계정명
+#
+# @return 성공 시 0, 실패 시 1
+##
+setup_sudoers() {
+  local target_user="${1:-${USER:-$(whoami)}}"
+  if (( ${#TX_SUDOERS_CMDS[@]} == 0 )); then
+    return 0
+  fi
+
+  local func_name="${FUNCNAME[0]}"
+  [[ "${EXECUTED_JOB_FLAGS[$func_name]:-0}" -eq 1 ]] && return 0
+
+  _detect_pkg_manager
+  echo
+  echo "############### $func_name ($target_user) ###############"
+  echo "[✨] 사용자 '$target_user' sudoers 설정 병합 중..."
+
+  local sudoers_file="/etc/sudoers.d/user-${target_user}"
+  local -a all_cmds=()
+
+  if [[ "$PKG_MANAGER" == "apt" ]]; then
+    all_cmds+=("/usr/bin/apt" "/usr/bin/apt-get")
+  elif [[ "$PKG_MANAGER" == "dnf" ]]; then
+    all_cmds+=("/usr/bin/dnf")
+  fi
+
+  if sudo test -f "$sudoers_file"; then
+    local existing_cmds_str
+    existing_cmds_str="$(sudo grep "NOPASSWD:" "$sudoers_file" 2>/dev/null | sed 's/.*NOPASSWD:[[:space:]]*//' || true)"
+    local -a existing_arr=()
+    IFS=',' read -ra existing_arr <<< "$existing_cmds_str"
+    local cmd
+    for cmd in "${existing_arr[@]}"; do
+      cmd="$(echo "$cmd" | xargs)"
+      [[ -n "$cmd" ]] && all_cmds+=("$cmd")
+    done
+  fi
+
+  local new_cmd
+  for new_cmd in "${TX_SUDOERS_CMDS[@]}"; do
+    [[ -n "$new_cmd" ]] && all_cmds+=("$new_cmd")
+  done
+
+  declare -a unique_cmds=()
+  declare -A seen_cmds=()
+  local c
+  for c in "${all_cmds[@]}"; do
+    if [[ -z "${seen_cmds[$c]:-}" ]]; then
+      unique_cmds+=("$c")
+      seen_cmds["$c"]=1
+    fi
+  done
+
+  local -a sorted_cmds=()
+  while IFS= read -r c; do
+    [[ -n "$c" ]] && sorted_cmds+=("$c")
+  done < <(printf '%s\n' "${unique_cmds[@]}" | sort)
+
+  local final_cmds_str=""
+  for c in "${sorted_cmds[@]}"; do
+    if [[ -z "$final_cmds_str" ]]; then
+      final_cmds_str="$c"
+    else
+      final_cmds_str="${final_cmds_str}, ${c}"
+    fi
+  done
+
+  local tmp_sudoers
+  tmp_sudoers="$(mktemp /tmp/sudoers.XXXXXX)"
+  echo "${target_user} ALL=(ALL) ALL" > "$tmp_sudoers"
+  if [[ -n "$final_cmds_str" ]]; then
+    echo "${target_user} ALL=(ALL) NOPASSWD: ${final_cmds_str}" >> "$tmp_sudoers"
+  fi
+
+  if sudo visudo -c -f "$tmp_sudoers" &>/dev/null; then
+    sudo tee "$sudoers_file" < "$tmp_sudoers" >/dev/null
+    sudo chmod 440 "$sudoers_file"
+    rm -f -- "$tmp_sudoers"
+    echo_i " - [🛠️] '${target_user}' sudoers 설정이 안전하게 병합 및 적용되었습니다. ($sudoers_file)"
+    EXECUTED_JOB_FLAGS["$func_name"]=1
+    return 0
+  else
+    rm -f -- "$tmp_sudoers"
+    echo_e " - [❌] 'sudoers' 문법 검증(visudo)에 실패하여 설정을 취소합니다."
+    _add_notice " - [$func_name] [❌] 'sudoers' 문법 검증 실패로 설정 취소"
+    return 1
+  fi
+}
+
+##
+# 확장자가 없는 신규 스크립트 설치 시, 동일한 이름에 '.sh'가 붙은 구버전 스크립트 및
+# bash completion 파일이 존재하면 자동으로 정리합니다.
+#
+# @param $1 {string} 삭제 확인할 구버전 명령어 이름 (예: my-tool.sh)
+# @param $2 {string} 스크립트 설치 디렉토리 (예: $HOME/bin)
+#
+# @return 0
+##
+_remove_legacy_sh_tool() {
+  local legacy_cmd="$1"
+  local bin_dir="$2"
+  [[ -n "$legacy_cmd" && -n "$bin_dir" ]] || return 0
+
+  local legacy_script="${bin_dir}/${legacy_cmd}"
+  local has_legacy_script=0
+  if [[ -f "$legacy_script" || -L "$legacy_script" ]]; then
+    has_legacy_script=1
+  fi
+
+  local -a comp_dirs=()
+  if [[ -d "/usr/share/bash-completion/completions" ]]; then
+    comp_dirs+=("/usr/share/bash-completion/completions")
+  fi
+  if [[ -d "/etc/bash_completion.d" ]]; then
+    comp_dirs+=("/etc/bash_completion.d")
+  fi
+
+  local -a legacy_comp_files=()
+  local dir cand
+  for dir in "${comp_dirs[@]}"; do
+    for cand in "${dir}/${legacy_cmd}" "${dir}/${legacy_cmd}.completion"; do
+      if [[ -f "$cand" || -L "$cand" ]]; then
+        legacy_comp_files+=("$cand")
+      fi
+    done
+  done
+
+  if (( has_legacy_script == 0 && ${#legacy_comp_files[@]} == 0 )); then
+    return 0
+  fi
+
+  if (( has_legacy_script == 1 )); then
+    if rm -f -- "$legacy_script" 2>/dev/null || sudo rm -f -- "$legacy_script"; then
+      echo_i " - [🗑️] '${legacy_cmd}' 구버전 실행 파일을 정리했습니다. ($legacy_script)"
+    fi
+  fi
+
+  local comp_file
+  for comp_file in "${legacy_comp_files[@]}"; do
+    if sudo rm -f -- "$comp_file"; then
+      echo_i " - [🗑️] '${legacy_cmd}' 구버전 자동완성 파일을 정리했습니다. ($comp_file)"
+    fi
+  done
+}
+
+##
+# Bash Completion 파일을 시스템 표준 경로에 설치합니다.
+#
+# @param $1 {string} completion 상대 경로 또는 URL
+# @param $2 {string} 대상 명령어 이름
+# @param $3 {string} 강제 덮어쓰기 여부 (true | false)
+#
+# @return 0
+##
+_install_completion() {
+  local comp_ref="$1"
+  local target_cmd="$2"
+  local force_overwrite="${3:-false}"
+
+  local comp_dir=""
+  if command -v pkg-config &>/dev/null; then
+    comp_dir="$(pkg-config --variable=completionsdir bash-completion 2>/dev/null || true)"
+  fi
+  if [[ -z "$comp_dir" && -d "/usr/share/bash-completion/completions" ]]; then
+    comp_dir="/usr/share/bash-completion/completions"
+  fi
+  if [[ -z "$comp_dir" && -d "/etc/bash_completion.d" ]]; then
+    comp_dir="/etc/bash_completion.d"
+  fi
+  if [[ -z "$comp_dir" ]]; then
+    comp_dir="/etc/bash_completion.d"
+    sudo mkdir -p "$comp_dir"
+  fi
+
+  local temp_comp
+  temp_comp="$(mktemp "/tmp/${target_cmd}.completion.XXXXXX")"
+
+  if ! _fetch_resource "$comp_ref" "$temp_comp"; then
+    rm -f -- "$temp_comp"
+    return 0
+  fi
+
+  local target_comp_file="${comp_dir}/${target_cmd}"
+  if [[ "$comp_dir" == *"/etc/bash_completion.d"* ]]; then
+    target_comp_file="${comp_dir}/${target_cmd}.completion"
+  fi
+
+  local installed=0
+  if [[ -f "$target_comp_file" ]]; then
+    if ! cmp -s "$temp_comp" "$target_comp_file"; then
+      local ch="y"
+      if [[ "$force_overwrite" != "true" && -t 0 ]]; then
+        read -r -p "> '${target_cmd} completion' 내용이 다릅니다. 업데이트하시겠습니까? (y/n): " ch
+      fi
+      if [[ "$ch" =~ ^[Yy]$ ]]; then
+        sudo mv "$temp_comp" "$target_comp_file" && sudo chmod 644 "$target_comp_file"
+        echo_i " - '${target_cmd} completion' 파일이 업데이트되었습니다. ($target_comp_file)"
+        installed=1
+      else
+        echo_w " - '${target_cmd} completion' 기존 파일을 유지합니다."
+        rm -f -- "$temp_comp"
+      fi
+    else
+      echo_w " - '${target_cmd} completion' 파일이 이미 최신입니다."
+      rm -f -- "$temp_comp"
+    fi
+  else
+    sudo mv "$temp_comp" "$target_comp_file" && sudo chmod 644 "$target_comp_file"
+    echo_i " - '${target_cmd} completion' 파일을 설치했습니다. ($target_comp_file)"
+    installed=1
+  fi
+
+  if (( installed == 1 )) && [[ -f "$target_comp_file" ]]; then
+    if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+      # shellcheck disable=SC1090
+      source "$target_comp_file" 2>/dev/null || true
+    fi
+  fi
+}
+
+##
+# 단일 커스텀 도구 및 연관 .completion 파일을 설치합니다.
+#
+# @param $1 {string} 커스텀 도구 식별자 또는 URL
+# @param $2 {string} 설치 범위 (local | global)
+# @param $3 {string} 강제 덮어쓰기 여부 (true | false)
+#
+# @return 0
+##
+_install_custom_tool() {
+  local func_name="${FUNCNAME[0]}"
+  local raw_id="$1"
+  local target_scope="${2:-local}"
+  local force_overwrite="${3:-false}"
+
+  local resolved_ref
+  resolved_ref="$(_resolve_tool_path "$raw_id")"
+  local target_cmd
+  target_cmd="$(basename "$resolved_ref")"
+
+  echo
+  echo "############### $func_name - $target_cmd ###############"
+  echo "[✨] '$target_cmd' 설치 중... ($resolved_ref)"
+
+  local bin_dir="${HOME}/bin"
+  local use_sudo=false
+  if [[ "$target_scope" == "global" ]]; then
+    bin_dir="/usr/local/bin"
+    use_sudo=true
+  fi
+
+  local temp_bin
+  temp_bin="$(mktemp "/tmp/${target_cmd}.XXXXXX")"
+
+  if ! _fetch_resource "$resolved_ref" "$temp_bin"; then
+    echo_e " - [❌] '${target_cmd}' 도구 파일을 가져올 수 없어 설치를 생략합니다. ($resolved_ref)"
+    rm -f -- "$temp_bin"
+    _add_notice " - [$func_name] [❌] '${target_cmd}' 다운로드 실패 ($resolved_ref)"
+    return 0
+  fi
+
+  if [[ "$use_sudo" == true ]]; then
+    sudo mkdir -p "$bin_dir"
+  else
+    mkdir -p "$bin_dir"
+  fi
+
+  local dest_bin="${bin_dir}/${target_cmd}"
+  if [[ -f "$dest_bin" ]]; then
+    if ! cmp -s "$temp_bin" "$dest_bin"; then
+      local ch="y"
+      if [[ "$force_overwrite" != "true" && -t 0 ]]; then
+        read -r -p "> '$target_cmd' 실행 파일 내용이 다릅니다. 업데이트하시겠습니까? (y/n): " ch
+      fi
+      if [[ "$ch" =~ ^[Yy]$ ]]; then
+        if [[ "$use_sudo" == true ]]; then
+          sudo mv "$temp_bin" "$dest_bin" && sudo chmod 755 "$dest_bin"
+        else
+          mv "$temp_bin" "$dest_bin" && chmod 755 "$dest_bin"
+        fi
+        echo_i " - '$target_cmd' 실행 파일이 업데이트되었습니다. ($dest_bin)"
+      else
+        echo_w " - '$target_cmd' 기존 실행 파일을 유지합니다."
+        rm -f -- "$temp_bin"
+      fi
+    else
+      echo_w " - '$target_cmd' 실행 파일이 이미 최신입니다."
+      rm -f -- "$temp_bin"
+    fi
+  else
+    if [[ "$use_sudo" == true ]]; then
+      sudo mv "$temp_bin" "$dest_bin" && sudo chmod 755 "$dest_bin"
+    else
+      mv "$temp_bin" "$dest_bin" && chmod 755 "$dest_bin"
+    fi
+    echo_i " - '$target_cmd' 실행 파일을 설치했습니다. ($dest_bin)"
+  fi
+
+  _install_completion "${resolved_ref}.completion" "$target_cmd" "$force_overwrite"
+
+  if [[ "$target_cmd" != *.sh ]]; then
+    _remove_legacy_sh_tool "${target_cmd}.sh" "$bin_dir"
+  fi
+}
+
+##
+# 트랜잭션에 등록된 모든 커스텀 도구를 순차 설치합니다.
+#
+# @param $1 {string} 설치 범위 (local | global)
+# @param $2 {string} 강제 덮어쓰기 여부 (true | false)
+#
+# @return 0
+##
+setup_custom_tools() {
+  local target_scope="${1:-local}"
+  local force_overwrite="${2:-false}"
+
+  if (( ${#TX_CUSTOM_TOOLS[@]} == 0 )); then
+    return 0
+  fi
+
+  local func_name="${FUNCNAME[0]}"
+  [[ "${EXECUTED_JOB_FLAGS[$func_name]:-0}" -eq 1 ]] && return 0
+
+  local tool_id
+  for tool_id in "${TX_CUSTOM_TOOLS[@]}"; do
+    [[ -n "$tool_id" ]] && _install_custom_tool "$tool_id" "$target_scope" "$force_overwrite"
+  done
+
+  EXECUTED_JOB_FLAGS["$func_name"]=1
+}
+
+##
+# 커스텀 인스톨러 또는 커스텀 명령어 스크립트를 가져와 무결성/보안 검증 후 서브쉘에서 실행합니다.
+#
+# @param $1 {string} 스크립트 상대 경로 또는 HTTPS URL
+#
+# @return 성공 시 0, 실패 시 1
+##
+_execute_custom_script() {
+  local func_name="${FUNCNAME[0]}"
+  local script_ref="$1"
+  local target_cmd
+  target_cmd="$(basename "$script_ref")"
+
+  local ref_hash
+  ref_hash="$(printf '%s' "$script_ref" | md5sum | cut -d' ' -f1)"
+  local job_flag="${func_name}-${ref_hash}"
+  [[ "${EXECUTED_JOB_FLAGS[$job_flag]:-0}" -eq 1 ]] && return 0
+
+  echo
+  echo "############### $func_name - $target_cmd ###############"
+  echo "[✨] '$target_cmd' 실행 준비 중... ($script_ref)"
+
+  if [[ "$script_ref" == http://* ]]; then
+    echo_e " - [❌] 평문 HTTP URL은 허용되지 않습니다 (HTTPS만 허용): $script_ref"
+    _add_notice " - [$func_name] [❌] 보안 정책 위반 (HTTP URL 차단): $script_ref"
+    return 1
+  fi
+
+  local temp_script="/tmp/sciectl_exec_${ref_hash}.sh"
+  rm -f -- "$temp_script"
+
+  if ! _fetch_resource "$script_ref" "$temp_script"; then
+    echo_e " - [❌] '${target_cmd}' 스크립트를 가져올 수 없어 실행을 생략합니다. ($script_ref)"
+    rm -f -- "$temp_script"
+    _add_notice " - [$func_name] [❌] '${target_cmd}' 스크립트 로드 실패 ($script_ref)"
+    return 0
+  fi
+
+  if [[ ! -s "$temp_script" ]]; then
+    echo_e " - [❌] 로드된 스크립트 파일이 비어 있습니다: $target_cmd"
+    rm -f -- "$temp_script"
+    return 1
+  fi
+
+  if [[ -L "$temp_script" ]]; then
+    echo_e " - [❌] 심볼릭 링크 공격이 감지되어 실행을 중단합니다: $temp_script"
+    rm -f -- "$temp_script"
+    return 1
+  fi
+
+  if command -v file &>/dev/null; then
+    local file_type
+    file_type="$(file -b "$temp_script")"
+    if [[ "$file_type" != *"shell script"* && "$file_type" != *"text"* ]]; then
+      echo_e " - [❌] 파일이 유효한 쉘 스크립트가 아닙니다 ($file_type): $target_cmd"
+      rm -f -- "$temp_script"
+      return 1
+    fi
+  fi
+
+  chmod 700 "$temp_script"
+  echo_i " - '$target_cmd' 실행 중..."
+
+  export -f _add_notice
+  export -f error_exit
+  export -f echo_e echo_w echo_i
+
+  if ! /bin/bash "$temp_script"; then
+    local exit_code=$?
+    echo_e " - [❌] '$target_cmd' 실행 실패 (exit code: $exit_code)"
+    rm -f -- "$temp_script"
+    _add_notice " - [$func_name] [❌] '$target_cmd' 실행 실패 (exit code: $exit_code)"
+    return 1
+  fi
+
+  rm -f -- "$temp_script"
+  echo_i " - [🛠️] '$target_cmd' 실행이 완료되었습니다."
+  EXECUTED_JOB_FLAGS["$job_flag"]=1
+  return 0
+}
+
+##
+# 트랜잭션에 등록된 모든 커스텀 인스톨러를 순차 실행합니다.
+#
+# @param 없음
+#
+# @return 0
+##
+setup_custom_installers() {
+  if (( ${#TX_CUSTOM_INSTALLERS[@]} == 0 )); then
+    return 0
+  fi
+
+  local func_name="${FUNCNAME[0]}"
+  [[ "${EXECUTED_JOB_FLAGS[$func_name]:-0}" -eq 1 ]] && return 0
+
+  local inst_id resolved_inst
+  for inst_id in "${TX_CUSTOM_INSTALLERS[@]}"; do
+    if [[ -n "$inst_id" ]]; then
+      resolved_inst="$(_resolve_installer_path "$inst_id")"
+      _execute_custom_script "$resolved_inst"
+    fi
+  done
+
+  EXECUTED_JOB_FLAGS["$func_name"]=1
+}
+
+##
+# 트랜잭션에 등록된 모든 사후 구성 명령어(Custom Commands)를 순차 실행합니다.
+#
+# @param 없음
+#
+# @return 0
+##
+setup_custom_commands() {
+  if (( ${#TX_CUSTOM_COMMANDS[@]} == 0 )); then
+    return 0
+  fi
+
+  local func_name="${FUNCNAME[0]}"
+  [[ "${EXECUTED_JOB_FLAGS[$func_name]:-0}" -eq 1 ]] && return 0
+
+  local cmd_id resolved_cmd
+  for cmd_id in "${TX_CUSTOM_COMMANDS[@]}"; do
+    if [[ -n "$cmd_id" ]]; then
+      resolved_cmd="$(_resolve_command_path "$cmd_id")"
+      _execute_custom_script "$resolved_cmd"
+    fi
+  done
+
+  EXECUTED_JOB_FLAGS["$func_name"]=1
+}
+
+##
+# 트랜잭션에 등록된 모든 SSH 공개키를 ~/.ssh/authorized_keys에 중복 없이 등록합니다.
+#
+# @param 없음
+#
+# @return 0
+##
+setup_ssh_key() {
+  if (( ${#TX_SSH_KEYS[@]} == 0 )); then
+    return 0
+  fi
+
+  local func_name="${FUNCNAME[0]}"
+  [[ "${EXECUTED_JOB_FLAGS[$func_name]:-0}" -eq 1 ]] && return 0
+
+  echo
+  echo "############### $func_name ###############"
+  echo "[✨] SSH RSA 공개키 등록 중..."
+  local ssh_dir="${HOME}/.ssh"
+  local auth_file="${ssh_dir}/authorized_keys"
+
+  [[ ! -d "$ssh_dir" ]] && mkdir -p "$ssh_dir" && chmod 700 "$ssh_dir"
+  [[ ! -f "$auth_file" ]] && touch "$auth_file" && chmod 600 "$auth_file"
+
+  local key_id public_key key_body key_comment
+  for key_id in "${TX_SSH_KEYS[@]}"; do
+    if ! public_key="$(_resolve_ssh_key_content "$key_id")"; then
+      echo_e " - [❌] SSH 공개키('$key_id')를 불러올 수 없어 생략합니다."
+      _add_notice " - [$func_name] [❌] SSH 공개키('$key_id') 로드 실패"
+      continue
+    fi
+
+    key_body="$(echo "$public_key" | awk '{print $2}')"
+    key_comment="$(echo "$public_key" | cut -d' ' -f3-)"
+
+    if ! grep -qF "$key_body" "$auth_file"; then
+      echo "$public_key" >> "$auth_file"
+      echo_i " - [💡] 공개키를 등록했습니다: ${key_id} (${key_comment:-${public_key:0:30}...})"
+    else
+      echo_w " - [⚠️] 이미 등록된 공개키입니다: ${key_id} (${key_comment:-${public_key:0:30}...})"
+    fi
+  done
+
+  chmod 600 "$auth_file"
+  EXECUTED_JOB_FLAGS["$func_name"]=1
+}
+
+# ==============================================================================
+# 서브커맨드 구현부: list / info / install
+# ==============================================================================
+
+##
+# [list 서브커맨드] 카탈로그, 인스톨러, 커맨드, SSH 공개키 목록을 출력합니다.
+#
+# @param $@ {array} list 서브커맨드 인자
+#
+# @return 0
+##
+cmd_list() {
+  local list_type="catalogs"
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --type|--type=*)
+        if [[ "$1" == *=* ]]; then
+          list_type="${1#*=}"
+          shift
+        else
+          [[ $# -ge 2 && -n "${2:-}" && "${2:-}" != -* ]] || error_exit "'--type' 옵션 뒤에 조회 유형(all|catalogs|installers|commands|keys)을 지정하세요." "$LINENO" "list"
+          list_type="$2"
+          shift 2
+        fi
+        ;;
+      --local)
+        SOURCE_MODE="local"
+        shift
+        ;;
+      --remote)
+        SOURCE_MODE="remote"
+        shift
+        ;;
+      --help)
+        help "" "" "list"
+        exit 0
+        ;;
+      *)
+        error_exit "지원하지 않는 옵션입니다: $1" "$LINENO" "list"
+        ;;
+    esac
+  done
+
+  case "$list_type" in
+    catalogs|all)
+      load_catalogs_index
+      echo_i "📦 [카탈로그(Catalog) 목록]"
+      show_catalog_table
+      ;;
+  esac
+
+  if [[ "$list_type" == "installers" || "$list_type" == "all" ]]; then
+    echo_i "🛠️  [커스텀 인스톨러(Installers) 목록]"
+    if _detect_local_repo && [[ -d "${LOCAL_REPO_ROOT}/env/installers" ]]; then
+      local f bname
+      for f in "${LOCAL_REPO_ROOT}/env/installers"/install-*.sh; do
+        [[ -f "$f" ]] || continue
+        bname="$(basename "$f")"
+        bname="${bname#install-}"
+        bname="${bname%.sh}"
+        printf "  - %-24s (env/installers/%s)\n" "$bname" "$(basename "$f")"
+      done
+      printf "  - %-24s (docker/install-docker/install-docker)\n" "docker/install-docker"
+    else
+      echo "  - temurin-25-jdk           (env/installers/install-temurin-25-jdk.sh)"
+      echo "  - update-java-config       (env/installers/install-update-java-config.sh)"
+      echo "  - maven-3.9.15             (env/installers/install-maven-3.9.15.sh)"
+      echo "  - update-mvn-config        (env/installers/install-update-mvn-config.sh)"
+      echo "  - htop                     (env/installers/install-htop.sh)"
+      echo "  - docker/install-docker    (docker/install-docker/install-docker)"
+    fi
+    echo
+  fi
+
+  if [[ "$list_type" == "commands" || "$list_type" == "all" ]]; then
+    echo_i "⚡ [사후 실행 명령어(Commands) 목록]"
+    if _detect_local_repo && [[ -d "${LOCAL_REPO_ROOT}/env/commands" ]]; then
+      local f bname
+      for f in "${LOCAL_REPO_ROOT}/env/commands"/*.sh; do
+        [[ -f "$f" ]] || continue
+        bname="$(basename "$f" .sh)"
+        printf "  - %-28s (env/commands/%s)\n" "$bname" "$(basename "$f")"
+      done
+    else
+      echo "  - firewall-cmd-set-priority    (env/commands/firewall-cmd-set-priority.sh)"
+    fi
+    echo
+  fi
+
+  if [[ "$list_type" == "keys" || "$list_type" == "all" ]]; then
+    echo_i "🔑 [SSH RSA 공개키(Keys) 목록]"
+    if _detect_local_repo && [[ -d "${LOCAL_REPO_ROOT}/env/keys" ]]; then
+      local f bname
+      for f in "${LOCAL_REPO_ROOT}/env/keys"/*.pub; do
+        [[ -f "$f" ]] || continue
+        bname="$(basename "$f" .pub)"
+        printf "  - %-24s (env/keys/%s)\n" "$bname" "$(basename "$f")"
+      done
+    else
+      echo "  - ymtech-internal          (env/keys/ymtech-internal.pub)"
+      echo "  - letsencrypt              (env/keys/letsencrypt.pub)"
+    fi
+    echo
+  fi
+
+  if [[ "$list_type" != "catalogs" && "$list_type" != "installers" && "$list_type" != "commands" && "$list_type" != "keys" && "$list_type" != "all" ]]; then
+    error_exit "알 수 없는 '--type' 값입니다: '$list_type' (허용값: all, catalogs, installers, commands, keys)" "$LINENO" "list"
+  fi
+}
+
+##
+# [info 서브커맨드] 특정 카탈로그(또는 복수 카탈로그)의 병합된 상세 구성 정보를 출력합니다.
+#
+# @param $@ {array} info 서브커맨드 인자
+#
+# @return 0
+##
+cmd_info() {
+  local target_catalogs=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --catalog|--catalog=*)
+        if [[ "$1" == *=* ]]; then
+          target_catalogs+=",${1#*=}"
+          shift
+        else
+          [[ $# -ge 2 && -n "${2:-}" && "${2:-}" != -* ]] || error_exit "'--catalog' 옵션 뒤에 카탈로그 ID를 지정하세요." "$LINENO" "info"
+          target_catalogs+=",${2}"
+          shift 2
+        fi
+        ;;
+      --local)
+        SOURCE_MODE="local"
+        shift
+        ;;
+      --remote)
+        SOURCE_MODE="remote"
+        shift
+        ;;
+      --help)
+        help "" "" "info"
+        exit 0
+        ;;
+      *)
+        error_exit "지원하지 않는 옵션입니다: $1" "$LINENO" "info"
+        ;;
+    esac
+  done
+
+  if [[ -z "$target_catalogs" ]]; then
+    error_exit "필수 파라미터 '--catalog <CATALOG_ID>'가 누락되었습니다." "$LINENO" "info"
+  fi
+
+  load_catalogs_index
+
+  local -a cat_arr=()
+  IFS=',' read -ra cat_arr <<< "$target_catalogs"
+  local cid
+  for cid in "${cat_arr[@]}"; do
+    cid="$(echo "$cid" | xargs)"
+    [[ -n "$cid" ]] && resolve_catalog "$cid"
+  done
+
+  echo
+  echo "================================================================================"
+  printf "📦 카탈로그 상세 정보 (적용 순서: %s)\n" "${TX_CATALOGS[*]}"
+  for cid in "${TX_CATALOGS[@]}"; do
+    if [[ -n "${CATALOG_TITLE[$cid]:-}" ]]; then
+      printf "   - %-34s : %s\n" "$cid" "${CATALOG_DESC[$cid]:-}"
+    fi
+  done
+  echo "================================================================================"
+  printf " 🗑️  [삭제할 OS 패키지 (%d)]      : %s\n" "${#TX_REMOVE_PKGS[@]}" "${TX_REMOVE_PKGS[*]:-없음}"
+  printf " 📥 [설치할 OS 패키지 (%d)]      : %s\n" "${#TX_INSTALL_PKGS[@]}" "${TX_INSTALL_PKGS[*]:-없음}"
+  printf " 🔐 [Sudoers NOPASSWD (%d)]     : %s\n" "${#TX_SUDOERS_CMDS[@]}" "${TX_SUDOERS_CMDS[*]:-없음}"
+  printf " 🚀 [커스텀 인스톨러 (%d)]       : %s\n" "${#TX_CUSTOM_INSTALLERS[@]}" "${TX_CUSTOM_INSTALLERS[*]:-없음}"
+  printf " 🛠️  [커스텀 CLI 도구 (%d)]       :\n" "${#TX_CUSTOM_TOOLS[@]}"
+  if (( ${#TX_CUSTOM_TOOLS[@]} == 0 )); then
+    echo "      - 없음"
+  else
+    local t
+    for t in "${TX_CUSTOM_TOOLS[@]}"; do
+      printf "      - %-32s (-> %s)\n" "$t" "$(_resolve_tool_path "$t")"
+    done
+  fi
+  printf " ⚡ [사후 실행 명령어 (%d)]      : %s\n" "${#TX_CUSTOM_COMMANDS[@]}" "${TX_CUSTOM_COMMANDS[*]:-없음}"
+  printf " 🔑 [SSH RSA 공개키 (%d)]        : %s\n" "${#TX_SSH_KEYS[@]}" "${TX_SSH_KEYS[*]:-없음}"
+  echo "================================================================================"
+  echo
+}
+
+##
+# 트랜잭션 실행 계획(Transaction Summary)을 화면에 출력합니다.
+#
+# @param $1 {string} 설치 범위 (local | global)
+# @param $2 {string} sudoers 대상 계정
+# @param $3 {number} 기본 환경 3종 활성화 여부 (1 | 0)
+# @param $4 {string} 활성화된 단계 목록 문자열
+#
+# @return 요약표 출력
+##
+_print_transaction_summary() {
+  local target_scope="$1"
+  local sudo_user="$2"
+  local run_default="$3"
+  local active_steps=" $4 "
+
+  echo
+  echo "================================================================================"
+  echo -e " 📋 ${COLOR_BOLD}[sciectl 트랜잭션 실행 계획 요약 (Transaction Summary)]${COLOR_NC}"
+  echo "================================================================================"
+  if (( ${#TX_CATALOGS[@]} > 0 )); then
+    printf " 📦 적용 카탈로그       : %s\n" "${TX_CATALOGS[*]}"
+  else
+    printf " 📦 적용 카탈로그       : (개별 컴포넌트 직접 지정)\n"
+  fi
+  printf " 🎯 도구 설치 범위      : %s (%s)\n" "$target_scope" "$([[ "$target_scope" == "global" ]] && echo "/usr/local/bin" || echo "$HOME/bin")"
+  echo "--------------------------------------------------------------------------------"
+
+  if [[ "$active_steps" == *" sudoers "* ]] && (( ${#TX_SUDOERS_CMDS[@]} > 0 )); then
+    printf " [Step 1] 🔐 Sudoers 등록 (%s) : %d개 명령어 병합\n" "$sudo_user" "${#TX_SUDOERS_CMDS[@]}"
+  else
+    printf " [Step 1] 🔐 Sudoers 등록        : 해당 없음 (건너뜀)\n"
+  fi
+
+  if [[ "$active_steps" == *" remove-packages "* ]] && (( ${#TX_REMOVE_PKGS[@]} > 0 )); then
+    printf " [Step 2] 🗑️  OS 패키지 삭제      : %s\n" "${TX_REMOVE_PKGS[*]}"
+  else
+    printf " [Step 2] 🗑️  OS 패키지 삭제      : 해당 없음 (건너뜀)\n"
+  fi
+
+  if [[ "$active_steps" == *" install-packages "* ]] && (( ${#TX_INSTALL_PKGS[@]} > 0 )); then
+    printf " [Step 3] 📥 OS 패키지 설치      : %s\n" "${TX_INSTALL_PKGS[*]}"
+  else
+    printf " [Step 3] 📥 OS 패키지 설치      : 해당 없음 (건너뜀)\n"
+  fi
+
+  if (( run_default == 1 )) && [[ "$active_steps" == *" default-opts "* ]]; then
+    printf " [Step 4] ⚙️  기본 환경 3종 설정  : ~/bin PATH, git branch 프롬프트, vimrc 옵션\n"
+  else
+    printf " [Step 4] ⚙️  기본 환경 3종 설정  : 생략 (--no-default-opts)\n"
+  fi
+
+  if [[ "$active_steps" == *" custom-installers "* ]] && (( ${#TX_CUSTOM_INSTALLERS[@]} > 0 )); then
+    printf " [Step 5] 🚀 커스텀 인스톨러 (%d) : %s\n" "${#TX_CUSTOM_INSTALLERS[@]}" "${TX_CUSTOM_INSTALLERS[*]}"
+  else
+    printf " [Step 5] 🚀 커스텀 인스톨러     : 해당 없음 (건너뜀)\n"
+  fi
+
+  if [[ "$active_steps" == *" custom-tools "* ]] && (( ${#TX_CUSTOM_TOOLS[@]} > 0 )); then
+    printf " [Step 6] 🛠️  커스텀 CLI 도구 (%d): %s\n" "${#TX_CUSTOM_TOOLS[@]}" "${TX_CUSTOM_TOOLS[*]}"
+  else
+    printf " [Step 6] 🛠️  커스텀 CLI 도구    : 해당 없음 (건너뜀)\n"
+  fi
+
+  if [[ "$active_steps" == *" custom-commands "* ]] && (( ${#TX_CUSTOM_COMMANDS[@]} > 0 )); then
+    printf " [Step 7] ⚡ 사후 실행 명령어 (%d): %s\n" "${#TX_CUSTOM_COMMANDS[@]}" "${TX_CUSTOM_COMMANDS[*]}"
+  else
+    printf " [Step 7] ⚡ 사후 실행 명령어    : 해당 없음 (건너뜀)\n"
+  fi
+
+  if [[ "$active_steps" == *" ssh-key "* ]] && (( ${#TX_SSH_KEYS[@]} > 0 )); then
+    printf " [Step 8] 🔑 SSH 공개키 등록 (%d) : %s\n" "${#TX_SSH_KEYS[@]}" "${TX_SSH_KEYS[*]}"
+  else
+    printf " [Step 8] 🔑 SSH 공개키 등록     : 해당 없음 (건너뜀)\n"
+  fi
+  echo "================================================================================"
+}
+
+##
+# [install 서브커맨드] 카탈로그 및 개별 컴포넌트를 트랜잭션 파이프라인으로 설치합니다.
+#
+# @param $@ {array} install 서브커맨드 인자
+#
+# @return 0
+##
+cmd_install() {
+  local raw_catalogs=""
+  local raw_tools=""
+  local raw_installers=""
+  local raw_commands=""
+  local raw_ssh_keys=""
+  local only_steps=""
+  local skip_steps=""
+  local target_user=""
+  local target_scope="local"
+  local auto_yes="false"
+  local force_overwrite="false"
+  local is_dry_run="false"
+  local no_default_opts="false"
+  local legacy_step_selected="false"
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --catalog|--catalog=*)
+        if [[ "$1" == *=* ]]; then
+          raw_catalogs+=",${1#*=}"
+          shift
+        else
+          [[ $# -ge 2 && -n "${2:-}" && "${2:-}" != -* ]] || error_exit "'--catalog' 옵션 뒤에 카탈로그 ID를 지정하세요." "$LINENO" "install"
+          raw_catalogs+=",${2}"
+          shift 2
+        fi
+        ;;
+      --tool|--tool=*)
+        if [[ "$1" == *=* ]]; then
+          raw_tools+=",${1#*=}"
+          shift
+        else
+          [[ $# -ge 2 && -n "${2:-}" && "${2:-}" != -* ]] || error_exit "'--tool' 옵션 뒤에 도구 식별자(예: git/git-commit)를 지정하세요." "$LINENO" "install"
+          raw_tools+=",${2}"
+          shift 2
+        fi
+        ;;
+      --installer|--installer=*)
+        if [[ "$1" == *=* ]]; then
+          raw_installers+=",${1#*=}"
+          shift
+        else
+          [[ $# -ge 2 && -n "${2:-}" && "${2:-}" != -* ]] || error_exit "'--installer' 옵션 뒤에 인스톨러 식별자(예: temurin-25-jdk)를 지정하세요." "$LINENO" "install"
+          raw_installers+=",${2}"
+          shift 2
+        fi
+        ;;
+      --command|--command=*)
+        if [[ "$1" == *=* ]]; then
+          raw_commands+=",${1#*=}"
+          shift
+        else
+          [[ $# -ge 2 && -n "${2:-}" && "${2:-}" != -* ]] || error_exit "'--command' 옵션 뒤에 명령어 식별자를 지정하세요." "$LINENO" "install"
+          raw_commands+=",${2}"
+          shift 2
+        fi
+        ;;
+      --ssh-key|--ssh-key=*)
+        if [[ "$1" == *=* ]]; then
+          raw_ssh_keys+=",${1#*=}"
+          shift
+        else
+          if [[ $# -ge 2 && -n "${2:-}" && "${2:-}" != -* ]]; then
+            raw_ssh_keys+=",${2}"
+            shift 2
+          else
+            # 레거시 단독 플래그 호환 (--ssh-key)
+            only_steps+=",ssh-key"
+            legacy_step_selected="true"
+            no_default_opts="true"
+            shift
+          fi
+        fi
+        ;;
+      --only|--only=*)
+        if [[ "$1" == *=* ]]; then
+          only_steps+=",${1#*=}"
+          shift
+        else
+          [[ $# -ge 2 && -n "${2:-}" && "${2:-}" != -* ]] || error_exit "'--only' 옵션 뒤에 실행할 단계 목록을 지정하세요." "$LINENO" "install"
+          only_steps+=",${2}"
+          shift 2
+        fi
+        ;;
+      --skip|--skip=*)
+        if [[ "$1" == *=* ]]; then
+          skip_steps+=",${1#*=}"
+          shift
+        else
+          [[ $# -ge 2 && -n "${2:-}" && "${2:-}" != -* ]] || error_exit "'--skip' 옵션 뒤에 제외할 단계 목록을 지정하세요." "$LINENO" "install"
+          skip_steps+=",${2}"
+          shift 2
+        fi
+        ;;
+      --user|--user=*)
+        if [[ "$1" == *=* ]]; then
+          target_user="${1#*=}"
+          shift
+        else
+          [[ $# -ge 2 && -n "${2:-}" && "${2:-}" != -* ]] || error_exit "'--user' 옵션 뒤에 사용자 계정명을 지정하세요." "$LINENO" "install"
+          target_user="$2"
+          shift 2
+        fi
+        ;;
+      --target|--target=*)
+        if [[ "$1" == *=* ]]; then
+          target_scope="${1#*=}"
+          shift
+        else
+          [[ $# -ge 2 && -n "${2:-}" && "${2:-}" != -* ]] || error_exit "'--target' 옵션 뒤에 local 또는 global을 지정하세요." "$LINENO" "install"
+          target_scope="$2"
+          shift 2
+        fi
+        ;;
+      --local)
+        SOURCE_MODE="local"
+        shift
+        ;;
+      --remote)
+        SOURCE_MODE="remote"
+        shift
+        ;;
+      --yes)
+        auto_yes="true"
+        shift
+        ;;
+      --force)
+        force_overwrite="true"
+        shift
+        ;;
+      --dry-run)
+        is_dry_run="true"
+        shift
+        ;;
+      --all)
+        only_steps=""
+        no_default_opts="false"
+        shift
+        ;;
+      --add-sudoers)
+        only_steps+=",sudoers"
+        legacy_step_selected="true"
+        no_default_opts="true"
+        shift
+        ;;
+      --remove-packages)
+        only_steps+=",remove-packages"
+        legacy_step_selected="true"
+        no_default_opts="true"
+        shift
+        ;;
+      --install-packages)
+        only_steps+=",install-packages"
+        legacy_step_selected="true"
+        no_default_opts="true"
+        shift
+        ;;
+      --custom-tools)
+        only_steps+=",custom-tools"
+        legacy_step_selected="true"
+        no_default_opts="true"
+        shift
+        ;;
+      --custom-installers)
+        only_steps+=",custom-installers"
+        legacy_step_selected="true"
+        no_default_opts="true"
+        shift
+        ;;
+      --custom-commands)
+        only_steps+=",custom-commands"
+        legacy_step_selected="true"
+        no_default_opts="true"
+        shift
+        ;;
+      --no-default-opts)
+        no_default_opts="true"
+        shift
+        ;;
+      --help)
+        help "" "" "install"
+        exit 0
+        ;;
+      *)
+        error_exit "지원하지 않는 옵션입니다: $1" "$LINENO" "install"
+        ;;
+    esac
+  done
+
+  if [[ "$target_scope" != "local" && "$target_scope" != "global" ]]; then
+    error_exit "'--target' 옵션 값은 'local' 또는 'global'만 허용됩니다: '$target_scope'" "$LINENO" "install"
+  fi
+
+  local has_direct_component="false"
+  if [[ -n "$raw_tools" || -n "$raw_installers" || -n "$raw_commands" || -n "$raw_ssh_keys" ]]; then
+    has_direct_component="true"
+  fi
+
+  # 1. 카탈로그 해석 (미지정 및 직접 컴포넌트도 없으면 대화형 카탈로그 선택)
+  if [[ -n "$raw_catalogs" ]]; then
+    load_catalogs_index
+    local -a cat_list=()
+    IFS=',' read -ra cat_list <<< "$raw_catalogs"
+    local cid
+    for cid in "${cat_list[@]}"; do
+      cid="$(echo "$cid" | xargs)"
+      [[ -n "$cid" ]] && resolve_catalog "$cid"
+    done
+  elif [[ "$has_direct_component" == "false" ]]; then
+    if ! interactive_select_catalogs; then
+      exit 0
+    fi
+  else
+    no_default_opts="true"
+  fi
+
+  # 2. 직접 지정된 컴포넌트 병합
+  _add_tx_items "tool"      "$raw_tools"
+  _add_tx_items "installer" "$raw_installers"
+  _add_tx_items "command"   "$raw_commands"
+  _add_tx_items "ssh_key"   "$raw_ssh_keys"
+
+  # 3. 대화형 모드에서 단계 필터(--only)가 지정되지 않았고 --yes도 아니면 단계 선택 메뉴 제공
+  if [[ -z "$raw_catalogs" && "$has_direct_component" == "false" && -z "$only_steps" && "$auto_yes" == "false" ]]; then
+    local -a avail_opts=()
+    declare -A opt_desc=()
+    if (( ${#TX_REMOVE_PKGS[@]} > 0 )); then
+      avail_opts+=("remove-packages")
+      opt_desc["remove-packages"]="사용하지 않을 OS 패키지를 삭제합니다. (${TX_REMOVE_PKGS[*]})"
+    fi
+    if (( ${#TX_SUDOERS_CMDS[@]} > 0 )); then
+      avail_opts+=("sudoers")
+      opt_desc["sudoers"]="특정 사용자를 'sudoers'에 추가합니다. (${#TX_SUDOERS_CMDS[@]}개 명령어)"
+    fi
+    if (( ${#TX_INSTALL_PKGS[@]} > 0 )); then
+      avail_opts+=("install-packages")
+      opt_desc["install-packages"]="기본 OS 패키지를 설치합니다. (${TX_INSTALL_PKGS[*]})"
+    fi
+    if (( ${#TX_CUSTOM_INSTALLERS[@]} > 0 )); then
+      avail_opts+=("custom-installers")
+      opt_desc["custom-installers"]="커스텀 설치 스크립트를 실행합니다. (${TX_CUSTOM_INSTALLERS[*]})"
+    fi
+    if (( ${#TX_CUSTOM_TOOLS[@]} > 0 )); then
+      avail_opts+=("custom-tools")
+      opt_desc["custom-tools"]="커스텀 CLI 도구 및 자동완성을 설치합니다. (${#TX_CUSTOM_TOOLS[@]}개 도구)"
+    fi
+    if (( ${#TX_CUSTOM_COMMANDS[@]} > 0 )); then
+      avail_opts+=("custom-commands")
+      opt_desc["custom-commands"]="사후 구성 명령어를 실행합니다. (${TX_CUSTOM_COMMANDS[*]})"
+    fi
+    if (( ${#TX_SSH_KEYS[@]} > 0 )); then
+      avail_opts+=("ssh-key")
+      opt_desc["ssh-key"]="SSH 접속용 RSA 공개키를 등록합니다. (${TX_SSH_KEYS[*]})"
+    fi
+
+    if (( ${#avail_opts[@]} == 0 )); then
+      echo_w " - [💡] 선택한 카탈로그에 적용할 설치 항목이 없습니다."
+      exit 0
+    fi
+
+    echo
+    echo "================================================================================"
+    echo_i "선택한 카탈로그에서 실행 가능한 단계는 다음과 같습니다."
+    echo
+    printf "  [ 0] %-20s : %s\n" "--all" "모든 단계 및 기본 환경 설정(~/bin, git 프롬프트, vimrc)을 일괄 적용합니다."
+    local idx=1
+    local st
+    for st in "${avail_opts[@]}"; do
+      printf "  [%2d] %-20s : %s\n" "$idx" "--${st}" "${opt_desc[$st]}"
+      ((idx++))
+    done
+    echo "================================================================================"
+    local step_input=""
+    read -r -p "> 적용할 옵션 번호를 입력하세요 (기본값: 0 [전체], 복수 선택 시 띄어쓰기 구분): " step_input
+    step_input="${step_input:-0}"
+
+    local -a s_nums=()
+    read -ra s_nums <<< "${step_input//,/ }"
+    local n
+    for n in "${s_nums[@]}"; do
+      if [[ "$n" == "0" ]]; then
+        only_steps=""
+        no_default_opts="false"
+        break
+      elif [[ "$n" =~ ^[0-9]+$ ]] && (( n >= 1 && n <= ${#avail_opts[@]} )); then
+        only_steps+=",${avail_opts[$((n - 1))]}"
+        no_default_opts="true"
+      fi
+    done
+  fi
+
+  # 4. 활성화 단계 계산
+  local -a all_step_names=("sudoers" "remove-packages" "install-packages" "default-opts" "custom-installers" "custom-tools" "custom-commands" "ssh-key")
+  local active_steps_str=""
+
+  if [[ -n "$only_steps" ]]; then
+    no_default_opts="true"
+    local -a o_arr=()
+    IFS=',' read -ra o_arr <<< "$only_steps"
+    local o
+    for o in "${o_arr[@]}"; do
+      o="$(echo "$o" | xargs)"
+      [[ "$o" == "add-sudoers" ]] && o="sudoers"
+      [[ "$o" == "default-opts" ]] && no_default_opts="false"
+      active_steps_str+=" $o "
+    done
+  else
+    active_steps_str=" ${all_step_names[*]} "
+  fi
+
+  if [[ -n "$skip_steps" ]]; then
+    local -a sk_arr=()
+    IFS=',' read -ra sk_arr <<< "$skip_steps"
+    local sk
+    for sk in "${sk_arr[@]}"; do
+      sk="$(echo "$sk" | xargs)"
+      [[ "$sk" == "add-sudoers" ]] && sk="sudoers"
+      active_steps_str="${active_steps_str// $sk / }"
+    done
+  fi
+
+  local run_default=1
+  if [[ "$no_default_opts" == "true" || "$active_steps_str" != *" default-opts "* ]]; then
+    run_default=0
+  fi
+
+  # 5. Sudoers 실행 대상인 경우 실행 전에 사용자 계정 사전 확정 (중간 멈춤 방지!)
+  if [[ "$active_steps_str" == *" sudoers "* ]] && (( ${#TX_SUDOERS_CMDS[@]} > 0 )); then
+    local current_user="${USER:-$(whoami)}"
+    if [[ -z "$target_user" ]]; then
+      if [[ "$auto_yes" == "true" || "$is_dry_run" == "true" || ! -t 0 ]]; then
+        target_user="$current_user"
+      else
+        while true; do
+          read -r -p "> [⌨️] sudoers에 등록할 사용자 계정을 입력하세요 (기본값: $current_user): " target_user
+          target_user="${target_user:-$current_user}"
+          if id "$target_user" &>/dev/null; then
+            break
+          else
+            echo_w " - '$target_user' 사용자가 시스템에 존재하지 않습니다. 다시 입력해 주세요."
+            target_user=""
+          fi
+        done
+      fi
+    else
+      if ! id "$target_user" &>/dev/null && [[ "$is_dry_run" != "true" ]]; then
+        error_exit "지정한 sudoers 대상 사용자('$target_user')가 시스템에 존재하지 않습니다." "$LINENO" "install"
+      fi
+    fi
+  fi
+
+  # 6. 트랜잭션 요약 출력 및 최종 1회 확인 (dnf/apt 스타일)
+  _print_transaction_summary "$target_scope" "${target_user:-${USER:-$(whoami)}}" "$run_default" "$active_steps_str"
+
+  if [[ "$is_dry_run" == "true" ]]; then
+    echo_i "🔍 [--dry-run] 시뮬레이션 모드이므로 실제 설치를 수행하지 않고 종료합니다."
+    rm -f -- "$NOTICE_MESSAGES_TEMP_FILE"
+    exit 0
+  fi
+
+  if [[ "$auto_yes" != "true" && -t 0 ]]; then
+    local confirm=""
+    read -r -p "> 위 트랜잭션 계획대로 설치를 진행하시겠습니까? (y/n): " confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+      echo_w " - [🛑] 사용자가 설치를 취소했습니다."
+      rm -f -- "$NOTICE_MESSAGES_TEMP_FILE"
+      exit 0
+    fi
+  fi
+
+  local effective_force="$force_overwrite"
+  if [[ "$auto_yes" == "true" ]]; then
+    effective_force="true"
+  fi
+
+  # ==============================================================================
+  # 7. 트랜잭션 일괄 실행 (엄격한 의존성 순서 보장)
+  #    Step 1: sudoers
+  #    Step 2: remove-packages
+  #    Step 3: install-packages (vim 등 필수 OS 패키지 먼저 확보!)
+  #    Step 4: default-opts (~/bin, git-prompt, vim 설치 후 vimrc 설정!)
+  #    Step 5: custom-installers (JDK, Maven, Docker 등)
+  #    Step 6: custom-tools (scriptctl 및 CLI 도구 + completion)
+  #    Step 7: custom-commands (방화벽 정책 등 사후 구성)
+  #    Step 8: ssh-key (authorized_keys 등록)
+  # ==============================================================================
+  if [[ "$active_steps_str" == *" sudoers "* ]]; then
+    setup_sudoers "$target_user"
+  fi
+
+  if [[ "$active_steps_str" == *" remove-packages "* ]]; then
+    remove_packages
+  fi
+
+  if [[ "$active_steps_str" == *" install-packages "* ]]; then
+    install_packages
+  fi
+
+  if (( run_default == 1 )); then
+    _setup_home_bin
+    _setup_git_prompt
+    _install_vim_options
+  fi
+
+  if [[ "$active_steps_str" == *" custom-installers "* ]]; then
+    setup_custom_installers
+  fi
+
+  if [[ "$active_steps_str" == *" custom-tools "* ]]; then
+    setup_custom_tools "$target_scope" "$effective_force"
+  fi
+
+  if [[ "$active_steps_str" == *" custom-commands "* ]]; then
+    setup_custom_commands
+  fi
+
+  if [[ "$active_steps_str" == *" ssh-key "* ]]; then
+    setup_ssh_key
+  fi
+
+  _announce_notices
+  echo
+  echo_i "✅ 모든 트랜잭션 작업이 완료되었습니다."
+}
+
+# ==============================================================================
+# 메인 엔트리포인트 (Main Dispatcher)
+# ==============================================================================
+main() {
+  if [[ $# -eq 0 ]]; then
+    cmd_install
+    exit 0
+  fi
+
+  case "$1" in
+    install)
+      shift
+      cmd_install "$@"
+      ;;
+    list)
+      shift
+      cmd_list "$@"
+      ;;
+    info)
+      shift
+      cmd_info "$@"
+      ;;
+    --help)
+      help "" "" ""
+      exit 0
+      ;;
+    --*)
+      # 서브커맨드 생략 후 바로 옵션(--catalog 등)을 입력한 경우 install로 위임
+      cmd_install "$@"
+      ;;
+    *)
+      error_exit "알 수 없는 명령어 또는 옵션입니다: '$1'" "$LINENO" ""
+      ;;
+  esac
+}
+
+main "$@"
+exit 0

@@ -10,6 +10,7 @@
 
 | 카테고리 | 설명 | 주요 제공 도구 |
 | :--- | :--- | :--- |
+| [**`env/`**](file:///home/parkjunhong/dev/bashshell-projects/github/shellscripts/env/README.md) | 목적별 카탈로그 기반 서버/개발 환경 통합 프로비저닝 및 패키지 제어 도구 | `sciectl` |
 | [**`utils/`**](file:///home/parkjunhong/dev/bashshell-projects/github/shellscripts/utils/README.md) | 범용 유틸리티 및 스크립트 패키지 관리 도구 | `scriptctl`, `grep-files`, `replace-files` 등 |
 | [**`git/`**](file:///home/parkjunhong/dev/bashshell-projects/github/shellscripts/git/README.md) | Git 형상 관리 및 다중 저장소 일괄 제어 도구 | `git-commit`, `git-status-all`, `git-branch-cmd` 등 |
 | [**`net/`**](file:///home/parkjunhong/dev/bashshell-projects/github/shellscripts/net/README.md) | 네트워크 인터페이스, 방화벽 및 SSH 연결 제어 도구 | `sshctl`, `ps-port`, `fwc-cli`, `scp-dir` 등 |

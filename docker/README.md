@@ -13,6 +13,7 @@
 | **dkcontls** | [`dkcontls/`](dkcontls/dkcontls) | `docker container ls` 래퍼, 콤마 구분 다중 출력 컬럼(`--format`) 선택 및 15종 필터(`--filter`) 동적 자동완성 | ✅ 지원 | [상세보기](dkcontls/README.md) |
 | **dknetcli** | [`dknetcli/`](dknetcli/dknetcli) | 커널 브릿지 바인딩 및 서브넷 대역 중첩(Overlap) 5단계 사전 검증 기반 Docker 브릿지 네트워크 생성·삭제·조회 | ✅ 지원 | [상세보기](dknetcli/README.md) |
 | **install-docker** | [`install-docker/`](install-docker/install-docker) | 리눅스 배포판(`apt`, `dnf`, `yum`) 자동 감지, 외부 PPA 장애 격리 및 `docker` 그룹 권한 구성 일괄 설치 | ✅ 지원 | [상세보기](install-docker/README.md) |
+| **install-docker-dev-config** | [`install-docker-dev-config/`](install-docker-dev-config/install-docker-dev-config) | Spring/Maven 프로젝트의 Docker 및 Docker Compose 표준 배포 구성 리소스(`maven-deploy-config`) 다운로드 | ✅ 지원 | [상세보기](install-docker-dev-config/README.md) |
 | **pull-gitlab-images** | [`pull-gitlab-images/`](pull-gitlab-images/pull-gitlab-images) | 다중 GitLab 버전 공식 이미지(`gitlab-ee`/`ce`) 일괄 다운로드(`pull`) 및 오프라인 배포용 `.tar` 아카이브 저장(`save`) | ✅ 지원 | [상세보기](pull-gitlab-images/README.md) |
 | **setup-compose-service** | [`setup-compose-service/`](setup-compose-service/setup-compose-service) | Docker Compose 프로젝트의 Systemd 유닛(`.service`), 전용 제어 스크립트(`<service>-ctl.sh`) 및 자동완성 일괄 생성 | ✅ 지원 | [상세보기](setup-compose-service/README.md) |
 | **setup-docker-compose** | [`setup-docker-compose/`](setup-docker-compose/setup-docker-compose) | 로그 로테이션 및 필수 환경변수 검증이 적용된 표준 `.env` 및 `docker-compose.yml` 디렉토리 스캐폴딩 | ✅ 지원 | [상세보기](setup-docker-compose/README.md) |
@@ -35,6 +36,10 @@ docker/
 ├── install-docker/
 │   ├── install-docker                          # 다중 배포판 지원 Docker CE 및 플러그인 설치 도구
 │   ├── install-docker.completion               # Bash 자동완성 스크립트
+│   └── README.md                               # 개별 도구 상세 설명서
+├── install-docker-dev-config/
+│   ├── install-docker-dev-config               # Maven/Docker 표준 배포 환경 리소스 다운로드 도구
+│   ├── install-docker-dev-config.completion    # Bash 자동완성 스크립트
 │   └── README.md                               # 개별 도구 상세 설명서
 ├── pull-gitlab-images/
 │   ├── pull-gitlab-images                      # GitLab 이미지 일괄 Pull 및 오프라인 tar 저장 도구

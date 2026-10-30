@@ -45,7 +45,7 @@ help(){
   echo  
   echo "사용법: ./$FILENAME [옵션]"
   echo "옵션:"
-  echo "  -h, --help    이 도움말을 표시하고 종료합니다."
+  echo "  --help        이 도움말을 표시하고 종료합니다."
 }
 
 ##
@@ -76,8 +76,8 @@ trap 'help "스크립트 실행 중 오류가 발생했습니다." "$LINENO"' ER
 
 # 도움말 옵션 처리
 while [[ "$#" -gt 0 ]]; do
-  case $1 in
-    -h|--help)
+  case "$1" in
+    --help)
       help
       exit 0
       ;;

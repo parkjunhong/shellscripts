@@ -1,0 +1,38 @@
+# ==============================================================================
+# Catalog Metadata
+# ==============================================================================
+CATALOG_ID=default-devops
+CATALOG_TITLE=기본 개발 환경 (빌드/배포/운영)
+CATALOG_DESC=git, temurin-25-jdk, maven-3.9.15 및 Git/Maven/Docker 배포 유틸리티를 제공합니다.
+INCLUDES=default-server
+
+# ==============================================================================
+# 1. Sudoers NOPASSWD Commands (콤마 구분, default-server 상속 포함)
+# ==============================================================================
+NO_PASSWORD_COMMANDS=
+
+# ==============================================================================
+# 2. OS Packages (apt / dnf, 콤마 구분, default-server 상속 포함)
+# ==============================================================================
+REMOVE_PACKAGES=
+INSTALL_PACKAGES=git
+
+# ==============================================================================
+# 3. Custom Tools (<category>/<canonical-name>, 콤마 구분, default-server 상속 포함)
+# ==============================================================================
+CUSTOM_TOOLS=maven/build-mvn-package, git/git-commit, git/git-merge, git/git-log-abbr, git/git-getpr, git/git-branch-cmd, git/git-init, build/clean-project, utils/diff-file, docker/install-docker-dev-config
+
+# ==============================================================================
+# 4. Custom Installers (env/installers/ 식별자 또는 <category>/<tool>, 콤마 구분)
+# ==============================================================================
+CUSTOM_INSTALLERS=maven-3.9.15, update-mvn-config
+
+# ==============================================================================
+# 5. Post-Install Commands (env/commands/ 식별자, 콤마 구분)
+# ==============================================================================
+CUSTOM_COMMANDS=
+
+# ==============================================================================
+# 6. SSH Public Keys (env/keys/ 식별자, 콤마 구분, default-server 상속 포함)
+# ==============================================================================
+SSH_KEYS=letsencrypt
