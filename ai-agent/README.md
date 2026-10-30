@@ -22,6 +22,7 @@ ai-agent/
 └── acs-cli/
     ├── acs-cli                         # AI-Agent Customization System CLI 도구
     ├── acs-cli.completion              # Bash 자동완성 스크립트
+    ├── PURPOSE.md                      # acs-cli 도입 목적 및 독립 공간 관리 권고문
     └── README.md                       # 개별 도구 상세 설명서
 ```
 

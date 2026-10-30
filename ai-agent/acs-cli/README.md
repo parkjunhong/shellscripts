@@ -2,6 +2,8 @@
 
 AI-Agent Customization System에서 사용하는 **스킬(`skill`)**과 **규칙(`rule`)** 디렉토리를 카테고리별로 **생성(`create`)**, **삭제(`remove`)**, **심볼릭 링크 참조 추가(`add`)**, **트리 구조 조회(`list`)**하는 통합 관리 CLI 도구입니다.
 
+> 💡 **도입 배경 및 사용 권고**: 왜 개발 프로젝트 내부가 아닌 독립된 공간에서 스킬과 규칙을 관리해야 하는지에 대한 상세 내용은 [**`PURPOSE.md` (도입 목적 및 사용 권고)**](file:///home/parkjunhong/dev/bashshell-projects/github/shellscripts/ai-agent/acs-cli/PURPOSE.md) 문서를 참조하세요.
+
 ---
 
 ## ✨ 주요 특징
