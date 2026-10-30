@@ -1,0 +1,190 @@
+#!/usr/bin/env bash
+
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title  : start-wrangler: Start Cloudflare Wrangler Pages Dev server with IP and HTTPS support
+# @license: Apache License 2.0
+# @since  : 2026-01-05
+# @desc   : support macOS 11.2.3, Ubuntu 18.04 or higher, CentOS 7 or higher
+# =======================================
+
+set -Eeuo pipefail
+
+# ------------------------------------------------------------------------------
+# Variables & Constants
+# ------------------------------------------------------------------------------
+RUN_DIR=""
+PUBLIC_DIR=""
+LISTEN_IP="0.0.0.0"
+SSL_KEY=""
+SSL_CERT=""
+ABS_RUN_DIR=""
+ABS_PUBLIC_DIR=""
+
+readonly FILENAME=$(basename "$0")
+
+# 텍스트 컬러
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# ------------------------------------------------------------------------------
+# Functions
+# ------------------------------------------------------------------------------
+
+help() {
+    if [[ -n "${1:-}" ]]; then
+        echo -e "${RED}Error: $1${NC}\n" >&2
+    fi
+
+    echo -e "${BLUE}Usage:${NC} $FILENAME --run-dir <dir> --public-dir <dir> [OPTIONS]"
+    echo ""
+    echo -e "${YELLOW}Required Parameters:${NC}"
+    echo -e "  --run-dir <dir>          Directory where the command executes"
+    echo -e "  --public-dir <dir>       Static assets directory (relative to run-dir or absolute)"
+    echo ""
+    echo -e "${YELLOW}Optional Parameters:${NC}"
+    echo -e "  --ip <ip>                Listen IP address (default: 0.0.0.0)"
+    echo -e "  --ssl-key <file>         Path to SSL Key file (Enable HTTPS, requires --ssl-cert)"
+    echo -e "  --ssl-cert <file>        Path to SSL Cert file (Enable HTTPS, requires --ssl-key)"
+    echo -e "  --help                   Show this help message"
+    echo ""
+    exit "${2:-1}"
+}
+
+error_exit() {
+    echo -e "${RED}Error: $1${NC}" >&2
+    exit 1
+}
+
+# ------------------------------------------------------------------------------
+# Argument Parsing (Long Option Only)
+# ------------------------------------------------------------------------------
+
+if [[ $# -eq 0 ]]; then
+    help "" 0
+fi
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --run-dir)
+            [[ $# -ge 2 ]] || error_exit "--run-dir 옵션에 값이 입력되지 않았습니다."
+            RUN_DIR="$2"
+            shift 2
+            ;;
+        --public-dir)
+            [[ $# -ge 2 ]] || error_exit "--public-dir 옵션에 값이 입력되지 않았습니다."
+            PUBLIC_DIR="$2"
+            shift 2
+            ;;
+        --ip)
+            [[ $# -ge 2 ]] || error_exit "--ip 옵션에 값이 입력되지 않았습니다."
+            LISTEN_IP="$2"
+            shift 2
+            ;;
+        --ssl-key)
+            [[ $# -ge 2 ]] || error_exit "--ssl-key 옵션에 값이 입력되지 않았습니다."
+            SSL_KEY="$2"
+            shift 2
+            ;;
+        --ssl-cert)
+            [[ $# -ge 2 ]] || error_exit "--ssl-cert 옵션에 값이 입력되지 않았습니다."
+            SSL_CERT="$2"
+            shift 2
+            ;;
+        --help)
+            help "" 0
+            ;;
+        *)
+            help "Unknown parameter: $1" 1
+            ;;
+    esac
+done
+
+# ------------------------------------------------------------------------------
+# Dependency & Validation Logic
+# ------------------------------------------------------------------------------
+
+command -v npx >/dev/null 2>&1 || error_exit "'npx' 명령어를 찾을 수 없습니다. Node.js를 먼저 설치하세요."
+
+# 1. Run Directory 검증
+if [[ -z "$RUN_DIR" ]]; then
+    error_exit "--run-dir 파라미터는 필수입니다."
+fi
+if [[ ! -d "$RUN_DIR" ]]; then
+    error_exit "실행 디렉터리가 존재하지 않습니다: '$RUN_DIR'"
+fi
+ABS_RUN_DIR=$(cd "$RUN_DIR" && pwd -P)
+
+# 2. Public Directory 검증
+if [[ -z "$PUBLIC_DIR" ]]; then
+    error_exit "--public-dir 파라미터는 필수입니다."
+fi
+
+if [[ -d "$PUBLIC_DIR" ]]; then
+    ABS_PUBLIC_DIR=$(cd "$PUBLIC_DIR" && pwd -P)
+elif [[ -d "$ABS_RUN_DIR/$PUBLIC_DIR" ]]; then
+    ABS_PUBLIC_DIR=$(cd "$ABS_RUN_DIR/$PUBLIC_DIR" && pwd -P)
+else
+    error_exit "정적 애셋 디렉터리를 찾을 수 없습니다: '$PUBLIC_DIR'"
+fi
+
+# 3. HTTPS 설정 검증 (Key와 Cert가 쌍으로 입력되어야 함)
+HAS_HTTPS=false
+if [[ -n "$SSL_KEY" || -n "$SSL_CERT" ]]; then
+    if [[ -z "$SSL_KEY" || -z "$SSL_CERT" ]]; then
+        error_exit "HTTPS를 활성화하려면 --ssl-key 및 --ssl-cert 옵션이 모두 필요합니다."
+    fi
+    if [[ ! -r "$SSL_KEY" ]]; then
+        error_exit "SSL 키 파일을 읽을 수 없습니다: '$SSL_KEY'"
+    fi
+    if [[ ! -r "$SSL_CERT" ]]; then
+        error_exit "SSL 인증서 파일을 읽을 수 없습니다: '$SSL_CERT'"
+    fi
+    HAS_HTTPS=true
+fi
+
+# ------------------------------------------------------------------------------
+# Main Execution
+# ------------------------------------------------------------------------------
+
+echo -e "--------------------------------------------------"
+echo -e "${BLUE}Configuration:${NC}"
+echo -e "  Run Directory    : $ABS_RUN_DIR"
+echo -e "  Public Directory : $ABS_PUBLIC_DIR"
+echo -e "  Listen IP        : ${YELLOW}$LISTEN_IP${NC}"
+if [[ "$HAS_HTTPS" == true ]]; then
+    echo -e "  Protocol         : ${GREEN}HTTPS${NC}"
+    echo -e "  SSL Key          : $SSL_KEY"
+    echo -e "  SSL Cert         : $SSL_CERT"
+else
+    echo -e "  Protocol         : HTTP"
+fi
+echo -e "--------------------------------------------------"
+
+# Wrangler 실행 인자 배열 구성
+WRANGLER_CMD=("npx" "wrangler" "pages" "dev" "$ABS_PUBLIC_DIR" "--ip" "$LISTEN_IP")
+if [[ "$HAS_HTTPS" == true ]]; then
+    WRANGLER_CMD+=("--local-protocol" "https" "--https-key-path" "$SSL_KEY" "--https-cert-path" "$SSL_CERT")
+fi
+
+echo -e "🚀 Starting Wrangler Pages Dev..."
+echo -e "* Command: ${WRANGLER_CMD[*]}\n"
+
+cd "$ABS_RUN_DIR" || error_exit "디렉터리 이동 실패: '$ABS_RUN_DIR'"
+
+# 프로세스 실행
+set +e
+"${WRANGLER_CMD[@]}"
+EXIT_CODE=$?
+set -e
+
+if [[ $EXIT_CODE -eq 0 ]]; then
+    echo -e "\n${GREEN}✅ Wrangler dev server stopped gracefully.${NC}"
+else
+    echo -e "\n${RED}❌ Wrangler dev server exited with code $EXIT_CODE.${NC}"
+fi
+
+exit $EXIT_CODE

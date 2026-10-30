@@ -1,10 +1,12 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# ==============================================================================
-# Script Name: init-wrangler-d1.sh
-# Description: Initialize Cloudflare D1 Database or Migrate Data
-# Author: parkjunhong77@gmail.com
-# ==============================================================================
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title  : init-wrangler-d1: Initialize Cloudflare D1 Database schema or migrate data
+# @license: Apache License 2.0
+# @since  : 2026-01-05
+# @desc   : support macOS 11.2.3, Ubuntu 18.04 or higher, CentOS 7 or higher
+# =======================================
 
 # ------------------------------------------------------------------------------
 # 1. Variables & Constants
@@ -13,6 +15,8 @@ RUN_DIR=""
 D1_LOCATION=""
 D1_SCHEMA=""
 D1_FILE=""
+
+readonly FILENAME=$(basename "$0")
 
 # 텍스트 컬러
 RED='\033[0;31m'
@@ -26,22 +30,22 @@ NC='\033[0m' # No Color
 # ------------------------------------------------------------------------------
 
 help() {
-    echo -e "${BLUE}Usage:${NC} $0 [OPTIONS]"
+    echo -e "${BLUE}Usage:${NC} $FILENAME [OPTIONS]"
     echo ""
     echo -e "${YELLOW}Required Parameters:${NC}"
-    echo -e "  -d, --run-dir <dir>      Directory where the command executes"
-    echo -e "      --d1-schema <name>   D1 Database name (e.g., loajoa_db)"
-    echo -e "      --d1-file <file>     SQL Schema file path (Required unless location is 'migration')"
+    echo -e "      --run-dir <dir>          Directory where the command executes"
+    echo -e "      --d1-schema <name>       D1 Database name (e.g., loajoa_db)"
+    echo -e "      --d1-file <file>         SQL Schema file path (Required unless location is 'migration')"
     echo ""
     echo -e "${YELLOW}Optional Parameters:${NC}"
-    echo -e "  -l, --d1-location <type> Target D1 location. Values: [local | remote | all | migration] (Default: Interactive)"
-    echo -e "                           * migration: Backup remote schema & data to local run-dir"
-    echo -e "  -h, --help               Show this help message"
+    echo -e "      --d1-location <type>     Target D1 location. Values: [local | remote | all | migration] (Default: Interactive)"
+    echo -e "                               * migration: Backup remote schema & data to local run-dir"
+    echo -e "      --help                   Show this help message"
     echo ""
 }
 
 error_exit() {
-    echo -e "${RED}Error: $1${NC}"
+    echo -e "${RED}Error: $1${NC}" >&2
     exit 1
 }
 
@@ -56,26 +60,48 @@ run_wrangler() {
     fi
 
     if [ $? -ne 0 ]; then
-        echo -e "${RED}Failed to execute on [${LOC}]${NC}"
+        echo -e "${RED}Failed to execute on [${LOC}]${NC}" >&2
         return 1
     fi
     return 0
 }
 
 # ------------------------------------------------------------------------------
-# 3. Parse Arguments
+# 3. Parse Arguments (Long Option Only)
 # ------------------------------------------------------------------------------
 
 while [[ "$#" -gt 0 ]]; do
-    case $1 in
-        -d|--run-dir) RUN_DIR="$2"; shift ;;
-        -l|--d1-location) D1_LOCATION="$2"; shift ;;
-        --d1-schema) D1_SCHEMA="$2"; shift ;;
-        --d1-file) D1_FILE="$2"; shift ;;
-        -h|--help) help; exit 0 ;;
-        *) echo "Unknown parameter passed: $1"; help; exit 1 ;;
+    case "$1" in
+        --run-dir)
+            [[ $# -ge 2 ]] || error_exit "--run-dir 옵션에 값이 입력되지 않았습니다."
+            RUN_DIR="$2"
+            shift 2
+            ;;
+        --d1-location)
+            [[ $# -ge 2 ]] || error_exit "--d1-location 옵션에 값이 입력되지 않았습니다."
+            D1_LOCATION="$2"
+            shift 2
+            ;;
+        --d1-schema)
+            [[ $# -ge 2 ]] || error_exit "--d1-schema 옵션에 값이 입력되지 않았습니다."
+            D1_SCHEMA="$2"
+            shift 2
+            ;;
+        --d1-file)
+            [[ $# -ge 2 ]] || error_exit "--d1-file 옵션에 값이 입력되지 않았습니다."
+            D1_FILE="$2"
+            shift 2
+            ;;
+        --help)
+            help
+            exit 0
+            ;;
+        *)
+            echo "Unknown parameter passed: $1" >&2
+            help
+            exit 1
+            ;;
     esac
-    shift
 done
 
 # ------------------------------------------------------------------------------

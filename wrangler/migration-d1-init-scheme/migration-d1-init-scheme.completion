@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title  : Bash completion for 'migration-d1-init-scheme'
+# @license: Apache License 2.0
+# @since  : 2026-01-30
+# @desc   : support RHEL, Oracle Linux, Ubuntu, CentOS, macOS
+# =======================================
+
+# Bash Completion Parameter Description
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: an index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+
+_migration_d1_init_scheme_completion() {
+  local cur prev opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+  
+  # 지원하는 전체 옵션 목록 (Long Option 전용)
+  opts="--src-sql --init-sql --force-overwrite --help"
+
+  # 1. 파일 경로 추천
+  case "${prev}" in
+    --src-sql|--init-sql)
+      COMPREPLY=( $(compgen -f -- "${cur}") )
+      return 0
+      ;;
+  esac
+
+  # 2. 이미 사용된 옵션 필터링
+  local unused_opts=()
+  for opt in $opts; do
+    local already_used=false
+    for w in "${COMP_WORDS[@]}"; do
+      if [[ "$w" == "$opt" ]]; then
+        already_used=true
+        break
+      fi
+    done
+
+    if [[ "$already_used" == false ]]; then
+      unused_opts+=("$opt")
+    fi
+  done
+
+  # 3. 옵션 제안
+  COMPREPLY=( $(compgen -W "${unused_opts[*]}" -- "${cur}") )
+  return 0
+}
+
+complete -F _migration_d1_init_scheme_completion migration-d1-init-scheme

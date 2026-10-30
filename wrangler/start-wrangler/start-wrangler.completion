@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title  : Bash completion for 'start-wrangler'
+# @license: Apache License 2.0
+# @since  : 2026-01-30
+# @desc   : support RHEL, Oracle Linux, Ubuntu, CentOS, macOS
+# =======================================
+
+# Bash Completion Parameter Description
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: an index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+
+_start_wrangler_completions() {
+  local cur prev opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+  
+  # 전체 가능한 옵션 목록 (Long Option 전용)
+  opts="--run-dir --public-dir --ip --ssl-key --ssl-cert --help"
+
+  # 1. 이전 인자에 따라 특정 경로 추천
+  case "${prev}" in
+    --run-dir|--public-dir)
+      # 디렉토리만 추천
+      compopt -o nospace 2>/dev/null || true
+      COMPREPLY=( $(compgen -d -- "${cur}") )
+      return 0
+      ;;
+    --ssl-key|--ssl-cert)
+      # 파일만 추천
+      COMPREPLY=( $(compgen -f -- "${cur}") )
+      return 0
+      ;;
+    --ip)
+      # 추천 IP 목록 제안
+      COMPREPLY=( $(compgen -W "0.0.0.0 127.0.0.1 localhost" -- "${cur}") )
+      return 0
+      ;;
+  esac
+
+  # 2. 이미 사용된 옵션 필터링
+  local unused_opts=()
+  for opt in $opts; do
+    local already_used=false
+    for word in "${COMP_WORDS[@]}"; do
+      if [[ "$word" == "$opt" ]]; then
+        already_used=true
+        break
+      fi
+    done
+
+    if [[ "$already_used" == false ]]; then
+      unused_opts+=("$opt")
+    fi
+  done
+
+  # 3. 옵션 제안
+  COMPREPLY=( $(compgen -W "${unused_opts[*]}" -- "${cur}") )
+  return 0
+}
+
+complete -F _start_wrangler_completions start-wrangler
