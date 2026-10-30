@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : Bash completion for 'match-error-lnb'
+# @license  : Apache License 2.0
+# @since    : 2021-04-19
+# =======================================
+
+# Bash Completion Parameter Description
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: an index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+
+_match_error_lnb_complete() {
+  local cur prev opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  opts="--file --output --help"
+
+  case "${prev}" in
+    --file|--output)
+      COMPREPLY=( $(compgen -f -- "${cur}") )
+      return 0
+      ;;
+  esac
+
+  if [[ ${cur} == -* ]] ; then
+    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+    return 0
+  fi
+
+  COMPREPLY=( $(compgen -f -- "${cur}") $(compgen -W "${opts}" -- "${cur}") )
+}
+
+complete -F _match_error_lnb_complete match-error-lnb
