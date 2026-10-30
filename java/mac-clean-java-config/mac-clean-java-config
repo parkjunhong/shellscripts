@@ -2,15 +2,13 @@
 
 # =======================================
 # @author : parkjunhong77@gmail.com
-# @title : clean broken jenv links
-# @license : Apache License 2.0
-# @since : 2026-03-06
-# @desc : support macOS Tahoe 26.3, RHEL, Oracle Linux, Ubuntu, RockyOS
-# @installation :
-# 1. insert 'source <path>/clean-java-config' into ~/.bashrc or ~/.bash_profile for a personal usage.
+# @title  : mac-clean-java-config: Clean broken jenv version symlinks for macOS
+# @license: Apache License 2.0
+# @since  : 2026-03-06
+# @desc   : support macOS Tahoe 26.3 or higher
 # =======================================
 
-FILENAME=$(basename $0)
+FILENAME=$(basename "$0")
 
 ##
 # 도움말 함수 (help)
@@ -29,8 +27,7 @@ help(){
         printf "$formatl" "line" "$2"
         printf "$formatl" "callstack"
         local idx=1
-        for func in ${FUNCNAME[@]:1}
-        do
+        for func in ${FUNCNAME[@]:1}; do
             printf "$formatr" "["$idx"]" $func
             ((idx++))
         done
@@ -38,7 +35,7 @@ help(){
         echo "================================================================================"
     fi
     echo
-    echo "Usage: $FILENAME [-h|--help]"
+    echo "Usage: $FILENAME [--help]"
     echo "설명: ~/.jenv/versions 내의 깨진 심볼릭 링크를 찾아 삭제 여부를 확인합니다."
 }
 
@@ -63,22 +60,23 @@ clean_broken_links() {
         fi
     done < <(find "$target_dir" -type l)
 
-    # 3. 없으면 종료
+    # 2. 없으면 종료
     if [ ${#broken_links[@]} -eq 0 ]; then
         echo "✅ 깨진 심볼릭 링크가 없습니다."
         return 0
     fi
 
-    # 1. 목록 제공
+    # 3. 목록 제공
     echo "🔍 깨진 심볼릭 링크를 발견했습니다:"
     for link in "${broken_links[@]}"; do
-        local target=$(readlink "$link")
-        echo "  - $(basename "$link") &arr; $target"
+        local target
+        target=$(readlink "$link")
+        echo "  - $(basename "$link") -> $target"
     done
     echo
 
-    # 2. 삭제 여부 확인
-    read -p "위의 깨진 링크들을 모두 삭제하시겠습니까? (y/n): " confirm
+    # 4. 삭제 여부 확인
+    read -r -p "위의 깨진 링크들을 모두 삭제하시겠습니까? (y/n): " confirm
     if [[ "$confirm" =~ ^[Yy]$ ]]; then
         for link in "${broken_links[@]}"; do
             rm "$link"
@@ -90,8 +88,8 @@ clean_broken_links() {
     fi
 }
 
-# 파라미터 체크 및 실행
-if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+# 파라미터 체크 및 실행 (Long Option 전용)
+if [[ "$1" == "--help" ]]; then
     help
     exit 0
 fi

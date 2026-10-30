@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : Bash completion for 'mac-update-java-config'
+# @license  : Apache License 2.0
+# @since    : 2026-03-06
+# =======================================
+
+# Bash Completion Parameter Description
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: an index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+
+_mac_update_java_config_complete() {
+  local cur opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  
+  opts="--help"
+
+  if [[ ${cur} == -* ]] ; then
+    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+    return 0
+  fi
+  
+  return 0
+}
+
+complete -F _mac_update_java_config_complete mac-update-java-config

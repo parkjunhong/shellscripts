@@ -1,6 +1,30 @@
 #!/usr/bin/env bash
 
-CURRENT=$(jenv version | awk '{print $1}')
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title  : mac-update-java-config: Interactive Java version switcher for macOS using jenv
+# @license: Apache License 2.0
+# @since  : 2026-03-06
+# @desc   : support macOS Tahoe 26.3 or higher
+# =======================================
+
+help(){
+    echo "Usage: $(basename "$0") [--help]"
+    echo ""
+    echo "macOS 환경에서 jenv에 등록된 Java 버전들을 탐색하고"
+    echo "사용자가 선택한 버전을 jenv global 및 JAVA_HOME으로 설정합니다."
+    echo ""
+    echo "Options:"
+    echo "  --help    도움말 출력"
+    echo ""
+    exit 0
+}
+
+if [[ "$1" == "--help" ]]; then
+    help
+fi
+
+CURRENT=$(jenv version 2>/dev/null | awk '{print $1}')
 
 mapfile -t ALL_VERSIONS < <(
   jenv versions 2>/dev/null |
@@ -40,7 +64,6 @@ if [ ${#VERSIONS[@]} -eq 0 ]; then
   exit 1
 fi
 
-
 echo "🔧 선택 가능한 Java 버전:"
 for i in "${!VERSIONS[@]}"; do
   index=$((i + 1))
@@ -53,7 +76,7 @@ for i in "${!VERSIONS[@]}"; do
   fi
 done
 
-read -p "번호를 선택하세요 (1~${#VERSIONS[@]}): " CHOICE
+read -r -p "번호를 선택하세요 (1~${#VERSIONS[@]}): " CHOICE
 
 if ! [[ "$CHOICE" =~ ^[0-9]+$ ]] || (( CHOICE < 1 || CHOICE > ${#VERSIONS[@]} )); then
   echo "❌ 올바른 번호를 입력해주세요."
@@ -71,7 +94,6 @@ JAVA_HOME_VERSION=$(echo "$JAVA_VERSION_OUTPUT" | grep -Eo '"[0-9]+(\.[0-9]+)*(_
 
 JAVA_HOME_PATH=$(/usr/libexec/java_home -v "$JAVA_HOME_VERSION" 2>/dev/null)
 
-
 if [[ -n "$JAVA_HOME_PATH" ]]; then
   export JAVA_HOME="$JAVA_HOME_PATH"
   echo "📌 JAVA_HOME 명시적으로 설정됨 (java -version 기준):"
@@ -81,6 +103,8 @@ else
 fi
 
 echo "🔄 적용 완료!"
-echo "'jenv' announce -> " $(jenv version)
+echo "'jenv' announce -> " $(jenv version 2>/dev/null)
 java -version
 echo "JAVA_HOME: $JAVA_HOME"
+
+exit 0
