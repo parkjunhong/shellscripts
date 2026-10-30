@@ -4,7 +4,7 @@
 # @title : grep-files: File Content Pattern Presence/Absence Scanner & Directory Report Generator
 # @license : Apache License 2.0
 # @since : 2024-03-10
-# @version : 2.1.0 (2026-10-26)
+# @version : 2.2.0 (2026-10-30)
 # @desc : support RHEL 8+, Oracle Linux 8+, Ubuntu 20.04+, RockyOS 8+, CentOS 7+, macOS 11+
 # @installation :
 # 1. insert 'source <path>/grep-files.completion' into ~/.bashrc or ~/.bash_profile for a personal usage.
@@ -70,13 +70,14 @@ help() {
   cat <<EOF
 
 🔎 사용법 (Usage):
-  $FILENAME --pattern <문자열> [--ext <확장자1[,확장자2...]>] [--dir <디렉토리>] [옵션]
+  $FILENAME --pattern <문자열> [--ext <확장자1[,확장자2...]>] [--dir <디렉토리>] [--files-only] [옵션]
   $FILENAME --help
 
 📝 설명 (Description):
   지정된 디렉토리(복수 지정 가능)에서 파일들을 대상으로 특정 문자열(--pattern)이
   포함된 파일(match) 또는 누락된 파일(missing)을 검색하고,
   디렉토리/서브디렉토리별 통계와 매칭된 줄 번호 및 내용(grep -rn 형식)을 리포트로 출력합니다.
+  --files-only 지정 시 매칭된 세부 줄 정보 없이 파일 목록만 빠르게 확인합니다.
   - 단축 옵션(Short Option)은 지원하지 않으며, 전체 옵션명(Long Option)만 사용 가능합니다.
 
 ⚙️  필수 옵션 (Required Options):
@@ -90,6 +91,7 @@ help() {
   --mode <match|missing>      검색 조건 (기본값: match)
                               - match   (또는 o) : 문자열이 포함된 파일 및 발생 줄 번호/내용 출력
                               - missing (또는 x) : 문자열이 포함되지 않은(누락된) 파일 목록 출력
+  --files-only                매칭된 줄 번호 및 내용 출력을 생략하고 파일 목록만 출력
   --ignore-case               문자열(--pattern) 검색 시 대소문자 무시
   --output <FILE>             결과 리포트를 화면 대신 지정된 파일에 저장
   --help                      이 도움말을 출력하고 종료
@@ -101,7 +103,10 @@ help() {
   # 2) 복수 확장자(sh, completion, properties) 지정 검색
   $FILENAME --ext sh,completion,properties --pattern searching-word --dir ../../
 
-  # 3) 현재 디렉토리 하위 모든 .java 파일 중 '@NullMarked'가 누락된(missing) 파일 감사 리포트 출력
+  # 3) 세부 줄 정보 없이 일치하는 파일 목록만 빠르게 확인
+  $FILENAME --pattern searching-word --dir ../../ --files-only
+
+  # 4) 현재 디렉토리 하위 모든 .java 파일 중 '@NullMarked'가 누락된(missing) 파일 감사 리포트 출력
   $FILENAME --ext java --pattern "@NullMarked" --mode missing
 EOF
 }
@@ -135,6 +140,7 @@ main() {
   local search_pattern=""
   local search_mode="match"
   local ignore_case=false
+  local files_only=false
   local output_file=""
 
   local has_pattern=false
@@ -226,6 +232,10 @@ main() {
         ;;
       --ignore-case)
         ignore_case=true
+        shift
+        ;;
+      --files-only)
+        files_only=true
         shift
         ;;
       --output|--output=*)
@@ -408,13 +418,23 @@ main() {
       rel_path="${file#"${directory}"/}"
 
       if [[ "$mode_normalized" == "match" ]]; then
-        if grep_out="$(grep "${grep_match_opts[@]}" -- "$search_pattern" "$file" 2>/dev/null)"; then
-          found_files["$directory"]+="${rel_path}"$'\n'
-          file_match_lines["${directory}|${rel_path}"]="$grep_out"
-          dir_name="$(dirname "$rel_path")"
-          subdir_count["${directory}|${dir_name}"]=$(( ${subdir_count["${directory}|${dir_name}"]:-0} + 1 ))
-          dir_count["$directory"]=$(( ${dir_count["$directory"]:-0} + 1 ))
-          ((total_count++)) || true
+        if [[ "$files_only" == true ]]; then
+          if grep "${grep_quiet_opts[@]}" -- "$search_pattern" "$file" 2>/dev/null; then
+            found_files["$directory"]+="${rel_path}"$'\n'
+            dir_name="$(dirname "$rel_path")"
+            subdir_count["${directory}|${dir_name}"]=$(( ${subdir_count["${directory}|${dir_name}"]:-0} + 1 ))
+            dir_count["$directory"]=$(( ${dir_count["$directory"]:-0} + 1 ))
+            ((total_count++)) || true
+          fi
+        else
+          if grep_out="$(grep "${grep_match_opts[@]}" -- "$search_pattern" "$file" 2>/dev/null)"; then
+            found_files["$directory"]+="${rel_path}"$'\n'
+            file_match_lines["${directory}|${rel_path}"]="$grep_out"
+            dir_name="$(dirname "$rel_path")"
+            subdir_count["${directory}|${dir_name}"]=$(( ${subdir_count["${directory}|${dir_name}"]:-0} + 1 ))
+            dir_count["$directory"]=$(( ${dir_count["$directory"]:-0} + 1 ))
+            ((total_count++)) || true
+          fi
         fi
       else
         # missing 모드: 바이너리 파일은 제외하고 텍스트 파일 중 패턴이 없는 파일만 집계
@@ -454,7 +474,11 @@ main() {
     echo " 📄 파일 확장자   : ${ext_label}"
     echo " 🔤 찾을 문자열   : ${search_pattern} (대소문자 구분: $([[ "$ignore_case" == true ]] && echo "무시" || echo "구분"))"
     if [[ "$mode_normalized" == "match" ]]; then
-      echo " 🎯 검색 모드     : match (문자열이 포함된 파일 및 발생 위치)"
+      if [[ "$files_only" == true ]]; then
+        echo " 🎯 검색 모드     : match (문자열이 포함된 파일 목록만 출력)"
+      else
+        echo " 🎯 검색 모드     : match (문자열이 포함된 파일 및 발생 위치)"
+      fi
     else
       echo " 🎯 검색 모드     : missing (문자열이 누락된 파일)"
     fi
@@ -488,7 +512,11 @@ main() {
       fi
     done
     echo "------------------------------------------------------------------"
-    echo " 📋 검색된 파일 목록 및 매칭 내용"
+    if [[ "$files_only" == true || "$mode_normalized" == "missing" ]]; then
+      echo " 📋 검색된 파일 목록"
+    else
+      echo " 📋 검색된 파일 목록 및 매칭 내용"
+    fi
     for d in "${directories[@]}"; do
       echo " - ${d}"
       if [[ -n "${found_files["$d"]:-}" ]]; then
@@ -496,7 +524,7 @@ main() {
         while IFS= read -r rpath; do
           [[ -n "$rpath" ]] || continue
           echo "   + ${rpath}"
-          if [[ "$mode_normalized" == "match" && -n "${file_match_lines["${d}|${rpath}"]:-}" ]]; then
+          if [[ "$files_only" == false && "$mode_normalized" == "match" && -n "${file_match_lines["${d}|${rpath}"]:-}" ]]; then
             while IFS= read -r mline; do
               [[ -n "$mline" ]] || continue
               line_no="${mline%%:*}"

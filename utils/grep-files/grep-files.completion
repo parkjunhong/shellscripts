@@ -3,7 +3,7 @@
 # @title : grep-files bash completion.
 # @license : Apache License 2.0
 # @since : 2024-03-10
-# @version : 2.1.0 (2026-10-26)
+# @version : 2.2.0 (2026-10-30)
 # @desc : support RHEL 8+, Oracle Linux 8+, Ubuntu 20.04+, RockyOS 8+, CentOS 7+, macOS 11+
 # @installation :
 # 1. insert 'source <path>/grep-files.completion' into ~/.bashrc or ~/.bash_profile for a personal usage.
@@ -84,6 +84,7 @@ _grep_files_completion() {
     "--pattern"
     "--mode"
     "--ignore-case"
+    "--files-only"
     "--output"
     "--help"
   )

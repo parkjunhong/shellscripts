@@ -9,11 +9,14 @@
 1. **확장자(`--ext`) 선택화 및 다중 확장자 지원**
    * `--ext`를 생략하면 확장자에 구애받지 않고 **모든 텍스트 파일**을 대상으로 검색합니다 (`.git` 디렉토리 및 바이너리 파일 자동 제외).
    * `--ext sh,completion,properties`처럼 콤마(`,`)로 구분하거나 `--ext`를 여러 번 지정하여 복수 확장자를 한 번에 검색할 수 있습니다.
-2. **검사 모수(Scanned Count) 및 매칭 통계 동시 제공**
+2. **파일 목록 전용 모드(`--files-only`) 및 고속 스캔**
+   * 매칭된 줄 번호 및 상세 내용 출력을 생략하고 조건에 부합하는 **파일 목록만 빠르게 확인**할 수 있습니다.
+   * `match` 모드에서 `--files-only` 사용 시 첫 번째 일치 항목 발견 즉시 파일 검사를 완료(`grep -q`)하여 대용량 파일 및 대규모 디렉토리 탐색 성능을 대폭 최적화합니다.
+3. **검사 모수(Scanned Count) 및 매칭 통계 동시 제공**
    * 전체 검사 대상 파일 수(`total_scanned`) 대비 매칭된 파일 수(`total_count`)를 디렉토리별로 함께 출력하여 검색 범위를 명확히 파악할 수 있습니다.
-3. **`grep -rn` 스타일 줄 번호 및 매칭 내용 출력 (`match` 모드)**
+4. **`grep -rn` 스타일 줄 번호 및 매칭 내용 출력 (`match` 모드 기본)**
    * `📋 검색된 파일 목록 및 매칭 내용` 섹션에서 각 파일 경로 하단에 매칭된 줄 번호(`[L줄번호]`)와 해당 줄의 내용을 함께 출력합니다.
-4. **안전한 배열 기반 실행 (`eval` 제거)**
+5. **안전한 배열 기반 실행 (`eval` 제거)**
    * 공백이나 특수문자가 포함된 경로에서도 단어 분리(Word Splitting) 없이 안전하게 동작합니다.
 
 ---
@@ -26,7 +29,8 @@
 | `--ext <EXT1[,EXT2...]>` | 선택 | 전체 텍스트 파일(`*`) | **가능** | 검색할 파일 확장자 (콤마 구분 가능, 대소문자 무시) |
 | `--dir <DIR>` | 선택 | 현재 디렉토리(`$PWD`) | **가능** | 검색 대상 디렉토리 경로 |
 | `--exclude-dir <DIR>` | 선택 | `.git` 기본 제외 | **가능** | 검색에서 제외할 디렉토리 경로 또는 폴더명 |
-| `--mode <match\|missing>` | 선택 | `match` | 불가 | `match`(문자열 포함 파일+줄 내용) 또는 `missing`(문자열 누락 파일) |
+| `--mode <match\|missing>` | 선택 | `match` | 불가 | `match`(문자열 포함 파일) 또는 `missing`(문자열 누락 파일) |
+| `--files-only` | 선택 | `false` | 불가 | 매칭된 줄 번호 및 내용 출력을 생략하고 파일 목록만 출력 |
 | `--ignore-case` | 선택 | `false` | 불가 | 찾을 문자열(`--pattern`)의 대소문자 무시 |
 | `--output <FILE>` | 선택 | 화면 출력 | 불가 | 결과 리포트를 지정한 파일로 저장 |
 | `--help` | 선택 | - | 불가 | 도움말 출력 |
@@ -45,7 +49,12 @@
 ./grep-files --ext sh,completion,properties --pattern searching-word --dir ../../
 ```
 
-### 3. 특정 어노테이션(`@NullMarked`)이 누락된(`.java`) 파일 감사 리포트 출력
+### 3. 세부 줄 정보 없이 일치하는 파일 목록만 빠르게 확인
+```bash
+./grep-files --pattern searching-word --dir ../../ --files-only
+```
+
+### 4. 특정 어노테이션(`@NullMarked`)이 누락된(`.java`) 파일 감사 리포트 출력
 ```bash
 ./grep-files --dir /path/to/project/src --ext java --pattern "@NullMarked" --mode missing
 ```
@@ -61,6 +70,6 @@
 ../scriptctl/scriptctl install --script ./grep-files --target local
 
 # 시스템 전역 설치 (/usr/local/bin, /usr/share/bash-completion/completions/ 등록)
-sudo ../scriptctl/scriptctl install --script ./grep-files --target global
+../scriptctl/scriptctl install --script ./grep-files --target global
 ```
 
