@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title  : Bash completion for 'csv-to-map'
+# @license: Apache License 2.0
+# @since  : 2021-06-24
+# =======================================
+
+# Bash Completion Parameter Description
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: an index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+
+_csv_to_map_complete(){
+	local cur prev
+	cur="${COMP_WORDS[COMP_CWORD]}"
+	prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+	local opts="--file --delim --index-key --index-value --quotechar --skip --verbose --write-count --help"
+
+	case "$prev" in
+		--file)
+			COMPREPLY=( $(compgen -f -- "$cur") )
+			return 0
+			;;
+		--delim|--quotechar|--index-key|--index-value|--write-count)
+			# 값 직접 입력
+			return 0
+			;;
+	esac
+
+	if [[ "$cur" == -* ]]; then
+		COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+		return 0
+	fi
+
+	# 파일 경로 또는 옵션 제안
+	COMPREPLY=( $(compgen -f -- "$cur") $(compgen -W "$opts" -- "$cur") )
+}
+
+complete -F _csv_to_map_complete csv-to-map

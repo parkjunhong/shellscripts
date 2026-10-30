@@ -1,14 +1,11 @@
 #!/usr/bin/env bash
 
 # =======================================
-# @auther : parkjunhong77@gmail.com
-# @title  : create a map by a specific indexed value.
+# @author : parkjunhong77@gmail.com
+# @title  : csv-to-map: Create key-value map file from CSV data by column indexes
 # @license: Apache License 2.0
 # @since  : 2021-06-24
-# @desc   : support macOS 11.2.3, Ubuntu 18.04, CentOS 7 or higher
-# @completion: csv2map.completion
-#			 1. insert 'source <path>/csv2map.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#			 2. copy the above file to /etc/bash_completion.d/ for all users.
+# @desc   : support macOS 11.2.3, Ubuntu 18.04 or higher, CentOS 7 or higher
 # =======================================
 
 # get a filename
@@ -45,32 +42,41 @@ help(){
 	fi
 	echo
 	echo "Usage:"
-	echo "csv2map [-h|--help] <filepath> -d <delimiter> -ik <index-of-key> -iv <index-of-value> -q <quote char> -w <write-count> -s -v"
-	echo "csv2map [-h|--help] <filepath> --delim <delimiter> --index-key <index-of-key> --index-value <index-of-value> --quotechar <quote char> --write-count <write-count> --skip --verbose"
+	echo "csv-to-map [--help] [--file] <filepath> --delim <delimiter> --index-key <index-of-key> --index-value <index-of-value> [--quotechar <quote char>] [--write-count <write-count>] [--skip] [--verbose]"
 	echo
 	echo "Options:"
-	echo " -d  | --delim      : line count to copy"
-	echo " -h  | --help       : show help messages"
-	echo " -ik | --index-key  : index of a key"
-	echo " -iv | --index-value: index of a value"
-	echo " -q  | --quotechar  : quoted character. default: double quoted ($QUOTECHAR)."
-	echo " -s  | --skip       : skip a first line."
-	echo " -v  | --verbose    : show error message."
-	echo " -w  | --write-count: count for writing data."
+	echo " --file       : input filepath"
+	echo " --delim      : delimiter of columns"
+	echo " --index-key  : index of a key column (0-based)"
+	echo " --index-value: index of a value column (0-based)"
+	echo " --quotechar  : quoted character. default: double quoted ($QUOTECHAR)."
+	echo " --skip       : skip the first header line."
+	echo " --verbose    : show verbose error messages."
+	echo " --write-count: count interval for writing/progressing data."
+	echo " --help       : show help messages"
 }
 
 while [ ! -z "$1" ];
 do
 	case "$1" in
-		-d | --delim)
+		--file)
+			shift
+			if [ ! -f "$1" ];then
+				help "Invalid 'input file': filepath: $1" $LINENO
+				exit 1
+			fi
+			INPUT_FILE="$1"
+			RESULT_FILE="$1.map"
+			;;
+		--delim)
 			shift
 			DELIMITER="$1"
 			;;
-		-h | --help)
+		--help)
 			help
 			exit 0
 			;;
-		-ik | --index-key)
+		--index-key)
 			shift
 			if ! [[ "$1" =~ [0-9]+ ]];then
 				help "Invalid 'key'. input: $1" $LINENO
@@ -78,7 +84,7 @@ do
 			fi
 			KEY=$1
 			;;
-		-iv | --index-value)
+		--index-value)
 			shift
 			if ! [[ "$1" =~ [0-9]+ ]];then
 				help "Invalid 'value'. input: $1" $LINENO
@@ -86,7 +92,7 @@ do
 			fi
 			VALUE=$1
 			;;
-		-q | --quotechar)
+		--quotechar)
 			shift
 			if [ -z "$1" ] || [ "${#1}" -ne 1 ];then
 				help "Invalid 'quote char'. input: $1" $LINENO
@@ -94,13 +100,13 @@ do
 			fi
 			QUOTECHAR="$1"
 			;;
-		-v | --verbose)
+		--verbose)
 			VERBOSE=1
 			;;
-		-s | --skip)
+		--skip)
 			SKIP=1
 			;;
-		-w | --write-count)
+		--write-count)
 			shift
 			if ! [[ "$1" =~ [0-9]+ ]];then
 				help "Invalid 'write-count'. input: $1" $LINENO
