@@ -11,6 +11,7 @@
 | 도구명 | Canonical 경로 | 주요 기능 및 특징 | Bash 자동완성 | 개별 문서 |
 | :--- | :--- | :--- | :---: | :---: |
 | **autotail** | [`autotail/`](autotail/autotail) | 대상 파일 생성 대기(Polling) 후 생성 즉시 `tail -f` 자동 추적 | ✅ 지원 | [상세보기](autotail/README.md) |
+| **canonical-status** | [`canonical-status/`](canonical-status/canonical-status) | 하위 디렉토리(depth=1, 2) 내 `README.md` 존재 여부 기반 Canonical 작업 현황 트리 시각화 | ✅ 지원 | [상세보기](canonical-status/README.md) |
 | **check-number-inline** | [`check-number-inline/`](check-number-inline/check-number-inline) | CSV/구분자 파일의 특정 열(Index) 데이터가 숫자인지 행별 정밀 검증 및 오류 격리 | ✅ 지원 | [상세보기](check-number-inline/README.md) |
 | **csv-count-checker** | [`csv-count-checker/`](csv-count-checker/csv-count-checker) | CSV 파일의 행별 데이터 컬럼(필드) 수 정합성 검증 및 불일치 행 실시간 기록 | ✅ 지원 | [상세보기](csv-count-checker/README.md) |
 | **diff-file** | [`diff-file/`](diff-file/diff-file) | 기준 파일과 대상 파일들의 내용 정규화 비교 보고서 생성 및 동기화/Dry-run 지원 | ✅ 지원 | [상세보기](diff-file/README.md) |
@@ -39,6 +40,10 @@ utils/
 ├── autotail/
 │   ├── autotail                       # 파일 생성 대기 및 실시간 tail 추적
 │   ├── autotail.completion            # Bash 자동완성 스크립트
+│   └── README.md                      # 개별 도구 상세 설명서
+├── canonical-status/
+│   ├── canonical-status               # Canonical 작업 진행 상태 트리 시각화 도구
+│   ├── canonical-status.completion    # Bash 자동완성 스크립트
 │   └── README.md                      # 개별 도구 상세 설명서
 ├── check-number-inline/
 │   ├── check-number-inline            # CSV 열 숫자 데이터 검증 도구

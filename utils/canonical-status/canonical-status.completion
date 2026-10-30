@@ -1,0 +1,314 @@
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : completion for canonical-status: Canonical directory work status visualizer
+# @license  : Apache License 2.0
+# @since    : 2026-10-29
+# @desc     : support RHEL 7+/8+/9+, Oracle Linux 7+/8+/9+, Ubuntu 20.04+/22.04+/24.04+, RockyOS 8+/9+, CentOS 7+
+# @installation :
+#   1. insert 'source <path>/canonical-status.completion' into ~/.bashrc or ~/.bash_profile for personal usage.
+#   2. or install via scriptctl:
+#      ../scriptctl/scriptctl install --script ./canonical-status --target local
+# =======================================
+
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+#
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+# =======================================
+
+# =======================================
+# User Information & Usage
+# - 한국어: canonical-status 명령에 대한 Bash 자동 완성 지원 (Long Option 전용)
+# - English: Bash completion support for canonical-status command (Long Options only)
+#
+# 지원 옵션 / Supported Options:
+#   * --target-dir <dir>
+#     - 검사할 기준 디렉토리 경로 (1회만 제안, 디렉토리 자동완성)
+#   * --exclude-dir <dir1> [dir2 ...] | --exclude-dir <dir1,dir2,...>
+#     - 탐색에서 제외할 하위 디렉토리 이름
+#     - 공백으로 구분된 연속 다중 디렉토리(예: --exclude-dir dir1 dir2 [TAB]),
+#       콤마(,)로 구분된 다중 디렉토리(예: --exclude-dir dir1,dir2[TAB]),
+#       그리고 --exclude-dir 옵션 반복 지정을 모두 지원하며 이미 제외된 디렉토리는 제외하고 제안
+#   * --exclude-dir-pattern <pat1> [pat2 ...] | --exclude-dir-pattern <pat1,pat2,...>
+#     - 와일드카드(abc*, *abc, *abc*) 방식으로 탐색에서 제외할 하위 디렉토리 패턴
+#     - 공백으로 구분된 연속 다중 패턴, 콤마(,) 구분, 옵션 반복 지정을 모두 지원
+#     - 패턴 입력 시 이미 제외된 디렉토리를 뺀 나머지 하위 디렉토리 이름 및 와일드카드 후보(예: abc*, *abc, *abc*)를 동적으로 제안
+#   * --help
+#     - 도움말 표시 (1회만 제안)
+# =======================================
+
+##
+# 커맨드 라인에 지정된 --target-dir 경로(없으면 현재 디렉토리 '.')를 반환합니다.
+#
+# @return {stdout} 기준 디렉토리 경로
+##
+_canonical_status_get_base_dir() {
+  local base_dir="."
+  local i word next_word candidate=""
+
+  for (( i=1; i < ${#COMP_WORDS[@]}; i++ )); do
+    (( i == COMP_CWORD )) && continue
+    word="${COMP_WORDS[i]}"
+    if [[ "$word" == "--target-dir" && $((i + 1)) -lt ${#COMP_WORDS[@]} && $((i + 1)) -ne $COMP_CWORD ]]; then
+      next_word="${COMP_WORDS[i+1]}"
+      if [[ -n "$next_word" && "$next_word" != --* ]]; then
+        candidate="$next_word"
+      fi
+    elif [[ "$word" == --target-dir=* ]]; then
+      candidate="${word#--target-dir=}"
+    fi
+  done
+
+  if [[ -n "$candidate" ]]; then
+    if [[ "$candidate" == "~"* ]]; then
+      candidate="${HOME}${candidate#\~}"
+    fi
+    if [[ -d "$candidate" ]]; then
+      base_dir="$candidate"
+    fi
+  fi
+
+  printf "%s" "$base_dir"
+}
+
+##
+# 커맨드 라인에서 이미 --exclude-dir 또는 --exclude-dir-pattern으로 지정된 값 목록을 추출합니다.
+#
+# @return {stdout} 줄바꿈으로 구분된 제외 디렉토리/패턴 목록
+##
+_canonical_status_get_used_excludes() {
+  local i word item
+  local in_exclude=0
+  local -a parts=()
+
+  for (( i=1; i < ${#COMP_WORDS[@]}; i++ )); do
+    word="${COMP_WORDS[i]}"
+
+    if (( i == COMP_CWORD )); then
+      continue
+    fi
+
+    if [[ "$word" == "--exclude-dir" || "$word" == "--exclude-dir-pattern" ]]; then
+      in_exclude=1
+      continue
+    elif [[ "$word" == --exclude-dir=* ]]; then
+      in_exclude=0
+      IFS=',' read -r -a parts <<< "${word#--exclude-dir=}"
+      for item in "${parts[@]}"; do
+        item="${item%/}"
+        [[ -n "$item" ]] && printf "%s\n" "$item"
+      done
+      continue
+    elif [[ "$word" == --exclude-dir-pattern=* ]]; then
+      in_exclude=0
+      IFS=',' read -r -a parts <<< "${word#--exclude-dir-pattern=}"
+      for item in "${parts[@]}"; do
+        item="${item%/}"
+        [[ -n "$item" ]] && printf "%s\n" "$item"
+      done
+      continue
+    elif [[ "$word" == --* ]]; then
+      in_exclude=0
+      continue
+    fi
+
+    if (( in_exclude == 1 )); then
+      IFS=',' read -r -a parts <<< "$word"
+      for item in "${parts[@]}"; do
+        item="${item%/}"
+        [[ -n "$item" ]] && printf "%s\n" "$item"
+      done
+    fi
+  done
+}
+
+##
+#--exclude-dir 및 --exclude-dir-pattern 인자(공백 연속 다중 지정 및 콤마 구분 다중 지정)에 대한 자동완성을 수행합니다.
+#
+# @param $1 {string} 현재 입력 중인 단어 (cur)
+# @param $2 {string} 출력 접두사 (기본값: '', '--exclude-dir=*' 완성 시 '--exclude-dir=')
+# @param $3 {string} 모드 ('exact' 또는 'pattern')
+##
+_canonical_status_complete_exclude_targets() {
+  local cur_val="$1"
+  local opt_prefix="${2:-}"
+  local mode="${3:-exact}"
+  local base_dir
+  base_dir="$(_canonical_status_get_base_dir)"
+
+  # 1. 기준 디렉토리 내 후보 하위 디렉토리 수집
+  local -a all_subdirs=()
+  local d dname
+  for d in "${base_dir}"/*/; do
+    [[ -d "$d" ]] || continue
+    d="${d%/}"
+    dname="$(basename "$d")"
+    [[ "$dname" == .* || "$dname" == "__.snippets" ]] && continue
+    all_subdirs+=("$dname")
+  done
+
+  # 2. 이미 선택된 제외 디렉토리/패턴 수집 (이전 토큰들 + 현재 토큰의 콤마 앞부분)
+  local -a used_rules=()
+  local u
+  while IFS= read -r u; do
+    [[ -n "$u" ]] && used_rules+=("$u")
+  done < <(_canonical_status_get_used_excludes)
+
+  local list_prefix=""
+  local partial="$cur_val"
+  local -a inline_selected=()
+  if [[ "$cur_val" == *,* ]]; then
+    list_prefix="${cur_val%,*},"
+    partial="${cur_val##*,}"
+    IFS=',' read -r -a inline_selected <<< "${cur_val%,*}"
+    for u in "${inline_selected[@]}"; do
+      u="${u%/}"
+      [[ -n "$u" ]] && used_rules+=("$u")
+    done
+  fi
+
+  # 3. 이미 제외 규칙(정확히 일치 또는 와일드카드 패턴)에 매칭된 디렉토리는 후보에서 제외
+  local -a filtered_subdirs=()
+  local sub rule is_matched
+  for sub in "${all_subdirs[@]}"; do
+    is_matched=0
+    for rule in "${used_rules[@]}"; do
+      # shellcheck disable=SC2053
+      if [[ "$sub" == "$rule" || "$sub" == $rule ]]; then
+        is_matched=1
+        break
+      fi
+    done
+    (( is_matched == 0 )) && filtered_subdirs+=("$sub")
+  done
+
+  # 4. pattern 모드에서 사용자가 와일드카드(*)가 포함된 패턴을 입력 중인 경우 처리
+  if [[ "$mode" == "pattern" && "$partial" == *\* ]]; then
+    # 예: abc*, *abc* 등 끝이 *로 끝나는 패턴을 입력하고 Tab을 누른 경우 해당 패턴을 확정하도록 반환
+    if [[ "$partial" != "*" ]]; then
+      COMPREPLY+=("${opt_prefix}${list_prefix}${partial}")
+      return 0
+    fi
+  fi
+
+  # pattern 모드에서 *abc (앞에 *가 있고 뒤에는 문자열을 입력 중)인 경우:
+  # 남은 하위 디렉토리 중 해당 패턴(*partial*)에 매칭되는 접미사(*subdir_suffix) 또는 패턴 후보 생성
+  if [[ "$mode" == "pattern" && "$partial" == \** && "$partial" != *\* ]]; then
+    local stem="${partial#\*}"
+    local -a wildcard_candidates=("${partial}" "${partial}*")
+    for sub in "${filtered_subdirs[@]}"; do
+      if [[ "$sub" == *"${stem}"* ]]; then
+        wildcard_candidates+=("*${sub#"${sub%%"${stem}"*}"}")
+      fi
+    done
+    local candidate
+    while IFS= read -r candidate; do
+      [[ -n "$candidate" ]] && COMPREPLY+=("${opt_prefix}${list_prefix}${candidate}")
+    done < <(compgen -W "${wildcard_candidates[*]}" -- "$partial")
+    return 0
+  fi
+
+  # 5. 일반 접두사(또는 빈 값) 입력 시: 남은 하위 디렉토리 목록 제안
+  local candidate
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] && COMPREPLY+=("${opt_prefix}${list_prefix}${candidate}")
+  done < <(compgen -W "${filtered_subdirs[*]}" -- "$partial")
+}
+
+##
+# canonical-status 스크립트의 자동완성(Auto-completion)을 지원하는 함수입니다.
+##
+_canonical_status_completion() {
+  local cur prev
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]:-}"
+  prev="${COMP_WORDS[COMP_CWORD-1]:-}"
+
+  local -a single_opts=("--target-dir" "--help")
+  local -a multi_opts=("--exclude-dir" "--exclude-dir-pattern")
+
+  # 1. --옵션=값 형태 처리
+  case "$cur" in
+    --target-dir=*)
+      local dir_part="${cur#--target-dir=}"
+      local candidate
+      compopt -o nospace 2>/dev/null || true
+      while IFS= read -r candidate; do
+        [[ -n "$candidate" ]] && COMPREPLY+=("--target-dir=${candidate%/}/")
+      done < <(compgen -d -- "$dir_part")
+      return 0
+      ;;
+    --exclude-dir=*)
+      _canonical_status_complete_exclude_targets "${cur#--exclude-dir=}" "--exclude-dir=" "exact"
+      return 0
+      ;;
+    --exclude-dir-pattern=*)
+      _canonical_status_complete_exclude_targets "${cur#--exclude-dir-pattern=}" "--exclude-dir-pattern=" "pattern"
+      return 0
+      ;;
+  esac
+
+  # 2. 직전 토큰이 --target-dir 인 경우 디렉토리 자동완성
+  if [[ "$prev" == "--target-dir" ]]; then
+    compopt -o dirnames 2>/dev/null || true
+    COMPREPLY=( $(compgen -d -- "${cur}") )
+    return 0
+  fi
+
+  # 3. 현재 커서가 --exclude-dir 또는 --exclude-dir-pattern 인자 구간인지 확인 (공백으로 여러 개 연속 입력 지원)
+  local active_opt=""
+  local i
+  for (( i=COMP_CWORD-1; i >= 1; i-- )); do
+    if [[ "${COMP_WORDS[i]}" == --* ]]; then
+      active_opt="${COMP_WORDS[i]}"
+      break
+    fi
+  done
+
+  if [[ "$active_opt" == "--exclude-dir" && "$cur" != -* ]]; then
+    _canonical_status_complete_exclude_targets "$cur" "" "exact"
+    return 0
+  fi
+
+  if [[ "$active_opt" == "--exclude-dir-pattern" && "$cur" != -* ]]; then
+    _canonical_status_complete_exclude_targets "$cur" "" "pattern"
+    return 0
+  fi
+
+  # 4. 옵션 자동완성 (단일 옵션은 중복 제외, 다중 옵션은 반복 사용 가능)
+  local -a available_opts=("${multi_opts[@]}")
+  local opt used_token already_used
+  for opt in "${single_opts[@]}"; do
+    already_used=0
+    for (( i=1; i < ${#COMP_WORDS[@]}; i++ )); do
+      (( i == COMP_CWORD )) && continue
+      used_token="${COMP_WORDS[i]%%=*}"
+      if [[ "$used_token" == "$opt" ]]; then
+        already_used=1
+        break
+      fi
+    done
+    (( already_used == 0 )) && available_opts+=("$opt")
+  done
+
+  if [[ -z "${cur}" || "${cur}" == -* ]]; then
+    COMPREPLY=( $(compgen -W "${available_opts[*]}" -- "${cur}") )
+    return 0
+  fi
+}
+
+# 스크립트 파일명과 자동완성 함수 연결
+complete -F _canonical_status_completion canonical-status
+complete -F _canonical_status_completion ./canonical-status
