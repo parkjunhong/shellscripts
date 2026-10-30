@@ -1,0 +1,241 @@
+#!/usr/bin/env bash
+
+# ==============================================================================
+# @author       : parkjunhong77@gmail.com fafanmama@naver.com
+# @title        : convert PEM certificate and key files to a PKCS#12 (.p12) file
+# @description  : PEM 형식의 인증서, 개인키, 체인 파일을 PKCS#12(.p12) 포맷으로 변환
+# @license      : Apache License 2.0
+# @since        : 2018-12-20
+# @installation : scriptctl install --script cert-to-p12
+# ==============================================================================
+
+FILENAME=$(basename "$0")
+
+help(){
+	if [ -n "$1" ];
+	then
+		local indent=10
+		local formatl=" - %-"$indent"s: %s\n"
+		local formatr=" - %"$indent"s: %s\n"
+		echo
+		echo "================================================================================"
+		printf "$formatl" "filename" "$FILENAME"
+		printf "$formatl" "line" "$2"
+		printf "$formatl" "callstack"
+		local idx=1
+		for func in "${FUNCNAME[@]:1}"
+		do
+			printf "$formatr" "["$idx"]" "$func"
+			((idx++))
+		done
+		printf "$formatl" "cause" "$1"
+		echo "================================================================================"
+	fi
+	echo
+	echo "Usage:"
+	echo "  $FILENAME --cert <pem-file> --privkey <pem-key-file> --chain <pem-chain-file> --pkcs12-file <pkcs12-output> --pkcs12-password <pkcs12-password>"
+	echo
+	echo "[Options]"
+	echo "  --cert <file>              : PEM Certification file."
+	echo "  --privkey <file>           : PEM Certification Private Key file."
+	echo "  --chain <file>             : PEM Chain (CA) file."
+	echo "  --pkcs12-file <file>       : PKCS#12 (.p12) output file path."
+	echo "  --pkcs12-password <passwd> : PKCS#12 export password."
+	echo "  --help                     : Show help messages."
+}
+
+# If no parameter.
+if [ $# -lt 1 ];
+then
+	help "No Parameter." "$LINENO"
+	exit 1
+fi
+
+PEM_IN=""
+PEM_INKEY=""
+PEM_CAFILE=""
+P12_FILE=""
+P12_PWD=""
+
+## Read parameters
+while [ -n "$1" ]; do
+	case "$1" in
+		--cert)
+			shift
+			PEM_IN="$1"
+			;;
+		--privkey)
+			shift
+			PEM_INKEY="$1"
+			;;
+		--chain)
+			shift
+			PEM_CAFILE="$1"
+			;;
+		--pkcs12-file)
+			shift
+			P12_FILE="$1"
+			;;
+		--pkcs12-password)
+			shift
+			P12_PWD="$1"
+			;;
+		--help)
+			help
+			exit 0
+			;;
+		*)
+			help "Unsupported option: $1" "$LINENO"
+			exit 1
+			;;
+	esac
+	shift
+done
+
+# print if not empty
+pine(){
+	if [ -n "$2" ];
+	then
+		echo " >>> $1: $2"
+	fi
+}
+
+print_params(){
+	pine "--cert (pem's certificate)" "$PEM_IN"
+	pine "--privkey (pem's private key)" "$PEM_INKEY"
+	pine "--chain (pem's chain)" "$PEM_CAFILE"
+	pine "--pkcs12-file (pkcs12's file)" "$P12_FILE"
+	pine "--pkcs12-password (pkcs12's password)" "$P12_PWD"
+}
+
+# function: validate if $2 is not empty
+# param $1: name
+# param $2: value
+# param $3: 'allow'.
+validate_name(){
+	if [ -z "$2" ];
+	then
+		if [ "$3" != "allow" ];
+		then
+			help "function 'validate not empty'. name: $1, value: $2" "$LINENO"
+			exit 1
+		fi
+	else
+		echo " !!! validated name. name: $1, value: $2"
+	fi
+}
+
+# function: validate if $2 is not a file.
+# param $1: name
+# param $2: value
+validate_file(){
+	if [ -z "$2" ] || [ ! -f "$2" ];
+	then
+		help "function 'validate not file'. name: $1, value: $2" "$LINENO"
+		exit 1
+	else
+		echo " !!! validated file. name: $1, value: $2"
+	fi
+}
+
+# validate certification, key, chain & output parameters
+echo
+echo " >>> validate 'certification.pem'"
+validate_file "Certification" "$PEM_IN"
+
+sleep 0.5
+
+echo
+echo " >>> validate 'certification key.pem'"
+validate_file "Certification Key" "$PEM_INKEY"
+
+sleep 0.5
+
+echo
+echo " >>> validate 'chain file.pem'"
+validate_file "Chain file" "$PEM_CAFILE"
+
+sleep 0.5
+
+echo
+echo " >>> validate 'pkcs12 output file & password'"
+validate_name "PKCS12 File" "$P12_FILE"
+validate_name "PKCS12 Password" "$P12_PWD"
+
+# check already exists
+if [ -e "$P12_FILE" ];
+then
+	echo
+	read -r -p " !!! '$P12_FILE' already EXISTs. DO REMOVE '$P12_FILE' ??? (y/n) " answer
+
+	if [[ "$answer" =~ ^[Yy]$ ]];
+	then
+		echo
+		echo " !!! rm -rf $P12_FILE"
+		rm -rf "$P12_FILE"
+	else
+		echo
+		echo "Check a value of '--pkcs12-file' option."
+		echo
+		print_params
+		exit 1
+	fi
+fi
+
+sleep 0.5
+
+# read a password for 'pem'.
+echo
+read -r -p " !!! Insert a password for 'PEM' file (press Enter if none): " PEM_PASSWD
+echo " >>> validate 'certification password'"
+validate_name "Certification Password" "$PEM_PASSWD" "allow"
+
+sleep 0.5
+
+# look at parameters.
+print_params
+
+echo
+read -r -p " !!! All parameters are right ???? (Y/N) " answer
+
+if [[ ! "$answer" =~ ^[Yy]$ ]]; then
+	help "Canceled by user." "$LINENO"
+	exit 1
+fi
+
+# 'pem' to 'p12'
+echo
+{
+	cmd_args=(
+		openssl pkcs12 -export
+		-out "$P12_FILE"
+		-passout "pass:$P12_PWD"
+		-in "$PEM_IN"
+		-inkey "$PEM_INKEY"
+		-CAfile "$PEM_CAFILE"
+	)
+	if [ -n "$PEM_PASSWD" ]; then
+		cmd_args+=(-passin "pass:$PEM_PASSWD")
+	fi
+	echo " >>> ${cmd_args[*]}"
+	"${cmd_args[@]}"
+} || {
+	exit 1
+}
+
+sleep 0.5
+
+echo
+echo " >>> check *.p12 file."
+if [ -f "$P12_FILE" ]; then
+	ls -l "$P12_FILE"
+else
+	echo
+	echo " !!! FAIL to convert 'pem' to 'p12'"
+	exit 1
+fi
+
+echo
+echo " <<< Completed...."
+
+exit 0

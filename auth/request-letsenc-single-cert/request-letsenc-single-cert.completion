@@ -1,14 +1,10 @@
-# =======================================
+# ==============================================================================
 # @author   : parkjunhong77@gmail.com
-# @title    : create Let's Encrypt certificates for multiple domains.
+# @title    : completion for request-letsenc-single-cert.
 # @license  : Apache License 2.0
 # @since    : 2025-11-28
 # @desc     : support RHEL 7+/8+, Oracle Linux 7+/8+, Ubuntu 18.04+, CentOS 7+, macOS 12+
-# @installation :
-#   1. insert 'source <path>/request-letsenc-single-cert.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/request-letsenc-single-cert.completion' into
-#      /etc/bashrc for all users.
-# =======================================
+# ==============================================================================
 # Global Reserved Variables
 # 1. COMP_WORDS: an array, contains all arguments
 # 2. COMP_CWORD: a index of a cursor
@@ -52,11 +48,11 @@ _create_letsenc_cert_completion() {
   # 값이 필요한 옵션 뒤에서는 옵션이 아니라 값 완성
   # When completing value for options, don't suggest options; for file option, suggest paths
   case "${prev}" in
-    --file|-f)
+    --file)
       COMPREPLY=($(compgen -f -- "${cur}"))
       return 0
       ;;
-    --domains|-ds)
+    --domains)
       # 도메인 리스트는 자유 입력 (쉼표 포함) / free form, no option suggestions
       COMPREPLY=()
       return 0
@@ -69,13 +65,13 @@ _create_letsenc_cert_completion() {
   for word in "${COMP_WORDS[@]:1}";
   do
     case "${word}" in
-      --domains|-ds)
+      --domains)
         candidates="${candidates/--domains/}"
         ;;
-      --file|-f)
+      --file)
         candidates="${candidates/--file/}"
         ;;
-      --help|-h)
+      --help)
         candidates="${candidates/--help/}"
         ;;
     esac
@@ -95,5 +91,5 @@ _create_letsenc_cert_completion() {
 
 # 실제 사용하는 명령 이름에 completion 연결
 # Attach completion to the actual command name
-complete -F _create_letsenc_cert_completion request-letsenc-single-cert.sh
+complete -F _create_letsenc_cert_completion request-letsenc-single-cert ./request-letsenc-single-cert
 

@@ -39,8 +39,8 @@ P12_PWD="CHANGE_ME_P12_PASSWORD"
 # 서비스 리스트 파일 경로 (고정값)
 SERVICES_LIST="/opt/certs/service-list.txt"
 
-# send-certificate.sh 위치 (필요에 맞게 수정)
-CERT_SCRIPT="$(cd "$(dirname "$0")" && pwd)/send-certificate.sh"
+# send-certificate 위치 (필요에 맞게 수정)
+CERT_SCRIPT="send-certificate"
 
 
 print_usage() {
@@ -51,8 +51,8 @@ print_usage() {
   echo "  --no-send              실제로 파일을 전송하지 않음 (로그만 출력)"
   echo "  --no-delete            변환된 인증서 파일들을 삭제하지 않음"
   echo "  --dry-run              --no-send + --no-delete 와 동일"
-  echo "  --target-ca|-tc TYPES  전송할 인증서 유형 지정 (comma separated: pem,sslca,pkcs12,jks)"
-  echo "  -h, --help             이 도움말을 출력"
+  echo "  --target-ca TYPES      전송할 인증서 유형 지정 (comma separated: pem,sslca,pkcs12,jks)"
+  echo "  --help                 이 도움말을 출력"
   echo
   echo "고정값:"
   echo "  WILDCARD_DOMAIN = ${WILDCARD_DOMAIN}"
@@ -79,18 +79,18 @@ while [ -n "$1" ]; do
       NO_SEND=1
       NO_DELETE=1
       ;;
-    --target-ca|-tc)
+    --target-ca)
       shift
       if [ -z "$1" ]; then
         echo
-        echo " ❌❌❌ '--target-ca|-tc' 옵션에 대한 값이 없습니다."
+        echo " ❌❌❌ '--target-ca' 옵션에 대한 값이 없습니다."
         echo "     사용 예) $0 --target-ca pem,sslca,pkcs12,jks"
         echo
         exit 1
       fi
       TARGET_CA_OPT="$1"
       ;;
-    -h|--help)
+    --help)
       print_usage
       exit 0
       ;;

@@ -1,0 +1,68 @@
+# ==============================================================================
+# @author   : parkjunhong77@gmail.com fafanmama@naver.com
+# @title    : completion for cert-to-p12.
+# @license  : Apache License 2.0
+# @since    : 2021-06-12
+# @desc     : support macOS 11.2.3+, Ubuntu 18.04+, CentOS 7+, RHEL 8+, RockyOS 8+
+# ==============================================================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: a index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+#
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+# ==============================================================================
+
+##
+# cert-to-p12 명령어용 Bash 자동완성 함수
+##
+_cert_to_p12_completion() {
+	local cur prev all_opts avail_opts word opt used
+	COMPREPLY=()
+	cur="${COMP_WORDS[COMP_CWORD]}"
+	prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+	all_opts="--cert --privkey --chain --pkcs12-file --pkcs12-password --help"
+
+	case "${prev}" in
+		--cert|--privkey|--chain|--pkcs12-file)
+			compopt -o default 2>/dev/null || true
+			COMPREPLY=( $(compgen -f -- "${cur}") )
+			return 0
+			;;
+		--pkcs12-password)
+			COMPREPLY=()
+			return 0
+			;;
+	esac
+
+	avail_opts=""
+	for opt in ${all_opts}; do
+		used=0
+		for word in "${COMP_WORDS[@]:1}"; do
+			if [[ "${word}" == "${opt}" ]]; then
+				used=1
+				break
+			fi
+		done
+		if [[ ${used} -eq 0 ]]; then
+			avail_opts+=" ${opt}"
+		fi
+	done
+
+	if [[ -z "${cur}" || "${cur}" == -* ]]; then
+		COMPREPLY=( $(compgen -W "${avail_opts}" -- "${cur}") )
+	fi
+	return 0
+}
+
+complete -F _cert_to_p12_completion cert-to-p12 ./cert-to-p12

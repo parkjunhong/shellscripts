@@ -1,16 +1,13 @@
 #!/usr/bin/env bash
 
-# =======================================
-# @author   : parkjunhong77@gmail.com
-# @title    : issue Let's Encrypt wildcard certificate.
-# @license  : Apache License 2.0
-# @since    : 2025-11-28
-# @desc     : support RHEL 7+/8+, Oracle Linux 7+/8+, Ubuntu 18.04+, CentOS 7+, macOS 12+
-# @installation :
-#   1. insert 'source <path>/issue-letsencrypt.sh' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/issue-letsencrypt.sh' into
-#      /etc/bashrc for all users.
-# =======================================
+# ==============================================================================
+# @author       : parkjunhong77@gmail.com
+# @title        : issue Let's Encrypt wildcard certificate via DNS challenge
+# @description  : certbot 수동 DNS 챌린지를 이용하여 루트 및 와일드카드(*.domain) 인증서 발급/갱신
+# @license      : Apache License 2.0
+# @since        : 2025-11-28
+# @installation : scriptctl install --script request-letsenc-wildcard-cert
+# ==============================================================================
 
 FILENAME="$(basename "$0")"
 
@@ -50,22 +47,21 @@ help() {
   echo
   echo "Usage:"
   echo "  $FILENAME --root-domain <domain> --email <email>"
-  echo "  $FILENAME -d <domain> -e <email>"
-  echo "  $FILENAME -h | --help"
+  echo "  $FILENAME --help"
   echo
   echo "Description:"
   echo "  Issue or renew Let's Encrypt wildcard certificate using certbot (manual DNS challenge)."
   echo "  certbot(수동 DNS 인증)을 이용해 Let's Encrypt 와일드카드 인증서를 발급/갱신하는 스크립트입니다."
   echo
   echo "Required options:"
-  echo "  -d, --root-domain <domain>  Root domain (e.g. example.com)"
+  echo "  --root-domain <domain>      Root domain (e.g. example.com)"
   echo "                              루트 도메인 (예: example.com)"
   echo
-  echo "  -e, --email <email>         Contact email for Let's Encrypt (e.g. user@example.com)"
+  echo "  --email <email>             Contact email for Let's Encrypt (e.g. user@example.com)"
   echo "                              Let's Encrypt 계정용 이메일 주소 (예: user@example.com)"
   echo
   echo "Optional options:"
-  echo "  -h, --help                  Show this help and exit."
+  echo "  --help                      Show this help and exit."
   echo "                              이 도움말을 출력하고 종료합니다."
   echo
   echo "Environment:"
@@ -107,7 +103,7 @@ parse_args() {
   while [[ $# -gt 0 ]];
   do
     case "$1" in
-      -d|--root-domain)
+      --root-domain)
         if [[ $# -lt 2 ]];
         then
           help "missing value for option '$1'" "$LINENO"
@@ -116,7 +112,7 @@ parse_args() {
         ROOT_DOMAIN="$2"
         shift 2
         ;;
-      -e|--email)
+      --email)
         if [[ $# -lt 2 ]];
         then
           help "missing value for option '$1'" "$LINENO"
@@ -125,7 +121,7 @@ parse_args() {
         EMAIL="$2"
         shift 2
         ;;
-      -h|--help)
+      --help)
         help "" "$LINENO"
         exit 0
         ;;
@@ -150,13 +146,13 @@ parse_args() {
 check_and_delete(){
   local dir="$LETSENC_ROOT/$1"
 
-  if [ -f $dir ];then
+  if [ -f "$dir" ];then
     echo
     echo "해당 경로는 파일입니다. file=$dir"
     exit 1
   fi  
 
-  if [ ! -d $dir ];then
+  if [ ! -d "$dir" ];then
     echo
     echo "존재하지 않는 경로입니다. dir=$dir"
     return 0
@@ -175,17 +171,17 @@ check_and_delete(){
   echo
   echo "'$dir' 경로를 삭제하기 전에 내용을 확인하기 바랍니다."
   echo
-  ls -al $dir
+  ls -al "$dir"
   echo
   local confirm=""
-  while [ -z $confirm ];
+  while [ -z "$confirm" ];
   do
-    read -p "'$dir' 경로를  삭제하시겠습니까? (y/n) " confirm
-    confirm=$(echo $confirm | tr [:lower:] [:upper:])
+    read -r -p "'$dir' 경로를 삭제하시겠습니까? (y/n) " confirm
+    confirm=$(echo "$confirm" | tr '[:lower:]' '[:upper:]')
   done
   
-  if [ "Y" = $confirm ];then
-    rm -rfv $dir
+  if [ "Y" = "$confirm" ];then
+    rm -rfv "$dir"
   fi  
 }
 
@@ -256,13 +252,13 @@ main() {
 
   if [[ -z "${ROOT_DOMAIN}" ]];
   then
-    help "root domain is required (-d|--root-domain)" "$LINENO"
+    help "root domain is required (--root-domain)" "$LINENO"
     exit 1
   fi
 
   if [[ -z "${EMAIL}" ]];
   then
-    help "email is required (-e|--email)" "$LINENO"
+    help "email is required (--email)" "$LINENO"
     exit 1
   fi
 
