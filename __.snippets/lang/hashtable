@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# =======================================
+# @auther    : parkjunhong77@gmail.com
+# @since     : 2020-02-08
+# @license   : MIT License (https://opensource.org/licenses/MIT)
+# @compatible: bash 4.x or higher
+# @references:
+#  - https://stackoverflow.com/questions/1494178/how-to-define-hash-tables-in-bash
+# =======================================
+
+# declar a hash table.
+echo "declare - A hashtable_name"
+# e.g.
+declare -A members
+
+# set value
+members["pjh"]=18
+members["hgd"]=18
+
+# get value
+echo "pjh's age: ${members['pjh']}"
+
+# get keys
+names=(${!members[@]})
+
+# Provide a value
+# @param $1 {string}: a variable  of hash table
+# @param $2 {string}: a key of a hash table
+# 
+func_get(){
+  echo $(expr \${$1['$2']})
+}
+
+# Set a value.
+# @param $1 {string}: a variable  of hash table
+# @param $2 {string}: a key of a hash table
+# @param $3 {any}   : a value
+# 
+func_set(){
+  eval "$1['$2']=$3"
+}
+
+# Increament a numeric value.
+# @param $1 {string}: a variable  of hash table
+# @param $2 {string}: a key of a hash table
+func_inc(){
+    if [ -z $(expr \${$1['$2']}) ];
+    then
+        eval "$1['$2']=0"
+    else
+        eval "$1['$2']=\$((\${$1['$2']}+1))"
+    fi
+}
+
+# Decreament a numeric value.
+# @param $1 {string}: a variable  of hash table
+# @param $2 {string}: a key of a hash table
+func_dec(){
+    if [ -z $(expr \${$1['$2']}) ];
+    then
+        eval "$1['$2']=-1"
+    else
+        eval "$1['$2']=\$((\${$1['$2']}-1))"
+    fi
+}
+
+
+# declare a map, key is NAME, value is AGE
+declare -A members
+
+# set value
+members['pjh']=41
+# or
+func_set "pjh" 41
+
+
