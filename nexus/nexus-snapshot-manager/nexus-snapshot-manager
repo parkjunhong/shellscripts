@@ -2,13 +2,10 @@
 
 # =======================================
 # @author   : parkjunhong77@gmail.com
-# @title    : nexus snapshot manager.
+# @title    : nexus-snapshot-manager: Interactive management and retention cleanup of Nexus Maven SNAPSHOT artifacts
 # @license  : Apache License 2.0
 # @since    : 2026-06-01
 # @desc     : support RHEL, Oracle Linux, Ubuntu, RockyOS
-# @installation : 
-#   1. insert 'source <path>/<파일명>" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-#   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/<파일명>' into /etc/bashrc for all users.
 # =======================================
 
 readonly FILENAME=$(basename "$0")
@@ -42,12 +39,11 @@ help(){
     echo "================================================================================"
   fi  
   echo  
-  # TODO: Usage 내용 작성
   echo "사용법: $FILENAME [옵션]"
   echo "옵션:"
-  echo "  -g, --group-id <id>      Nexus Group ID (콤마로 다중 입력 가능)"
-  echo "  -a, --artifact-id <id>   Nexus Artifact ID (콤마로 다중 입력 가능)"
-  echo "  -h, --help               도움말 출력"
+  echo "  --group-id <id>          Nexus Group ID (콤마로 다중 입력 가능)"
+  echo "  --artifact-id <id>       Nexus Artifact ID (콤마로 다중 입력 가능)"
+  echo "  --help                   도움말 출력"
   echo
   echo "💡 파라미터 없이 실행 시 대화형 모드(Interactive Mode)로 진입합니다."
   echo "🚨 참고 1: 실행 중 Ctrl + C를 누르면 즉시 스크립트가 강제 종료됩니다."
@@ -222,23 +218,23 @@ cleanup_old_logs "$LOG_DIR"
 # 1. 의존성 및 변수 검증
 ensure_jq
 
-if [ -z "$NEXUS_URL" ] || [ -z "$NEXUS_REPO" ] || [ -z "$NEXUS_USER" ] || [ -z "$NEXUS_PASS" ]; then
-  help "필수 환경 변수(NEXUS_URL, NEXUS_REPO, NEXUS_USER, NEXUS_PASS)가 설정되지 않았습니다." "$LINENO"
-  exit 1
-fi
-
 GROUP_ID=""
 ARTIFACT_ID=""
 
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
-    -g|--group-id) GROUP_ID="$2"; shift ;;
-    -a|--artifact-id) ARTIFACT_ID="$2"; shift ;;
-    -h|--help) help; exit 0 ;;
+    --group-id) GROUP_ID="$2"; shift ;;
+    --artifact-id) ARTIFACT_ID="$2"; shift ;;
+    --help) help; exit 0 ;;
     *) help "알 수 없는 파라미터입니다: $1" "$LINENO"; exit 1 ;;
   esac
   shift
 done
+
+if [ -z "$NEXUS_URL" ] || [ -z "$NEXUS_REPO" ] || [ -z "$NEXUS_USER" ] || [ -z "$NEXUS_PASS" ]; then
+  help "필수 환경 변수(NEXUS_URL, NEXUS_REPO, NEXUS_USER, NEXUS_PASS)가 설정되지 않았습니다." "$LINENO"
+  exit 1
+fi
 
 if [ -z "$GROUP_ID" ] && [ ! -z "$ARTIFACT_ID" ]; then
   help "Group ID가 입력되지 않은 경우 Artifact ID는 사용할 수 없습니다." "$LINENO"

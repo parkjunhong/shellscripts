@@ -1,12 +1,9 @@
 # =======================================
 # @author : parkjunhong77@gmail.com
-# @title : search files.
-# @license : Apache License 2.0
-# @since : 2026-08-14
-# @desc : support RHEL 7/8/9, Oracle Linux 7/8/9, Ubuntu 18.04/20.04/22.04/24.04, RockyOS 8/9, CentOS 7/8
-# @installation : 
-# 1. insert 'source <path>/<파일명>' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/<파일명>' into /etc/bashrc for all users.
+# @title  : Bash completion for 'nexus-maven-import'
+# @license: Apache License 2.0
+# @since  : 2026-08-14
+# @desc   : support RHEL 7/8/9, Oracle Linux 7/8/9, Ubuntu 18.04/20.04/22.04/24.04, RockyOS 8/9, CentOS 7/8
 # =======================================
 
 # =======================================
@@ -26,20 +23,20 @@
 # - $2: arg4
 # - $3: arg3
 
-_nexus_maven_export_completion() {
+_nexus_maven_import_completion() {
   local cur prev opts
   COMPREPLY=()
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  # 지원 가능한 전체 옵션 목록 (숏 옵션 완전히 제외)
-  opts="--url --user --output --repository --insecure --verbose --help"
+  # 지원 가능한 전체 롱 옵션 목록 (숏 옵션 제외)
+  opts="--url --user --input --repository-map --path-prefix --limit --dry-run --force --no-verify --include-checksum-assets --insecure --verbose --help"
 
-  # 반복 가능 옵션 목록
-  local repeatable_opts="--repository"
+  # 반복 사용 가능한 옵션 목록
+  local repeatable_opts="--repository-map"
   local unused_opts=""
 
-  # 이미 사용된 옵션 제외 처리 (단, 반복 가능 옵션은 유지)
+  # 이미 사용된 옵션 제외 처리 (단, 반복 가능 옵션은 제외)
   for opt in $opts; do
     local used=0
     if [[ " $repeatable_opts " != *"$opt"* ]]; then
@@ -55,16 +52,16 @@ _nexus_maven_export_completion() {
     fi
   done
 
-  # 이전 파라미터($prev)에 따른 자동완성 지원
+  # 이전 파라미터($prev)에 따른 자동완성 처리
   case "$prev" in
-    --output)
+    --input)
       # 디렉터리 경로 자동완성 추천 -> compgen -d 사용
       local dirs
       dirs="$(compgen -d -- "$cur")"
       COMPREPLY=($dirs)
       return 0
       ;;
-    --url|--user|--repository)
+    --url|--user|--repository-map|--path-prefix|--limit)
       # 사용자 직접 입력 항목은 기본 처리
       return 0
       ;;
@@ -77,4 +74,4 @@ _nexus_maven_export_completion() {
   return 0
 }
 
-complete -F _nexus_maven_export_completion nexus-maven-export.sh
+complete -F _nexus_maven_import_completion nexus-maven-import

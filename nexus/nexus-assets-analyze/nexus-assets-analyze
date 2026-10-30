@@ -2,13 +2,10 @@
 
 # =======================================
 # @author : parkjunhong77@gmail.com
-# @title : search files.
-# @license : Apache License 2.0
-# @since : 2026-08-12
-# @desc : support RHEL 8/9, Oracle Linux 8/9, Ubuntu 20.04/22.04/24.04, RockyOS 8/9, CentOS 7/8
-# @installation : 
-# 1. insert 'source <path>/<파일명>' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
-# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/<파일명>' into /etc/bashrc for all users.
+# @title  : nexus-assets-analyze: Analyze assets distribution, disk usage and file types in Sonatype Nexus repositories
+# @license: Apache License 2.0
+# @since  : 2026-08-12
+# @desc   : support RHEL 8/9, Oracle Linux 8/9, Ubuntu 20.04/22.04/24.04, RockyOS 8/9, CentOS 7/8
 # =======================================
 
 set -Eeuo pipefail
@@ -58,7 +55,7 @@ help(){
   echo "  --url URL         Nexus 서버 URL (기본값: http://localhost:8080)"
   echo "  --user USER       Nexus 사용자 ID (기본값: admin)"
   echo "  --pass PASS       Nexus 비밀번호"
-  echo "  --repo REPO       분석할 저장소명 (다중 지정 가능, 예: -r repo1 -r repo2)"
+  echo "  --repo REPO       분석할 저장소명 (다중 지정 가능, 예: --repo repo1 --repo repo2)"
   echo "  --output DIR      결과 저장 디렉터리 (기본값: ./nexus-analysis)"
   echo "  --help            도움말 출력"
   echo
@@ -292,7 +289,7 @@ main() {
   fi
 
   if [[ -z "${NEXUS_PASSWORD}" ]]; then
-    echo "ERROR: NEXUS_PASSWORD가 설정되지 않았습니다. (-p 옵션 또는 환경변수 설정 필수)" >&2
+    echo "ERROR: NEXUS_PASSWORD가 설정되지 않았습니다. (--pass 옵션 또는 환경변수 설정 필수)" >&2
     help "Missing NEXUS_PASSWORD" "${LINENO}"
     exit 1
   fi

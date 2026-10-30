@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : Bash completion for 'nexus-snapshot-manager'
+# @license  : Apache License 2.0
+# @since    : 2026-06-01
+# @desc     : support RHEL, Oracle Linux, Ubuntu, RockyOS
+# =======================================
+
+# Bash Completion Parameter Description
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: an index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+
+_nexus_snapshot_manager_completion() {
+  local cur prev opts
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  # 사용 가능한 옵션 목록 (Long Option 전용)
+  opts="--group-id --artifact-id --help"
+
+  # 이미 입력된 옵션을 찾아 제안에서 제외
+  local unused_opts=""
+  for opt in $opts; do
+    local used=0
+    for word in "${COMP_WORDS[@]}"; do
+      if [[ "$word" == "$opt" ]]; then
+        used=1
+        break
+      fi
+    done
+    if [ $used -eq 0 ]; then
+      unused_opts="$unused_opts $opt"
+    fi
+  done
+
+  case "${prev}" in
+    --group-id|--artifact-id)
+      # 일반 값 입력이므로 완성 후보 없음
+      COMPREPLY=()
+      return 0
+      ;;
+    *)
+      ;;
+  esac
+
+  COMPREPLY=( $(compgen -W "${unused_opts}" -- "${cur}") )
+  return 0
+}
+
+complete -F _nexus_snapshot_manager_completion nexus-snapshot-manager
