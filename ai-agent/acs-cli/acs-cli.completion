@@ -27,11 +27,47 @@
 # =======================================
 
 ##
-# 현재 커맨드 라인에 지정된 '--home' 값 또는 환경변수 AI_AGENT_CUSTOMIZATION_HOME을 반환합니다.
+# 현재 커맨드 라인에 지정된 '--agent' 값을 확인하여 정규화된 에이전트 이름(antigravity | claud | codex)을 반환합니다.
+# '--agent'가 생략된 경우 기본값 'antigravity'를 반환합니다.
 #
-# @return 유효한 루트 디렉토리 경로 출력 (미설정 시 빈 문자열)
+# @return 정규화된 에이전트 디렉토리명 (antigravity | claud | codex), 유효하지 않은 값이면 빈 문자열
 ##
-_acs_cli_get_home() {
+_acs_cli_get_agent() {
+  local raw_agent="antigravity"
+  local i tok
+  for (( i=1; i < ${#COMP_WORDS[@]}; i++ )); do
+    (( i != COMP_CWORD )) || continue
+    tok="${COMP_WORDS[i]}"
+    if [[ "$tok" == "--agent" && $((i + 1)) -lt ${#COMP_WORDS[@]} ]]; then
+      raw_agent="${COMP_WORDS[i+1]}"
+    elif [[ "$tok" == --agent=* ]]; then
+      raw_agent="${tok#--agent=}"
+    fi
+  done
+
+  case "$raw_agent" in
+    ""|antigravity|agy)
+      printf "antigravity\n"
+      ;;
+    claud)
+      printf "claud\n"
+      ;;
+    codex)
+      printf "codex\n"
+      ;;
+    *)
+      printf "\n"
+      ;;
+  esac
+}
+
+##
+# 현재 커맨드 라인에 지정된 '--home' 값 또는 환경변수 AI_AGENT_CUSTOMIZATION_HOME에
+# 에이전트 하위 경로(${acs_home}/${agent})를 결합하여 반환합니다.
+#
+# @return 유효한 에이전트 루트 디렉토리 경로 출력 (미설정 시 빈 문자열)
+##
+_acs_cli_get_agent_home() {
   local cli_home=""
   local i tok
   for (( i=1; i < ${#COMP_WORDS[@]}; i++ )); do
@@ -44,11 +80,56 @@ _acs_cli_get_home() {
     fi
   done
 
+  local base_home=""
   if [[ -n "$cli_home" ]]; then
-    printf "%s\n" "${cli_home%/}"
+    base_home="${cli_home%/}"
   elif [[ -n "${AI_AGENT_CUSTOMIZATION_HOME:-}" ]]; then
-    printf "%s\n" "${AI_AGENT_CUSTOMIZATION_HOME%/}"
+    base_home="${AI_AGENT_CUSTOMIZATION_HOME%/}"
   fi
+
+  local agent
+  agent="$(_acs_cli_get_agent)"
+  if [[ -n "$base_home" && -n "$agent" ]]; then
+    printf "%s/%s\n" "$base_home" "$agent"
+  fi
+}
+
+##
+# 에이전트별 스킬 하위 상대 경로를 반환합니다.
+#
+# @param $1 {string} 정규화된 에이전트 이름 (antigravity | claud | codex)
+#
+# @return .agents/skills | .claude/skills
+##
+_acs_cli_get_skills_subpath() {
+  local agent="$1"
+  if [[ "$agent" == "claud" ]]; then
+    printf ".claude/skills\n"
+  else
+    printf ".agents/skills\n"
+  fi
+}
+
+##
+# 에이전트별 규칙 하위 상대 경로를 반환합니다.
+#
+# @param $1 {string} 정규화된 에이전트 이름 (antigravity | claud | codex)
+#
+# @return .agents/rules | .claude/rules | "" (codex)
+##
+_acs_cli_get_rules_subpath() {
+  local agent="$1"
+  case "$agent" in
+    antigravity)
+      printf ".agents/rules\n"
+      ;;
+    claud)
+      printf ".claude/rules\n"
+      ;;
+    codex)
+      printf "\n"
+      ;;
+  esac
 }
 
 ##
@@ -60,16 +141,16 @@ _acs_cli_get_home() {
 ##
 _acs_cli_get_categories() {
   local target="${1:-all}"
-  local acs_home
-  acs_home="$(_acs_cli_get_home)"
-  [[ -n "$acs_home" && -d "$acs_home" ]] || return 0
+  local agent_home
+  agent_home="$(_acs_cli_get_agent_home)"
+  [[ -n "$agent_home" && -d "$agent_home" ]] || return 0
 
   local -a cats=()
   local dir bname
 
   if [[ "$target" == "skill" || "$target" == "all" ]]; then
-    if [[ -d "${acs_home}/skills" ]]; then
-      for dir in "${acs_home}/skills"/*; do
+    if [[ -d "${agent_home}/skills" ]]; then
+      for dir in "${agent_home}/skills"/*; do
         [[ -d "$dir" ]] || continue
         bname="$(basename "$dir")"
         cats+=("${bname#skill-}")
@@ -78,8 +159,8 @@ _acs_cli_get_categories() {
   fi
 
   if [[ "$target" == "rule" || "$target" == "all" ]]; then
-    if [[ -d "${acs_home}/rules" ]]; then
-      for dir in "${acs_home}/rules"/*; do
+    if [[ -d "${agent_home}/rules" ]]; then
+      for dir in "${agent_home}/rules"/*; do
         [[ -d "$dir" ]] || continue
         bname="$(basename "$dir")"
         cats+=("${bname#rule-}")
@@ -103,18 +184,22 @@ _acs_cli_get_categories() {
 _acs_cli_get_names_in_category() {
   local target="$1"
   local category="$2"
-  local acs_home
-  acs_home="$(_acs_cli_get_home)"
-  [[ -n "$acs_home" && -d "$acs_home" && -n "$category" ]] || return 0
+  local agent
+  agent="$(_acs_cli_get_agent)"
+  local agent_home
+  agent_home="$(_acs_cli_get_agent_home)"
+  [[ -n "$agent" && -n "$agent_home" && -d "$agent_home" && -n "$category" ]] || return 0
 
   local -a names=()
   local entry bname
 
   if [[ "$target" == "skill" ]]; then
+    local skills_subpath
+    skills_subpath="$(_acs_cli_get_skills_subpath "$agent")"
     local logical_cat="${category#skill-}"
-    local skills_dir="${acs_home}/skills/skill-${logical_cat}/.agents/skills"
-    if [[ ! -d "$skills_dir" && -d "${acs_home}/skills/${logical_cat}/.agents/skills" ]]; then
-      skills_dir="${acs_home}/skills/${logical_cat}/.agents/skills"
+    local skills_dir="${agent_home}/skills/skill-${logical_cat}/${skills_subpath}"
+    if [[ ! -d "$skills_dir" && -d "${agent_home}/skills/${logical_cat}/${skills_subpath}" ]]; then
+      skills_dir="${agent_home}/skills/${logical_cat}/${skills_subpath}"
     fi
     if [[ -d "$skills_dir" ]]; then
       for entry in "${skills_dir}"/*; do
@@ -124,20 +209,33 @@ _acs_cli_get_names_in_category() {
     fi
   elif [[ "$target" == "rule" ]]; then
     local logical_cat="${category#rule-}"
-    local rules_dir="${acs_home}/rules/rule-${logical_cat}/.agents/rules"
-    if [[ ! -d "$rules_dir" && -d "${acs_home}/rules/${logical_cat}/.agents/rules" ]]; then
-      rules_dir="${acs_home}/rules/${logical_cat}/.agents/rules"
+    local cat_dir="${agent_home}/rules/rule-${logical_cat}"
+    if [[ ! -d "$cat_dir" && -d "${agent_home}/rules/${logical_cat}" ]]; then
+      cat_dir="${agent_home}/rules/${logical_cat}"
     fi
-    if [[ -d "$rules_dir" ]]; then
-      for entry in "${rules_dir}"/*; do
-        [[ -e "$entry" || -L "$entry" ]] || continue
-        bname="$(basename "$entry")"
-        if [[ "$bname" == *.md ]]; then
-          names+=("${bname%.md}")
-        elif [[ "$bname" == *.MD ]]; then
-          names+=("${bname%.MD}")
-        fi
-      done
+
+    if [[ "$agent" == "codex" ]]; then
+      if [[ -d "$cat_dir" ]]; then
+        for entry in "${cat_dir}"/*; do
+          [[ -d "$entry" || -L "$entry" ]] || continue
+          names+=("$(basename "$entry")")
+        done
+      fi
+    else
+      local rules_subpath
+      rules_subpath="$(_acs_cli_get_rules_subpath "$agent")"
+      local rules_dir="${cat_dir}/${rules_subpath}"
+      if [[ -d "$rules_dir" ]]; then
+        for entry in "${rules_dir}"/*; do
+          [[ -e "$entry" || -L "$entry" ]] || continue
+          bname="$(basename "$entry")"
+          if [[ "$bname" == *.md ]]; then
+            names+=("${bname%.md}")
+          elif [[ "$bname" == *.MD ]]; then
+            names+=("${bname%.MD}")
+          fi
+        done
+      fi
     fi
   fi
 
@@ -215,58 +313,80 @@ _acs_cli_complete_add_name() {
   local cur_val="$3"
   local prefix="${4:-}"
 
-  local acs_home
-  acs_home="$(_acs_cli_get_home)"
-  [[ -n "$acs_home" && -d "$acs_home" ]] || return 0
+  local agent
+  agent="$(_acs_cli_get_agent)"
+  local agent_home
+  agent_home="$(_acs_cli_get_agent_home)"
+  [[ -n "$agent" && -n "$agent_home" && -d "$agent_home" ]] || return 0
 
   local -a short_keys=()
   local -a full_paths=()
   local cat_dir dir_bname src_logical_cat entry bname rule_name
 
   if [[ "$target" == "skill" ]]; then
+    local skills_subpath
+    skills_subpath="$(_acs_cli_get_skills_subpath "$agent")"
     local exclude_logical="${exclude_cat#skill-}"
-    local skills_root="${acs_home}/skills"
+    local skills_root="${agent_home}/skills"
     if [[ -d "$skills_root" ]]; then
       for cat_dir in "${skills_root}"/*; do
         [[ -d "$cat_dir" ]] || continue
         dir_bname="$(basename "$cat_dir")"
         src_logical_cat="${dir_bname#skill-}"
         [[ "$src_logical_cat" != "$exclude_logical" ]] || continue
-        [[ -d "${cat_dir}/.agents/skills" ]] || continue
+        [[ -d "${cat_dir}/${skills_subpath}" ]] || continue
 
-        for entry in "${cat_dir}/.agents/skills"/*; do
+        for entry in "${cat_dir}/${skills_subpath}"/*; do
           [[ -e "$entry" || -L "$entry" ]] || continue
           bname="$(basename "$entry")"
           short_keys+=("${src_logical_cat}/${bname}")
-          full_paths+=("${cat_dir}/.agents/skills/${bname}")
+          full_paths+=("${cat_dir}/${skills_subpath}/${bname}")
         done
       done
     fi
   elif [[ "$target" == "rule" ]]; then
     local exclude_logical="${exclude_cat#rule-}"
-    local rules_root="${acs_home}/rules"
+    local rules_root="${agent_home}/rules"
     if [[ -d "$rules_root" ]]; then
-      for cat_dir in "${rules_root}"/*; do
-        [[ -d "$cat_dir" ]] || continue
-        dir_bname="$(basename "$cat_dir")"
-        src_logical_cat="${dir_bname#rule-}"
-        [[ "$src_logical_cat" != "$exclude_logical" ]] || continue
-        [[ -d "${cat_dir}/.agents/rules" ]] || continue
+      if [[ "$agent" == "codex" ]]; then
+        for cat_dir in "${rules_root}"/*; do
+          [[ -d "$cat_dir" ]] || continue
+          dir_bname="$(basename "$cat_dir")"
+          src_logical_cat="${dir_bname#rule-}"
+          [[ "$src_logical_cat" != "$exclude_logical" ]] || continue
 
-        for entry in "${cat_dir}/.agents/rules"/*; do
-          [[ -e "$entry" || -L "$entry" ]] || continue
-          bname="$(basename "$entry")"
-          if [[ "$bname" == *.md ]]; then
-            rule_name="${bname%.md}"
-          elif [[ "$bname" == *.MD ]]; then
-            rule_name="${bname%.MD}"
-          else
-            continue
-          fi
-          short_keys+=("${src_logical_cat}/${rule_name}")
-          full_paths+=("${cat_dir}/.agents/rules/${bname}")
+          for entry in "${cat_dir}"/*; do
+            [[ -d "$entry" || -L "$entry" ]] || continue
+            bname="$(basename "$entry")"
+            short_keys+=("${src_logical_cat}/${bname}")
+            full_paths+=("${cat_dir}/${bname}")
+          done
         done
-      done
+      else
+        local rules_subpath
+        rules_subpath="$(_acs_cli_get_rules_subpath "$agent")"
+        for cat_dir in "${rules_root}"/*; do
+          [[ -d "$cat_dir" ]] || continue
+          dir_bname="$(basename "$cat_dir")"
+          src_logical_cat="${dir_bname#rule-}"
+          [[ "$src_logical_cat" != "$exclude_logical" ]] || continue
+          [[ -d "${cat_dir}/${rules_subpath}" ]] || continue
+
+          for entry in "${cat_dir}/${rules_subpath}"/*; do
+            [[ -e "$entry" || -L "$entry" ]] || continue
+            bname="$(basename "$entry")"
+            if [[ "$bname" == *.md ]]; then
+              rule_name="${bname%.md}"
+            elif [[ "$bname" == *.MD ]]; then
+              rule_name="${bname%.MD}"
+            else
+              continue
+            fi
+            short_keys+=("${src_logical_cat}/${rule_name}")
+            full_paths+=("${cat_dir}/${rules_subpath}/${bname}")
+          done
+        done
+      fi
     fi
   fi
 
@@ -339,6 +459,20 @@ _acs_cli_complete_dir() {
 ##
 # acs-cli 명령어에 대한 단계별(Sequential State Machine) Bash 자동 완성 처리 함수
 #
+# 추천 순서:
+#   acs-cli <TAB>
+#     --agent <TAB>
+#       [agy|antigravity|claud|codex]
+#         [add|create|list|remove] <TAB>
+#           [skill|rule] <TAB>
+#             --category <TAB>
+#               {카테고리} <TAB>
+#                 --name <TAB>
+#                   {이름} <TAB>
+#                     --force <TAB 지원 끝>
+#             --help <TAB 지원 끝>
+# (단, 사용자가 '--agent'를 생략하고 바로 add/create/list/remove를 입력한 경우에도 기본값 antigravity로 하위 자동완성 지원)
+#
 # @param $1 {string} 명령어 이름 (Command name)
 # @param $2 {string} 현재 커서에서 완성 중인 단어 (Current word)
 # @param $3 {string} 직전 단어 (Previous word)
@@ -351,27 +485,96 @@ _acs_cli_completion() {
   cur="${COMP_WORDS[COMP_CWORD]:-}"
   prev="${COMP_WORDS[COMP_CWORD-1]:-}"
 
-  # 1단계: acs-cli <TAB> -> 서브커맨드 제안
-  if (( COMP_CWORD == 1 )); then
-    local -a subcommands=("add" "create" "list" "remove")
-    if [[ "$cur" == -* ]]; then
-      COMPREPLY=( $(compgen -W "--help" -- "$cur") )
-    else
-      COMPREPLY=( $(compgen -W "${subcommands[*]}" -- "$cur") )
-    fi
+  local -a agents=("agy" "antigravity" "claud" "codex")
+  local -a subcommands=("add" "create" "list" "remove")
+
+  # '--agent' 값 완성 (직전 단어가 --agent 이거나 현재 단어가 --agent=* 인 경우)
+  if [[ "$prev" == "--agent" ]]; then
+    COMPREPLY=( $(compgen -W "${agents[*]}" -- "$cur") )
+    return 0
+  fi
+  if [[ "$cur" == --agent=* ]]; then
+    local agent_part="${cur#--agent=}"
+    local a_cand
+    while IFS= read -r a_cand; do
+      [[ -n "$a_cand" ]] && COMPREPLY+=("--agent=${a_cand}")
+    done < <(compgen -W "${agents[*]}" -- "$agent_part")
     return 0
   fi
 
-  local subcmd="${COMP_WORDS[1]:-}"
-  case "$subcmd" in
-    add|create|list|remove)
-      ;;
-    *)
-      return 0
-      ;;
-  esac
+  # COMP_CWORD 이전 토큰들에서 전역 '--agent' 및 서브커맨드(add|create|list|remove) 위치 탐색
+  local has_agent="false"
+  local agent_val="antigravity"
+  local subcmd=""
+  local subcmd_idx=0
+  local has_help="false"
 
-  # 현재 커맨드 라인(COMP_CWORD 이전 토큰들) 상태 스캔
+  local i tok
+  for (( i=1; i < COMP_CWORD; i++ )); do
+    tok="${COMP_WORDS[i]}"
+    case "$tok" in
+      --help)
+        has_help="true"
+        ;;
+      --agent)
+        has_agent="true"
+        if (( i + 1 < COMP_CWORD )); then
+          agent_val="${COMP_WORDS[i+1]}"
+          ((i++)) || true
+        fi
+        ;;
+      --agent=*)
+        has_agent="true"
+        agent_val="${tok#--agent=}"
+        ;;
+      add|create|list|remove)
+        if [[ -z "$subcmd" ]]; then
+          subcmd="$tok"
+          subcmd_idx=$i
+          break
+        fi
+        ;;
+    esac
+  done
+
+  if [[ "$has_help" == "true" ]]; then
+    return 0
+  fi
+
+  # 아직 서브커맨드(add|create|list|remove)가 입력되지 않은 단계
+  if [[ -z "$subcmd" ]]; then
+    if [[ "$has_agent" == "false" ]]; then
+      # 1단계: acs-cli <TAB> -> 맨 앞에 위치한 '--agent'를 우선 제안
+      # (단, 사용자가 '--agent' 없이 바로 명령어 알파벳을 타이핑 중인 경우에는 서브커맨드 완성 지원)
+      if [[ -z "$cur" ]]; then
+        COMPREPLY=( "--agent" )
+      elif [[ "$cur" == --h* ]]; then
+        COMPREPLY=( $(compgen -W "--help" -- "$cur") )
+      elif [[ "$cur" == -* ]]; then
+        COMPREPLY=( $(compgen -W "--agent" -- "$cur") )
+      else
+        COMPREPLY=( $(compgen -W "${subcommands[*]}" -- "$cur") )
+      fi
+      return 0
+    else
+      # 2단계: acs-cli --agent <agent> <TAB> -> 서브커맨드(add|create|list|remove) 제안
+      case "$agent_val" in
+        agy|antigravity|claud|codex)
+          ;;
+        *)
+          return 0
+          ;;
+      esac
+      if [[ "$cur" == -* ]]; then
+        COMPREPLY=( $(compgen -W "--help" -- "$cur") )
+      else
+        COMPREPLY=( $(compgen -W "${subcommands[*]}" -- "$cur") )
+      fi
+      return 0
+    fi
+  fi
+
+  # 서브커맨드 이후의 토큰들(subcmd_idx + 1 .. COMP_CWORD - 1) 상태 스캔
   local active_target=""
   local has_category="false"
   local category_val=""
@@ -379,10 +582,8 @@ _acs_cli_completion() {
   local name_val=""
   local has_home="false"
   local has_force="false"
-  local has_help="false"
 
-  local i tok
-  for (( i=2; i < COMP_CWORD; i++ )); do
+  for (( i = subcmd_idx + 1; i < COMP_CWORD; i++ )); do
     tok="${COMP_WORDS[i]}"
     case "$tok" in
       skill|rule)
@@ -393,6 +594,13 @@ _acs_cli_completion() {
         ;;
       --force)
         has_force="true"
+        ;;
+      --agent)
+        has_agent="true"
+        ((i++)) || true
+        ;;
+      --agent=*)
+        has_agent="true"
         ;;
       --home)
         has_home="true"
@@ -431,7 +639,7 @@ _acs_cli_completion() {
     return 0
   fi
 
-  # 2단계: acs-cli <subcmd> <TAB> (아직 skill|rule이 선택되지 않은 상태)
+  # 3단계: acs-cli [--agent <agent>] <subcmd> <TAB> (아직 skill|rule이 선택되지 않은 상태)
   if [[ -z "$active_target" ]]; then
     COMPREPLY=( $(compgen -W "skill rule --help" -- "$cur") )
     return 0
@@ -500,7 +708,7 @@ _acs_cli_completion() {
       ;;
   esac
 
-  # 3단계 이후: 순차적 옵션 제안 (Step-by-Step)
+  # 4단계 이후: 순차적 옵션 제안 (Step-by-Step)
   local -a next_opts=()
 
   # (1) 아직 --category가 입력되지 않은 경우: --category, --help 제안
