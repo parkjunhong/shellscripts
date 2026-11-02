@@ -158,20 +158,25 @@ EOF
       cat <<EOF
 
 ✏️  사용법 (Usage - edit):
+  $FILENAME edit skill --file <스킬명> [--agent <antigravity|agy|codex|claude>] [--home <경로>]
+  $FILENAME edit rule  --file <규칙명> [--agent <antigravity|agy|codex|claude>] [--home <경로>]
   $FILENAME edit skill --category <카테고리> --name <이름> [--agent <antigravity|agy|codex|claude>] [--home <경로>]
   $FILENAME edit rule  --category <카테고리> --name <이름> [--agent <antigravity|agy|codex|claude>] [--home <경로>]
   $FILENAME edit --help
 
 📝 설명 (Description):
-  지정된 AI Agent(--agent, 기본값: antigravity)의 카테고리에 존재하는 스킬(SKILL.md) 또는 규칙(<NAME>.md / AGENTS.md) 파일을
+  지정된 AI Agent(--agent, 기본값: antigravity)에 존재하는 스킬(SKILL.md) 또는 규칙(<NAME>.md / AGENTS.md) 파일을
   'vim' 편집기로 열어 편집합니다.
+  - 하나의 에이전트 내에서 스킬 이름은 고유하므로, '--category' 없이 '--file <스킬명>'만으로 대상을 즉시 찾아 편집할 수 있습니다.
+  - '--category <카테고리> --name <이름>' 조합도 지원합니다.
   - '--agent' 옵션은 명령어 앞뒤 어느 위치에서나 지정할 수 있습니다.
   - 시스템에 'vim'이 설치되어 있지 않은 경우 패키지 매니저를 통해 자동으로 설치를 진행한 후 편집기를 실행합니다.
 
 ⚙️  옵션 (Options):
   --agent <AGENT>           대상 AI Agent 지정 (antigravity | agy | codex | claude, 기본값: antigravity)
-  --category <CATEGORY>     편집할 스킬/규칙이 속한 논리 카테고리 이름 (필수, 'skill-'/'rule-' 접두사 제외 입력)
-  --name <NAME>             편집할 스킬/규칙의 이름 (필수, 규칙의 경우 .md 확장자 생략 가능)
+  --file <FILE|NAME>        편집할 스킬명 또는 규칙명 ('--category' 없이 직접 지정)
+  --category <CATEGORY>     편집할 스킬/규칙이 속한 논리 카테고리 이름 ('skill-'/'rule-' 접두사 제외 입력)
+  --name <NAME>             편집할 스킬/규칙의 이름 (규칙의 경우 .md 확장자 생략 가능)
   --home <DIR>              AI-Agent 커스터마이징 루트 경로 지정 (미지정 시 \$AI_AGENT_CUSTOMIZATION_HOME 사용)
   --help                    edit 서브커맨드 도움말 출력
 
@@ -558,7 +563,7 @@ split_csv_unique() {
 #
 # @return 최상위 루트 디렉토리 경로 출력
 ##
-resolve_acs_home() {
+resolve_asr_home() {
   local cli_home="${1:-}"
   local subcmd="${2:-}"
   local effective_home=""
@@ -593,7 +598,7 @@ resolve_agent_home() {
   local agent="${2:-$DEFAULT_AGENT}"
   local subcmd="${3:-}"
   local base_home
-  base_home="$(resolve_acs_home "$cli_home" "$subcmd")"
+  base_home="$(resolve_asr_home "$cli_home" "$subcmd")"
 
   printf "%s/%s\n" "$base_home" "$agent"
 }
@@ -2288,7 +2293,7 @@ print_list_by_kind() {
 # 단일 에이전트에 대해 skill / rule 목록을 출력합니다.
 #
 # @param $1 {string} 정규화된 에이전트 이름 (antigravity | claude | codex)
-# @param $2 {string} 최상위 루트 경로 (acs_home)
+# @param $2 {string} 최상위 루트 경로 (asr_home)
 # @param $3 {string} 대상 (all | skill | rule)
 # @param $4 {string} 카테고리 필터 (선택)
 # @param $5 {string} 이름 필터 (선택)
@@ -2297,12 +2302,12 @@ print_list_by_kind() {
 ##
 print_list_for_single_agent() {
   local agent="$1"
-  local acs_home="$2"
+  local asr_home="$2"
   local target="$3"
   local category="$4"
   local name="$5"
 
-  local agent_home="${acs_home}/${agent}"
+  local agent_home="${asr_home}/${agent}"
 
   if [[ "$target" == "skill" ]]; then
     print_list_by_kind "skill" "$agent_home" "$agent" "$category" "$name"
@@ -2417,13 +2422,13 @@ cmd_list() {
     fi
   fi
 
-  local acs_home
-  acs_home="$(resolve_acs_home "$cli_home" "list")"
+  local asr_home
+  asr_home="$(resolve_asr_home "$cli_home" "list")"
 
   # 1) '--agent'가 명시적으로 지정된 경우: 해당 에이전트만 조회
   if [[ -n "$agent" ]]; then
     agent="$(normalize_agent_name "$agent" "list")"
-    print_list_for_single_agent "$agent" "$acs_home" "$target" "$category" "$name"
+    print_list_for_single_agent "$agent" "$asr_home" "$target" "$category" "$name"
     return 0
   fi
 
@@ -2431,13 +2436,13 @@ cmd_list() {
   local -a existing_agents=()
   local ag
   for ag in "${SUPPORTED_AGENTS[@]}"; do
-    if [[ -d "${acs_home}/${ag}" ]]; then
+    if [[ -d "${asr_home}/${ag}" ]]; then
       existing_agents+=("$ag")
     fi
   done
 
   if (( ${#existing_agents[@]} == 0 )); then
-    printf "%s (등록된 에이전트 데이터 없음)\n" "$acs_home"
+    printf "%s (등록된 에이전트 데이터 없음)\n" "$asr_home"
     return 0
   fi
 
@@ -2448,11 +2453,11 @@ cmd_list() {
     for ag in "${existing_agents[@]}"; do
       local -a ag_matched_cats=()
       for req_cat in "${parsed_cats[@]}"; do
-        phys_cat="$(resolve_existing_category_dir_name "${acs_home}/${ag}" "$target" "$req_cat")"
+        phys_cat="$(resolve_existing_category_dir_name "${asr_home}/${ag}" "$target" "$req_cat")"
         if [[ "$target" == "skill" ]]; then
-          cat_root="${acs_home}/${ag}/skills/${phys_cat}"
+          cat_root="${asr_home}/${ag}/skills/${phys_cat}"
         else
-          cat_root="${acs_home}/${ag}/rules/${phys_cat}"
+          cat_root="${asr_home}/${ag}/rules/${phys_cat}"
         fi
         if [[ -d "$cat_root" ]]; then
           ag_matched_cats+=("$req_cat")
@@ -2464,7 +2469,7 @@ cmd_list() {
         local IFS=','
         local ag_cat_csv="${ag_matched_cats[*]}"
         unset IFS
-        print_list_for_single_agent "$ag" "$acs_home" "$target" "$ag_cat_csv" "$name"
+        print_list_for_single_agent "$ag" "$asr_home" "$target" "$ag_cat_csv" "$name"
       fi
     done
 
@@ -2475,7 +2480,7 @@ cmd_list() {
   fi
 
   for ag in "${existing_agents[@]}"; do
-    print_list_for_single_agent "$ag" "$acs_home" "$target" "" ""
+    print_list_for_single_agent "$ag" "$asr_home" "$target" "" ""
   done
 }
 
@@ -2524,7 +2529,143 @@ ensure_vim_installed() {
 }
 
 ##
+# 에이전트 내의 모든 스킬 카테고리를 탐색하여 대상 스킬(폴더명 또는 SKILL.md name 속성)에 해당하는 SKILL.md 경로를 반환합니다.
+# 하나의 에이전트 내에서는 스킬 이름이 고유하므로 카테고리 지정 없이 검색이 가능합니다.
+#
+# @param $1 {string} 에이전트 루트 디렉토리 (agent_home)
+# @param $2 {string} 정규화된 에이전트 이름 (agent)
+# @param $3 {string} 대상 스킬 식별자 (target_name)
+#
+# @return 찾은 SKILL.md 파일 경로 출력 (못 찾을 시 1 반환)
+##
+find_skill_file_in_agent() {
+  local agent_home="$1"
+  local agent="$2"
+  local target_name="$3"
+
+  # 직접 유효한 파일 경로가 전달된 경우
+  if [[ -f "$target_name" ]]; then
+    printf "%s\n" "$target_name"
+    return 0
+  fi
+
+  local skills_root="${agent_home}/skills"
+  [[ -d "$skills_root" ]] || return 1
+
+  local skills_subpath
+  skills_subpath="$(get_skills_subpath "$agent")"
+
+  local cat_dir entry skill_dir skill_md fm_name
+  for cat_dir in "${skills_root}"/*; do
+    [[ -d "$cat_dir" && -d "${cat_dir}/${skills_subpath}" ]] || continue
+
+    # 1) 스킬 디렉토리명 일치
+    skill_dir="${cat_dir}/${skills_subpath}/${target_name}"
+    if [[ -d "$skill_dir" || -L "$skill_dir" ]]; then
+      if [[ -f "${skill_dir}/SKILL.md" ]]; then
+        printf "%s\n" "${skill_dir}/SKILL.md"
+        return 0
+      elif [[ -f "${skill_dir}/SKILL.MD" ]]; then
+        printf "%s\n" "${skill_dir}/SKILL.MD"
+        return 0
+      fi
+    fi
+
+    # 2) SKILL.md 내 name 속성 매칭
+    for entry in "${cat_dir}/${skills_subpath}"/*; do
+      [[ -d "$entry" || -L "$entry" ]] || continue
+      skill_md=""
+      if [[ -f "${entry}/SKILL.md" ]]; then
+        skill_md="${entry}/SKILL.md"
+      elif [[ -f "${entry}/SKILL.MD" ]]; then
+        skill_md="${entry}/SKILL.MD"
+      fi
+
+      if [[ -n "$skill_md" ]]; then
+        fm_name="$(awk '
+          NR == 1 && $0 == "---" { in_fm = 1; next }
+          in_fm && $0 == "---" { exit }
+          in_fm && $0 ~ /^[[:space:]]*name:[[:space:]]*/ {
+            sub(/^[[:space:]]*name:[[:space:]]*/, "", $0)
+            sub(/[[:space:]]*$/, "", $0)
+            gsub(/^["'\''"]|["'\''"]$/, "", $0)
+            print $0
+            exit
+          }
+        ' "$skill_md" 2>/dev/null || true)"
+
+        if [[ -n "$fm_name" && "$fm_name" == "$target_name" ]]; then
+          printf "%s\n" "$skill_md"
+          return 0
+        fi
+      fi
+    done
+  done
+
+  return 1
+}
+
+##
+# 에이전트 내의 모든 규칙 카테고리를 탐색하여 대상 규칙에 해당하는 마크다운 파일 경로를 반환합니다.
+#
+# @param $1 {string} 에이전트 루트 디렉토리 (agent_home)
+# @param $2 {string} 정규화된 에이전트 이름 (agent)
+# @param $3 {string} 대상 규칙 식별자 (target_name)
+#
+# @return 찾은 규칙 파일 경로 출력 (못 찾을 시 1 반환)
+##
+find_rule_file_in_agent() {
+  local agent_home="$1"
+  local agent="$2"
+  local target_name="$3"
+
+  # 직접 유효한 파일 경로가 전달된 경우
+  if [[ -f "$target_name" ]]; then
+    printf "%s\n" "$target_name"
+    return 0
+  fi
+
+  local rule_clean
+  rule_clean="$(normalize_rule_name "$target_name")"
+
+  local rules_root="${agent_home}/rules"
+  [[ -d "$rules_root" ]] || return 1
+
+  local cat_dir rule_file
+  if [[ "$agent" == "codex" ]]; then
+    for cat_dir in "${rules_root}"/*; do
+      [[ -d "$cat_dir" ]] || continue
+      rule_file="${cat_dir}/${rule_clean}/AGENTS.md"
+      if [[ -f "$rule_file" ]]; then
+        printf "%s\n" "$rule_file"
+        return 0
+      elif [[ -f "${cat_dir}/${rule_clean}/AGENTS.MD" ]]; then
+        printf "%s\n" "${cat_dir}/${rule_clean}/AGENTS.MD"
+        return 0
+      fi
+    done
+  else
+    local rules_subpath
+    rules_subpath="$(get_rules_subpath "$agent")"
+    for cat_dir in "${rules_root}"/*; do
+      [[ -d "$cat_dir" && -d "${cat_dir}/${rules_subpath}" ]] || continue
+      rule_file="${cat_dir}/${rules_subpath}/${rule_clean}.md"
+      if [[ -f "$rule_file" ]]; then
+        printf "%s\n" "$rule_file"
+        return 0
+      elif [[ -f "${cat_dir}/${rules_subpath}/${rule_clean}.MD" ]]; then
+        printf "%s\n" "${cat_dir}/${rules_subpath}/${rule_clean}.MD"
+        return 0
+      fi
+    done
+  fi
+
+  return 1
+}
+
+##
 # 지정된 카테고리의 스킬(SKILL.md) 또는 규칙(<NAME>.md / AGENTS.md) 파일을 'vim'으로 편집합니다.
+# '--file <스킬명|규칙명>' 옵션을 통해 카테고리 지정 없이 대상을 직접 지정할 수 있습니다.
 #
 # @param $1 {string} 상위에서 전달된 에이전트 이름 (선택, 빈 값이면 기본값 antigravity 적용)
 # @param ${@:2} {array} edit 서브커맨드 인자 목록
@@ -2536,6 +2677,7 @@ cmd_edit() {
   shift || true
 
   local target=""
+  local file=""
   local category=""
   local name=""
   local cli_home=""
@@ -2562,6 +2704,15 @@ cmd_edit() {
         else
           die "대상(skill|rule)이 중복 지정되었습니다: $1" "$LINENO" "edit"
         fi
+        ;;
+      --file)
+        [[ $# -ge 2 ]] || die "'--file' 옵션에 값이 필요합니다." "$LINENO" "edit"
+        file="$2"
+        shift 2
+        ;;
+      --file=*)
+        file="${1#--file=}"
+        shift
         ;;
       --category)
         [[ $# -ge 2 ]] || die "'--category' 옵션에 값이 필요합니다." "$LINENO" "edit"
@@ -2600,55 +2751,78 @@ cmd_edit() {
   done
 
   agent="$(normalize_agent_name "${agent:-$DEFAULT_AGENT}" "edit")"
-  [[ -n "$target" ]] || die "편집할 대상('skill' 또는 'rule')을 지정해야 합니다." "$LINENO" "edit"
-  category="$(normalize_category_name "$target" "$category")"
-  validate_identifier "$category" "category" "edit"
-  validate_identifier "$name" "name" "edit"
 
   local agent_home
   agent_home="$(resolve_agent_home "$cli_home" "$agent" "edit")"
 
-  local phys_cat
-  phys_cat="$(resolve_existing_category_dir_name "$agent_home" "$target" "$category")"
-
   local target_file=""
-  if [[ "$target" == "skill" ]]; then
-    local skills_subpath
-    skills_subpath="$(get_skills_subpath "$agent")"
-    local skill_dir="${agent_home}/skills/${phys_cat}/${skills_subpath}/${name}"
-    if [[ -f "${skill_dir}/SKILL.md" ]]; then
-      target_file="${skill_dir}/SKILL.md"
-    elif [[ -f "${skill_dir}/SKILL.MD" ]]; then
-      target_file="${skill_dir}/SKILL.MD"
-    else
-      die "편집할 스킬 파일이 존재하지 않습니다: ${skill_dir}/SKILL.md" "$LINENO" "edit"
-    fi
-  elif [[ "$target" == "rule" ]]; then
-    local rule_name
-    rule_name="$(normalize_rule_name "$name")"
-    validate_identifier "$rule_name" "name" "edit"
 
-    if [[ "$agent" == "codex" ]]; then
-      local rule_dir="${agent_home}/rules/${phys_cat}/${rule_name}"
-      if [[ -f "${rule_dir}/AGENTS.md" ]]; then
-        target_file="${rule_dir}/AGENTS.md"
-      elif [[ -f "${rule_dir}/AGENTS.MD" ]]; then
-        target_file="${rule_dir}/AGENTS.MD"
-      else
-        die "편집할 Codex 규칙 파일이 존재하지 않습니다: ${rule_dir}/AGENTS.md" "$LINENO" "edit"
-      fi
+  # 1. '--file' 옵션이 지정된 경우 (카테고리 지정 없이 직접 탐색)
+  if [[ -n "$file" ]]; then
+    if [[ "$target" == "skill" ]]; then
+      target_file="$(find_skill_file_in_agent "$agent_home" "$agent" "$file" || true)"
+      [[ -n "$target_file" ]] || die "[${agent}] 스킬 파일(SKILL.md)을 찾을 수 없습니다: '${file}'" "$LINENO" "edit"
+    elif [[ "$target" == "rule" ]]; then
+      target_file="$(find_rule_file_in_agent "$agent_home" "$agent" "$file" || true)"
+      [[ -n "$target_file" ]] || die "[${agent}] 규칙 파일을 찾을 수 없습니다: '${file}'" "$LINENO" "edit"
     else
-      local rules_subpath
-      rules_subpath="$(get_rules_subpath "$agent")"
-      local rules_dir="${agent_home}/rules/${phys_cat}/${rules_subpath}"
-      if [[ -f "${rules_dir}/${rule_name}.md" ]]; then
-        target_file="${rules_dir}/${rule_name}.md"
-      elif [[ -f "${rules_dir}/${rule_name}.MD" ]]; then
-        target_file="${rules_dir}/${rule_name}.MD"
+      # target 미지정 시: 스킬 우선 탐색 후 규칙 탐색
+      target_file="$(find_skill_file_in_agent "$agent_home" "$agent" "$file" || true)"
+      if [[ -z "$target_file" ]]; then
+        target_file="$(find_rule_file_in_agent "$agent_home" "$agent" "$file" || true)"
+      fi
+      [[ -n "$target_file" ]] || die "[${agent}] 스킬 또는 규칙 파일을 찾을 수 없습니다: '${file}'" "$LINENO" "edit"
+    fi
+  # 2. 기존 방식: '--category'와 '--name'으로 지정된 경우
+  elif [[ -n "$category" && -n "$name" ]]; then
+    [[ -n "$target" ]] || die "편집할 대상('skill' 또는 'rule')을 지정해야 합니다." "$LINENO" "edit"
+    category="$(normalize_category_name "$target" "$category")"
+    validate_identifier "$category" "category" "edit"
+    validate_identifier "$name" "name" "edit"
+
+    local phys_cat
+    phys_cat="$(resolve_existing_category_dir_name "$agent_home" "$target" "$category")"
+
+    if [[ "$target" == "skill" ]]; then
+      local skills_subpath
+      skills_subpath="$(get_skills_subpath "$agent")"
+      local skill_dir="${agent_home}/skills/${phys_cat}/${skills_subpath}/${name}"
+      if [[ -f "${skill_dir}/SKILL.md" ]]; then
+        target_file="${skill_dir}/SKILL.md"
+      elif [[ -f "${skill_dir}/SKILL.MD" ]]; then
+        target_file="${skill_dir}/SKILL.MD"
       else
-        die "편집할 규칙 파일이 존재하지 않습니다: ${rules_dir}/${rule_name}.md" "$LINENO" "edit"
+        die "편집할 스킬 파일이 존재하지 않습니다: ${skill_dir}/SKILL.md" "$LINENO" "edit"
+      fi
+    elif [[ "$target" == "rule" ]]; then
+      local rule_name
+      rule_name="$(normalize_rule_name "$name")"
+      validate_identifier "$rule_name" "name" "edit"
+
+      if [[ "$agent" == "codex" ]]; then
+        local rule_dir="${agent_home}/rules/${phys_cat}/${rule_name}"
+        if [[ -f "${rule_dir}/AGENTS.md" ]]; then
+          target_file="${rule_dir}/AGENTS.md"
+        elif [[ -f "${rule_dir}/AGENTS.MD" ]]; then
+          target_file="${rule_dir}/AGENTS.MD"
+        else
+          die "편집할 Codex 규칙 파일이 존재하지 않습니다: ${rule_dir}/AGENTS.md" "$LINENO" "edit"
+        fi
+      else
+        local rules_subpath
+        rules_subpath="$(get_rules_subpath "$agent")"
+        local rules_dir="${agent_home}/rules/${phys_cat}/${rules_subpath}"
+        if [[ -f "${rules_dir}/${rule_name}.md" ]]; then
+          target_file="${rules_dir}/${rule_name}.md"
+        elif [[ -f "${rules_dir}/${rule_name}.MD" ]]; then
+          target_file="${rules_dir}/${rule_name}.MD"
+        else
+          die "편집할 규칙 파일이 존재하지 않습니다: ${rules_dir}/${rule_name}.md" "$LINENO" "edit"
+        fi
       fi
     fi
+  else
+    die "편집할 대상을 지정해 주세요. ('--file <스킬명|규칙명>' 또는 '--category <카테고리> --name <이름>')" "$LINENO" "edit"
   fi
 
   ensure_vim_installed

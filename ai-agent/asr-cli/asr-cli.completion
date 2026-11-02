@@ -31,7 +31,7 @@
 #
 # @return 유효한 최상위 루트 디렉토리 경로 출력 (미설정 시 빈 문자열)
 ##
-_acs_cli_get_base_home() {
+_asr_cli_get_base_home() {
   local cli_home=""
   local i tok
   for (( i=1; i < ${#COMP_WORDS[@]}; i++ )); do
@@ -57,7 +57,7 @@ _acs_cli_get_base_home() {
 #
 # @return 정규화된 에이전트 디렉토리명 (antigravity | claude | codex), 미지정 시 빈 문자열, 잘못된 값이면 "INVALID"
 ##
-_acs_cli_get_explicit_agent() {
+_asr_cli_get_explicit_agent() {
   local raw_agent=""
   local i tok
   for (( i=1; i < ${#COMP_WORDS[@]}; i++ )); do
@@ -100,10 +100,10 @@ _acs_cli_get_explicit_agent() {
 #
 # @return 줄바꿈으로 구분된 에이전트 이름 목록
 ##
-_acs_cli_get_target_agents() {
+_asr_cli_get_target_agents() {
   local subcmd="${1:-}"
   local explicit_agent
-  explicit_agent="$(_acs_cli_get_explicit_agent)"
+  explicit_agent="$(_asr_cli_get_explicit_agent)"
 
   if [[ "$explicit_agent" == "INVALID" ]]; then
     return 0
@@ -114,7 +114,7 @@ _acs_cli_get_target_agents() {
 
   if [[ "$subcmd" == "list" ]]; then
     local base_home
-    base_home="$(_acs_cli_get_base_home)"
+    base_home="$(_asr_cli_get_base_home)"
     [[ -n "$base_home" && -d "$base_home" ]] || return 0
     local ag
     for ag in antigravity claude codex; do
@@ -134,7 +134,7 @@ _acs_cli_get_target_agents() {
 #
 # @return .agents/skills | .claude/skills
 ##
-_acs_cli_get_skills_subpath() {
+_asr_cli_get_skills_subpath() {
   local agent="$1"
   if [[ "$agent" == "claude" ]]; then
     printf ".claude/skills\n"
@@ -150,7 +150,7 @@ _acs_cli_get_skills_subpath() {
 #
 # @return .agents/rules | .claude/rules | "" (codex)
 ##
-_acs_cli_get_rules_subpath() {
+_asr_cli_get_rules_subpath() {
   local agent="$1"
   case "$agent" in
     antigravity)
@@ -173,11 +173,11 @@ _acs_cli_get_rules_subpath() {
 #
 # @return 줄바꿈으로 구분된 논리 카테고리 이름 목록 (예: my-category)
 ##
-_acs_cli_get_categories() {
+_asr_cli_get_categories() {
   local target="${1:-all}"
   local subcmd="${2:-}"
   local base_home
-  base_home="$(_acs_cli_get_base_home)"
+  base_home="$(_asr_cli_get_base_home)"
   [[ -n "$base_home" && -d "$base_home" ]] || return 0
 
   local -a cats=()
@@ -207,7 +207,7 @@ _acs_cli_get_categories() {
         done
       fi
     fi
-  done < <(_acs_cli_get_target_agents "$subcmd")
+  done < <(_asr_cli_get_target_agents "$subcmd")
 
   if (( ${#cats[@]} > 0 )); then
     printf "%s\n" "${cats[@]}" | sort -u
@@ -223,12 +223,12 @@ _acs_cli_get_categories() {
 #
 # @return 줄바꿈으로 구분된 스킬/규칙 이름 목록
 ##
-_acs_cli_get_names_in_category() {
+_asr_cli_get_names_in_category() {
   local target="$1"
   local category="$2"
   local subcmd="${3:-}"
   local base_home
-  base_home="$(_acs_cli_get_base_home)"
+  base_home="$(_asr_cli_get_base_home)"
   [[ -n "$base_home" && -d "$base_home" && -n "$category" ]] || return 0
 
   local -a names=()
@@ -241,7 +241,7 @@ _acs_cli_get_names_in_category() {
 
     if [[ "$target" == "skill" ]]; then
       local skills_subpath
-      skills_subpath="$(_acs_cli_get_skills_subpath "$agent")"
+      skills_subpath="$(_asr_cli_get_skills_subpath "$agent")"
       local logical_cat="${category#skill-}"
       local skills_dir="${agent_home}/skills/skill-${logical_cat}/${skills_subpath}"
       if [[ ! -d "$skills_dir" && -d "${agent_home}/skills/${logical_cat}/${skills_subpath}" ]]; then
@@ -269,7 +269,7 @@ _acs_cli_get_names_in_category() {
         fi
       else
         local rules_subpath
-        rules_subpath="$(_acs_cli_get_rules_subpath "$agent")"
+        rules_subpath="$(_asr_cli_get_rules_subpath "$agent")"
         local rules_dir="${cat_dir}/${rules_subpath}"
         if [[ -d "$rules_dir" ]]; then
           for entry in "${rules_dir}"/*; do
@@ -284,10 +284,98 @@ _acs_cli_get_names_in_category() {
         fi
       fi
     fi
-  done < <(_acs_cli_get_target_agents "$subcmd")
+  done < <(_asr_cli_get_target_agents "$subcmd")
 
   if (( ${#names[@]} > 0 )); then
     printf "%s\n" "${names[@]}" | sort -u
+  fi
+}
+
+##
+# 특정 에이전트(또는 탐색 대상 에이전트들) 내에 존재하는 모든 스킬 이름 목록을 반환합니다.
+# 하나의 에이전트 내에서는 스킬 이름이 고유하므로, 카테고리와 무관하게 전체 스킬 목록을 추출합니다.
+#
+# @return 줄바꿈으로 구분된 고유 스킬 이름 목록
+##
+_asr_cli_get_all_skills() {
+  local base_home
+  base_home="$(_asr_cli_get_base_home)"
+  [[ -n "$base_home" && -d "$base_home" ]] || return 0
+
+  local -a skills=()
+  local agent agent_home skills_subpath skills_root cat_dir entry
+
+  while IFS= read -r agent; do
+    [[ -n "$agent" ]] || continue
+    agent_home="${base_home}/${agent}"
+    [[ -d "$agent_home" ]] || continue
+
+    skills_subpath="$(_asr_cli_get_skills_subpath "$agent")"
+    skills_root="${agent_home}/skills"
+    [[ -d "$skills_root" ]] || continue
+
+    for cat_dir in "${skills_root}"/*; do
+      [[ -d "$cat_dir" && -d "${cat_dir}/${skills_subpath}" ]] || continue
+      for entry in "${cat_dir}/${skills_subpath}"/*; do
+        [[ -e "$entry" || -L "$entry" ]] || continue
+        skills+=("$(basename "$entry")")
+      done
+    done
+  done < <(_asr_cli_get_target_agents "edit")
+
+  if (( ${#skills[@]} > 0 )); then
+    printf "%s\n" "${skills[@]}" | sort -u
+  fi
+}
+
+##
+# 특정 에이전트(또는 탐색 대상 에이전트들) 내에 존재하는 모든 규칙 이름 목록을 반환합니다.
+#
+# @return 줄바꿈으로 구분된 고유 규칙 이름 목록
+##
+_asr_cli_get_all_rules() {
+  local base_home
+  base_home="$(_asr_cli_get_base_home)"
+  [[ -n "$base_home" && -d "$base_home" ]] || return 0
+
+  local -a rules=()
+  local agent agent_home rules_root cat_dir entry bname rules_subpath
+
+  while IFS= read -r agent; do
+    [[ -n "$agent" ]] || continue
+    agent_home="${base_home}/${agent}"
+    [[ -d "$agent_home" ]] || continue
+
+    rules_root="${agent_home}/rules"
+    [[ -d "$rules_root" ]] || continue
+
+    if [[ "$agent" == "codex" ]]; then
+      for cat_dir in "${rules_root}"/*; do
+        [[ -d "$cat_dir" ]] || continue
+        for entry in "${cat_dir}"/*; do
+          [[ -d "$entry" || -L "$entry" ]] || continue
+          rules+=("$(basename "$entry")")
+        done
+      done
+    else
+      rules_subpath="$(_asr_cli_get_rules_subpath "$agent")"
+      for cat_dir in "${rules_root}"/*; do
+        [[ -d "$cat_dir" && -d "${cat_dir}/${rules_subpath}" ]] || continue
+        for entry in "${cat_dir}/${rules_subpath}"/*; do
+          [[ -e "$entry" || -L "$entry" ]] || continue
+          bname="$(basename "$entry")"
+          if [[ "$bname" == *.md ]]; then
+            rules+=("${bname%.md}")
+          elif [[ "$bname" == *.MD ]]; then
+            rules+=("${bname%.MD}")
+          fi
+        done
+      done
+    fi
+  done < <(_asr_cli_get_target_agents "edit")
+
+  if (( ${#rules[@]} > 0 )); then
+    printf "%s\n" "${rules[@]}" | sort -u
   fi
 }
 
@@ -301,7 +389,7 @@ _acs_cli_get_names_in_category() {
 #
 # @return COMPREPLY 배열 설정
 ##
-_acs_cli_complete_csv() {
+_asr_cli_complete_csv() {
   local candidates_str="$1"
   local cur_val="$2"
   local opt_prefix="${3:-}"
@@ -354,16 +442,16 @@ _acs_cli_complete_csv() {
 #
 # @return COMPREPLY 배열 설정
 ##
-_acs_cli_complete_add_name() {
+_asr_cli_complete_add_name() {
   local target="$1"
   local exclude_cat="$2"
   local cur_val="$3"
   local prefix="${4:-}"
 
   local base_home
-  base_home="$(_acs_cli_get_base_home)"
+  base_home="$(_asr_cli_get_base_home)"
   local agent
-  agent="$(_acs_cli_get_target_agents "add")"
+  agent="$(_asr_cli_get_target_agents "add")"
   [[ -n "$base_home" && -n "$agent" ]] || return 0
 
   local agent_home="${base_home}/${agent}"
@@ -375,7 +463,7 @@ _acs_cli_complete_add_name() {
 
   if [[ "$target" == "skill" ]]; then
     local skills_subpath
-    skills_subpath="$(_acs_cli_get_skills_subpath "$agent")"
+    skills_subpath="$(_asr_cli_get_skills_subpath "$agent")"
     local exclude_logical="${exclude_cat#skill-}"
     local skills_root="${agent_home}/skills"
     if [[ -d "$skills_root" ]]; then
@@ -414,7 +502,7 @@ _acs_cli_complete_add_name() {
         done
       else
         local rules_subpath
-        rules_subpath="$(_acs_cli_get_rules_subpath "$agent")"
+        rules_subpath="$(_asr_cli_get_rules_subpath "$agent")"
         for cat_dir in "${rules_root}"/*; do
           [[ -d "$cat_dir" ]] || continue
           dir_bname="$(basename "$cat_dir")"
@@ -484,7 +572,7 @@ _acs_cli_complete_add_name() {
 #
 # @return COMPREPLY 배열 및 compopt 설정
 ##
-_acs_cli_complete_dir() {
+_asr_cli_complete_dir() {
   local path_cur="$1"
   local opt_prefix="${2:-}"
   local candidate
@@ -526,7 +614,7 @@ _acs_cli_complete_dir() {
 #
 # @return COMPREPLY 배열 설정
 ##
-_acs_cli_completion() {
+_asr_cli_completion() {
   local cur prev
   COMPREPLY=()
   cur="${COMP_WORDS[COMP_CWORD]:-}"
@@ -540,6 +628,8 @@ _acs_cli_completion() {
   local active_target=""
   local has_agent="false"
   local agent_val=""
+  local has_file="false"
+  local file_val=""
   local has_category="false"
   local category_val=""
   local has_name="false"
@@ -582,6 +672,17 @@ _acs_cli_completion() {
       --home=*)
         has_home="true"
         ;;
+      --file)
+        has_file="true"
+        if (( i + 1 < COMP_CWORD )); then
+          file_val="${COMP_WORDS[i+1]}"
+          ((i++)) || true
+        fi
+        ;;
+      --file=*)
+        has_file="true"
+        file_val="${tok#--file=}"
+        ;;
       --category)
         has_category="true"
         if (( i + 1 < COMP_CWORD )); then
@@ -623,22 +724,35 @@ _acs_cli_completion() {
     esac
   fi
 
-  # 1. 직전 단어(prev)가 값을 요구하는 옵션(--agent, --home, --category, --name)인 경우 값 완성
+  # 1. 직전 단어(prev)가 값을 요구하는 옵션(--agent, --home, --file, --category, --name)인 경우 값 완성
   case "$prev" in
     --agent)
       COMPREPLY=( $(compgen -W "${agents[*]}" -- "$cur") )
       return 0
       ;;
     --home)
-      _acs_cli_complete_dir "$cur" ""
+      _asr_cli_complete_dir "$cur" ""
+      return 0
+      ;;
+    --file)
+      [[ "$subcmd" == "edit" ]] || return 0
+      local file_cands=""
+      if [[ "$active_target" == "skill" ]]; then
+        file_cands="$(_asr_cli_get_all_skills)"
+      elif [[ "$active_target" == "rule" ]]; then
+        file_cands="$(_asr_cli_get_all_rules)"
+      else
+        file_cands="$(printf "%s\n%s\n" "$(_asr_cli_get_all_skills)" "$(_asr_cli_get_all_rules)" | sort -u)"
+      fi
+      COMPREPLY=( $(compgen -W "$file_cands" -- "$cur") )
       return 0
       ;;
     --category)
       [[ -n "$subcmd" && -n "$active_target" ]] || return 0
       local cat_list
-      cat_list="$(_acs_cli_get_categories "$active_target" "$subcmd")"
+      cat_list="$(_asr_cli_get_categories "$active_target" "$subcmd")"
       if [[ "$subcmd" == "remove" || "$subcmd" == "list" ]]; then
-        _acs_cli_complete_csv "$cat_list" "$cur" ""
+        _asr_cli_complete_csv "$cat_list" "$cur" ""
       else
         COMPREPLY=( $(compgen -W "$cat_list" -- "$cur") )
       fi
@@ -647,16 +761,16 @@ _acs_cli_completion() {
     --name)
       [[ -n "$subcmd" && -n "$active_target" && -n "$category_val" ]] || return 0
       if [[ "$subcmd" == "add" ]]; then
-        _acs_cli_complete_add_name "$active_target" "$category_val" "$cur" ""
+        _asr_cli_complete_add_name "$active_target" "$category_val" "$cur" ""
       elif [[ "$subcmd" == "edit" ]]; then
         local name_list
-        name_list="$(_acs_cli_get_names_in_category "$active_target" "$category_val" "$subcmd")"
+        name_list="$(_asr_cli_get_names_in_category "$active_target" "$category_val" "$subcmd")"
         COMPREPLY=( $(compgen -W "$name_list" -- "$cur") )
       elif [[ "$subcmd" == "remove" || "$subcmd" == "list" ]]; then
         [[ "$category_val" != *,* ]] || return 0
         local name_list
-        name_list="$(_acs_cli_get_names_in_category "$active_target" "$category_val" "$subcmd")"
-        _acs_cli_complete_csv "$name_list" "$cur" ""
+        name_list="$(_asr_cli_get_names_in_category "$active_target" "$category_val" "$subcmd")"
+        _asr_cli_complete_csv "$name_list" "$cur" ""
       fi
       return 0
       ;;
@@ -673,16 +787,33 @@ _acs_cli_completion() {
       return 0
       ;;
     --home=*)
-      _acs_cli_complete_dir "${cur#--home=}" "--home="
+      _asr_cli_complete_dir "${cur#--home=}" "--home="
+      return 0
+      ;;
+    --file=*)
+      [[ "$subcmd" == "edit" ]] || return 0
+      local file_part="${cur#--file=}"
+      local file_cands=""
+      if [[ "$active_target" == "skill" ]]; then
+        file_cands="$(_asr_cli_get_all_skills)"
+      elif [[ "$active_target" == "rule" ]]; then
+        file_cands="$(_asr_cli_get_all_rules)"
+      else
+        file_cands="$(printf "%s\n%s\n" "$(_asr_cli_get_all_skills)" "$(_asr_cli_get_all_rules)" | sort -u)"
+      fi
+      local candidate
+      while IFS= read -r candidate; do
+        [[ -n "$candidate" ]] && COMPREPLY+=("--file=${candidate}")
+      done < <(compgen -W "$file_cands" -- "$file_part")
       return 0
       ;;
     --category=*)
       [[ -n "$subcmd" && -n "$active_target" ]] || return 0
       local cat_part="${cur#--category=}"
       local cat_list
-      cat_list="$(_acs_cli_get_categories "$active_target" "$subcmd")"
+      cat_list="$(_asr_cli_get_categories "$active_target" "$subcmd")"
       if [[ "$subcmd" == "remove" || "$subcmd" == "list" ]]; then
-        _acs_cli_complete_csv "$cat_list" "$cat_part" "--category="
+        _asr_cli_complete_csv "$cat_list" "$cat_part" "--category="
       else
         local candidate
         while IFS= read -r candidate; do
@@ -695,18 +826,18 @@ _acs_cli_completion() {
       [[ -n "$subcmd" && -n "$active_target" && -n "$category_val" ]] || return 0
       local name_part="${cur#--name=}"
       if [[ "$subcmd" == "add" ]]; then
-        _acs_cli_complete_add_name "$active_target" "$category_val" "$name_part" "--name="
+        _asr_cli_complete_add_name "$active_target" "$category_val" "$name_part" "--name="
       elif [[ "$subcmd" == "edit" ]]; then
         local name_list candidate
-        name_list="$(_acs_cli_get_names_in_category "$active_target" "$category_val" "$subcmd")"
+        name_list="$(_asr_cli_get_names_in_category "$active_target" "$category_val" "$subcmd")"
         while IFS= read -r candidate; do
           [[ -n "$candidate" ]] && COMPREPLY+=("--name=${candidate}")
         done < <(compgen -W "$name_list" -- "$name_part")
       elif [[ "$subcmd" == "remove" || "$subcmd" == "list" ]]; then
         [[ "$category_val" != *,* ]] || return 0
         local name_list
-        name_list="$(_acs_cli_get_names_in_category "$active_target" "$category_val" "$subcmd")"
-        _acs_cli_complete_csv "$name_list" "$name_part" "--name="
+        name_list="$(_asr_cli_get_names_in_category "$active_target" "$category_val" "$subcmd")"
+        _asr_cli_complete_csv "$name_list" "$name_part" "--name="
       fi
       return 0
       ;;
@@ -715,7 +846,7 @@ _acs_cli_completion() {
   # 3. 단계별(Step-by-Step) 위치 판단 및 후보 제안 ('--agent'는 미입력 시 모든 위치에서 함께 제안)
   local -a next_opts=()
 
-  # (단계 A) 아직 서브커맨드(add|create|list|remove)가 입력되지 않은 상태
+  # (단계 A) 아직 서브커맨드(add|create|edit|list|remove)가 입력되지 않은 상태
   if [[ -z "$subcmd" ]]; then
     if [[ "$cur" == -* ]]; then
       [[ "$has_agent" == "false" ]] && next_opts+=("--agent")
@@ -728,9 +859,22 @@ _acs_cli_completion() {
     return 0
   fi
 
+  # (edit 서브커맨드 특화) 이미 '--file'이 입력 완료된 상태인 경우: 더 이상 필수 옵션 없음 (<TAB 지원 끝>)
+  if [[ "$subcmd" == "edit" && "$has_file" == "true" ]]; then
+    [[ "$has_agent" == "false" ]] && next_opts+=("--agent")
+    if (( ${#next_opts[@]} > 0 )); then
+      COMPREPLY=( $(compgen -W "${next_opts[*]}" -- "$cur") )
+    fi
+    return 0
+  fi
+
   # (단계 B) 서브커맨드는 입력되었으나 아직 skill|rule이 선택되지 않은 상태
   if [[ -z "$active_target" ]]; then
-    next_opts+=("skill" "rule" "--help")
+    if [[ "$subcmd" == "edit" ]]; then
+      next_opts+=("skill" "rule" "--file" "--help")
+    else
+      next_opts+=("skill" "rule" "--help")
+    fi
     [[ "$has_agent" == "false" ]] && next_opts+=("--agent")
     COMPREPLY=( $(compgen -W "${next_opts[*]}" -- "$cur") )
     return 0
@@ -738,7 +882,11 @@ _acs_cli_completion() {
 
   # (단계 C) 아직 --category가 입력되지 않은 상태
   if [[ "$has_category" == "false" ]]; then
-    next_opts+=("--category" "--help")
+    if [[ "$subcmd" == "edit" ]]; then
+      next_opts+=("--file" "--category" "--help")
+    else
+      next_opts+=("--category" "--help")
+    fi
     [[ "$has_agent" == "false" ]] && next_opts+=("--agent")
     if [[ -z "${AI_AGENT_CUSTOMIZATION_HOME:-}" && "$has_home" == "false" ]]; then
       next_opts+=("--home")
@@ -780,4 +928,4 @@ _acs_cli_completion() {
   return 0
 }
 
-complete -F _acs_cli_completion asr-cli
+complete -F _asr_cli_completion asr-cli

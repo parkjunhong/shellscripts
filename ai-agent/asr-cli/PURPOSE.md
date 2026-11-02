@@ -34,7 +34,7 @@ flowchart LR
     P2["Project B (Shell Scripts)"]
   end
 
-  subgraph ACS["🏠 독립된 AI-Agent 커스터마이징 공간 ($AI_AGENT_CUSTOMIZATION_HOME)"]
+  subgraph ASR["🏠 독립된 AI-Agent 커스터마이징 공간 ($AI_AGENT_CUSTOMIZATION_HOME)"]
     direction TB
     S1["skills/skill-java/.agents/skills/..."]
     S2["skills/skill-bash/.agents/skills/..."]

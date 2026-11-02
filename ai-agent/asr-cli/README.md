@@ -45,7 +45,8 @@ AI-Agent Customization System에서 사용하는 **다중 AI 에이전트(`antig
    * `--category <cat> --name <name1,name2>` 지정 시 해당 스킬/규칙들을 별도 라인으로 출력하고 **1회 `[y/n]` 확인**으로 일괄 삭제하며, 삭제 후 해당 카테고리에 더 이상 스킬이나 규칙이 남아 있지 않으면 **카테고리 디렉토리까지 자동으로 함께 삭제**합니다.
    * 모든 삭제 작업은 `[y/n]` 사용자 확인(`y`만 진행, `n` 또는 `Enter`는 취소)을 거치며, `--force` 지정 시 즉시 삭제합니다.
 5. **`vim` 기반 스킬/규칙 파일 즉시 편집 및 미설치 시 자동 설치 지원 (`edit`)**
-   * `asr-cli edit <skill|rule> --category <카테고리> --name <이름>` 명령어로 대상 에이전트의 스킬 파일(`SKILL.md`) 또는 규칙 파일(`<NAME>.md` / `AGENTS.md`)을 즉시 `vim`으로 열어 편집할 수 있습니다.
+   * 하나의 AI 에이전트 내에서 스킬 이름은 고유하므로, **`--category` 없이 `--file <스킬명>`**만으로 대상 스킬(`SKILL.md`)을 즉시 찾아 `vim`으로 열어 편집할 수 있습니다. 규칙 파일 역시 `--file <규칙명>`으로 직접 편집 가능합니다.
+   * 기존 방식인 `asr-cli edit <skill|rule> --category <카테고리> --name <이름>` 조합도 동일하게 지원합니다.
    * 시스템에 `vim`이 설치되어 있지 않은 경우 OS 패키지 매니저(`apt-get`, `dnf`, `yum`, `zypper`, `pacman`, `apk`)를 자동으로 감지하여 설치를 진행한 뒤 편집기를 실행합니다.
 6. **순수 Bash 기반 `tree` 선(`├──`, `└──`) 스타일 계층 조회 (`list`)**
    * 외부 `tree` 패키지 의존성 없이 스킬 디렉토리 하위 파일 구조와 규칙 파일/디렉토리 및 심볼릭 링크 참조 대상(`-> 원본경로`)을 `├──`, `└──`, `│` 트리 스타일로 시각화합니다.
@@ -178,14 +179,17 @@ asr-cli remove rule --category java --name backend-architecture --agent codex --
 
 ### 5. 스킬 및 규칙 파일 편집 (`edit`)
 ```bash
-# 1) Antigravity(기본값) 스킬 파일(SKILL.md) vim 편집
+# 1) 스킬명 단독 지정으로 Antigravity(기본값) 스킬 파일(SKILL.md) vim 편집 (--category 생략)
+asr-cli edit skill --file bash-scripts
+
+# 2) Claude Code 규칙 파일(<name>.md) 단독 vim 편집 (--category 생략)
+asr-cli edit rule --file javadoc-guide --agent claude
+
+# 3) 기존 카테고리/이름 지정 방식으로 Antigravity 스킬 파일 vim 편집
 asr-cli edit skill --category bash --name bash-scripts
 
-# 2) Claude Code 규칙 파일(<name>.md) vim 편집
-asr-cli edit rule --category java --name spring-security --agent claude
-
-# 3) Codex 규칙 파일(AGENTS.md) vim 편집
-asr-cli --agent codex edit rule --category java --name backend-architecture
+# 4) Codex 규칙 파일(AGENTS.md) vim 편집
+asr-cli --agent codex edit rule --file backend-architecture
 ```
 
 ---
