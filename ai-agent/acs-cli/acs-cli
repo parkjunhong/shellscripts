@@ -14,6 +14,7 @@ set -Eeuo pipefail
 
 readonly FILENAME="$(basename "$0")"
 readonly DEFAULT_AGENT="antigravity"
+readonly -a SUPPORTED_AGENTS=("antigravity" "claude" "codex")
 
 ##
 # 오류 원인 및 콜스택 진단 정보를 표준 에러(stderr)로 출력합니다.
@@ -69,27 +70,28 @@ help() {
       cat <<EOF
 
 📦 사용법 (Usage - create):
-  $FILENAME [--agent <antigravity|agy|codex|claud>] create skill --category <카테고리> --name <이름> [--home <경로>] [--force]
-  $FILENAME [--agent <antigravity|agy|codex|claud>] create rule  --category <카테고리> --name <이름> [--home <경로>] [--force]
-  $FILENAME [--agent <antigravity|agy|codex|claud>] create --help
+  $FILENAME create skill --category <카테고리> --name <이름> [--agent <antigravity|agy|codex|claude>] [--home <경로>] [--force]
+  $FILENAME create rule  --category <카테고리> --name <이름> [--agent <antigravity|agy|codex|claude>] [--home <경로>] [--force]
+  $FILENAME create --help
 
 📝 설명 (Description):
   지정된 AI Agent(--agent, 기본값: antigravity)의 카테고리에 새로운 스킬(Skill) 또는 규칙(Rule)을 생성합니다.
+  - '--agent' 옵션은 명령어 앞뒤 어느 위치에서나 지정할 수 있습니다.
   - 실제 생성되는 카테고리 디렉토리명은 식별이 용이하도록 'skill-<카테고리>' 또는 'rule-<카테고리>'가 됩니다.
   - Skill 생성 시: 해당 에이전트의 전체 카테고리를 검사하여 동일한 스킬 이름(--name)이 이미 사용 중이면 생성을 차단하고 종료합니다.
   - 에이전트별 생성 경로 및 규격:
     * antigravity (agy):
       - skill : \${AI_AGENT_CUSTOMIZATION_HOME}/antigravity/skills/skill-\${CATEGORY}/.agents/skills/\${NAME}/{SKILL.md,scripts/,templates/,references/}
       - rule  : \${AI_AGENT_CUSTOMIZATION_HOME}/antigravity/rules/rule-\${CATEGORY}/.agents/rules/{\${NAME}.md,\${NAME}/{scripts/,templates/,references/}}
-    * claud (Claude Code):
-      - skill : \${AI_AGENT_CUSTOMIZATION_HOME}/claud/skills/skill-\${CATEGORY}/.claude/skills/\${NAME}/{SKILL.md,references/,scripts/,assets/}
-      - rule  : \${AI_AGENT_CUSTOMIZATION_HOME}/claud/rules/rule-\${CATEGORY}/.claude/rules/{\${NAME}.md,\${NAME}/{references/,scripts/,assets/}}
+    * claude (Claude Code):
+      - skill : \${AI_AGENT_CUSTOMIZATION_HOME}/claude/skills/skill-\${CATEGORY}/.claude/skills/\${NAME}/{SKILL.md,references/,scripts/,assets/}
+      - rule  : \${AI_AGENT_CUSTOMIZATION_HOME}/claude/rules/rule-\${CATEGORY}/.claude/rules/{\${NAME}.md,\${NAME}/{references/,scripts/,assets/}}
     * codex (OpenAI Codex):
       - skill : \${AI_AGENT_CUSTOMIZATION_HOME}/codex/skills/skill-\${CATEGORY}/.agents/skills/\${NAME}/{SKILL.md,agents/openai.yaml,references/,scripts/,assets/}
       - rule  : \${AI_AGENT_CUSTOMIZATION_HOME}/codex/rules/rule-\${CATEGORY}/\${NAME}/{AGENTS.md,references/,scripts/,assets/}
 
 ⚙️  옵션 (Options):
-  --agent <AGENT>           사용할 AI Agent 지정 (antigravity | agy | codex | claud, 기본값: antigravity)
+  --agent <AGENT>           사용할 AI Agent 지정 (antigravity | agy | codex | claude, 기본값: antigravity)
   --category <CATEGORY>     생성할 스킬/규칙의 논리 카테고리 이름 (필수, 'skill-'/'rule-' 접두사 제외 입력)
   --name <NAME>             생성할 스킬/규칙의 이름 (필수, 규칙의 경우 .md 확장자 생략 가능)
   --home <DIR>              AI-Agent 커스터마이징 루트 경로 지정 (미지정 시 \$AI_AGENT_CUSTOMIZATION_HOME 사용)
@@ -102,22 +104,23 @@ EOF
       cat <<EOF
 
 🗑️  사용법 (Usage - remove):
-  $FILENAME [--agent <antigravity|agy|codex|claud>] remove skill --category <카테고리[,카테고리2,...]> [--force] [--home <경로>]
-  $FILENAME [--agent <antigravity|agy|codex|claud>] remove skill --category <카테고리> --name <이름[,이름2,...]> [--force] [--home <경로>]
-  $FILENAME [--agent <antigravity|agy|codex|claud>] remove rule  --category <카테고리[,카테고리2,...]> [--force] [--home <경로>]
-  $FILENAME [--agent <antigravity|agy|codex|claud>] remove rule  --category <카테고리> --name <이름[,이름2,...]> [--force] [--home <경로>]
-  $FILENAME [--agent <antigravity|agy|codex|claud>] remove --help
+  $FILENAME remove skill --category <카테고리[,카테고리2,...]> [--agent <antigravity|agy|codex|claude>] [--force] [--home <경로>]
+  $FILENAME remove skill --category <카테고리> --name <이름[,이름2,...]> [--agent <antigravity|agy|codex|claude>] [--force] [--home <경로>]
+  $FILENAME remove rule  --category <카테고리[,카테고리2,...]> [--agent <antigravity|agy|codex|claude>] [--force] [--home <경로>]
+  $FILENAME remove rule  --category <카테고리> --name <이름[,이름2,...]> [--agent <antigravity|agy|codex|claude>] [--force] [--home <경로>]
+  $FILENAME remove --help
 
 📝 설명 (Description):
   지정된 AI Agent(--agent, 기본값: antigravity)의 카테고리에서 특정 스킬/규칙(--name 지정 시, 콤마 다중 지정 가능)을 삭제하거나,
   카테고리 전체(--name 생략 시, 콤마 다중 지정 가능)를 삭제합니다.
+  - '--agent' 옵션은 명령어 앞뒤 어느 위치에서나 지정할 수 있습니다.
   - '--category'에는 'skill-'/'rule-' 접두사가 제외된 카테고리 이름을 입력합니다.
   - '--category'에 여러 카테고리를 콤마(,)로 지정한 경우 '--name'은 사용할 수 없으며 카테고리들을 일괄 삭제합니다.
   - 특정 스킬/규칙 삭제 후 해당 카테고리에 더 이상 스킬/규칙이 남아 있지 않으면 카테고리 디렉토리도 자동으로 함께 삭제합니다.
   - 다중 입력된 삭제 대상 정보를 별도 라인으로 출력하고 [y/n] 확인을 1회 요청합니다 (--force 지정 시 즉시 삭제).
 
 ⚙️  옵션 (Options):
-  --agent <AGENT>           대상 AI Agent 지정 (antigravity | agy | codex | claud, 기본값: antigravity)
+  --agent <AGENT>           대상 AI Agent 지정 (antigravity | agy | codex | claude, 기본값: antigravity)
   --category <CAT[,CAT2]>   삭제할 대상 카테고리 이름 (필수, 콤마 구분 다중 입력 지원)
   --name <NAME[,NAME2]>     삭제할 스킬/규칙의 이름 (선택, 단일 카테고리 지정 시 콤마 구분 다중 입력 지원)
   --home <DIR>              AI-Agent 커스터마이징 루트 경로 지정 (미지정 시 \$AI_AGENT_CUSTOMIZATION_HOME 사용)
@@ -130,18 +133,19 @@ EOF
       cat <<EOF
 
 🔗 사용법 (Usage - add):
-  $FILENAME [--agent <antigravity|agy|codex|claud>] add skill --category <카테고리> --name <스킬_전체경로_또는_카테고리/이름> [--home <경로>] [--force]
-  $FILENAME [--agent <antigravity|agy|codex|claud>] add rule  --category <카테고리> --name <규칙_전체경로_또는_카테고리/이름> [--home <경로>] [--force]
-  $FILENAME [--agent <antigravity|agy|codex|claud>] add --help
+  $FILENAME add skill --category <카테고리> --name <스킬_전체경로_또는_카테고리/이름> [--agent <antigravity|agy|codex|claude>] [--home <경로>] [--force]
+  $FILENAME add rule  --category <카테고리> --name <규칙_전체경로_또는_카테고리/이름> [--agent <antigravity|agy|codex|claude>] [--home <경로>] [--force]
+  $FILENAME add --help
 
 📝 설명 (Description):
   지정된 AI Agent(--agent, 기본값: antigravity) 내에 이미 존재하는 스킬 또는 규칙(--name)을
   지정된 카테고리(--category)에 심볼릭 링크로 추가(참조)합니다.
-  Bash 자동완성(<TAB>)을 통해 '{category}/{name}' 형태로 추천받고 선택 시 전체 파일/디렉토리 경로로 자동 변환됩니다.
-  대상 카테고리 디렉토리('skill-<카테고리>' 또는 'rule-<카테고리>')가 존재하지 않는 경우 자동으로 생성합니다.
+  - '--agent' 옵션은 명령어 앞뒤 어느 위치에서나 지정할 수 있습니다.
+  - Bash 자동완성(<TAB>)을 통해 '{category}/{name}' 형태로 추천받고 선택 시 전체 파일/디렉토리 경로로 자동 변환됩니다.
+  - 대상 카테고리 디렉토리('skill-<카테고리>' 또는 'rule-<카테고리>')가 존재하지 않는 경우 자동으로 생성합니다.
 
 ⚙️  옵션 (Options):
-  --agent <AGENT>           대상 AI Agent 지정 (antigravity | agy | codex | claud, 기본값: antigravity)
+  --agent <AGENT>           대상 AI Agent 지정 (antigravity | agy | codex | claude, 기본값: antigravity)
   --category <CATEGORY>     심볼릭 링크가 생성될 대상 카테고리 이름 (필수, 'skill-'/'rule-' 접두사 제외 입력)
   --name <PATH_OR_REF>      참조할 원본 스킬 디렉토리 또는 규칙 파일/폴더의 전체 경로 (필수, '{category}/{name}' 형식도 지원)
   --home <DIR>              AI-Agent 커스터마이징 루트 경로 지정 (미지정 시 \$AI_AGENT_CUSTOMIZATION_HOME 사용)
@@ -154,20 +158,22 @@ EOF
       cat <<EOF
 
 📋 사용법 (Usage - list):
-  $FILENAME [--agent <antigravity|agy|codex|claud>] list
-  $FILENAME [--agent <antigravity|agy|codex|claud>] list <skill|rule>
-  $FILENAME [--agent <antigravity|agy|codex|claud>] list <skill|rule> --category <카테고리[,카테고리2,...]>
-  $FILENAME [--agent <antigravity|agy|codex|claud>] list <skill|rule> --category <카테고리> --name <이름[,이름2,...]>
-  $FILENAME [--agent <antigravity|agy|codex|claud>] list --help
+  $FILENAME list [--agent <antigravity|agy|codex|claude>]
+  $FILENAME list <skill|rule> [--agent <antigravity|agy|codex|claude>]
+  $FILENAME list <skill|rule> --category <카테고리[,카테고리2,...]> [--agent <antigravity|agy|codex|claude>]
+  $FILENAME list <skill|rule> --category <카테고리> --name <이름[,이름2,...]> [--agent <antigravity|agy|codex|claude>]
+  $FILENAME --agent <antigravity|agy|codex|claude>
+  $FILENAME list --help
 
 📝 설명 (Description):
-  지정된 AI Agent(--agent, 기본값: antigravity)에서 관리 중인 스킬(Skill) 및 규칙(Rule)의 계층 구조를 tree 스타일(├──, └──)로 조회합니다.
-  - 'acs-cli [--agent <agent>] list' 실행 시 모든 skill과 rule 정보를 skill -> rule 순서로 출력합니다.
+  관리 중인 스킬(Skill) 및 규칙(Rule)의 계층 구조를 tree 스타일(├──, └──)로 조회합니다.
+  - 'acs-cli list' ('--agent' 생략 시): 존재하는 모든 AI Agent(antigravity, claude, codex)의 skill/rule 정보를 출력합니다.
+  - 'acs-cli list --agent <agent>' 또는 'acs-cli --agent <agent>': 지정된 특정 AI Agent의 skill/rule 정보를 출력합니다.
   - '--category' 또는 '--name'에 콤마(,)로 구분하여 여러 항목을 한 번에 조회할 수 있습니다.
     (단, '--category'에 여러 카테고리를 지정한 경우 '--name' 옵션은 함께 사용할 수 없습니다.)
 
 ⚙️  옵션 (Options):
-  --agent <AGENT>           조회할 AI Agent 지정 (antigravity | agy | codex | claud, 기본값: antigravity)
+  --agent <AGENT>           특정 AI Agent만 필터링하여 조회 (antigravity | agy | codex | claude, 생략 시 전체 에이전트 조회)
   --category <CAT[,CAT2]>   특정 카테고리만 필터링하여 조회 (선택, 콤마 구분 다중 입력 지원)
   --name <NAME[,NAME2]>     특정 스킬/규칙만 필터링하여 조회 (선택, 단일 카테고리 지정 시 콤마 구분 다중 입력 지원)
   --home <DIR>              AI-Agent 커스터마이징 루트 경로 지정 (미지정 시 \$AI_AGENT_CUSTOMIZATION_HOME 사용)
@@ -179,12 +185,15 @@ EOF
       cat <<EOF
 
 🛠️  사용법 (Usage):
-  $FILENAME [--agent <antigravity|agy|codex|claud>] <command> [target] [options...]
+  $FILENAME <command> [target] [options...]
+  $FILENAME --agent <antigravity|agy|codex|claude> [command] [target] [options...]
   $FILENAME --help
 
-📌 전역 에이전트 옵션 (AI Agent Option):
-  --agent <AGENT>           사용할 AI Agent 지정 (antigravity | agy | codex | claud)
-                            * 기본값: antigravity ('agy'는 'antigravity'의 약어)
+📌 에이전트 옵션 (AI Agent Option - 모든 위치에서 지정 가능):
+  --agent <AGENT>           사용할 AI Agent 지정 (antigravity | agy | codex | claude)
+                            * 'agy'는 'antigravity'의 약어입니다.
+                            * create / remove / add 기본값: antigravity
+                            * list 기본값: 존재하는 모든 에이전트 조회
 
 📌 서브커맨드 (Subcommands):
   create   skill|rule       새로운 스킬(SKILL.md) 또는 규칙(<NAME>.md / AGENTS.md) 생성
@@ -198,16 +207,18 @@ EOF
 
 📂 에이전트별 관리 경로 구조 (Directory Layout):
   - antigravity (agy) : \${AI_AGENT_CUSTOMIZATION_HOME}/antigravity/{skills,rules}/...
-  - claud             : \${AI_AGENT_CUSTOMIZATION_HOME}/claud/{skills,rules}/...
+  - claude            : \${AI_AGENT_CUSTOMIZATION_HOME}/claude/{skills,rules}/...
   - codex             : \${AI_AGENT_CUSTOMIZATION_HOME}/codex/{skills,rules}/...
 
 💡 예시 (Examples):
-  $FILENAME --agent agy   create skill --category bash --name bash-scripts
-  $FILENAME --agent claud create rule  --category java --name javadoc-guide
-  $FILENAME --agent codex create rule  --category java --name spring-backend
-  $FILENAME --agent agy   add    skill --category devops --name bash/bash-scripts
-  $FILENAME --agent claud list   skill --category bash,devops
-  $FILENAME --agent codex remove rule  --category java --name spring-backend
+  $FILENAME create skill --category bash --name bash-scripts --agent agy
+  $FILENAME create rule  --category java --name javadoc-guide --agent claude
+  $FILENAME create rule  --category java --name spring-backend --agent codex
+  $FILENAME add    skill --category devops --name bash/bash-scripts
+  $FILENAME list
+  $FILENAME list   --agent claude
+  $FILENAME --agent claude
+  $FILENAME remove rule  --category java --name spring-backend --agent codex
 
 EOF
       ;;
@@ -232,13 +243,13 @@ die() {
 }
 
 ##
-# 입력된 '--agent' 값을 검증하고 정규화된 에이전트 디렉토리명(antigravity | claud | codex)을 반환합니다.
+# 입력된 '--agent' 값을 검증하고 정규화된 에이전트 디렉토리명(antigravity | claude | codex)을 반환합니다.
 # 'agy'는 'antigravity'로 변환되며, 빈 값인 경우 기본값('antigravity')을 반환합니다.
 #
 # @param $1 {string} 입력된 에이전트 이름
 # @param $2 {string} 서브커맨드 이름 (선택, 에러 출력용)
 #
-# @return 정규화된 에이전트 식별자 (antigravity | claud | codex)
+# @return 정규화된 에이전트 식별자 (antigravity | claude | codex)
 ##
 normalize_agent_name() {
   local raw_agent="${1:-$DEFAULT_AGENT}"
@@ -248,14 +259,14 @@ normalize_agent_name() {
     ""|antigravity|agy)
       printf "antigravity\n"
       ;;
-    claud)
-      printf "claud\n"
+    claude)
+      printf "claude\n"
       ;;
     codex)
       printf "codex\n"
       ;;
     *)
-      die "지원하지 않는 AI Agent입니다: '${raw_agent}' (지원 목록: antigravity, agy, codex, claud)" "$LINENO" "$subcmd"
+      die "지원하지 않는 AI Agent입니다: '${raw_agent}' (지원 목록: antigravity, agy, codex, claude)" "$LINENO" "$subcmd"
       ;;
   esac
 }
@@ -263,14 +274,14 @@ normalize_agent_name() {
 ##
 # 에이전트별 카테고리 내부 스킬 상대 경로를 반환합니다.
 #
-# @param $1 {string} 정규화된 에이전트 이름 (antigravity | claud | codex)
+# @param $1 {string} 정규화된 에이전트 이름 (antigravity | claude | codex)
 #
 # @return 스킬 하위 경로 문자열 (.agents/skills | .claude/skills)
 ##
 get_skills_subpath() {
   local agent="$1"
   case "$agent" in
-    claud)
+    claude)
       printf ".claude/skills\n"
       ;;
     *)
@@ -283,7 +294,7 @@ get_skills_subpath() {
 # 에이전트별 카테고리 내부 규칙 상대 경로를 반환합니다.
 # (codex의 경우 카테고리 바로 아래에 <rule-name>/AGENTS.md가 위치하므로 빈 문자열 반환)
 #
-# @param $1 {string} 정규화된 에이전트 이름 (antigravity | claud | codex)
+# @param $1 {string} 정규화된 에이전트 이름 (antigravity | claude | codex)
 #
 # @return 규칙 하위 경로 문자열 (.agents/rules | .claude/rules | "")
 ##
@@ -293,7 +304,7 @@ get_rules_subpath() {
     antigravity)
       printf ".agents/rules\n"
       ;;
-    claud)
+    claude)
       printf ".claude/rules\n"
       ;;
     codex)
@@ -514,19 +525,16 @@ split_csv_unique() {
 }
 
 ##
-# AI_AGENT_CUSTOMIZATION_HOME 루트 디렉토리와 에이전트 이름을 결합하여
-# 에이전트 전용 루트 경로(${AI_AGENT_CUSTOMIZATION_HOME}/${agent})를 반환합니다.
+# AI_AGENT_CUSTOMIZATION_HOME 최상위 루트 디렉토리를 확인하고 반환합니다.
 #
 # @param $1 {string} CLI '--home' 옵션으로 전달된 경로 (빈 문자열 가능)
-# @param $2 {string} 정규화된 에이전트 이름 (antigravity | claud | codex)
-# @param $3 {string} 현재 서브커맨드 이름
+# @param $2 {string} 현재 서브커맨드 이름
 #
-# @return 에이전트 전용 루트 디렉토리 경로 출력
+# @return 최상위 루트 디렉토리 경로 출력
 ##
-resolve_agent_home() {
+resolve_acs_home() {
   local cli_home="${1:-}"
-  local agent="${2:-$DEFAULT_AGENT}"
-  local subcmd="${3:-}"
+  local subcmd="${2:-}"
   local effective_home=""
 
   if [[ -n "$cli_home" ]]; then
@@ -541,7 +549,27 @@ resolve_agent_home() {
     effective_home="${effective_home%/}"
   fi
 
-  printf "%s/%s\n" "$effective_home" "$agent"
+  printf "%s\n" "$effective_home"
+}
+
+##
+# AI_AGENT_CUSTOMIZATION_HOME 루트 디렉토리와 에이전트 이름을 결합하여
+# 에이전트 전용 루트 경로(${AI_AGENT_CUSTOMIZATION_HOME}/${agent})를 반환합니다.
+#
+# @param $1 {string} CLI '--home' 옵션으로 전달된 경로 (빈 문자열 가능)
+# @param $2 {string} 정규화된 에이전트 이름 (antigravity | claude | codex)
+# @param $3 {string} 현재 서브커맨드 이름
+#
+# @return 에이전트 전용 루트 디렉토리 경로 출력
+##
+resolve_agent_home() {
+  local cli_home="${1:-}"
+  local agent="${2:-$DEFAULT_AGENT}"
+  local subcmd="${3:-}"
+  local base_home
+  base_home="$(resolve_acs_home "$cli_home" "$subcmd")"
+
+  printf "%s/%s\n" "$base_home" "$agent"
 }
 
 ##
@@ -567,7 +595,7 @@ confirm_yes_no() {
 # 동일한 스킬 이름(디렉토리명 또는 SKILL.md frontmatter의 name 속성)이 이미 사용 중인지 검증합니다.
 #
 # @param $1 {string} 에이전트 루트 경로 (agent_home)
-# @param $2 {string} 정규화된 에이전트 이름 (antigravity | claud | codex)
+# @param $2 {string} 정규화된 에이전트 이름 (antigravity | claude | codex)
 # @param $3 {string} 검증할 스킬 이름 (target_name)
 # @param $4 {string} 생성하려는 논리 카테고리 이름 (target_category)
 # @param $5 {string} 강제 덮어쓰기 여부 (force: true | false)
@@ -641,7 +669,7 @@ validate_skill_name_unique() {
 ##
 # 에이전트별 Skill 템플릿 및 참조 디렉토리를 생성합니다.
 #
-# @param $1 {string} 정규화된 에이전트 이름 (antigravity | claud | codex)
+# @param $1 {string} 정규화된 에이전트 이름 (antigravity | claude | codex)
 # @param $2 {string} 에이전트 루트 경로 (agent_home)
 # @param $3 {string} 논리 카테고리명 (category)
 # @param $4 {string} 물리 카테고리 디렉토리명 (phys_cat)
@@ -734,7 +762,7 @@ EOF
       echo "   - 참조 디렉토리: ${skill_dir}/{scripts,templates,references}"
       ;;
 
-    claud)
+    claude)
       mkdir -p "${skill_dir}/references" "${skill_dir}/scripts" "${skill_dir}/assets"
       cat <<EOF > "$skill_file"
 ---
@@ -779,7 +807,7 @@ description: >-
 - 작업에 필요한 파일 접근 권한 및 사전 백업 상태를 점검하십시오.
 
 ## 3. 입력 규격 (Inputs)
-<!-- 필수/선택 파라미터($ARGUMENTS 등)와 유효성 검증 기준 (운영 명령에 사용자 문자열을 검증 없이 직접 셸로 평가 금지) -->
+<!-- 필수/선택 파라미터(\$ARGUMENTS 등)와 유효성 검증 기준 (운영 명령에 사용자 문자열을 검증 없이 직접 셸로 평가 금지) -->
 - 입력 인자 또는 대상 파일 경로가 누락된 경우 임의로 추정하지 말고 필요한 정보를 요청하십시오.
 
 ## 4. 작업 절차 (Workflow)
@@ -801,7 +829,7 @@ description: >-
 - 검증 명령이나 스크립트가 실패한 경우 실패 원인을 그대로 보고하고 임의로 성공 처리하지 마십시오.
 
 ## 7. 출력 규격 (Output contract)
-<!-- 파일, 표, 요약, 증거, 남은 위험 (`assets/` 템플릿 활용 가능) -->
+<!-- 파일, 표, 요약, 증거, 남은 위험 (\`assets/\` 템플릿 활용 가능) -->
 - 변경된 파일 목록, 실행한 검증 명령과 결과, 미검증 영역 및 잔여 위험을 요약하여 보고하십시오.
 EOF
       echo "✅ [CREATE:SKILL] (${agent}) 스킬 및 보조 리소스 디렉토리가 생성되었습니다."
@@ -890,7 +918,7 @@ EOF
 ##
 # 에이전트별 Rule 템플릿 및 참조 디렉토리를 생성합니다.
 #
-# @param $1 {string} 정규화된 에이전트 이름 (antigravity | claud | codex)
+# @param $1 {string} 정규화된 에이전트 이름 (antigravity | claude | codex)
 # @param $2 {string} 에이전트 루트 경로 (agent_home)
 # @param $3 {string} 논리 카테고리명 (category)
 # @param $4 {string} 물리 카테고리 디렉토리명 (phys_cat)
@@ -974,7 +1002,7 @@ EOF
       echo "   - 참조 디렉토리: ${rule_ref_dir}/{scripts,templates,references}"
       ;;
 
-    claud)
+    claude)
       local rules_dir="${agent_home}/rules/${phys_cat}/.claude/rules"
       local rule_file="${rules_dir}/${rule_name}.md"
       local rule_ref_dir="${rules_dir}/${rule_name}"
@@ -1095,13 +1123,13 @@ EOF
 # 새로운 스킬(Skill) 또는 규칙(Rule)을 생성합니다.
 # 실제 생성되는 카테고리 디렉토리명은 'skill-<category>' 또는 'rule-<category>'가 됩니다.
 #
-# @param $1 {string} 상위에서 전달된 에이전트 이름 (선택)
+# @param $1 {string} 상위에서 전달된 에이전트 이름 (선택, 빈 값이면 기본값 antigravity 적용)
 # @param ${@:2} {array} create 서브커맨드 인자 목록
 #
 # @return 0 (성공 시)
 ##
 cmd_create() {
-  local agent="${1:-$DEFAULT_AGENT}"
+  local agent="${1:-}"
   shift || true
 
   local target=""
@@ -1117,7 +1145,7 @@ cmd_create() {
         return 0
         ;;
       --agent)
-        [[ $# -ge 2 ]] || die "'--agent' 옵션에 값이 필요합니다. (antigravity | agy | codex | claud)" "$LINENO" "create"
+        [[ $# -ge 2 ]] || die "'--agent' 옵션에 값이 필요합니다. (antigravity | agy | codex | claude)" "$LINENO" "create"
         agent="$2"
         shift 2
         ;;
@@ -1173,7 +1201,7 @@ cmd_create() {
     esac
   done
 
-  agent="$(normalize_agent_name "$agent" "create")"
+  agent="$(normalize_agent_name "${agent:-$DEFAULT_AGENT}" "create")"
   [[ -n "$target" ]] || die "생성할 대상('skill' 또는 'rule')을 지정해야 합니다." "$LINENO" "create"
   category="$(normalize_category_name "$target" "$category")"
   validate_identifier "$category" "category" "create"
@@ -1202,13 +1230,13 @@ cmd_create() {
 # - '--category'에 여러 카테고리가 지정된 경우 '--name'은 허용하지 않으며 복수 카테고리를 삭제합니다.
 # - 다중 입력된 대상 정보를 별도 라인으로 출력하고 1회만 [y/n] 확인을 요청합니다.
 #
-# @param $1 {string} 상위에서 전달된 에이전트 이름 (선택)
+# @param $1 {string} 상위에서 전달된 에이전트 이름 (선택, 빈 값이면 기본값 antigravity 적용)
 # @param ${@:2} {array} remove 서브커맨드 인자 목록
 #
 # @return 0 (성공 시)
 ##
 cmd_remove() {
-  local agent="${1:-$DEFAULT_AGENT}"
+  local agent="${1:-}"
   shift || true
 
   local target=""
@@ -1224,7 +1252,7 @@ cmd_remove() {
         return 0
         ;;
       --agent)
-        [[ $# -ge 2 ]] || die "'--agent' 옵션에 값이 필요합니다. (antigravity | agy | codex | claud)" "$LINENO" "remove"
+        [[ $# -ge 2 ]] || die "'--agent' 옵션에 값이 필요합니다. (antigravity | agy | codex | claude)" "$LINENO" "remove"
         agent="$2"
         shift 2
         ;;
@@ -1280,7 +1308,7 @@ cmd_remove() {
     esac
   done
 
-  agent="$(normalize_agent_name "$agent" "remove")"
+  agent="$(normalize_agent_name "${agent:-$DEFAULT_AGENT}" "remove")"
   [[ -n "$target" ]] || die "삭제할 대상('skill' 또는 'rule')을 지정해야 합니다." "$LINENO" "remove"
   [[ -n "$category" ]] || die "'--category' 옵션 값이 비어 있습니다." "$LINENO" "remove"
 
@@ -1578,13 +1606,13 @@ cmd_remove() {
 # 이미 존재하는 스킬 또는 규칙(--name)을 지정된 카테고리(--category)에 심볼릭 링크로 추가합니다.
 # '--name' 값으로는 전체 파일/디렉토리 경로뿐만 아니라 '{src_category}/{name}' 형식도 허용합니다.
 #
-# @param $1 {string} 상위에서 전달된 에이전트 이름 (선택)
+# @param $1 {string} 상위에서 전달된 에이전트 이름 (선택, 빈 값이면 기본값 antigravity 적용)
 # @param ${@:2} {array} add 서브커맨드 인자 목록
 #
 # @return 0 (성공 시)
 ##
 cmd_add() {
-  local agent="${1:-$DEFAULT_AGENT}"
+  local agent="${1:-}"
   shift || true
 
   local target=""
@@ -1600,7 +1628,7 @@ cmd_add() {
         return 0
         ;;
       --agent)
-        [[ $# -ge 2 ]] || die "'--agent' 옵션에 값이 필요합니다. (antigravity | agy | codex | claud)" "$LINENO" "add"
+        [[ $# -ge 2 ]] || die "'--agent' 옵션에 값이 필요합니다. (antigravity | agy | codex | claude)" "$LINENO" "add"
         agent="$2"
         shift 2
         ;;
@@ -1656,7 +1684,7 @@ cmd_add() {
     esac
   done
 
-  agent="$(normalize_agent_name "$agent" "add")"
+  agent="$(normalize_agent_name "${agent:-$DEFAULT_AGENT}" "add")"
   [[ -n "$target" ]] || die "추가할 대상('skill' 또는 'rule')을 지정해야 합니다." "$LINENO" "add"
   category="$(normalize_category_name "$target" "$category")"
   validate_identifier "$category" "category" "add"
@@ -1913,7 +1941,7 @@ render_dir_tree() {
 # 단일 스킬 카테고리의 트리 구조를 출력합니다.
 #
 # @param $1 {string} 에이전트 루트 경로 (agent_home)
-# @param $2 {string} 정규화된 에이전트 이름 (antigravity | claud | codex)
+# @param $2 {string} 정규화된 에이전트 이름 (antigravity | claude | codex)
 # @param $3 {string} 논리 카테고리 이름
 # @param $4 {string} 콤마로 구분된 스킬 이름 필터 (선택)
 #
@@ -1996,11 +2024,11 @@ print_skill_category_tree() {
 
 ##
 # 단일 규칙 카테고리의 트리 구조를 출력합니다.
-# - antigravity / claud: 규칙 파일(<rule-name>.md)과 연관 참조 디렉토리(<rule-name>/)를 함께 출력
-# - codex              : 규칙 디렉토리(<rule-name>/AGENTS.md 및 하위 참조 폴더)를 트리 출력
+# - antigravity / claude: 규칙 파일(<rule-name>.md)과 연관 참조 디렉토리(<rule-name>/)를 함께 출력
+# - codex               : 규칙 디렉토리(<rule-name>/AGENTS.md 및 하위 참조 폴더)를 트리 출력
 #
 # @param $1 {string} 에이전트 루트 경로 (agent_home)
-# @param $2 {string} 정규화된 에이전트 이름 (antigravity | claud | codex)
+# @param $2 {string} 정규화된 에이전트 이름 (antigravity | claude | codex)
 # @param $3 {string} 논리 카테고리 이름
 # @param $4 {string} 콤마로 구분된 규칙 이름 필터 (선택)
 #
@@ -2120,7 +2148,7 @@ print_rule_category_tree() {
 #
 # @param $1 {string} 종류 (skill | rule)
 # @param $2 {string} 에이전트 루트 경로 (agent_home)
-# @param $3 {string} 정규화된 에이전트 이름 (antigravity | claud | codex)
+# @param $3 {string} 정규화된 에이전트 이름 (antigravity | claude | codex)
 # @param $4 {string} 카테고리 필터 (콤마 구분 가능, 빈 문자열이면 전체 카테고리)
 # @param $5 {string} 이름 필터 (콤마 구분 가능, 빈 문자열이면 전체 항목)
 #
@@ -2189,15 +2217,48 @@ print_list_by_kind() {
 }
 
 ##
-# 등록된 스킬(Skill) 및 규칙(Rule) 목록을 tree 스타일로 조회합니다.
+# 단일 에이전트에 대해 skill / rule 목록을 출력합니다.
 #
-# @param $1 {string} 상위에서 전달된 에이전트 이름 (선택)
+# @param $1 {string} 정규화된 에이전트 이름 (antigravity | claude | codex)
+# @param $2 {string} 최상위 루트 경로 (acs_home)
+# @param $3 {string} 대상 (all | skill | rule)
+# @param $4 {string} 카테고리 필터 (선택)
+# @param $5 {string} 이름 필터 (선택)
+#
+# @return 0
+##
+print_list_for_single_agent() {
+  local agent="$1"
+  local acs_home="$2"
+  local target="$3"
+  local category="$4"
+  local name="$5"
+
+  local agent_home="${acs_home}/${agent}"
+
+  if [[ "$target" == "skill" ]]; then
+    print_list_by_kind "skill" "$agent_home" "$agent" "$category" "$name"
+  elif [[ "$target" == "rule" ]]; then
+    print_list_by_kind "rule" "$agent_home" "$agent" "$category" "$name"
+  else
+    # skill -> rule 순서로 출력
+    print_list_by_kind "skill" "$agent_home" "$agent" "" ""
+    print_list_by_kind "rule" "$agent_home" "$agent" "" ""
+  fi
+}
+
+##
+# 등록된 스킬(Skill) 및 규칙(Rule) 목록을 tree 스타일로 조회합니다.
+# - '--agent'가 지정되지 않은 경우: 존재하는 모든 에이전트(antigravity, claude, codex)의 정보를 출력합니다.
+# - '--agent'가 지정된 경우: 해당 에이전트의 정보만 출력합니다.
+#
+# @param $1 {string} 상위에서 전달된 에이전트 이름 (선택, 빈 값이면 전체 에이전트 조회)
 # @param ${@:2} {array} list 서브커맨드 인자 목록
 #
 # @return 0 (성공 시)
 ##
 cmd_list() {
-  local agent="${1:-$DEFAULT_AGENT}"
+  local agent="${1:-}"
   shift || true
 
   local target="all"
@@ -2213,7 +2274,7 @@ cmd_list() {
         return 0
         ;;
       --agent)
-        [[ $# -ge 2 ]] || die "'--agent' 옵션에 값이 필요합니다. (antigravity | agy | codex | claud)" "$LINENO" "list"
+        [[ $# -ge 2 ]] || die "'--agent' 옵션에 값이 필요합니다. (antigravity | agy | codex | claude)" "$LINENO" "list"
         agent="$2"
         shift 2
         ;;
@@ -2266,8 +2327,6 @@ cmd_list() {
     esac
   done
 
-  agent="$(normalize_agent_name "$agent" "list")"
-
   if [[ -n "$name" && -z "$category" ]]; then
     die "'--name' 옵션을 사용할 때는 '--category' 옵션을 함께 지정해야 합니다." "$LINENO" "list"
   fi
@@ -2275,11 +2334,11 @@ cmd_list() {
     die "'--category' 또는 '--name' 필터를 사용할 때는 조회 대상('skill' 또는 'rule')을 지정해야 합니다." "$LINENO" "list"
   fi
 
+  local -a parsed_cats=()
   if [[ -n "$category" ]]; then
     local cat_norm_mode="skill-cat"
     [[ "$target" == "rule" ]] && cat_norm_mode="rule-cat"
 
-    local -a parsed_cats=()
     local c_line
     while IFS= read -r c_line; do
       [[ -n "$c_line" ]] && parsed_cats+=("$c_line")
@@ -2290,31 +2349,87 @@ cmd_list() {
     fi
   fi
 
-  local agent_home
-  agent_home="$(resolve_agent_home "$cli_home" "$agent" "list")"
+  local acs_home
+  acs_home="$(resolve_acs_home "$cli_home" "list")"
 
-  if [[ "$target" == "skill" ]]; then
-    print_list_by_kind "skill" "$agent_home" "$agent" "$category" "$name"
-  elif [[ "$target" == "rule" ]]; then
-    print_list_by_kind "rule" "$agent_home" "$agent" "$category" "$name"
-  else
-    # acs-cli list : skill -> rule 순서로 출력
-    print_list_by_kind "skill" "$agent_home" "$agent" "" ""
-    print_list_by_kind "rule" "$agent_home" "$agent" "" ""
+  # 1) '--agent'가 명시적으로 지정된 경우: 해당 에이전트만 조회
+  if [[ -n "$agent" ]]; then
+    agent="$(normalize_agent_name "$agent" "list")"
+    print_list_for_single_agent "$agent" "$acs_home" "$target" "$category" "$name"
+    return 0
   fi
+
+  # 2) '--agent'가 생략된 경우: 존재하는 모든 에이전트(antigravity, claude, codex) 조회
+  local -a existing_agents=()
+  local ag
+  for ag in "${SUPPORTED_AGENTS[@]}"; do
+    if [[ -d "${acs_home}/${ag}" ]]; then
+      existing_agents+=("$ag")
+    fi
+  done
+
+  if (( ${#existing_agents[@]} == 0 )); then
+    printf "%s (등록된 에이전트 데이터 없음)\n" "$acs_home"
+    return 0
+  fi
+
+  # '--category' 필터가 지정된 경우: 존재하는 에이전트 중 해당 카테고리를 보유한 에이전트에 대해 출력
+  if [[ -n "$category" ]]; then
+    local matched_any="false"
+    local req_cat phys_cat cat_root
+    for ag in "${existing_agents[@]}"; do
+      local -a ag_matched_cats=()
+      for req_cat in "${parsed_cats[@]}"; do
+        phys_cat="$(resolve_existing_category_dir_name "${acs_home}/${ag}" "$target" "$req_cat")"
+        if [[ "$target" == "skill" ]]; then
+          cat_root="${acs_home}/${ag}/skills/${phys_cat}"
+        else
+          cat_root="${acs_home}/${ag}/rules/${phys_cat}"
+        fi
+        if [[ -d "$cat_root" ]]; then
+          ag_matched_cats+=("$req_cat")
+        fi
+      done
+
+      if (( ${#ag_matched_cats[@]} > 0 )); then
+        matched_any="true"
+        local IFS=','
+        local ag_cat_csv="${ag_matched_cats[*]}"
+        unset IFS
+        print_list_for_single_agent "$ag" "$acs_home" "$target" "$ag_cat_csv" "$name"
+      fi
+    done
+
+    if [[ "$matched_any" == "false" ]]; then
+      die "존재하는 모든 에이전트(${existing_agents[*]})에서 요청한 카테고리('${category}')를 찾을 수 없습니다." "$LINENO" "list"
+    fi
+    return 0
+  fi
+
+  for ag in "${existing_agents[@]}"; do
+    print_list_for_single_agent "$ag" "$acs_home" "$target" "" ""
+  done
 }
 
 ##
 # 메인 엔트리포인트 함수
-# 'acs-cli [--agent <agent>] <command> ...' 구문을 처리합니다.
+# - 'acs-cli <command> ...'
+# - 'acs-cli --agent <agent> <command> ...'
+# - 'acs-cli --agent <agent>' (단독 실행 시 특정 에이전트의 skill/rule 목록 조회)
 #
 # @param $@ {array} 전체 커맨드라인 인자
 #
 # @return 종료 코드
 ##
 main() {
-  local global_agent="$DEFAULT_AGENT"
+  if (( $# == 0 )); then
+    help "실행할 명령어(create | remove | add | list)를 지정해 주세요." "$LINENO" "" >&2
+    exit 1
+  fi
+
+  local global_agent=""
   local subcmd=""
+  local -a pre_args=()
 
   while (( $# > 0 )); do
     case "$1" in
@@ -2323,12 +2438,21 @@ main() {
         return 0
         ;;
       --agent)
-        [[ $# -ge 2 ]] || die "'--agent' 옵션에 값이 필요합니다. (antigravity | agy | codex | claud)" "$LINENO" ""
+        [[ $# -ge 2 ]] || die "'--agent' 옵션에 값이 필요합니다. (antigravity | agy | codex | claude)" "$LINENO" ""
         global_agent="$(normalize_agent_name "$2" "")"
         shift 2
         ;;
       --agent=*)
         global_agent="$(normalize_agent_name "${1#--agent=}" "")"
+        shift
+        ;;
+      --home)
+        [[ $# -ge 2 ]] || die "'--home' 옵션에 경로가 필요합니다." "$LINENO" ""
+        pre_args+=("--home" "$2")
+        shift 2
+        ;;
+      --home=*)
+        pre_args+=("$1")
         shift
         ;;
       create|remove|add|list)
@@ -2337,7 +2461,7 @@ main() {
         break
         ;;
       -*)
-        die "알 수 없는 옵션입니다: $1 (지원 전역 옵션: --agent, --help)" "$LINENO" ""
+        die "알 수 없는 옵션입니다: $1 (지원 전역 옵션: --agent, --home, --help)" "$LINENO" ""
         ;;
       *)
         die "지원하지 않는 명령어입니다: $1 (지원 명령어: create, remove, add, list)" "$LINENO" ""
@@ -2345,23 +2469,28 @@ main() {
     esac
   done
 
+  # 'acs-cli --agent <agent>' 형태로 서브커맨드 없이 실행된 경우 해당 에이전트의 list 조회 수행
   if [[ -z "$subcmd" ]]; then
+    if [[ -n "$global_agent" ]]; then
+      cmd_list "$global_agent" "${pre_args[@]}" "$@"
+      return 0
+    fi
     help "실행할 명령어(create | remove | add | list)를 지정해 주세요." "$LINENO" "" >&2
     exit 1
   fi
 
   case "$subcmd" in
     create)
-      cmd_create "$global_agent" "$@"
+      cmd_create "$global_agent" "${pre_args[@]}" "$@"
       ;;
     remove)
-      cmd_remove "$global_agent" "$@"
+      cmd_remove "$global_agent" "${pre_args[@]}" "$@"
       ;;
     add)
-      cmd_add "$global_agent" "$@"
+      cmd_add "$global_agent" "${pre_args[@]}" "$@"
       ;;
     list)
-      cmd_list "$global_agent" "$@"
+      cmd_list "$global_agent" "${pre_args[@]}" "$@"
       ;;
   esac
 }
