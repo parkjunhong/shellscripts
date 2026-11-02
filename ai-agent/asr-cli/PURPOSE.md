@@ -1,8 +1,8 @@
-# 🎯 `acs-cli` 도입 목적 및 사용 권고 (Purpose & Recommendation)
+# 🎯 `asr-cli` 도입 목적 및 사용 권고 (Purpose & Recommendation)
 
 > **"개발 프로젝트 공간은 순수하게 코드와 비즈니스 로직을 위해 남겨두고, AI-Agent를 위한 지식 자산(`Skill` / `Rule`)은 독립된 전용 공간에서 체계적으로 관리하십시오."**
 
-`acs-cli`(**AI-Agent Customization System CLI**)는 AI 코딩 에이전트(Google Antigravity 등)가 사용하는 **스킬(`Skill`)**과 **규칙(`Rule`)**을 개별 개발 프로젝트 디렉토리 내부에 직접 포함시키지 않고, **독립적인 중앙 관리 공간(`${AI_AGENT_CUSTOMIZATION_HOME}`)**에 생성·관리·참조할 수 있도록 지원하는 전용 도구입니다.
+`asr-cli`(**AI-Agent Customization System CLI**)는 AI 코딩 에이전트(Google Antigravity 등)가 사용하는 **스킬(`Skill`)**과 **규칙(`Rule`)**을 개별 개발 프로젝트 디렉토리 내부에 직접 포함시키지 않고, **독립적인 중앙 관리 공간(`${AI_AGENT_CUSTOMIZATION_HOME}`)**에 생성·관리·참조할 수 있도록 지원하는 전용 도구입니다.
 
 ---
 
@@ -23,9 +23,9 @@ AI 에이전트는 기본적으로 워크스페이스 루트의 `.agents/skills/
 
 ---
 
-## 2. `acs-cli`가 제공하는 핵심 해결책
+## 2. `asr-cli`가 제공하는 핵심 해결책
 
-`acs-cli`는 위 문제들을 해결하기 위해 **관심사의 분리(Separation of Concerns)**와 **단일 진실 공급원(Single Source of Truth)** 원칙을 기반으로 설계되었습니다.
+`asr-cli`는 위 문제들을 해결하기 위해 **관심사의 분리(Separation of Concerns)**와 **단일 진실 공급원(Single Source of Truth)** 원칙을 기반으로 설계되었습니다.
 
 ```mermaid
 flowchart LR
@@ -53,12 +53,12 @@ flowchart LR
 * 모든 `Skill`과 `Rule`은 `${AI_AGENT_CUSTOMIZATION_HOME}` 하위의 독립된 디렉토리에서만 생성되고 관리되므로, 개발 저장소의 Git 상태를 100% 깨끗하게 유지할 수 있습니다.
 
 ### ✅ 2) 명확한 워크스페이스 식별 (`skill-<category>`, `rule-<category>`)
-* `acs-cli`로 카테고리를 생성하면 디스크 상에 `skill-<카테고리>`, `rule-<카테고리>` 이름으로 디렉토리가 구성됩니다.
+* `asr-cli`로 카테고리를 생성하면 디스크 상에 `skill-<카테고리>`, `rule-<카테고리>` 이름으로 디렉토리가 구성됩니다.
 * AI 에이전트 앱(Antigravity App 2.x 등)에 폴더를 추가했을 때 일반 개발 리소스(`java/`)와 에이전트 커스터마이징 폴더(`skill-java/`, `rule-java/`)를 즉각 구분할 수 있습니다.
 * 반면 CLI 명령어와 탭(`<TAB>`) 자동완성에서는 접두사를 제외한 논리 카테고리명(`java`)만 입력하면 되므로 조작 편의성을 해치지 않습니다.
 
 ### ✅ 3) 심볼릭 링크 기반의 유연한 조합 및 재사용 (`add`)
-* 이미 생성된 스킬이나 규칙을 다른 카테고리에 포함시켜야 할 때 파일을 복사하지 않고 `acs-cli add` 명령어를 통해 **심볼릭 링크(Symbolic Link)**로 참조합니다.
+* 이미 생성된 스킬이나 규칙을 다른 카테고리에 포함시켜야 할 때 파일을 복사하지 않고 `asr-cli add` 명령어를 통해 **심볼릭 링크(Symbolic Link)**로 참조합니다.
 * 원본 스킬이나 규칙 파일을 한 번만 수정하면, 이를 참조하는 모든 카테고리에 변경 사항이 즉시 반영됩니다.
 
 ### ✅ 4) 에이전트 호환성 및 무결성 자동 보장
@@ -68,9 +68,9 @@ flowchart LR
 
 ---
 
-## 3. 기존 방식 vs `acs-cli` 사용 방식 비교
+## 3. 기존 방식 vs `asr-cli` 사용 방식 비교
 
-| 비교 항목 | 프로젝트 내 직접 관리 방식 (기존) | `acs-cli` 독립 공간 관리 방식 (권고) |
+| 비교 항목 | 프로젝트 내 직접 관리 방식 (기존) | `asr-cli` 독립 공간 관리 방식 (권고) |
 | :--- | :--- | :--- |
 | **저장 위치** | 각 개발 프로젝트 루트 내부 (`<project>/.agents/`) | 독립된 전용 공간 (`${AI_AGENT_CUSTOMIZATION_HOME}`) |
 | **Git 저장소 영향** | 프로젝트 Git 상태에 노출됨 (`.gitignore` 관리 필요) | **개발 프로젝트와 완전 격리 (영향 없음)** |
@@ -91,13 +91,13 @@ flowchart LR
 2. **도메인/역할별 카테고리 생성 및 관리**:
    특정 프로젝트에 종속시키지 않고 기술 스택이나 역할 단위(예: `java`, `bash`, `devops`, `security`)로 카테고리를 나누어 스킬과 규칙을 생성합니다.
    ```bash
-   acs-cli create skill --category bash --name bash-scripts
-   acs-cli create rule  --category java --name javadoc-spec
+   asr-cli create skill --category bash --name bash-scripts
+   asr-cli create rule  --category java --name javadoc-spec
    ```
 3. **복합 작업 환경을 위한 참조 조합 (`add`)**:
    특정 업무에서 여러 도메인의 스킬/규칙 묶음이 필요하다면, 파일을 복제하지 말고 `add` 명령어로 심볼릭 링크 카테고리를 구성합니다.
    ```bash
-   acs-cli add skill --category fullstack --name bash/bash-scripts
+   asr-cli add skill --category fullstack --name bash/bash-scripts
    ```
 4. **AI-Agent 워크스페이스에 마운트**:
    작업 중인 개발 프로젝트와 함께 `${AI_AGENT_CUSTOMIZATION_HOME}/skills/skill-<카테고리>` 또는 `${AI_AGENT_CUSTOMIZATION_HOME}/rules/rule-<카테고리>` 폴더를 에이전트 워크스페이스에 추가하여 깔끔하고 일관된 AI 페어 프로그래밍 환경을 유지합니다.

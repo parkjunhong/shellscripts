@@ -23,7 +23,7 @@
 | **`docker`** | - | Docker CE 및 컨테이너 관리 도구 | `docker/install-docker`, `setup-compose-service`, `setup-docker-compose`, `dknetcli`, `dkcontls` |
 | **`network`** | - | 방화벽 및 네트워크 관리 도구 | `fwc-cli`, `fwc-docker-policy`, `add-vlan-routes`, `mtr-netstat-conns`, `firewall-cmd-set-priority` |
 | **`gitlab`** | - | GitLab 그룹/프로젝트 일괄 Clone | `gitlab-clone`, `clone-gitlab-projects` |
-| **`ai-agent`** | - | AI Agent Skill & Rule 관리 | `acs-cli` 및 기본 서버 패키지/Sudoers |
+| **`ai-agent`** | - | AI Agent Skill & Rule 관리 | `asr-cli` 및 기본 서버 패키지/Sudoers |
 | **`install-lets-encrypt-certificate`** | - | Let's Encrypt 인증서 배포 지원 | `letsencrypt` SSH RSA 공개키 등록 |
 
 ---
@@ -44,7 +44,7 @@ env/
 │   ├── docker.catalog                                      # Docker 엔진 및 유틸리티 매니페스트
 │   ├── network.catalog                                     # 네트워크 및 방화벽 매니페스트
 │   ├── gitlab.catalog                                      # GitLab Clone 환경 매니페스트
-│   ├── ai-agent.catalog                                    # AI Agent (acs-cli) 매니페스트
+│   ├── ai-agent.catalog                                    # AI Agent (asr-cli) 매니페스트
 │   └── install-lets-encrypt-certificate.catalog            # Let's Encrypt 인증서 배포용 공개키 매니페스트
 ├── installers/
 │   ├── install-htop.sh                                     # EPEL/Universe 저장소 구성 및 htop 설치 모듈

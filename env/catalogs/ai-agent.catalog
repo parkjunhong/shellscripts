@@ -3,7 +3,7 @@
 # ==============================================================================
 CATALOG_ID=ai-agent
 CATALOG_TITLE=AI Agent 사용자 정의 Skill & Rule 생성 지원
-CATALOG_DESC=AI Agent Skill & Rule 파일 생성 및 관리 도구(acs-cli)와 기본 패키지 환경을 제공합니다.
+CATALOG_DESC=AI Agent Skill & Rule 파일 생성 및 관리 도구(asr-cli)와 기본 패키지 환경을 제공합니다.
 INCLUDES=
 
 # ==============================================================================
@@ -20,7 +20,7 @@ INSTALL_PACKAGES=curl, net-tools, vim, jq, firewalld, file
 # ==============================================================================
 # 3. Custom Tools (<category>/<canonical-name>, 콤마 구분)
 # ==============================================================================
-CUSTOM_TOOLS=utils/scriptctl, ai-agent/acs-cli
+CUSTOM_TOOLS=utils/scriptctl, ai-agent/asr-cli
 
 # ==============================================================================
 # 4. Custom Installers (env/installers/ 식별자 또는 <category>/<tool>, 콤마 구분)

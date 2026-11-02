@@ -74,7 +74,7 @@ _sciectl_completion() {
   local command_candidates="firewall-cmd-set-priority"
   local key_candidates="ymtech-internal letsencrypt"
   local step_candidates="sudoers remove-packages install-packages default-opts custom-installers custom-tools custom-commands ssh-key"
-  local tool_candidates="utils/scriptctl sys/vim-cli sudo/sudoers-cli sys/disk-size maven/build-mvn-package git/git-commit git/git-merge git/git-log-abbr git/git-getpr git/git-branch-cmd git/git-init build/clean-project utils/diff-file docker/install-docker-dev-config docker/setup-compose-service docker/setup-docker-compose docker/dknetcli docker/dkcontls net/fwc-cli net/fwc-docker-policy net/add-vlan-routes net/mtr-netstat-conns gitlab/gitlab-clone gitlab/clone-gitlab-projects ai-agent/acs-cli"
+  local tool_candidates="utils/scriptctl sys/vim-cli sudo/sudoers-cli sys/disk-size maven/build-mvn-package git/git-commit git/git-merge git/git-log-abbr git/git-getpr git/git-branch-cmd git/git-init build/clean-project utils/diff-file docker/install-docker-dev-config docker/setup-compose-service docker/setup-docker-compose docker/dknetcli docker/dkcontls net/fwc-cli net/fwc-docker-policy net/add-vlan-routes net/mtr-netstat-conns gitlab/gitlab-clone gitlab/clone-gitlab-projects ai-agent/asr-cli"
 
   # 첫 번째 인자 완성
   if (( COMP_CWORD == 1 )); then

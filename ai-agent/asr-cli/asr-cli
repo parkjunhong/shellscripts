@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # =======================================
 # @author : parkjunhong77@gmail.com
-# @title : acs-cli: AI-Agent Customization System CLI (Skill & Rule Manager)
+# @title : asr-cli: AI-Agent Customization System CLI (Skill & Rule Manager)
 # @license : Apache License 2.0
 # @since : 2026-10-28
 # @desc : support RHEL 8+, Oracle Linux 8+, Ubuntu 20.04+, RockyOS 8+, CentOS 7+
 # @installation :
-# 1. insert 'source <path>/acs-cli.completion' into ~/.bashrc or ~/.bash_profile for a personal usage.
-# 2. copy the completion file to /usr/share/bash-completion/completions/acs-cli (1st) or /etc/bash_completion.d/acs-cli.completion (2nd) for all users.
+# 1. insert 'source <path>/asr-cli.completion' into ~/.bashrc or ~/.bash_profile for a personal usage.
+# 2. copy the completion file to /usr/share/bash-completion/completions/asr-cli (1st) or /etc/bash_completion.d/asr-cli.completion (2nd) for all users.
 # =======================================
 
 set -Eeuo pipefail
@@ -154,6 +154,29 @@ EOF
 
 EOF
       ;;
+    edit)
+      cat <<EOF
+
+✏️  사용법 (Usage - edit):
+  $FILENAME edit skill --category <카테고리> --name <이름> [--agent <antigravity|agy|codex|claude>] [--home <경로>]
+  $FILENAME edit rule  --category <카테고리> --name <이름> [--agent <antigravity|agy|codex|claude>] [--home <경로>]
+  $FILENAME edit --help
+
+📝 설명 (Description):
+  지정된 AI Agent(--agent, 기본값: antigravity)의 카테고리에 존재하는 스킬(SKILL.md) 또는 규칙(<NAME>.md / AGENTS.md) 파일을
+  'vim' 편집기로 열어 편집합니다.
+  - '--agent' 옵션은 명령어 앞뒤 어느 위치에서나 지정할 수 있습니다.
+  - 시스템에 'vim'이 설치되어 있지 않은 경우 패키지 매니저를 통해 자동으로 설치를 진행한 후 편집기를 실행합니다.
+
+⚙️  옵션 (Options):
+  --agent <AGENT>           대상 AI Agent 지정 (antigravity | agy | codex | claude, 기본값: antigravity)
+  --category <CATEGORY>     편집할 스킬/규칙이 속한 논리 카테고리 이름 (필수, 'skill-'/'rule-' 접두사 제외 입력)
+  --name <NAME>             편집할 스킬/규칙의 이름 (필수, 규칙의 경우 .md 확장자 생략 가능)
+  --home <DIR>              AI-Agent 커스터마이징 루트 경로 지정 (미지정 시 \$AI_AGENT_CUSTOMIZATION_HOME 사용)
+  --help                    edit 서브커맨드 도움말 출력
+
+EOF
+      ;;
     list)
       cat <<EOF
 
@@ -167,8 +190,8 @@ EOF
 
 📝 설명 (Description):
   관리 중인 스킬(Skill) 및 규칙(Rule)의 계층 구조를 tree 스타일(├──, └──)로 조회합니다.
-  - 'acs-cli list' ('--agent' 생략 시): 존재하는 모든 AI Agent(antigravity, claude, codex)의 skill/rule 정보를 출력합니다.
-  - 'acs-cli list --agent <agent>' 또는 'acs-cli --agent <agent>': 지정된 특정 AI Agent의 skill/rule 정보를 출력합니다.
+  - 'asr-cli list' ('--agent' 생략 시): 존재하는 모든 AI Agent(antigravity, claude, codex)의 skill/rule 정보를 출력합니다.
+  - 'asr-cli list --agent <agent>' 또는 'asr-cli --agent <agent>': 지정된 특정 AI Agent의 skill/rule 정보를 출력합니다.
   - '--category' 또는 '--name'에 콤마(,)로 구분하여 여러 항목을 한 번에 조회할 수 있습니다.
     (단, '--category'에 여러 카테고리를 지정한 경우 '--name' 옵션은 함께 사용할 수 없습니다.)
 
@@ -192,13 +215,14 @@ EOF
 📌 에이전트 옵션 (AI Agent Option - 모든 위치에서 지정 가능):
   --agent <AGENT>           사용할 AI Agent 지정 (antigravity | agy | codex | claude)
                             * 'agy'는 'antigravity'의 약어입니다.
-                            * create / remove / add 기본값: antigravity
+                            * create / remove / add / edit 기본값: antigravity
                             * list 기본값: 존재하는 모든 에이전트 조회
 
 📌 서브커맨드 (Subcommands):
   create   skill|rule       새로운 스킬(SKILL.md) 또는 규칙(<NAME>.md / AGENTS.md) 생성
   remove   skill|rule       특정 스킬/규칙 삭제 또는 카테고리 전체 삭제 (콤마 다중 지정 지원)
   add      skill|rule       이미 존재하는 스킬/규칙을 대상 카테고리에 심볼릭 링크로 추가(참조)
+  edit     skill|rule       기존 스킬(SKILL.md) 또는 규칙(<NAME>.md / AGENTS.md) 파일을 vim으로 편집
   list     [skill|rule]     등록된 스킬/규칙의 디렉토리 및 파일 트리 구조 조회 (콤마 다중 지정 지원)
 
 🌐 전역 옵션 및 환경 변수 (Global Options & Environment):
@@ -214,6 +238,8 @@ EOF
   $FILENAME create skill --category bash --name bash-scripts --agent agy
   $FILENAME create rule  --category java --name javadoc-guide --agent claude
   $FILENAME create rule  --category java --name spring-backend --agent codex
+  $FILENAME edit   skill --category bash --name bash-scripts
+  $FILENAME edit   rule  --category java --name javadoc-guide --agent claude
   $FILENAME add    skill --category devops --name bash/bash-scripts
   $FILENAME list
   $FILENAME list   --agent claude
@@ -2454,10 +2480,186 @@ cmd_list() {
 }
 
 ##
+# 시스템에 'vim' 편집기가 설치되어 있는지 확인하고, 미설치 시 OS 패키지 매니저를 통해 자동 설치합니다.
+#
+# @return 0 (설치 확인 또는 설치 완료 시), 실패 시 die 호출
+##
+ensure_vim_installed() {
+  if command -v vim >/dev/null 2>&1; then
+    return 0
+  fi
+
+  echo "📦 시스템에 'vim' 편집기가 설치되어 있지 않습니다. 자동으로 설치를 진행합니다..."
+
+  local -a sudo_cmd=()
+  if (( EUID != 0 )); then
+    if command -v sudo >/dev/null 2>&1; then
+      sudo_cmd=("sudo")
+    else
+      die "'vim'을 설치하려면 root 권한 또는 'sudo'가 필요합니다." "$LINENO" "edit"
+    fi
+  fi
+
+  if command -v apt-get >/dev/null 2>&1; then
+    "${sudo_cmd[@]}" apt-get update -y && "${sudo_cmd[@]}" apt-get install -y vim
+  elif command -v dnf >/dev/null 2>&1; then
+    "${sudo_cmd[@]}" dnf install -y vim-enhanced || "${sudo_cmd[@]}" dnf install -y vim
+  elif command -v yum >/dev/null 2>&1; then
+    "${sudo_cmd[@]}" yum install -y vim-enhanced || "${sudo_cmd[@]}" yum install -y vim
+  elif command -v zypper >/dev/null 2>&1; then
+    "${sudo_cmd[@]}" zypper --non-interactive install vim
+  elif command -v pacman >/dev/null 2>&1; then
+    "${sudo_cmd[@]}" pacman -Sy --noconfirm vim
+  elif command -v apk >/dev/null 2>&1; then
+    "${sudo_cmd[@]}" apk add vim
+  else
+    die "지원하는 패키지 매니저(apt-get, dnf, yum, zypper, pacman, apk)를 찾을 수 없어 'vim'을 자동 설치할 수 없습니다." "$LINENO" "edit"
+  fi
+
+  if ! command -v vim >/dev/null 2>&1; then
+    die "'vim' 설치에 실패했습니다. 수동으로 'vim'을 설치한 후 다시 시도해 주세요." "$LINENO" "edit"
+  fi
+
+  echo "✅ 'vim' 설치가 완료되었습니다."
+}
+
+##
+# 지정된 카테고리의 스킬(SKILL.md) 또는 규칙(<NAME>.md / AGENTS.md) 파일을 'vim'으로 편집합니다.
+#
+# @param $1 {string} 상위에서 전달된 에이전트 이름 (선택, 빈 값이면 기본값 antigravity 적용)
+# @param ${@:2} {array} edit 서브커맨드 인자 목록
+#
+# @return 0 (성공 시)
+##
+cmd_edit() {
+  local agent="${1:-}"
+  shift || true
+
+  local target=""
+  local category=""
+  local name=""
+  local cli_home=""
+
+  while (( $# > 0 )); do
+    case "$1" in
+      --help)
+        help "" "" "edit"
+        return 0
+        ;;
+      --agent)
+        [[ $# -ge 2 ]] || die "'--agent' 옵션에 값이 필요합니다. (antigravity | agy | codex | claude)" "$LINENO" "edit"
+        agent="$2"
+        shift 2
+        ;;
+      --agent=*)
+        agent="${1#--agent=}"
+        shift
+        ;;
+      skill|rule)
+        if [[ -z "$target" ]]; then
+          target="$1"
+          shift
+        else
+          die "대상(skill|rule)이 중복 지정되었습니다: $1" "$LINENO" "edit"
+        fi
+        ;;
+      --category)
+        [[ $# -ge 2 ]] || die "'--category' 옵션에 값이 필요합니다." "$LINENO" "edit"
+        category="$2"
+        shift 2
+        ;;
+      --category=*)
+        category="${1#--category=}"
+        shift
+        ;;
+      --name)
+        [[ $# -ge 2 ]] || die "'--name' 옵션에 값이 필요합니다." "$LINENO" "edit"
+        name="$2"
+        shift 2
+        ;;
+      --name=*)
+        name="${1#--name=}"
+        shift
+        ;;
+      --home)
+        [[ $# -ge 2 ]] || die "'--home' 옵션에 경로가 필요합니다." "$LINENO" "edit"
+        cli_home="$2"
+        shift 2
+        ;;
+      --home=*)
+        cli_home="${1#--home=}"
+        shift
+        ;;
+      -*)
+        die "알 수 없는 옵션입니다: $1 (Long Option만 지원합니다)" "$LINENO" "edit"
+        ;;
+      *)
+        die "알 수 없는 인자입니다: $1" "$LINENO" "edit"
+        ;;
+    esac
+  done
+
+  agent="$(normalize_agent_name "${agent:-$DEFAULT_AGENT}" "edit")"
+  [[ -n "$target" ]] || die "편집할 대상('skill' 또는 'rule')을 지정해야 합니다." "$LINENO" "edit"
+  category="$(normalize_category_name "$target" "$category")"
+  validate_identifier "$category" "category" "edit"
+  validate_identifier "$name" "name" "edit"
+
+  local agent_home
+  agent_home="$(resolve_agent_home "$cli_home" "$agent" "edit")"
+
+  local phys_cat
+  phys_cat="$(resolve_existing_category_dir_name "$agent_home" "$target" "$category")"
+
+  local target_file=""
+  if [[ "$target" == "skill" ]]; then
+    local skills_subpath
+    skills_subpath="$(get_skills_subpath "$agent")"
+    local skill_dir="${agent_home}/skills/${phys_cat}/${skills_subpath}/${name}"
+    if [[ -f "${skill_dir}/SKILL.md" ]]; then
+      target_file="${skill_dir}/SKILL.md"
+    elif [[ -f "${skill_dir}/SKILL.MD" ]]; then
+      target_file="${skill_dir}/SKILL.MD"
+    else
+      die "편집할 스킬 파일이 존재하지 않습니다: ${skill_dir}/SKILL.md" "$LINENO" "edit"
+    fi
+  elif [[ "$target" == "rule" ]]; then
+    local rule_name
+    rule_name="$(normalize_rule_name "$name")"
+    validate_identifier "$rule_name" "name" "edit"
+
+    if [[ "$agent" == "codex" ]]; then
+      local rule_dir="${agent_home}/rules/${phys_cat}/${rule_name}"
+      if [[ -f "${rule_dir}/AGENTS.md" ]]; then
+        target_file="${rule_dir}/AGENTS.md"
+      elif [[ -f "${rule_dir}/AGENTS.MD" ]]; then
+        target_file="${rule_dir}/AGENTS.MD"
+      else
+        die "편집할 Codex 규칙 파일이 존재하지 않습니다: ${rule_dir}/AGENTS.md" "$LINENO" "edit"
+      fi
+    else
+      local rules_subpath
+      rules_subpath="$(get_rules_subpath "$agent")"
+      local rules_dir="${agent_home}/rules/${phys_cat}/${rules_subpath}"
+      if [[ -f "${rules_dir}/${rule_name}.md" ]]; then
+        target_file="${rules_dir}/${rule_name}.md"
+      elif [[ -f "${rules_dir}/${rule_name}.MD" ]]; then
+        target_file="${rules_dir}/${rule_name}.MD"
+      else
+        die "편집할 규칙 파일이 존재하지 않습니다: ${rules_dir}/${rule_name}.md" "$LINENO" "edit"
+      fi
+    fi
+  fi
+
+  ensure_vim_installed
+  vim "$target_file"
+}
+
+##
 # 메인 엔트리포인트 함수
-# - 'acs-cli <command> ...'
-# - 'acs-cli --agent <agent> <command> ...'
-# - 'acs-cli --agent <agent>' (단독 실행 시 특정 에이전트의 skill/rule 목록 조회)
+# - 'asr-cli <command> ...'
+# - 'asr-cli --agent <agent> <command> ...'
+# - 'asr-cli --agent <agent>' (단독 실행 시 특정 에이전트의 skill/rule 목록 조회)
 #
 # @param $@ {array} 전체 커맨드라인 인자
 #
@@ -2465,7 +2667,7 @@ cmd_list() {
 ##
 main() {
   if (( $# == 0 )); then
-    help "실행할 명령어(create | remove | add | list)를 지정해 주세요." "$LINENO" "" >&2
+    help "실행할 명령어(create | remove | add | edit | list)를 지정해 주세요." "$LINENO" "" >&2
     exit 1
   fi
 
@@ -2497,7 +2699,7 @@ main() {
         pre_args+=("$1")
         shift
         ;;
-      create|remove|add|list)
+      create|remove|add|edit|list)
         subcmd="$1"
         shift
         break
@@ -2506,18 +2708,18 @@ main() {
         die "알 수 없는 옵션입니다: $1 (지원 전역 옵션: --agent, --home, --help)" "$LINENO" ""
         ;;
       *)
-        die "지원하지 않는 명령어입니다: $1 (지원 명령어: create, remove, add, list)" "$LINENO" ""
+        die "지원하지 않는 명령어입니다: $1 (지원 명령어: create, remove, add, edit, list)" "$LINENO" ""
         ;;
     esac
   done
 
-  # 'acs-cli --agent <agent>' 형태로 서브커맨드 없이 실행된 경우 해당 에이전트의 list 조회 수행
+  # 'asr-cli --agent <agent>' 형태로 서브커맨드 없이 실행된 경우 해당 에이전트의 list 조회 수행
   if [[ -z "$subcmd" ]]; then
     if [[ -n "$global_agent" ]]; then
       cmd_list "$global_agent" "${pre_args[@]}" "$@"
       return 0
     fi
-    help "실행할 명령어(create | remove | add | list)를 지정해 주세요." "$LINENO" "" >&2
+    help "실행할 명령어(create | remove | add | edit | list)를 지정해 주세요." "$LINENO" "" >&2
     exit 1
   fi
 
@@ -2530,6 +2732,9 @@ main() {
       ;;
     add)
       cmd_add "$global_agent" "${pre_args[@]}" "$@"
+      ;;
+    edit)
+      cmd_edit "$global_agent" "${pre_args[@]}" "$@"
       ;;
     list)
       cmd_list "$global_agent" "${pre_args[@]}" "$@"

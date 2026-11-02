@@ -1,12 +1,12 @@
 # =======================================
 # @author : parkjunhong77@gmail.com
-# @title : acs-cli: AI-Agent Customization System CLI bash completion
+# @title : asr-cli: AI-Agent Customization System CLI bash completion
 # @license : Apache License 2.0
 # @since : 2026-10-28
 # @desc : support RHEL 8+, Oracle Linux 8+, Ubuntu 20.04+, RockyOS 8+, CentOS 7+
 # @installation :
-# 1. insert 'source <path>/acs-cli.completion' into ~/.bashrc or ~/.bash_profile for a personal usage.
-# 2. copy the completion file to /usr/share/bash-completion/completions/acs-cli (1st) or /etc/bash_completion.d/acs-cli.completion (2nd) for all users.
+# 1. insert 'source <path>/asr-cli.completion' into ~/.bashrc or ~/.bash_profile for a personal usage.
+# 2. copy the completion file to /usr/share/bash-completion/completions/asr-cli (1st) or /etc/bash_completion.d/asr-cli.completion (2nd) for all users.
 # =======================================
 
 # =======================================
@@ -507,10 +507,10 @@ _acs_cli_complete_dir() {
 }
 
 ##
-# acs-cli 명령어에 대한 단계별(Sequential State Machine) Bash 자동 완성 처리 함수
+# asr-cli 명령어에 대한 단계별(Sequential State Machine) Bash 자동 완성 처리 함수
 #
 # 추천 순서 (단, '--agent'는 아직 입력되지 않은 경우 모든 단계의 위치에서 함께 제안됨):
-#   acs-cli <TAB>
+#   asr-cli <TAB>
 #     [add|create|list|remove] <TAB>
 #       [skill|rule] <TAB>
 #         --category <TAB>
@@ -533,7 +533,7 @@ _acs_cli_completion() {
   prev="${COMP_WORDS[COMP_CWORD-1]:-}"
 
   local -a agents=("agy" "antigravity" "claude" "codex")
-  local -a subcommands=("add" "create" "list" "remove")
+  local -a subcommands=("add" "create" "edit" "list" "remove")
 
   # COMP_CWORD 이전 토큰 전체를 스캔하여 현재까지 입력된 상태 파악
   local subcmd=""
@@ -552,7 +552,7 @@ _acs_cli_completion() {
   for (( i=1; i < COMP_CWORD; i++ )); do
     tok="${COMP_WORDS[i]}"
     case "$tok" in
-      add|create|list|remove)
+      add|create|edit|list|remove)
         [[ -z "$subcmd" ]] && subcmd="$tok"
         ;;
       skill|rule)
@@ -648,6 +648,10 @@ _acs_cli_completion() {
       [[ -n "$subcmd" && -n "$active_target" && -n "$category_val" ]] || return 0
       if [[ "$subcmd" == "add" ]]; then
         _acs_cli_complete_add_name "$active_target" "$category_val" "$cur" ""
+      elif [[ "$subcmd" == "edit" ]]; then
+        local name_list
+        name_list="$(_acs_cli_get_names_in_category "$active_target" "$category_val" "$subcmd")"
+        COMPREPLY=( $(compgen -W "$name_list" -- "$cur") )
       elif [[ "$subcmd" == "remove" || "$subcmd" == "list" ]]; then
         [[ "$category_val" != *,* ]] || return 0
         local name_list
@@ -692,6 +696,12 @@ _acs_cli_completion() {
       local name_part="${cur#--name=}"
       if [[ "$subcmd" == "add" ]]; then
         _acs_cli_complete_add_name "$active_target" "$category_val" "$name_part" "--name="
+      elif [[ "$subcmd" == "edit" ]]; then
+        local name_list candidate
+        name_list="$(_acs_cli_get_names_in_category "$active_target" "$category_val" "$subcmd")"
+        while IFS= read -r candidate; do
+          [[ -n "$candidate" ]] && COMPREPLY+=("--name=${candidate}")
+        done < <(compgen -W "$name_list" -- "$name_part")
       elif [[ "$subcmd" == "remove" || "$subcmd" == "list" ]]; then
         [[ "$category_val" != *,* ]] || return 0
         local name_list
@@ -760,10 +770,14 @@ _acs_cli_completion() {
   fi
 
   # (단계 E) --category와 --name이 모두 입력 완료된 상태
-  next_opts+=("--force")
+  if [[ "$subcmd" != "edit" ]]; then
+    next_opts+=("--force")
+  fi
   [[ "$has_agent" == "false" ]] && next_opts+=("--agent")
-  COMPREPLY=( $(compgen -W "${next_opts[*]}" -- "$cur") )
+  if (( ${#next_opts[@]} > 0 )); then
+    COMPREPLY=( $(compgen -W "${next_opts[*]}" -- "$cur") )
+  fi
   return 0
 }
 
-complete -F _acs_cli_completion acs-cli
+complete -F _acs_cli_completion asr-cli
