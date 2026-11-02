@@ -99,6 +99,22 @@ while [[ "$#" -gt 0 ]]; do
   shift
 done
 
+# macOS 환경 확인 및 Homebrew 설치 분기
+if [[ "${OSTYPE:-}" == "darwin"* ]] || [[ "$(uname -s 2>/dev/null)" == "Darwin" ]]; then
+  if ! command -v brew >/dev/null 2>&1; then
+    die "macOS 환경에서는 Homebrew('brew')가 필요합니다."
+  fi
+  log "macOS 환경에서 htop 설치를 시작합니다 (Homebrew)."
+  brew install htop
+
+  if command -v htop >/dev/null 2>&1; then
+    log "htop 설치 완료: $(htop --version | head -n 1)"
+    exit 0
+  else
+    die "설치 후 htop 실행 파일을 찾지 못했습니다."
+  fi
+fi
+
 # OS 릴리즈 파일 존재 여부 확인
 if [[ ! -r /etc/os-release ]]; then
   die "/etc/os-release 파일을 찾을 수 없습니다."

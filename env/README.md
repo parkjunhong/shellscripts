@@ -1,8 +1,8 @@
 # 🌐 Environment & Package Provisioning (`env/`)
 
-리눅스 서버(Ubuntu 24+, Rocky Linux 9+, RHEL 9+, CentOS Stream 9+)의 초기 운영/개발 환경 구축, 패키지 설치, Sudoers 권한 구성, 커스텀 CLI 도구 배포, 그리고 SSH 공개키 등록을 리눅스 패키지 매니저(`dnf`, `apt`) 방식으로 일괄 제어하는 카테고리입니다.
+리눅스 서버(Ubuntu 24+, Rocky Linux 9+, RHEL 9+, CentOS Stream 9+) 및 macOS(MacBook, MacBook Pro - Homebrew 기반)의 초기 운영/개발 환경 구축, 패키지 설치, Sudoers 권한 구성(Linux), 커스텀 CLI 도구 배포, 그리고 SSH 공개키 등록을 패키지 매니저(`dnf`, `apt`, `brew`) 방식으로 일괄 제어하는 카테고리입니다.
 
-핵심 CLI 도구인 [**`sciectl`**](sciectl/README.md)(Script, Command, Installer & Environment Controller)과 선언형 카탈로그 매니페스트(`catalogs/*.catalog`), 소프트웨어 인스톨러(`installers/*.sh`), 사후 구성 명령어(`commands/*.sh`), SSH 공개키(`keys/*.pub`)로 구성되어 있습니다.
+핵심 CLI 도구인 [**`sciectl`**](sciectl/README.md)(Script, Command, Installer & Environment Controller)과 선언형 카탈로그 매니페스트(`catalogs/*.catalog`), 소프트웨어 인스톨러(`installers/*.sh`), 사후 구성 명령어(`commands/*.sh`), SSH 공개키(`keys/*.pub`)로 구성되어 있습니다. OS별로 카탈로그를 분리하지 않고 단일 카탈로그 체계로 동작하며, 엔진이 대상 OS(Linux vs macOS)를 자동 판별하여 필요한 컴포넌트만 지능적으로 선택 설치/제외합니다.
 
 ---
 
@@ -63,7 +63,21 @@ env/
 
 ## 🛠️ 공통 설치 안내
 
-### 1. 신규 서버 환경에서 원격 다운로드 및 초기 등록 절차
+### 0. 시스템 요구사항 (Prerequisites)
+
+- **Linux**: Ubuntu 24.04+, Rocky Linux 9+, RHEL 9+, CentOS Stream 9+ (`bash 4.0+`, `curl` 기본 제공)
+- **macOS**: macOS 13+ (Ventura, Sonoma, Sequoia 등)
+  - **패키지 관리자**: [Homebrew](https://brew.sh) 설치 필수 (`brew`)
+  - **Bash 버전**: macOS 기본 내장 `/bin/bash`(3.2)는 연관 배열(`declare -A`)을 지원하지 않으므로, **Homebrew Bash 5.x 설치가 필수**입니다.
+    ```bash
+    # Homebrew 및 최신 Bash 설치
+    brew install bash bash-completion@2
+    ```
+  - **셸 환경 제약**: zsh는 지원하지 않으며 **오직 Bash 환경**에서만 실행됩니다. 환경 설정은 `$HOME/.bash_profile`에 단독 적용됩니다 (`$HOME/.bashrc` 연동 체이닝 없음).
+
+---
+
+### 1. 신규 환경에서 원격 다운로드 및 초기 등록 절차
 
 저장소 전체를 Clone하지 않은 신규 서버 환경에서는 아래 코드 스니펫을 복사하여 한 번에 실행하면 `scriptctl`과 `sciectl`(및 각각의 Bash 자동완성)이 시스템에 자동으로 등록됩니다.
 
@@ -103,7 +117,7 @@ sciectl install --catalog default-server,docker
 
 ### 2. 로컬 저장소(`shellscripts`) Clone 환경에서의 설치
 
-저장소가 이미 로컬에 Clone되어 있는 경우, `utils/scriptctl` 유틸리티를 사용하여 개인 실행 경로(`~/bin`) 또는 시스템 전역 경로(`/usr/local/bin`)에 간편하게 설치할 수 있습니다. 설치 시 연관된 Bash 자동완성 규칙이 시스템 표준 경로(`/usr/share/bash-completion/completions/`)에 자동으로 등록됩니다.
+저장소가 이미 로컬에 Clone되어 있는 경우, `utils/scriptctl` 유틸리티를 사용하여 개인 실행 경로(`~/bin`) 또는 시스템 전역 경로(`/usr/local/bin`)에 간편하게 설치할 수 있습니다. 설치 시 연관된 Bash 자동완성 규칙이 시스템 표준 경로(Linux: `/usr/share/bash-completion/completions/`, macOS: `$(brew --prefix)/etc/bash_completion.d` 또는 `~/.bash_completion.d`)에 자동으로 등록됩니다.
 
 ```bash
 # 개인 환경 설치 (~/bin, 사용자 자동완성 등록)

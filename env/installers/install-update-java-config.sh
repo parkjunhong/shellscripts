@@ -13,7 +13,14 @@ dest_path="$bin_dir/update-java-config"
 
 mkdir -p "$bin_dir"
 
+BASH_CONFIG_FILE="$HOME/.bashrc"
 URL_UPDATE_JAVA_CONFIG="https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main/java/update-java-config/update-java-config"
+
+if [[ "${OSTYPE:-}" == "darwin"* ]] || [[ "$(uname -s 2>/dev/null)" == "Darwin" ]]; then
+  BASH_CONFIG_FILE="$HOME/.bash_profile"
+  URL_UPDATE_JAVA_CONFIG="https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main/java/mac-update-java-config/mac-update-java-config"
+fi
+
 if ! curl -sfLo "$dest_path" "$URL_UPDATE_JAVA_CONFIG"; then
   echo_e " - [ERROR] '기본 Java 설정 도구' 다운로드 실패"
   echo_e " - [ERROR] '$URL_UPDATE_JAVA_CONFIG' 파일이 존재하지 않아 설치를 생략합니다."
@@ -28,8 +35,10 @@ fi
 chmod +x "$dest_path"
 echo " - $dest_path 다운로드 및 실행 권한 부여 완료."
 
-if ! grep -q "function update-java-config()" "$HOME/.bashrc"; then
-  cat << 'EOF' >> "$HOME/.bashrc" || error_exit "~/.bashrc 파일 수정 실패" "$LINENO"
+[[ -f "$BASH_CONFIG_FILE" ]] || touch "$BASH_CONFIG_FILE"
+
+if ! grep -q "function update-java-config()" "$BASH_CONFIG_FILE"; then
+  cat << 'EOF' >> "$BASH_CONFIG_FILE" || error_exit "$BASH_CONFIG_FILE 파일 수정 실패" "$LINENO"
 
 # ==========================================
 # Java 환경 변수 관리 (update-java-config 연동)
@@ -49,9 +58,9 @@ function update-java-config() {
   fi
 }
 EOF
-  echo_i " - ~/.bashrc에 update-java-config 래퍼 함수를 추가했습니다."
+  echo_i " - $BASH_CONFIG_FILE 에 update-java-config 래퍼 함수를 추가했습니다."
 else
-  echo_w " - ~/.bashrc에 이미 update-java-config 설정이 존재합니다."
+  echo_w " - $BASH_CONFIG_FILE 에 이미 update-java-config 설정이 존재합니다."
 fi
 
 # 최초 설치 시 실행하여 JAVA_HOME 설정 (비대화형 환경이 아닐 때 실행)

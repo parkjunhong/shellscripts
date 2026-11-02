@@ -347,7 +347,8 @@ find_companion_completion() {
 ##
 # 시스템에서 지원하는 bash completion 설치 디렉토리를 우선순위에 따라 결정합니다.
 # - 1순위: /usr/share/bash-completion/completions (설치 시 파일명: <tool>, 확장자 제거)
-# - 2순위: /etc/bash_completion.d (설치 시 파일명: <tool>.completion, 확장자 유지)
+# - 2순위: /etc/bash_completion.d (또는 Homebrew etc/bash_completion.d, 설치 시 파일명: <tool>.completion)
+# - 3순위: $HOME/.bash_completion.d (사용자 로컬)
 #
 # @return 선택된 설치 디렉토리 경로 출력
 ##
@@ -355,11 +356,29 @@ resolve_completion_install_dir() {
   local primary_dir="/usr/share/bash-completion/completions"
   local secondary_dir="/etc/bash_completion.d"
 
-  if [[ -d "$primary_dir" ]]; then
+  # macOS / Homebrew 환경 경로 우선 탐색
+  local brew_comp_dir=""
+  if command -v brew >/dev/null 2>&1; then
+    local brew_prefix
+    brew_prefix="$(brew --prefix 2>/dev/null || true)"
+    if [[ -n "$brew_prefix" && -d "${brew_prefix}/etc/bash_completion.d" ]]; then
+      brew_comp_dir="${brew_prefix}/etc/bash_completion.d"
+    elif [[ -n "$brew_prefix" && -d "${brew_prefix}/share/bash-completion/completions" ]]; then
+      brew_comp_dir="${brew_prefix}/share/bash-completion/completions"
+    fi
+  fi
+
+  if [[ -n "$brew_comp_dir" && -d "$brew_comp_dir" ]]; then
+    printf '%s\n' "$brew_comp_dir"
+    return 0
+  elif [[ -d "$primary_dir" ]]; then
     printf '%s\n' "$primary_dir"
     return 0
   elif [[ -d "$secondary_dir" ]]; then
     printf '%s\n' "$secondary_dir"
+    return 0
+  elif [[ -d "$HOME/.bash_completion.d" ]]; then
+    printf '%s\n' "$HOME/.bash_completion.d"
     return 0
   fi
 

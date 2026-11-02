@@ -14,6 +14,27 @@ readonly FILENAME="$(basename "$0")"
 readonly REPO_BASE_URL="${SCIECTL_REPO_URL:-https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main}"
 
 # ==========================================
+# 실행 대상 OS 판별 및 Bash 버전 검증
+# ==========================================
+TARGET_OS="linux"
+BASH_ENV_FILE="$HOME/.bashrc"
+if [[ "${SCIECTL_FORCE_OS:-}" == "darwin" ]] || [[ "${OSTYPE:-}" == "darwin"* ]] || [[ "$(uname -s 2>/dev/null)" == "Darwin" ]]; then
+  TARGET_OS="darwin"
+  BASH_ENV_FILE="$HOME/.bash_profile"
+fi
+
+if (( BASH_VERSINFO[0] < 4 )); then
+  if [[ "$TARGET_OS" == "darwin" ]]; then
+    printf '\033[1;31m[❌] macOS 기본 Bash(%s)는 연관 배열(declare -A) 등 필수 기능을 지원하지 않습니다.\033[0m\n' "${BASH_VERSION:-unknown}" >&2
+    printf '\033[1;33m💡 Homebrew를 통해 최신 Bash(5.x)를 설치한 후 실행해 주세요:\033[0m\n' >&2
+    printf '   brew install bash && exec /opt/homebrew/bin/bash (또는 /usr/local/bin/bash)\n' >&2
+  else
+    printf '\033[1;31m[❌] Bash 4.0 이상 버전이 필요합니다 (현재: %s).\033[0m\n' "${BASH_VERSION:-unknown}" >&2
+  fi
+  exit 1
+fi
+
+# ==========================================
 # 터미널 출력 색상 정의
 # ==========================================
 if [[ -t 1 ]]; then
@@ -315,7 +336,7 @@ PKG_INSTALL_CMD=""
 PKG_REMOVE_CMD=""
 
 ##
-# OS 패키지 매니저(apt 또는 dnf)를 감지하여 전역 변수를 설정합니다.
+# OS 패키지 매니저(apt, dnf 또는 Homebrew)를 감지하여 전역 변수를 설정합니다.
 #
 # @param 없음
 #
@@ -325,6 +346,21 @@ _detect_pkg_manager() {
   if [[ -n "$PKG_MANAGER" ]]; then
     return 0
   fi
+
+  if [[ "$TARGET_OS" == "darwin" ]]; then
+    if ! command -v brew &>/dev/null; then
+      echo_e "[❌] macOS 환경에서는 Homebrew('brew')가 필요합니다."
+      echo_w "💡 아래 명령어로 Homebrew를 먼저 설치해 주세요:"
+      echo_w '   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+      exit 1
+    fi
+    PKG_MANAGER="brew"
+    PKG_UPDATE_CMD="brew update"
+    PKG_INSTALL_CMD="brew install -q"
+    PKG_REMOVE_CMD="brew uninstall -q"
+    return 0
+  fi
+
   if command -v apt &>/dev/null; then
     PKG_MANAGER="apt"
     PKG_UPDATE_CMD="sudo apt update"
@@ -355,6 +391,8 @@ _is_package_installed() {
     dpkg -s "$pkg_name" 2>/dev/null | grep -q "Status: install ok installed"
   elif [[ "$PKG_MANAGER" == "dnf" ]]; then
     rpm -q "$pkg_name" &>/dev/null
+  elif [[ "$PKG_MANAGER" == "brew" ]]; then
+    brew list "$pkg_name" &>/dev/null
   else
     return 1
   fi
@@ -1038,21 +1076,24 @@ _setup_home_bin() {
     mkdir -p "$bin_dir" || error_exit "~/bin 디렉토리 생성 실패" "$LINENO"
     echo_i " - ~/bin 디렉토리를 생성했습니다."
   fi
-  if [[ -f "$HOME/.bashrc" ]] && ! grep -q "PATH=.*$bin_dir" "$HOME/.bashrc"; then
-    echo "export PATH=\"\$PATH:$bin_dir\"" >> "$HOME/.bashrc" || error_exit "$HOME/.bashrc 파일 수정 실패" "$LINENO"
+
+  [[ -f "$BASH_ENV_FILE" ]] || touch "$BASH_ENV_FILE"
+
+  if ! grep -q "PATH=.*$bin_dir" "$BASH_ENV_FILE"; then
+    echo "export PATH=\"\$PATH:$bin_dir\"" >> "$BASH_ENV_FILE" || error_exit "$BASH_ENV_FILE 파일 수정 실패" "$LINENO"
     export PATH="$PATH:$bin_dir"
-    echo_i " - $HOME/.bashrc 파일에 PATH 설정('$HOME/bin')을 추가했습니다."
+    echo_i " - $BASH_ENV_FILE 파일에 PATH 설정('$HOME/bin')을 추가했습니다."
     _add_notice "### $HOME/bin -> \$PATH 추가 작업 ###" false
-    _add_notice " - 현재 터미널에 즉시 반영하려면 다음 명령을 실행하세요: source ~/.bashrc" false
+    _add_notice " - 현재 터미널에 즉시 반영하려면 다음 명령을 실행하세요: source $BASH_ENV_FILE" false
   else
-    echo_w " - ~/.bashrc 파일에 이미 PATH 설정이 존재합니다."
+    echo_w " - $BASH_ENV_FILE 파일에 이미 PATH 설정이 존재합니다."
   fi
 
   EXECUTED_JOB_FLAGS["$func_name"]=1
 }
 
 ##
-# .bashrc 파일에 현재 위치의 git branch를 표시하는 프롬프트(PS1) 설정을 추가합니다.
+# .bashrc 또는 .bash_profile 파일에 현재 위치의 git branch를 표시하는 프롬프트(PS1) 설정을 추가합니다.
 #
 # @param 없음
 #
@@ -1065,8 +1106,11 @@ _setup_git_prompt() {
   echo
   echo "############### $func_name ###############"
   echo "[✨] git branch 프롬프트 설정 중..."
-  if [[ -f "$HOME/.bashrc" ]] && ! grep -q "parse_git_branch()" "$HOME/.bashrc"; then
-    cat << 'EOF' >> "$HOME/.bashrc" || error_exit "~/.bashrc 파일 수정 실패" "$LINENO"
+
+  [[ -f "$BASH_ENV_FILE" ]] || touch "$BASH_ENV_FILE"
+
+  if ! grep -q "parse_git_branch()" "$BASH_ENV_FILE"; then
+    cat << 'EOF' >> "$BASH_ENV_FILE" || error_exit "$BASH_ENV_FILE 파일 수정 실패" "$LINENO"
 
 parse_git_branch() {
   git branch 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/(\1) /'
@@ -1074,16 +1118,16 @@ parse_git_branch() {
 
 PS1='[directory] \[\033[01;31m\]$(parse_git_branch)\[\033[00m\]\[\033[01;34m\]\w\[\033[00m\]\n[\t ] \[\033[01;32m\]\u@\h\[\033[00m\]:$ '
 EOF
-    echo_i " - ~/.bashrc에 git 프롬프트 설정을 추가했습니다."
+    echo_i " - $BASH_ENV_FILE 에 git 프롬프트 설정을 추가했습니다."
   else
-    echo_w " - ~/.bashrc 파일에 이미 git 프롬프트 설정이 존재합니다."
+    echo_w " - $BASH_ENV_FILE 파일에 이미 git 프롬프트 설정이 존재합니다."
   fi
 
   EXECUTED_JOB_FLAGS["$func_name"]=1
 }
 
 ##
-# /etc/vim/vimrc (또는 /etc/vimrc) 파일에 커스텀 기본 옵션들을 활성화합니다.
+# /etc/vim/vimrc (macOS의 경우 $HOME/.vimrc) 파일에 커스텀 기본 옵션들을 활성화합니다.
 # (반드시 install_packages 이후에 실행되어 vim 미설치 상태의 파일 누락 문제를 방지합니다.)
 #
 # @param 없음
@@ -1099,11 +1143,35 @@ _install_vim_options() {
   echo "[✨] vim 환경 설정 중..."
 
   local vimrc_file="/etc/vim/vimrc"
-  if [[ ! -f "$vimrc_file" && -f "/etc/vimrc" ]]; then
+  local is_user_vimrc=false
+
+  if [[ "$TARGET_OS" == "darwin" ]]; then
+    # macOS는 SIP로 인해 시스템 디렉토리 쓰기가 차단되므로 개인 ~/.vimrc 타겟
+    vimrc_file="$HOME/.vimrc"
+    is_user_vimrc=true
+  elif [[ ! -f "$vimrc_file" && -f "/etc/vimrc" ]]; then
     vimrc_file="/etc/vimrc"
   fi
 
-  if [[ -f "$vimrc_file" ]]; then
+  if [[ "$is_user_vimrc" == true ]]; then
+    [[ -f "$vimrc_file" ]] || touch "$vimrc_file"
+    if ! grep -q "\" Custom Settings by setup-env" "$vimrc_file"; then
+      cat << 'EOF' >> "$vimrc_file"
+
+" Custom Settings by setup-env (sciectl)
+set showcmd   " Show (partial) command in status line.
+set ts=2
+set shiftwidth=2
+set paste
+set hlsearch
+set nu
+set expandtab
+EOF
+      echo_i " - [💡] $vimrc_file 파일에 커스텀 설정을 추가했습니다."
+    else
+      echo_w " - $vimrc_file 파일에 이미 커스텀 설정이 존재합니다."
+    fi
+  elif [[ -f "$vimrc_file" ]]; then
     if ! grep -q "\" Custom Settings by setup-env" "$vimrc_file"; then
       cat << 'EOF' | sudo tee -a "$vimrc_file" > /dev/null
 
@@ -1217,6 +1285,14 @@ install_packages() {
   local -a missing_pkgs=()
   local pkg
   for pkg in "${TX_INSTALL_PKGS[@]}"; do
+    if [[ "$PKG_MANAGER" == "brew" ]]; then
+      # macOS / Homebrew 미지원 Linux 전용 시스템 패키지는 사전에 필터링
+      if [[ "$pkg" == "firewalld" || "$pkg" == "net-tools" || "$pkg" == "ufw" ]]; then
+        echo_w " - '$pkg' 패키지는 macOS 환경에서 지원하지 않아 설치를 건너뜁니다."
+        continue
+      fi
+    fi
+
     if _is_package_installed "$pkg"; then
       echo_w " - '$pkg' 패키지가 이미 설치되어 있습니다."
     else
@@ -1262,6 +1338,14 @@ setup_sudoers() {
 
   local func_name="${FUNCNAME[0]}"
   [[ "${EXECUTED_JOB_FLAGS[$func_name]:-0}" -eq 1 ]] && return 0
+
+  if [[ "$TARGET_OS" == "darwin" ]]; then
+    echo
+    echo "############### $func_name ($target_user) ###############"
+    echo_w " - [💡] macOS 환경에서는 sudoers NOPASSWD 자동 등록을 건너뜁니다."
+    EXECUTED_JOB_FLAGS["$func_name"]=1
+    return 0
+  fi
 
   _detect_pkg_manager
   echo
@@ -1361,6 +1445,15 @@ _remove_legacy_sh_tool() {
   fi
 
   local -a comp_dirs=()
+  if [[ "$TARGET_OS" == "darwin" ]]; then
+    local brew_prefix=""
+    if command -v brew &>/dev/null; then
+      brew_prefix="$(brew --prefix 2>/dev/null || true)"
+    fi
+    [[ -n "$brew_prefix" && -d "${brew_prefix}/etc/bash_completion.d" ]] && comp_dirs+=("${brew_prefix}/etc/bash_completion.d")
+    [[ -n "$brew_prefix" && -d "${brew_prefix}/share/bash-completion/completions" ]] && comp_dirs+=("${brew_prefix}/share/bash-completion/completions")
+    [[ -d "$HOME/.bash_completion.d" ]] && comp_dirs+=("$HOME/.bash_completion.d")
+  fi
   if [[ -d "/usr/share/bash-completion/completions" ]]; then
     comp_dirs+=("/usr/share/bash-completion/completions")
   fi
@@ -1411,18 +1504,35 @@ _install_completion() {
   local force_overwrite="${3:-false}"
 
   local comp_dir=""
-  if command -v pkg-config &>/dev/null; then
-    comp_dir="$(pkg-config --variable=completionsdir bash-completion 2>/dev/null || true)"
-  fi
-  if [[ -z "$comp_dir" && -d "/usr/share/bash-completion/completions" ]]; then
-    comp_dir="/usr/share/bash-completion/completions"
-  fi
-  if [[ -z "$comp_dir" && -d "/etc/bash_completion.d" ]]; then
-    comp_dir="/etc/bash_completion.d"
-  fi
-  if [[ -z "$comp_dir" ]]; then
-    comp_dir="/etc/bash_completion.d"
-    sudo mkdir -p "$comp_dir"
+  if [[ "$TARGET_OS" == "darwin" ]]; then
+    local brew_prefix=""
+    if command -v brew &>/dev/null; then
+      brew_prefix="$(brew --prefix 2>/dev/null || true)"
+    fi
+    if [[ -n "$brew_prefix" && -d "${brew_prefix}/etc/bash_completion.d" ]]; then
+      comp_dir="${brew_prefix}/etc/bash_completion.d"
+    elif [[ -n "$brew_prefix" && -d "${brew_prefix}/share/bash-completion/completions" ]]; then
+      comp_dir="${brew_prefix}/share/bash-completion/completions"
+    elif [[ -d "$HOME/.bash_completion.d" ]]; then
+      comp_dir="$HOME/.bash_completion.d"
+    else
+      comp_dir="$HOME/.bash_completion.d"
+      mkdir -p "$comp_dir"
+    fi
+  else
+    if command -v pkg-config &>/dev/null; then
+      comp_dir="$(pkg-config --variable=completionsdir bash-completion 2>/dev/null || true)"
+    fi
+    if [[ -z "$comp_dir" && -d "/usr/share/bash-completion/completions" ]]; then
+      comp_dir="/usr/share/bash-completion/completions"
+    fi
+    if [[ -z "$comp_dir" && -d "/etc/bash_completion.d" ]]; then
+      comp_dir="/etc/bash_completion.d"
+    fi
+    if [[ -z "$comp_dir" ]]; then
+      comp_dir="/etc/bash_completion.d"
+      sudo mkdir -p "$comp_dir"
+    fi
   fi
 
   local temp_comp
@@ -1434,8 +1544,15 @@ _install_completion() {
   fi
 
   local target_comp_file="${comp_dir}/${target_cmd}"
-  if [[ "$comp_dir" == *"/etc/bash_completion.d"* ]]; then
+  if [[ "$comp_dir" == *"/etc/bash_completion.d"* || "$comp_dir" == *"$HOME/.bash_completion.d"* ]]; then
     target_comp_file="${comp_dir}/${target_cmd}.completion"
+  fi
+
+  local move_cmd="sudo mv"
+  local chmod_cmd="sudo chmod 644"
+  if [[ -w "$comp_dir" ]] || [[ ! -e "$target_comp_file" && -w "$(dirname "$target_comp_file")" ]]; then
+    move_cmd="mv"
+    chmod_cmd="chmod 644"
   fi
 
   local installed=0
@@ -1446,7 +1563,7 @@ _install_completion() {
         read -r -p "> '${target_cmd} completion' 내용이 다릅니다. 업데이트하시겠습니까? (y/n): " ch
       fi
       if [[ "$ch" =~ ^[Yy]$ ]]; then
-        sudo mv "$temp_comp" "$target_comp_file" && sudo chmod 644 "$target_comp_file"
+        $move_cmd "$temp_comp" "$target_comp_file" && $chmod_cmd "$target_comp_file"
         echo_i " - '${target_cmd} completion' 파일이 업데이트되었습니다. ($target_comp_file)"
         installed=1
       else
@@ -1458,7 +1575,7 @@ _install_completion() {
       rm -f -- "$temp_comp"
     fi
   else
-    sudo mv "$temp_comp" "$target_comp_file" && sudo chmod 644 "$target_comp_file"
+    $move_cmd "$temp_comp" "$target_comp_file" && $chmod_cmd "$target_comp_file"
     echo_i " - '${target_cmd} completion' 파일을 설치했습니다. ($target_comp_file)"
     installed=1
   fi
@@ -1984,7 +2101,9 @@ _print_transaction_summary() {
   printf " 🎯 도구 설치 범위      : %s (%s)\n" "$target_scope" "$([[ "$target_scope" == "global" ]] && echo "/usr/local/bin" || echo "$HOME/bin")"
   echo "--------------------------------------------------------------------------------"
 
-  if [[ "$active_steps" == *" sudoers "* ]] && (( ${#TX_SUDOERS_CMDS[@]} > 0 )); then
+  if [[ "$TARGET_OS" == "darwin" ]]; then
+    printf " [Step 1] 🔐 Sudoers 등록        : 해당 없음 (macOS 환경으로 자동 건너뜁니다)\n"
+  elif [[ "$active_steps" == *" sudoers "* ]] && (( ${#TX_SUDOERS_CMDS[@]} > 0 )); then
     printf " [Step 1] 🔐 Sudoers 등록 (%s) : %d개 명령어 병합\n" "$sudo_user" "${#TX_SUDOERS_CMDS[@]}"
   else
     printf " [Step 1] 🔐 Sudoers 등록        : 해당 없음 (건너뜀)\n"
@@ -2003,7 +2122,7 @@ _print_transaction_summary() {
   fi
 
   if (( run_default == 1 )) && [[ "$active_steps" == *" default-opts "* ]]; then
-    printf " [Step 4] ⚙️  기본 환경 3종 설정  : ~/bin PATH, git branch 프롬프트, vimrc 옵션\n"
+    printf " [Step 4] ⚙️  기본 환경 3종 설정  : ~/bin PATH, git branch 프롬프트 (%s), vimrc 옵션\n" "$(basename "$BASH_ENV_FILE")"
   else
     printf " [Step 4] ⚙️  기본 환경 3종 설정  : 생략 (--no-default-opts)\n"
   fi
@@ -2369,7 +2488,7 @@ cmd_install() {
   fi
 
   # 5. Sudoers 실행 대상인 경우 실행 전에 사용자 계정 사전 확정 (중간 멈춤 방지!)
-  if [[ "$active_steps_str" == *" sudoers "* ]] && (( ${#TX_SUDOERS_CMDS[@]} > 0 )); then
+  if [[ "$TARGET_OS" != "darwin" && "$active_steps_str" == *" sudoers "* ]] && (( ${#TX_SUDOERS_CMDS[@]} > 0 )); then
     local current_user="${USER:-$(whoami)}"
     if [[ -z "$target_user" ]]; then
       if [[ "$auto_yes" == "true" || "$is_dry_run" == "true" || ! -t 0 ]]; then

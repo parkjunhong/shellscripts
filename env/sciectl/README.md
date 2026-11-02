@@ -1,21 +1,26 @@
 # sciectl
 
-**`sciectl` (Script, Command, Installer & Environment Controller)**은 리눅스 패키지 매니저(`dnf`, `apt`)와 동일한 방식으로 목적별 환경 카탈로그(`@catalog`) 및 개별 컴포넌트(커스텀 CLI 도구, 인스톨러, 사후 명령어, Sudoers 권한, SSH 공개키)를 단일 트랜잭션 파이프라인으로 일괄 설치·관리하는 통합 프로비저닝 CLI 도구입니다.
+**`sciectl` (Script, Command, Installer & Environment Controller)**은 리눅스 패키지 매니저(`dnf`, `apt`) 및 macOS 패키지 매니저(`brew`)와 동일한 방식으로 목적별 환경 카탈로그(`@catalog`) 및 개별 컴포넌트(커스텀 CLI 도구, 인스톨러, 사후 명령어, Sudoers 권한, SSH 공개키)를 단일 트랜잭션 파이프라인으로 일괄 설치·관리하는 통합 프로비저닝 CLI 도구입니다.
 
 ---
 
 ## ✨ 주요 특징
 
+- **단일 카탈로그 기반 다중 OS 선택적 설치 (Multi-OS Selective Provisioning)**:
+  - 카탈로그 매니페스트(`*.catalog`)를 OS별로 쪼개지 않고 단일 정의를 유지합니다.
+  - 실행 엔진이 현재 대상 OS(Linux vs macOS)를 자동 판별하여, 해당 OS 환경에 적합한 항목만 지능적으로 선택 설치하거나 제외(Skip)합니다.
+    - **Linux**: `apt`/`dnf` 패키지 관리, Sudoers NOPASSWD 병합, `$HOME/.bashrc`에 환경 설정 적용
+    - **macOS (Darwin)**: `Homebrew(brew)` 패키지 관리, Sudoers 자동 건너뜀, `$HOME/.bash_profile`에 단독 환경 설정 적용 (`.bashrc` 체이닝 일체 배제), Bash 4+ 기반
 - **패키지 매니저형 다중 카탈로그 트랜잭션 (`install`)**: 1개 이상의 카탈로그(예: `--catalog default-server,docker,network`)를 동시에 지정하면 상위 상속(`INCLUDES`)까지 자동으로 해석·병합·중복 제거한 뒤, 실행 전 **Transaction Summary(실행 계획 요약표)**를 출력하고 단 1회 확인으로 일괄 실행합니다.
 - **선언형 카탈로그 및 논리 식별자 해석**: 전체 URL을 하드코딩하지 않고 `git/git-commit`, `temurin-25-jdk`, `ymtech-internal`과 같은 논리 식별자만으로 로컬 저장소(`--local`) 또는 원격 GitHub 저장소(`--remote`)에서 자원을 자동 탐색합니다.
 - **엄격한 의존성 순서 보장 (8단계 파이프라인)**:
-  1. `sudoers` (`/etc/sudoers.d/user-<계정>` 병합·정렬 및 `visudo -c` 사전 검증)
-  2. `remove-packages` (불필요 OS 패키지 제거)
-  3. `install-packages` (미설치 OS 패키지 일괄 설치 — 필요 시에만 패키지 인덱스 업데이트 1회 수행)
-  4. `default-opts` (`~/bin` PATH 등록, Git 브랜치 프롬프트, `vim` 설치 후 `vimrc` 설정)
-  5. `custom-installers` (`env/installers/` 소프트웨어 설치 스크립트 보안 검증 및 실행)
+  1. `sudoers` (`/etc/sudoers.d/user-<계정>` 병합·정렬 및 `visudo -c` 사전 검증, macOS는 안전하게 건너뜀)
+  2. `remove-packages` (패키지별 실제 설치 여부 검사 후 존재 시 삭제, 미존재 시 건너뜀)
+  3. `install-packages` (미설치 OS 패키지 일괄 설치 — 필요 시에만 패키지 인덱스 업데이트 1회 수행, OS 미지원 패키지는 자동 제외)
+  4. `default-opts` (`~/bin` PATH 등록, Git 브랜치 프롬프트, `vimrc` 설정 — Linux: `$HOME/.bashrc`, macOS: `$HOME/.bash_profile` 단독)
+  5. `custom-installers` (`env/installers/` 소프트웨어 설치 스크립트 보안 검증 및 실행 — Linux: deb/rpm, macOS: brew cask/formula)
   6. `custom-tools` (커스텀 CLI 도구 + `.completion` 자동 설치 및 구버전 `.sh` 정리)
-  7. `custom-commands` (`env/commands/` 시스템 사후 구성 명령어 실행)
+  7. `custom-commands` (`env/commands/` 시스템 사후 구성 명령어 실행 — Linux 전용 방화벽 등은 macOS에서 자동 건너뜀)
   8. `ssh-key` (`~/.ssh/authorized_keys` Base64 본문 중복 검사 후 등록)
 - **대화형(TUI) 및 무인 자동화(`--yes`) 하이브리드 지원**: 인자 없이 실행하면 동적 ASCII 테이블 기반 다중 카탈로그/단계 선택 메뉴를 제공하며, `--yes` 지정 시 모든 확인 프롬프트를 자동 승인하여 무인 프로비저닝을 수행합니다.
 
