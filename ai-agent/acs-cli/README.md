@@ -46,6 +46,7 @@ AI-Agent Customization System에서 사용하는 **다중 AI 에이전트(`antig
    * 모든 삭제 작업은 `[y/n]` 사용자 확인(`y`만 진행, `n` 또는 `Enter`는 취소)을 거치며, `--force` 지정 시 즉시 삭제합니다.
 5. **순수 Bash 기반 `tree` 선(`├──`, `└──`) 스타일 계층 조회 (`list`)**
    * 외부 `tree` 패키지 의존성 없이 스킬 디렉토리 하위 파일 구조와 규칙 파일/디렉토리 및 심볼릭 링크 참조 대상(`-> 원본경로`)을 `├──`, `└──`, `│` 트리 스타일로 시각화합니다.
+   * **빈 디렉토리 자동 제외**: 하위에 파일이나 디렉토리가 전혀 없거나, 비어 있는 하위 디렉토리만 존재하는 폴더(예: 파일이 없는 `references/`, `scripts/`, `templates/` 또는 비어 있는 규칙 참조 폴더)는 출력에서 자동으로 제외하여 실제 유효한 리소스만 깔끔하게 표시합니다.
    * `acs-cli list` 단독 실행 시 존재하는 모든 에이전트(`antigravity`, `claude`, `codex`)의 `skill`과 `rule` 정보를 출력하며, `--agent <agent>` 지정 시 특정 에이전트의 정보만 출력합니다.
    * `--category <cat1,cat2>` 또는 `--category <cat> --name <name1,name2>` 형태의 콤마(`,`) 다중 조회를 지원합니다. (단, `--category`가 다중 입력된 경우 `--name`은 사용할 수 없습니다.)
 6. **단계별(Step-by-Step) 및 모든 위치 `--agent` 지원 Bash 자동완성 (`acs-cli.completion`)**

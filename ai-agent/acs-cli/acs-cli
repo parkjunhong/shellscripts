@@ -1884,7 +1884,41 @@ cmd_add() {
 }
 
 ##
+# 지정된 디렉토리 하위에(재귀적으로) 실제 파일(또는 파일 심볼릭 링크)이 최소 1개 이상 존재하는지 확인합니다.
+# - 하위 파일/폴더가 전혀 없는 빈 디렉토리이거나
+# - 비어 있는 하위 디렉토리만 존재하는 경우 1(false)을 반환합니다.
+#
+# @param $1 {string} 검사할 디렉토리 경로
+# @param $2 {number} 재귀 탐색 깊이 (내부 루프 방지용, 기본값: 0)
+#
+# @return 0 (하위에 파일 존재), 1 (비어 있거나 빈 디렉토리만 존재)
+##
+dir_has_any_file() {
+  local dir_path="$1"
+  local depth="${2:-0}"
+  (( depth < 16 )) || return 1
+  [[ -d "$dir_path" ]] || return 1
+
+  local item bname
+  for item in "${dir_path}"/* "${dir_path}"/.[!.]* "${dir_path}"/..?*; do
+    [[ -e "$item" || -L "$item" ]] || continue
+    bname="$(basename "$item")"
+    [[ "$bname" != "." && "$bname" != ".." ]] || continue
+    if [[ -d "$item" ]]; then
+      if dir_has_any_file "$item" "$((depth + 1))"; then
+        return 0
+      fi
+    else
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+##
 # 디렉토리 내부의 파일 및 하위 폴더들을 tree 선 기호(├──, └──, │) 스타일로 재귀 출력합니다.
+# 단, 비어 있는 디렉토리이거나 빈 디렉토리만 포함하는 하위 디렉토리는 출력에서 제외합니다.
 #
 # @param $1 {string} 탐색할 디렉토리 경로
 # @param $2 {string} 현재 줄 앞에 붙일 들여쓰기 접두사
@@ -1901,6 +1935,9 @@ render_dir_tree() {
   local item
   for item in "${dir_path}"/*; do
     [[ -e "$item" || -L "$item" ]] || continue
+    if [[ -d "$item" ]]; then
+      dir_has_any_file "$item" || continue
+    fi
     entries+=("$item")
   done
 
@@ -1925,6 +1962,7 @@ render_dir_tree() {
       link_target="$(readlink "$item" || true)"
       if [[ -d "$item" ]]; then
         printf "%s%s%s/ -> %s\n" "$prefix" "$branch" "$bname" "$link_target"
+        render_dir_tree "$item" "$next_prefix"
       else
         printf "%s%s%s -> %s\n" "$prefix" "$branch" "$bname" "$link_target"
       fi
@@ -1974,22 +2012,26 @@ print_skill_category_tree() {
       if [[ ! -e "$target_skill" && ! -L "$target_skill" ]]; then
         die "카테고리 '${logical_cat}' (${phys_cat})에 '${sname}' 스킬이 존재하지 않습니다: ${target_skill}" "$LINENO" "list"
       fi
+      if [[ -d "$target_skill" ]]; then
+        dir_has_any_file "$target_skill" || continue
+      fi
       skill_entries+=("$target_skill")
     done < <(split_csv_unique "$filter_names_csv" "name" "list" "")
   elif [[ -d "$skills_dir" ]]; then
     local entry
     for entry in "${skills_dir}"/*; do
       [[ -e "$entry" || -L "$entry" ]] || continue
+      if [[ -d "$entry" ]]; then
+        dir_has_any_file "$entry" || continue
+      fi
       skill_entries+=("$entry")
     done
   fi
 
-  printf "%s\n" "$cat_root"
   local count="${#skill_entries[@]}"
-  if (( count == 0 )); then
-    printf "└── (등록된 스킬 없음)\n"
-    return 0
-  fi
+  (( count > 0 )) || return 0
+
+  printf "%s\n" "$cat_root"
 
   local idx=0
   local entry sname branch child_prefix link_target
@@ -2024,8 +2066,8 @@ print_skill_category_tree() {
 
 ##
 # 단일 규칙 카테고리의 트리 구조를 출력합니다.
-# - antigravity / claude: 규칙 파일(<rule-name>.md)과 연관 참조 디렉토리(<rule-name>/)를 함께 출력
-# - codex               : 규칙 디렉토리(<rule-name>/AGENTS.md 및 하위 참조 폴더)를 트리 출력
+# - antigravity / claude: 규칙 파일(<rule-name>.md)과 실제 파일이 존재하는 연관 참조 디렉토리(<rule-name>/)를 함께 출력
+# - codex               : 규칙 디렉토리(<rule-name>/AGENTS.md 및 실제 파일이 존재하는 하위 참조 폴더)를 트리 출력
 #
 # @param $1 {string} 에이전트 루트 경로 (agent_home)
 # @param $2 {string} 정규화된 에이전트 이름 (antigravity | claude | codex)
@@ -2063,12 +2105,18 @@ print_rule_category_tree() {
         if [[ ! -e "$target_rule_dir" && ! -L "$target_rule_dir" ]]; then
           die "카테고리 '${logical_cat}' (${phys_cat})에 '${rname}' 규칙이 존재하지 않습니다: ${target_rule_dir}" "$LINENO" "list"
         fi
+        if [[ -d "$target_rule_dir" ]]; then
+          dir_has_any_file "$target_rule_dir" || continue
+        fi
         display_entries+=("$target_rule_dir")
       done < <(split_csv_unique "$filter_names_csv" "name" "list" "rule-name")
     elif [[ -d "$rules_dir" ]]; then
       local entry
       for entry in "${rules_dir}"/*; do
         [[ -d "$entry" || -L "$entry" ]] || continue
+        if [[ -d "$entry" ]]; then
+          dir_has_any_file "$entry" || continue
+        fi
         display_entries+=("$entry")
       done
     fi
@@ -2083,7 +2131,7 @@ print_rule_category_tree() {
           die "카테고리 '${logical_cat}' (${phys_cat})에 '${rname}' 규칙이 존재하지 않습니다: ${target_rule}" "$LINENO" "list"
         fi
         display_entries+=("$target_rule")
-        if [[ -d "$target_ref_dir" || -L "$target_ref_dir" ]]; then
+        if [[ -d "$target_ref_dir" || -L "$target_ref_dir" ]] && dir_has_any_file "$target_ref_dir"; then
           display_entries+=("$target_ref_dir")
         fi
       done < <(split_csv_unique "$filter_names_csv" "name" "list" "rule-name")
@@ -2096,19 +2144,17 @@ print_rule_category_tree() {
         display_entries+=("$entry")
         rname="$(normalize_rule_name "$bname")"
         target_ref_dir="${rules_dir}/${rname}"
-        if [[ -d "$target_ref_dir" || -L "$target_ref_dir" ]]; then
+        if [[ -d "$target_ref_dir" || -L "$target_ref_dir" ]] && dir_has_any_file "$target_ref_dir"; then
           display_entries+=("$target_ref_dir")
         fi
       done
     fi
   fi
 
-  printf "%s\n" "$cat_root"
   local count="${#display_entries[@]}"
-  if (( count == 0 )); then
-    printf "└── (등록된 규칙 없음)\n"
-    return 0
-  fi
+  (( count > 0 )) || return 0
+
+  printf "%s\n" "$cat_root"
 
   local idx=0
   local entry rfile branch child_prefix link_target
@@ -2145,6 +2191,7 @@ print_rule_category_tree() {
 
 ##
 # 지정된 종류(skill 또는 rule)의 전체 또는 필터링된 트리 목록을 출력합니다.
+# 비어 있는 디렉토리이거나 빈 디렉토리만 존재하는 카테고리는 출력에서 제외합니다.
 #
 # @param $1 {string} 종류 (skill | rule)
 # @param $2 {string} 에이전트 루트 경로 (agent_home)
@@ -2188,23 +2235,18 @@ print_list_by_kind() {
     kind_root="${agent_home}/rules"
   fi
 
-  if [[ ! -d "$kind_root" ]]; then
-    printf "%s (등록된 카테고리 없음)\n" "$kind_root"
-    return 0
-  fi
+  dir_has_any_file "$kind_root" || return 0
 
   local -a categories=()
   local cat_dir bname
   for cat_dir in "${kind_root}"/*; do
     [[ -d "$cat_dir" ]] || continue
+    dir_has_any_file "$cat_dir" || continue
     bname="$(basename "$cat_dir")"
     categories+=("$bname")
   done
 
-  if (( ${#categories[@]} == 0 )); then
-    printf "%s (등록된 카테고리 없음)\n" "$kind_root"
-    return 0
-  fi
+  (( ${#categories[@]} > 0 )) || return 0
 
   local cat
   for cat in "${categories[@]}"; do
