@@ -1,6 +1,6 @@
-# antigravity
+# installer
 
-Google Antigravity Core CLI 및 Antigravity IDE 설치 및 환경 구성을 지원하는 도구 모음 디렉토리입니다.
+Google Antigravity Core CLI, Antigravity IDE, Albert 등 다양한 프로그램의 설치 및 환경 구성을 지원하는 도구 모음 디렉토리입니다.
 
 ---
 
@@ -17,7 +17,7 @@ Google Antigravity Core CLI 및 Antigravity IDE 설치 및 환경 구성을 지�
 ## 📁 디렉토리 구조
 
 ```plaintext
-antigravity/
+installer/
 ├── README.md
 ├── install-albert-with-socket/
 │   ├── README.md
