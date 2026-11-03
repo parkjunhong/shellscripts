@@ -1,0 +1,78 @@
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : install-albert-with-socket bash completion.
+# @license : Apache License 2.0
+# @since : 2026-10-31
+# @desc : support Ubuntu (22.04, 24.04, 26.04 or higher)
+# @installation : 
+# 1. insert 'source <path>/install-albert-with-socket.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/install-albert-with-socket.completion' into '/etc/bashrc' or '/usr/share/bash-completion/completions/' for all users.
+# =======================================
+# Global Reserved Variables
+# 1. COMP_WORDS: an array, contains all arguments
+# 2. COMP_CWORD: an index of a cursor
+# 3. COMP_LINE: all command string
+# 4. COMPREPLY: an array, contains suggested words. words are sorted and unique.
+#
+# Arguments of a function
+# 1. $1: command
+# 2. $2: current
+# 3. $3: previous
+#
+# e.g.: mycmd arg1 arg2 arg3 arg4[tab]
+# - $1: mycmd
+# - $2: arg4
+# - $3: arg3
+# =======================================
+
+##
+# install-albert-with-socket 명령어에 대한 자동완성(Auto-completion) 지원 함수입니다.
+##
+_install_albert_with_socket_completion() {
+  local cur prev opts available_opts opt is_used word i
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  # 지원하는 Long 옵션 목록 정의 (단축 옵션 완전 배제)
+  opts="--release --toggle-path --skip-toggle --dry-run --help"
+
+  # 이전 인자 컨텍스트에 따른 동적 자동완성 제어
+  case "${prev}" in
+    --release)
+      local common_releases="22.04 24.04 26.04"
+      COMPREPLY=( $(compgen -W "${common_releases}" -- "${cur}") )
+      return 0
+      ;;
+    --toggle-path)
+      # 파일/경로 자동완성
+      compopt -o default
+      COMPREPLY=( $(compgen -f -- "${cur}") )
+      return 0
+      ;;
+    *)
+      ;;
+  esac
+
+  # 이미 입력된 단일 사용 옵션 필터링
+  available_opts=""
+  for opt in $opts; do
+    is_used=0
+    for (( i=1; i<COMP_CWORD; i++ )); do
+      word="${COMP_WORDS[i]}"
+      if [[ "$word" == "$opt" ]]; then
+        is_used=1
+        break
+      fi
+    done
+    if [[ $is_used -eq 0 ]]; then
+      available_opts="$available_opts $opt"
+    fi
+  done
+
+  # 커서에 '-' 또는 '--' 입력 여부와 무관하게 TAB 입력 시 사용 가능한 옵션 즉시 제안
+  COMPREPLY=( $(compgen -W "${available_opts}" -- "${cur}") )
+}
+
+# 스크립트 실행파일명과 자동완성 함수 바인딩
+complete -F _install_albert_with_socket_completion install-albert-with-socket

@@ -1,0 +1,275 @@
+#!/usr/bin/env bash
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : install-albert-with-socket
+# @license : Apache License 2.0
+# @since : 2026-10-31
+# @desc : support Ubuntu (22.04, 24.04, 26.04 or higher)
+# @installation : 
+# 1. insert 'source <path>/install-albert-with-socket.completion' into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
+# 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/install-albert-with-socket.completion' into '/etc/bashrc' or '/usr/share/bash-completion/completions/' for all users.
+# =======================================
+
+set -Eeuo pipefail
+
+FILENAME=$(basename "$0")
+
+##
+# 스크립트 사용 방법 및 오류 원인을 출력합니다.
+#
+# @param $1 {string} (오류 발생 시 원인 메시지)
+# @param $2 {string} (오류 발생 라인)
+#
+# @return (도움말 내용 출력)
+##
+help(){
+  if [ ! -z "${1:-}" ];
+  then
+    local indent=10
+    local formatl=" - %-"$indent"s: %s\n"
+    local formatr=" - %"$indent"s: %s\n"
+    echo
+    echo "================================================================================"
+    printf "$formatl" "filename" "$FILENAME"
+    printf "$formatl" "line" "${2:-}"
+    printf "$formatl" "callstack"
+    local idx=1
+    for func in "${FUNCNAME[@]:1}"
+    do 
+      printf "$formatr" "["$idx"]" "$func"
+      ((idx++)) || true
+    done
+    printf "$formatl" "cause" "$1"
+    echo "================================================================================"
+  fi 
+  echo 
+  echo "사용법 (Usage): ./$FILENAME [옵션]"
+  echo ""
+  echo "[설명]"
+  echo "  openSUSE Build Service(OBS) 공식 저장소를 통해 Albert 런처를 설치하고,"
+  echo "  Wayland 환경에서 안정적인 단축키 동작을 지원하기 위한 IPC Socket 토글 도구를 구성합니다."
+  echo ""
+  echo "[옵션 (Options)]"
+  echo "  --release <버전>          Ubuntu 릴리즈 버전 (예: 22.04, 24.04, 26.04) (기본값: 시스템 자동 감지)"
+  echo "  --toggle-path <경로>      IPC Socket 토글 스크립트 설치 경로 (기본값: \$HOME/.local/bin/albert-toggle)"
+  echo "  --skip-toggle             IPC Socket 토글 스크립트 생성을 건너뛰고 Albert 본체만 설치"
+  echo "  --dry-run                 실제 패키지 설치 및 파일 수정을 진행하지 않고 실행 계획만 출력"
+  echo "  --help                    도움말을 출력하고 종료"
+  echo ""
+  echo "[주의사항]"
+  echo "  단축 옵션(-r, -t, -h 등)은 지원하지 않으므로 반드시 Long 옵션을 사용하십시오."
+}
+
+##
+# 현재 시스템의 Ubuntu 릴리즈 버전을 감지합니다.
+#
+# @return {string} 감지된 Ubuntu 버전 (예: 24.04, 26.04)
+##
+detect_ubuntu_release() {
+  local version=""
+  if [ -f /etc/os-release ]; then
+    local os_id
+    local os_ver
+    os_id=$(grep -E '^ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
+    os_ver=$(grep -E '^VERSION_ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
+    if [[ "$os_id" == "ubuntu" ]] && [ -n "$os_ver" ]; then
+      version="$os_ver"
+    fi
+  elif command -v lsb_release >/dev/null 2>&1; then
+    local os_id
+    os_id=$(lsb_release -si 2>/dev/null | tr '[:upper:]' '[:lower:]')
+    if [[ "$os_id" == "ubuntu" ]]; then
+      version=$(lsb_release -sr 2>/dev/null)
+    fi
+  fi
+
+  if [ -z "$version" ]; then
+    version="24.04"
+  fi
+  echo "$version"
+}
+
+##
+# 명령어 실행 래퍼 (dry-run 지원)
+##
+run_cmd() {
+  if [ "$DRY_RUN" = true ]; then
+    echo "  [DRY-RUN] $*"
+  else
+    "$@"
+  fi
+}
+
+##
+# 입력받은 파라미터를 파싱하고 검증합니다.
+#
+# @param $@ {Array} 스크립트 실행 파라미터
+##
+parse_arguments() {
+  TARGET_RELEASE=""
+  TOGGLE_SCRIPT="${HOME}/.local/bin/albert-toggle"
+  SKIP_TOGGLE=false
+  DRY_RUN=false
+
+  while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+      --release)
+        if [ -z "${2:-}" ]; then help "--release 버전 정보가 누락되었습니다." "$LINENO"; exit 1; fi
+        TARGET_RELEASE="$2"; shift 2 ;;
+      --toggle-path)
+        if [ -z "${2:-}" ]; then help "--toggle-path 경로가 누락되었습니다." "$LINENO"; exit 1; fi
+        TOGGLE_SCRIPT="$2"; shift 2 ;;
+      --skip-toggle)
+        SKIP_TOGGLE=true; shift ;;
+      --dry-run)
+        DRY_RUN=true; shift ;;
+      --help)
+        help ""; exit 0 ;;
+      *)
+        help "지원하지 않는 옵션입니다: $1" "$LINENO"; exit 1 ;;
+    esac
+  done
+
+  if [ -z "$TARGET_RELEASE" ]; then
+    TARGET_RELEASE=$(detect_ubuntu_release)
+  fi
+}
+
+##
+# 메인 실행 함수
+##
+main() {
+  parse_arguments "$@"
+
+  local repo_base="https://download.opensuse.org/repositories/home:manuelschneid3r/xUbuntu_${TARGET_RELEASE}"
+  local keyring="/etc/apt/keyrings/albert.gpg"
+  local source_list="/etc/apt/sources.list.d/albert.list"
+
+  echo "================================================================================"
+  echo "▶️  Albert Installer for Ubuntu (${TARGET_RELEASE})"
+  echo "    OBS Repository + IPC Socket Toggle"
+  if [ "$DRY_RUN" = true ]; then
+    echo "    [시뮬레이션 모드 (--dry-run) 활성화]"
+  fi
+  echo "================================================================================"
+  echo
+
+  echo "[1/7] 필수 의존 패키지(curl, ca-certificates, gnupg, socat) 설치 확인..."
+  run_cmd sudo apt update
+  run_cmd sudo apt install -y curl ca-certificates gnupg socat
+
+  echo
+  echo "[2/7] APT 키링 디렉토리 및 저장소 서명 키 설치..."
+  run_cmd sudo mkdir -p /etc/apt/keyrings
+  if [ "$DRY_RUN" = true ]; then
+    echo "  [DRY-RUN] curl -fsSL \"${repo_base}/Release.key\" | sudo gpg --dearmor --yes -o \"${keyring}\""
+  else
+    curl -fsSL "${repo_base}/Release.key" | sudo gpg --dearmor --yes -o "${keyring}"
+  fi
+
+  echo
+  echo "[3/7] Albert OBS APT 저장소 등록..."
+  if [ "$DRY_RUN" = true ]; then
+    echo "  [DRY-RUN] echo \"deb [signed-by=${keyring}] ${repo_base}/ /\" | sudo tee \"${source_list}\" >/dev/null"
+  else
+    echo "deb [signed-by=${keyring}] ${repo_base}/ /" | sudo tee "${source_list}" >/dev/null
+  fi
+
+  echo
+  echo "[4/7] APT 패키지 목록 업데이트..."
+  run_cmd sudo apt update
+
+  echo
+  echo "[5/7] Albert 패키지 설치..."
+  run_cmd sudo apt install -y albert
+
+  echo
+  if [ "$SKIP_TOGGLE" = false ]; then
+    echo "[6/7] Albert IPC Socket 토글 스크립트 생성..."
+    local toggle_dir
+    toggle_dir="$(dirname "${TOGGLE_SCRIPT}")"
+    if [ "$DRY_RUN" = true ]; then
+      echo "  [DRY-RUN] mkdir -p \"${toggle_dir}\""
+      echo "  [DRY-RUN] 토글 스크립트 작성 -> \"${TOGGLE_SCRIPT}\""
+      echo "  [DRY-RUN] chmod +x \"${TOGGLE_SCRIPT}\""
+    else
+      mkdir -p "${toggle_dir}"
+      cat > "${TOGGLE_SCRIPT}" <<'EOF'
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SOCKET="${XDG_CACHE_HOME:-${HOME}/.cache}/albert/ipc_socket"
+
+# Albert가 실행 중이고 IPC socket이 존재하면 직접 toggle 명령을 전달한다.
+if [[ -S "${SOCKET}" ]]; then
+  printf '["toggle"]' | socat - "UNIX-CONNECT:${SOCKET}"
+  exit 0
+fi
+
+# Albert가 아직 실행되지 않았거나 socket이 준비되지 않은 경우 fallback.
+exec /usr/bin/albert toggle
+EOF
+      chmod +x "${TOGGLE_SCRIPT}"
+      echo "  ✅ 토글 스크립트 생성 완료: ${TOGGLE_SCRIPT}"
+    fi
+  else
+    echo "[6/7] (--skip-toggle 옵션에 의해 IPC Socket 토글 스크립트 생성을 건너뜁니다.)"
+  fi
+
+  echo
+  echo "[7/7] 설치 상태 검증..."
+  if [ "$DRY_RUN" = true ]; then
+    echo "  [DRY-RUN] albert --version"
+    echo "  [DRY-RUN] socat -V"
+  else
+    echo -n "  Albert 버전: "
+    albert --version 2>/dev/null || echo "설치 전 또는 미확인"
+    echo -n "  socat 상태: "
+    socat -V 2>/dev/null | head -n 1 || echo "미확인"
+    if [ "$SKIP_TOGGLE" = false ]; then
+      echo "  토글 명령어: ${TOGGLE_SCRIPT}"
+    fi
+  fi
+
+  echo
+  echo "================================================================================"
+  echo "🎉 Albert 설치 및 구성 안내"
+  echo "================================================================================"
+  echo
+  echo "1. Albert 초기 실행:"
+  echo "   /usr/bin/albert &"
+  echo
+  echo "2. Albert 트레이 아이콘이 나타난 후, GNOME 단축키를 등록하십시오."
+  echo "--------------------------------------------------------------------------------"
+  echo " GNOME 단축키 등록 방법 (Wayland 환경)"
+  echo "--------------------------------------------------------------------------------"
+  echo " 설정 (Settings) -> 키보드 (Keyboard)"
+  echo "   -> 바로가기 보기 및 사용자 지정 (View and Customize Shortcuts)"
+  echo "   -> 사용자 정의 바로가기 (Custom Shortcuts) -> 바로가기 추가 (+)"
+  echo
+  echo "   - 이름 (Name): Albert"
+  if [ "$SKIP_TOGGLE" = false ]; then
+    echo "   - 명령 (Command): ${TOGGLE_SCRIPT}"
+  else
+    echo "   - 명령 (Command): /usr/bin/albert toggle"
+  fi
+  echo "   - 바로가기 (Shortcut): Alt + Space"
+  echo "--------------------------------------------------------------------------------"
+  echo
+  echo "※ 만약 Alt + Space 가 GNOME 창 메뉴(activate-window-menu)에 할당되어 있다면:"
+  echo "   gsettings get org.gnome.desktop.wm.keybindings activate-window-menu"
+  echo
+  echo "   결과에 '<Alt>space'가 포함되어 있다면 다음 명령어로 해제하십시오:"
+  echo "   gsettings set org.gnome.desktop.wm.keybindings activate-window-menu \"[]\""
+  echo
+  if [ "$SKIP_TOGGLE" = false ]; then
+    echo "※ 수동 토글 테스트 명령:"
+    echo "   ${TOGGLE_SCRIPT}"
+    echo
+  fi
+}
+
+main "$@"
+
+exit 0
