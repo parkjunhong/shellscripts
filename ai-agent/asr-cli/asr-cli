@@ -13,7 +13,6 @@
 set -Eeuo pipefail
 
 readonly FILENAME="$(basename "$0")"
-readonly DEFAULT_AGENT="antigravity"
 readonly -a SUPPORTED_AGENTS=("antigravity" "claude" "codex")
 
 ##
@@ -133,21 +132,28 @@ EOF
       cat <<EOF
 
 🔗 사용법 (Usage - add):
-  $FILENAME add skill --category <카테고리> --name <스킬_전체경로_또는_카테고리/이름> [--agent <antigravity|agy|codex|claude>] [--home <경로>] [--force]
-  $FILENAME add rule  --category <카테고리> --name <규칙_전체경로_또는_카테고리/이름> [--agent <antigravity|agy|codex|claude>] [--home <경로>] [--force]
+  $FILENAME --agent <antigravity|agy|claude|codex> add skill --category <카테고리> (--name <참조경로> | --skill-dir <외부디렉토리>) [--home <경로>] [--force]
+  $FILENAME --agent <antigravity|agy|claude>       add rule  --category <카테고리> (--name <참조경로> | --rule-file <외부파일>) [--home <경로>] [--force]
+  $FILENAME --agent codex                         add rule  --category <카테고리> (--name <참조경로> | --rule-dir <외부디렉토리>) [--home <경로>] [--force]
   $FILENAME add --help
 
 📝 설명 (Description):
-  지정된 AI Agent(--agent, 기본값: antigravity) 내에 이미 존재하는 스킬 또는 규칙(--name)을
-  지정된 카테고리(--category)에 심볼릭 링크로 추가(참조)합니다.
-  - '--agent' 옵션은 명령어 앞뒤 어느 위치에서나 지정할 수 있습니다.
-  - Bash 자동완성(<TAB>)을 통해 '{category}/{name}' 형태로 추천받고 선택 시 전체 파일/디렉토리 경로로 자동 변환됩니다.
+  지정된 AI Agent(--agent, 필수)의 특정 카테고리(--category)에
+  내부 스킬/규칙(--name) 또는 외부 스킬/규칙(--skill-dir, --rule-file, --rule-dir)을 심볼릭 링크로 추가(참조)합니다.
+  - '--agent' 옵션은 필수이며, 커맨드라인 최우선 위치에 지정합니다.
+  - 스킬의 경우: '--name'과 '--skill-dir'은 상호 배타적입니다.
+  - 규칙의 경우:
+    * Antigravity / Claude : '--name'과 '--rule-file' (마크다운 파일) 지원
+    * Codex                : '--name'과 '--rule-dir' (AGENTS.md 포함 디렉토리) 지원
   - 대상 카테고리 디렉토리('skill-<카테고리>' 또는 'rule-<카테고리>')가 존재하지 않는 경우 자동으로 생성합니다.
 
 ⚙️  옵션 (Options):
-  --agent <AGENT>           대상 AI Agent 지정 (antigravity | agy | codex | claude, 기본값: antigravity)
+  --agent <AGENT>           대상 AI Agent 지정 (antigravity | agy | codex | claude, 필수)
   --category <CATEGORY>     심볼릭 링크가 생성될 대상 카테고리 이름 (필수, 'skill-'/'rule-' 접두사 제외 입력)
-  --name <PATH_OR_REF>      참조할 원본 스킬 디렉토리 또는 규칙 파일/폴더의 전체 경로 (필수, '{category}/{name}' 형식도 지원)
+  --name <PATH_OR_REF>      내부 스킬 디렉토리 또는 규칙 파일/폴더 경로 ('{category}/{name}' 형식 지원)
+  --skill-dir <DIR>         외부 스킬 디렉토리 경로 (SKILL.md 필수, skill 대상 전용)
+  --rule-file <FILE>        외부 마크다운 규칙 파일 경로 (.md 필수, antigravity/claude rule 대상 전용)
+  --rule-dir <DIR>          외부 Codex 규칙 디렉토리 경로 (AGENTS.md 필수, codex rule 대상 전용)
   --home <DIR>              AI-Agent 커스터마이징 루트 경로 지정 (미지정 시 \$AI_AGENT_CUSTOMIZATION_HOME 사용)
   --force                   동일 이름의 항목이 이미 존재할 때 기존 항목을 교체
   --help                    add 서브커맨드 도움말 출력
@@ -275,7 +281,9 @@ die() {
 
 ##
 # 입력된 '--agent' 값을 검증하고 정규화된 에이전트 디렉토리명(antigravity | claude | codex)을 반환합니다.
-# 'agy'는 'antigravity'로 변환되며, 빈 값인 경우 기본값('antigravity')을 반환합니다.
+# 'agy'는 'antigravity'로 변환됩니다.
+# 'create', 'remove', 'add', 'edit' 서브커맨드에서는 '--agent' 옵션이 필수입니다.
+# 'list' 서브커맨드에서는 생략 시 빈 문자열을 반환하여 전체 에이전트 조회를 허용합니다.
 #
 # @param $1 {string} 입력된 에이전트 이름
 # @param $2 {string} 서브커맨드 이름 (선택, 에러 출력용)
@@ -283,11 +291,20 @@ die() {
 # @return 정규화된 에이전트 식별자 (antigravity | claude | codex)
 ##
 normalize_agent_name() {
-  local raw_agent="${1:-$DEFAULT_AGENT}"
+  local raw_agent="${1:-}"
   local subcmd="${2:-}"
 
+  if [[ -z "$raw_agent" ]]; then
+    if [[ "$subcmd" == "list" ]]; then
+      printf "\n"
+      return 0
+    else
+      die "필수 옵션 '--agent'가 누락되었습니다. (antigravity | agy | claude | codex)" "$LINENO" "$subcmd"
+    fi
+  fi
+
   case "$raw_agent" in
-    ""|antigravity|agy)
+    antigravity|agy)
       printf "antigravity\n"
       ;;
     claude)
@@ -595,8 +612,11 @@ resolve_asr_home() {
 ##
 resolve_agent_home() {
   local cli_home="${1:-}"
-  local agent="${2:-$DEFAULT_AGENT}"
+  local agent="${2:-}"
   local subcmd="${3:-}"
+
+  [[ -n "$agent" ]] || die "필수 옵션 '--agent'가 누락되었습니다. (antigravity | agy | claude | codex)" "$LINENO" "$subcmd"
+
   local base_home
   base_home="$(resolve_asr_home "$cli_home" "$subcmd")"
 
@@ -1232,7 +1252,7 @@ cmd_create() {
     esac
   done
 
-  agent="$(normalize_agent_name "${agent:-$DEFAULT_AGENT}" "create")"
+  agent="$(normalize_agent_name "$agent" "create")"
   [[ -n "$target" ]] || die "생성할 대상('skill' 또는 'rule')을 지정해야 합니다." "$LINENO" "create"
   category="$(normalize_category_name "$target" "$category")"
   validate_identifier "$category" "category" "create"
@@ -1339,7 +1359,7 @@ cmd_remove() {
     esac
   done
 
-  agent="$(normalize_agent_name "${agent:-$DEFAULT_AGENT}" "remove")"
+  agent="$(normalize_agent_name "$agent" "remove")"
   [[ -n "$target" ]] || die "삭제할 대상('skill' 또는 'rule')을 지정해야 합니다." "$LINENO" "remove"
   [[ -n "$category" ]] || die "'--category' 옵션 값이 비어 있습니다." "$LINENO" "remove"
 
@@ -1635,9 +1655,9 @@ cmd_remove() {
 
 ##
 # 이미 존재하는 스킬 또는 규칙(--name)을 지정된 카테고리(--category)에 심볼릭 링크로 추가합니다.
-# '--name' 값으로는 전체 파일/디렉토리 경로뿐만 아니라 '{src_category}/{name}' 형식도 허용합니다.
+# 외부 스킬 디렉토리(--skill-dir) 또는 외부 규칙 파일(--rule-file) / 디렉토리(--rule-dir) 참조도 지원합니다.
 #
-# @param $1 {string} 상위에서 전달된 에이전트 이름 (선택, 빈 값이면 기본값 antigravity 적용)
+# @param $1 {string} 상위에서 전달된 에이전트 이름 (선택, 빈 값이면 옵션 파싱 시 필수 검증)
 # @param ${@:2} {array} add 서브커맨드 인자 목록
 #
 # @return 0 (성공 시)
@@ -1649,6 +1669,9 @@ cmd_add() {
   local target=""
   local category=""
   local name_arg=""
+  local skill_dir_arg=""
+  local rule_file_arg=""
+  local rule_dir_arg=""
   local cli_home=""
   local force="false"
 
@@ -1693,6 +1716,33 @@ cmd_add() {
         name_arg="${1#--name=}"
         shift
         ;;
+      --skill-dir)
+        [[ $# -ge 2 ]] || die "'--skill-dir' 옵션에 외부 스킬 디렉토리 경로가 필요합니다." "$LINENO" "add"
+        skill_dir_arg="$2"
+        shift 2
+        ;;
+      --skill-dir=*)
+        skill_dir_arg="${1#--skill-dir=}"
+        shift
+        ;;
+      --rule-file)
+        [[ $# -ge 2 ]] || die "'--rule-file' 옵션에 외부 규칙 파일 경로가 필요합니다." "$LINENO" "add"
+        rule_file_arg="$2"
+        shift 2
+        ;;
+      --rule-file=*)
+        rule_file_arg="${1#--rule-file=}"
+        shift
+        ;;
+      --rule-dir)
+        [[ $# -ge 2 ]] || die "'--rule-dir' 옵션에 외부 규칙 디렉토리 경로가 필요합니다." "$LINENO" "add"
+        rule_dir_arg="$2"
+        shift 2
+        ;;
+      --rule-dir=*)
+        rule_dir_arg="${1#--rule-dir=}"
+        shift
+        ;;
       --home)
         [[ $# -ge 2 ]] || die "'--home' 옵션에 경로가 필요합니다." "$LINENO" "add"
         cli_home="$2"
@@ -1715,11 +1765,10 @@ cmd_add() {
     esac
   done
 
-  agent="$(normalize_agent_name "${agent:-$DEFAULT_AGENT}" "add")"
+  agent="$(normalize_agent_name "$agent" "add")"
   [[ -n "$target" ]] || die "추가할 대상('skill' 또는 'rule')을 지정해야 합니다." "$LINENO" "add"
   category="$(normalize_category_name "$target" "$category")"
   validate_identifier "$category" "category" "add"
-  [[ -n "$name_arg" ]] || die "'--name' 옵션 값이 비어 있습니다." "$LINENO" "add"
 
   local agent_home
   agent_home="$(resolve_agent_home "$cli_home" "$agent" "add")"
@@ -1732,26 +1781,46 @@ cmd_add() {
   phys_cat="$(resolve_existing_category_dir_name "$agent_home" "$target" "$category")"
 
   if [[ "$target" == "skill" ]]; then
-    local resolved_input="$name_arg"
-    if [[ ! -d "$resolved_input" && "$resolved_input" == */* && "$resolved_input" != /* ]]; then
-      local src_cat_raw="${resolved_input%%/*}"
-      local src_cat_phys
-      src_cat_phys="$(resolve_existing_category_dir_name "$agent_home" "skill" "$src_cat_raw")"
-      local src_skill="${resolved_input#*/}"
-      local candidate_dir="${agent_home}/skills/${src_cat_phys}/${skills_subpath}/${src_skill}"
-      if [[ -d "$candidate_dir" ]]; then
-        resolved_input="$candidate_dir"
-      fi
+    if [[ -n "$rule_file_arg" || -n "$rule_dir_arg" ]]; then
+      die "'add skill' 명령어에서는 '--rule-file' 또는 '--rule-dir' 옵션을 사용할 수 없습니다." "$LINENO" "add"
+    fi
+    if [[ -n "$name_arg" && -n "$skill_dir_arg" ]]; then
+      die "'add skill' 명령어에서는 '--name' 옵션과 '--skill-dir' 옵션을 함께 사용할 수 없습니다. 둘 중 하나만 지정해 주세요." "$LINENO" "add"
+    fi
+    if [[ -z "$name_arg" && -z "$skill_dir_arg" ]]; then
+      die "참조할 스킬 대상('--name <카테고리/이름>' 또는 '--skill-dir <디렉토리경로>')을 지정해야 합니다." "$LINENO" "add"
     fi
 
-    [[ -d "$resolved_input" ]] || die "참조할 원본 스킬 디렉토리가 존재하지 않습니다: ${name_arg}" "$LINENO" "add"
+    local abs_src_dir=""
+    local skill_name=""
 
-    local abs_src_dir
-    abs_src_dir="$(resolve_abs_path "$resolved_input" "resolve")"
+    if [[ -n "$skill_dir_arg" ]]; then
+      [[ -d "$skill_dir_arg" ]] || die "지정된 외부 스킬 디렉토리가 존재하지 않습니다: ${skill_dir_arg}" "$LINENO" "add"
+      if [[ ! -f "${skill_dir_arg}/SKILL.md" && ! -f "${skill_dir_arg}/SKILL.MD" ]]; then
+        die "지정된 외부 디렉토리에 'SKILL.md' 파일이 존재하지 않습니다: ${skill_dir_arg}" "$LINENO" "add"
+      fi
+      abs_src_dir="$(resolve_abs_path "$skill_dir_arg" "resolve")"
+      skill_name="$(basename "$abs_src_dir")"
+    else
+      local resolved_input="$name_arg"
+      if [[ ! -d "$resolved_input" && "$resolved_input" == */* && "$resolved_input" != /* ]]; then
+        local src_cat_raw="${resolved_input%%/*}"
+        local src_cat_phys
+        src_cat_phys="$(resolve_existing_category_dir_name "$agent_home" "skill" "$src_cat_raw")"
+        local src_skill="${resolved_input#*/}"
+        local candidate_dir="${agent_home}/skills/${src_cat_phys}/${skills_subpath}/${src_skill}"
+        if [[ -d "$candidate_dir" ]]; then
+          resolved_input="$candidate_dir"
+        fi
+      fi
 
-    local skill_name
-    skill_name="$(basename "$abs_src_dir")"
+      [[ -d "$resolved_input" ]] || die "참조할 원본 스킬 디렉토리가 존재하지 않습니다: ${name_arg}" "$LINENO" "add"
+      abs_src_dir="$(resolve_abs_path "$resolved_input" "resolve")"
+      skill_name="$(basename "$abs_src_dir")"
+    fi
+
     validate_identifier "$skill_name" "name" "add"
+    validate_skill_name_unique "$agent_home" "$agent" "$skill_name" "$category" "$force"
 
     local skills_parent="${agent_home}/skills/${phys_cat}/${skills_subpath}"
     local link_path="${skills_parent}/${skill_name}"
@@ -1784,30 +1853,53 @@ cmd_add() {
     echo "   - 원본 경로: ${abs_src_dir}"
 
   elif [[ "$target" == "rule" ]]; then
+    if [[ -n "$skill_dir_arg" ]]; then
+      die "'add rule' 명령어에서는 '--skill-dir' 옵션을 사용할 수 없습니다." "$LINENO" "add"
+    fi
+
     if [[ "$agent" == "codex" ]]; then
-      local resolved_input="$name_arg"
-      if [[ "$resolved_input" == */AGENTS.md || "$resolved_input" == */AGENTS.MD ]]; then
-        resolved_input="$(dirname "$resolved_input")"
+      if [[ -n "$rule_file_arg" ]]; then
+        die "Codex 에이전트는 규칙이 디렉토리 단위로 관리되므로 '--rule-file' 대신 '--rule-dir <디렉토리경로>' 옵션을 사용해야 합니다." "$LINENO" "add"
       fi
-      if [[ ! -d "$resolved_input" && "$resolved_input" == */* && "$resolved_input" != /* ]]; then
-        local src_cat_raw="${resolved_input%%/*}"
-        local src_cat_phys
-        src_cat_phys="$(resolve_existing_category_dir_name "$agent_home" "rule" "$src_cat_raw")"
-        local src_rule
-        src_rule="$(normalize_rule_name "${resolved_input#*/}")"
-        local candidate_dir="${agent_home}/rules/${src_cat_phys}/${src_rule}"
-        if [[ -d "$candidate_dir" ]]; then
-          resolved_input="$candidate_dir"
+      if [[ -n "$name_arg" && -n "$rule_dir_arg" ]]; then
+        die "'add rule' (codex) 명령어에서는 '--name' 옵션과 '--rule-dir' 옵션을 함께 사용할 수 없습니다. 둘 중 하나만 지정해 주세요." "$LINENO" "add"
+      fi
+      if [[ -z "$name_arg" && -z "$rule_dir_arg" ]]; then
+        die "참조할 Codex 규칙 대상('--name <카테고리/이름>' 또는 '--rule-dir <디렉토리경로>')을 지정해야 합니다." "$LINENO" "add"
+      fi
+
+      local abs_src_dir=""
+      local rule_name=""
+
+      if [[ -n "$rule_dir_arg" ]]; then
+        [[ -d "$rule_dir_arg" ]] || die "지정된 외부 Codex 규칙 디렉토리가 존재하지 않습니다: ${rule_dir_arg}" "$LINENO" "add"
+        if [[ ! -f "${rule_dir_arg}/AGENTS.md" && ! -f "${rule_dir_arg}/AGENTS.MD" ]]; then
+          die "지정된 외부 디렉토리에 'AGENTS.md' 파일이 존재하지 않습니다: ${rule_dir_arg}" "$LINENO" "add"
         fi
+        abs_src_dir="$(resolve_abs_path "$rule_dir_arg" "resolve")"
+        rule_name="$(basename "$abs_src_dir")"
+      else
+        local resolved_input="$name_arg"
+        if [[ "$resolved_input" == */AGENTS.md || "$resolved_input" == */AGENTS.MD ]]; then
+          resolved_input="$(dirname "$resolved_input")"
+        fi
+        if [[ ! -d "$resolved_input" && "$resolved_input" == */* && "$resolved_input" != /* ]]; then
+          local src_cat_raw="${resolved_input%%/*}"
+          local src_cat_phys
+          src_cat_phys="$(resolve_existing_category_dir_name "$agent_home" "rule" "$src_cat_raw")"
+          local src_rule
+          src_rule="$(normalize_rule_name "${resolved_input#*/}")"
+          local candidate_dir="${agent_home}/rules/${src_cat_phys}/${src_rule}"
+          if [[ -d "$candidate_dir" ]]; then
+            resolved_input="$candidate_dir"
+          fi
+        fi
+
+        [[ -d "$resolved_input" ]] || die "참조할 원본 Codex 규칙 디렉토리가 존재하지 않습니다: ${name_arg}" "$LINENO" "add"
+        abs_src_dir="$(resolve_abs_path "$resolved_input" "resolve")"
+        rule_name="$(basename "$abs_src_dir")"
       fi
 
-      [[ -d "$resolved_input" ]] || die "참조할 원본 Codex 규칙 디렉토리가 존재하지 않습니다: ${name_arg}" "$LINENO" "add"
-
-      local abs_src_dir
-      abs_src_dir="$(resolve_abs_path "$resolved_input" "resolve")"
-
-      local rule_name
-      rule_name="$(basename "$abs_src_dir")"
       validate_identifier "$rule_name" "name" "add"
 
       local rules_parent="${agent_home}/rules/${phys_cat}"
@@ -1839,27 +1931,46 @@ cmd_add() {
       echo "   - 규칙 이름: ${rule_name}"
       echo "   - 링크 경로: ${link_path}"
       echo "   - 원본 경로: ${abs_src_dir}"
+
     else
-      local resolved_input="$name_arg"
-      if [[ ! -f "$resolved_input" && "$resolved_input" == */* && "$resolved_input" != /* ]]; then
-        local src_cat_raw="${resolved_input%%/*}"
-        local src_cat_phys
-        src_cat_phys="$(resolve_existing_category_dir_name "$agent_home" "rule" "$src_cat_raw")"
-        local src_rule
-        src_rule="$(normalize_rule_name "${resolved_input#*/}")"
-        local candidate_file="${agent_home}/rules/${src_cat_phys}/${rules_subpath}/${src_rule}.md"
-        if [[ -f "$candidate_file" ]]; then
-          resolved_input="$candidate_file"
-        fi
+      # antigravity / claude
+      if [[ -n "$rule_dir_arg" ]]; then
+        die "[${agent}] 에이전트는 규칙이 단일 파일 단위로 관리되므로 '--rule-dir' 대신 '--rule-file <마크다운파일>' 옵션을 사용해야 합니다." "$LINENO" "add"
+      fi
+      if [[ -n "$name_arg" && -n "$rule_file_arg" ]]; then
+        die "'add rule' ([${agent}]) 명령어에서는 '--name' 옵션과 '--rule-file' 옵션을 함께 사용할 수 없습니다. 둘 중 하나만 지정해 주세요." "$LINENO" "add"
+      fi
+      if [[ -z "$name_arg" && -z "$rule_file_arg" ]]; then
+        die "참조할 규칙 대상('--name <카테고리/이름>' 또는 '--rule-file <파일경로>')을 지정해야 합니다." "$LINENO" "add"
       fi
 
-      [[ -f "$resolved_input" ]] || die "참조할 원본 규칙 파일이 존재하지 않습니다: ${name_arg}" "$LINENO" "add"
+      local abs_src_file=""
+      local rule_name=""
 
-      local abs_src_file
-      abs_src_file="$(resolve_abs_path "$resolved_input" "resolve")"
+      if [[ -n "$rule_file_arg" ]]; then
+        [[ -f "$rule_file_arg" ]] || die "지정된 외부 규칙 파일이 존재하지 않습니다: ${rule_file_arg}" "$LINENO" "add"
+        [[ "$rule_file_arg" == *.md || "$rule_file_arg" == *.MD ]] || die "규칙 파일은 마크다운(.md) 파일이어야 합니다: ${rule_file_arg}" "$LINENO" "add"
+        abs_src_file="$(resolve_abs_path "$rule_file_arg" "resolve")"
+        rule_name="$(normalize_rule_name "$(basename "$abs_src_file")")"
+      else
+        local resolved_input="$name_arg"
+        if [[ ! -f "$resolved_input" && "$resolved_input" == */* && "$resolved_input" != /* ]]; then
+          local src_cat_raw="${resolved_input%%/*}"
+          local src_cat_phys
+          src_cat_phys="$(resolve_existing_category_dir_name "$agent_home" "rule" "$src_cat_raw")"
+          local src_rule
+          src_rule="$(normalize_rule_name "${resolved_input#*/}")"
+          local candidate_file="${agent_home}/rules/${src_cat_phys}/${rules_subpath}/${src_rule}.md"
+          if [[ -f "$candidate_file" ]]; then
+            resolved_input="$candidate_file"
+          fi
+        fi
 
-      local rule_name
-      rule_name="$(normalize_rule_name "$(basename "$abs_src_file")")"
+        [[ -f "$resolved_input" ]] || die "참조할 원본 규칙 파일이 존재하지 않습니다: ${name_arg}" "$LINENO" "add"
+        abs_src_file="$(resolve_abs_path "$resolved_input" "resolve")"
+        rule_name="$(normalize_rule_name "$(basename "$abs_src_file")")"
+      fi
+
       validate_identifier "$rule_name" "name" "add"
 
       local rules_parent="${agent_home}/rules/${phys_cat}/${rules_subpath}"
@@ -2007,6 +2118,31 @@ render_dir_tree() {
 }
 
 ##
+# 에이전트와 대상 종류(skill | rule)에 따른 태그와 들여쓰기 공백을 반환합니다.
+#
+# @param $1 {string} 정규화된 에이전트 이름 (antigravity | claude | codex)
+# @param $2 {string} 대상 종류 (skill | rule)
+#
+# @return "태그" "들여쓰기공백" (탭으로 구분)
+##
+get_agent_kind_tag_and_indent() {
+  local agent="$1"
+  local kind="$2"
+
+  local kind_emoji=""
+  if [[ "$kind" == "skill" ]]; then
+    kind_emoji="🚀"
+  else
+    kind_emoji="📜"
+  fi
+
+  local tag="[${kind_emoji}] "
+  local indent="     " # 5칸 (1 + 2 + 1 + 1 = 5)
+
+  printf "%s\t%s\n" "$tag" "$indent"
+}
+
+##
 # 단일 스킬 카테고리의 트리 구조를 출력합니다.
 #
 # @param $1 {string} 에이전트 루트 경로 (agent_home)
@@ -2062,7 +2198,13 @@ print_skill_category_tree() {
   local count="${#skill_entries[@]}"
   (( count > 0 )) || return 0
 
-  printf "%s\n" "$cat_root"
+  local tag_info tag base_indent
+  tag_info="$(get_agent_kind_tag_and_indent "$agent" "skill")"
+  tag="${tag_info%%$'\t'*}"
+  base_indent="${tag_info#*$'\t'}"
+
+  local rel_path="./${agent}/skills/${phys_cat}"
+  printf "%s%s\n" "$tag" "$rel_path"
 
   local idx=0
   local entry sname branch child_prefix link_target
@@ -2081,16 +2223,16 @@ print_skill_category_tree() {
     if [[ -L "$entry" ]]; then
       link_target="$(readlink "$entry" || true)"
       if [[ -e "$entry" ]]; then
-        printf "%s%s -> %s\n" "$branch" "$sname" "$link_target"
-        render_dir_tree "$entry" "$child_prefix"
+        printf "%s%s%s -> %s\n" "$base_indent" "$branch" "$sname" "$link_target"
+        render_dir_tree "$entry" "${base_indent}${child_prefix}"
       else
-        printf "%s%s -> %s (대상 없음)\n" "$branch" "$sname" "$link_target"
+        printf "%s%s%s -> %s (대상 없음)\n" "$base_indent" "$branch" "$sname" "$link_target"
       fi
     elif [[ -d "$entry" ]]; then
-      printf "%s%s\n" "$branch" "$sname"
-      render_dir_tree "$entry" "$child_prefix"
+      printf "%s%s%s\n" "$base_indent" "$branch" "$sname"
+      render_dir_tree "$entry" "${base_indent}${child_prefix}"
     else
-      printf "%s%s\n" "$branch" "$sname"
+      printf "%s%s%s\n" "$base_indent" "$branch" "$sname"
     fi
   done
 }
@@ -2185,7 +2327,13 @@ print_rule_category_tree() {
   local count="${#display_entries[@]}"
   (( count > 0 )) || return 0
 
-  printf "%s\n" "$cat_root"
+  local tag_info tag base_indent
+  tag_info="$(get_agent_kind_tag_and_indent "$agent" "rule")"
+  tag="${tag_info%%$'\t'*}"
+  base_indent="${tag_info#*$'\t'}"
+
+  local rel_path="./${agent}/rules/${phys_cat}"
+  printf "%s%s\n" "$tag" "$rel_path"
 
   local idx=0
   local entry rfile branch child_prefix link_target
@@ -2204,18 +2352,18 @@ print_rule_category_tree() {
     if [[ -L "$entry" ]]; then
       link_target="$(readlink "$entry" || true)"
       if [[ -d "$entry" ]]; then
-        printf "%s%s/ -> %s\n" "$branch" "$rfile" "$link_target"
-        render_dir_tree "$entry" "$child_prefix"
+        printf "%s%s%s/ -> %s\n" "$base_indent" "$branch" "$rfile" "$link_target"
+        render_dir_tree "$entry" "${base_indent}${child_prefix}"
       elif [[ -e "$entry" ]]; then
-        printf "%s%s -> %s\n" "$branch" "$rfile" "$link_target"
+        printf "%s%s%s -> %s\n" "$base_indent" "$branch" "$rfile" "$link_target"
       else
-        printf "%s%s -> %s (대상 없음)\n" "$branch" "$rfile" "$link_target"
+        printf "%s%s%s -> %s (대상 없음)\n" "$base_indent" "$branch" "$rfile" "$link_target"
       fi
     elif [[ -d "$entry" ]]; then
-      printf "%s%s/\n" "$branch" "$rfile"
-      render_dir_tree "$entry" "$child_prefix"
+      printf "%s%s%s/\n" "$base_indent" "$branch" "$rfile"
+      render_dir_tree "$entry" "${base_indent}${child_prefix}"
     else
-      printf "%s%s\n" "$branch" "$rfile"
+      printf "%s%s%s\n" "$base_indent" "$branch" "$rfile"
     fi
   done
 }
@@ -2425,6 +2573,9 @@ cmd_list() {
   local asr_home
   asr_home="$(resolve_asr_home "$cli_home" "list")"
 
+  printf "🏠 AI_AGENT_CUSTOMIZATION_HOME: %s\n" "$asr_home"
+  printf "%s\n" "------------------------------------------------------------"
+
   # 1) '--agent'가 명시적으로 지정된 경우: 해당 에이전트만 조회
   if [[ -n "$agent" ]]; then
     agent="$(normalize_agent_name "$agent" "list")"
@@ -2442,7 +2593,7 @@ cmd_list() {
   done
 
   if (( ${#existing_agents[@]} == 0 )); then
-    printf "%s (등록된 에이전트 데이터 없음)\n" "$asr_home"
+    printf "(등록된 에이전트 데이터 없음)\n"
     return 0
   fi
 
@@ -2486,6 +2637,7 @@ cmd_list() {
 
 ##
 # 시스템에 'vim' 편집기가 설치되어 있는지 확인하고, 미설치 시 OS 패키지 매니저를 통해 자동 설치합니다.
+# Linux(apt-get, dnf, yum, zypper, pacman, apk) 및 macOS(brew) 환경을 모두 지원합니다.
 #
 # @return 0 (설치 확인 또는 설치 완료 시), 실패 시 die 호출
 ##
@@ -2496,29 +2648,33 @@ ensure_vim_installed() {
 
   echo "📦 시스템에 'vim' 편집기가 설치되어 있지 않습니다. 자동으로 설치를 진행합니다..."
 
-  local -a sudo_cmd=()
-  if (( EUID != 0 )); then
-    if command -v sudo >/dev/null 2>&1; then
-      sudo_cmd=("sudo")
-    else
-      die "'vim'을 설치하려면 root 권한 또는 'sudo'가 필요합니다." "$LINENO" "edit"
-    fi
-  fi
-
-  if command -v apt-get >/dev/null 2>&1; then
-    "${sudo_cmd[@]}" apt-get update -y && "${sudo_cmd[@]}" apt-get install -y vim
-  elif command -v dnf >/dev/null 2>&1; then
-    "${sudo_cmd[@]}" dnf install -y vim-enhanced || "${sudo_cmd[@]}" dnf install -y vim
-  elif command -v yum >/dev/null 2>&1; then
-    "${sudo_cmd[@]}" yum install -y vim-enhanced || "${sudo_cmd[@]}" yum install -y vim
-  elif command -v zypper >/dev/null 2>&1; then
-    "${sudo_cmd[@]}" zypper --non-interactive install vim
-  elif command -v pacman >/dev/null 2>&1; then
-    "${sudo_cmd[@]}" pacman -Sy --noconfirm vim
-  elif command -v apk >/dev/null 2>&1; then
-    "${sudo_cmd[@]}" apk add vim
+  if command -v brew >/dev/null 2>&1; then
+    brew install vim
   else
-    die "지원하는 패키지 매니저(apt-get, dnf, yum, zypper, pacman, apk)를 찾을 수 없어 'vim'을 자동 설치할 수 없습니다." "$LINENO" "edit"
+    local -a sudo_cmd=()
+    if (( EUID != 0 )); then
+      if command -v sudo >/dev/null 2>&1; then
+        sudo_cmd=("sudo")
+      else
+        die "'vim'을 설치하려면 root 권한 또는 'sudo'가 필요합니다." "$LINENO" "edit"
+      fi
+    fi
+
+    if command -v apt-get >/dev/null 2>&1; then
+      "${sudo_cmd[@]}" apt-get update -y && "${sudo_cmd[@]}" apt-get install -y vim
+    elif command -v dnf >/dev/null 2>&1; then
+      "${sudo_cmd[@]}" dnf install -y vim-enhanced || "${sudo_cmd[@]}" dnf install -y vim
+    elif command -v yum >/dev/null 2>&1; then
+      "${sudo_cmd[@]}" yum install -y vim-enhanced || "${sudo_cmd[@]}" yum install -y vim
+    elif command -v zypper >/dev/null 2>&1; then
+      "${sudo_cmd[@]}" zypper --non-interactive install vim
+    elif command -v pacman >/dev/null 2>&1; then
+      "${sudo_cmd[@]}" pacman -Sy --noconfirm vim
+    elif command -v apk >/dev/null 2>&1; then
+      "${sudo_cmd[@]}" apk add vim
+    else
+      die "지원하는 패키지 매니저(brew, apt-get, dnf, yum, zypper, pacman, apk)를 찾을 수 없어 'vim'을 자동 설치할 수 없습니다." "$LINENO" "edit"
+    fi
   fi
 
   if ! command -v vim >/dev/null 2>&1; then
@@ -2526,6 +2682,29 @@ ensure_vim_installed() {
   fi
 
   echo "✅ 'vim' 설치가 완료되었습니다."
+}
+
+##
+# 대상 파일 경로가 심볼릭 링크인 경우 실제 원본 파일의 절대 경로(Canonical Path)를 반환합니다.
+# 심볼릭 링크 편집 시 링크가 해제되거나 깨지는 현상을 방지합니다.
+#
+# @param $1 {string} 파일 또는 디렉토리 경로
+#
+# @return 정규화된 실제 원본 파일 경로 출력
+##
+resolve_canonical_path() {
+  local target="$1"
+  if [[ -L "$target" ]]; then
+    if command -v realpath >/dev/null 2>&1; then
+      realpath "$target" 2>/dev/null || readlink -f "$target" 2>/dev/null || printf "%s\n" "$target"
+    elif command -v readlink >/dev/null 2>&1; then
+      readlink -f "$target" 2>/dev/null || printf "%s\n" "$target"
+    else
+      printf "%s\n" "$target"
+    fi
+  else
+    printf "%s\n" "$target"
+  fi
 }
 
 ##
@@ -2750,7 +2929,12 @@ cmd_edit() {
     esac
   done
 
-  agent="$(normalize_agent_name "${agent:-$DEFAULT_AGENT}" "edit")"
+  agent="$(normalize_agent_name "$agent" "edit")"
+  [[ -n "$target" ]] || die "편집할 대상('skill' 또는 'rule')을 지정해야 합니다." "$LINENO" "edit"
+
+  if [[ -n "$file" && ( -n "$category" || -n "$name" ) ]]; then
+    die "'edit' 명령어에서는 '--file' 옵션과 '--category'/'--name' 옵션을 함께 사용할 수 없습니다. 둘 중 하나만 지정해 주세요." "$LINENO" "edit"
+  fi
 
   local agent_home
   agent_home="$(resolve_agent_home "$cli_home" "$agent" "edit")"
@@ -2765,17 +2949,9 @@ cmd_edit() {
     elif [[ "$target" == "rule" ]]; then
       target_file="$(find_rule_file_in_agent "$agent_home" "$agent" "$file" || true)"
       [[ -n "$target_file" ]] || die "[${agent}] 규칙 파일을 찾을 수 없습니다: '${file}'" "$LINENO" "edit"
-    else
-      # target 미지정 시: 스킬 우선 탐색 후 규칙 탐색
-      target_file="$(find_skill_file_in_agent "$agent_home" "$agent" "$file" || true)"
-      if [[ -z "$target_file" ]]; then
-        target_file="$(find_rule_file_in_agent "$agent_home" "$agent" "$file" || true)"
-      fi
-      [[ -n "$target_file" ]] || die "[${agent}] 스킬 또는 규칙 파일을 찾을 수 없습니다: '${file}'" "$LINENO" "edit"
     fi
   # 2. 기존 방식: '--category'와 '--name'으로 지정된 경우
   elif [[ -n "$category" && -n "$name" ]]; then
-    [[ -n "$target" ]] || die "편집할 대상('skill' 또는 'rule')을 지정해야 합니다." "$LINENO" "edit"
     category="$(normalize_category_name "$target" "$category")"
     validate_identifier "$category" "category" "edit"
     validate_identifier "$name" "name" "edit"
@@ -2825,6 +3001,7 @@ cmd_edit() {
     die "편집할 대상을 지정해 주세요. ('--file <스킬명|규칙명>' 또는 '--category <카테고리> --name <이름>')" "$LINENO" "edit"
   fi
 
+  target_file="$(resolve_canonical_path "$target_file")"
   ensure_vim_installed
   vim "$target_file"
 }

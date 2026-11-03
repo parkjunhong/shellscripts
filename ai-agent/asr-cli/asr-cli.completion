@@ -595,6 +595,34 @@ _asr_cli_complete_dir() {
 }
 
 ##
+# 파일 경로 자동 완성을 수행합니다. (--rule-file 옵션용)
+#
+# @param $1 {string} 현재 입력 중인 경로 문자열
+# @param $2 {string} 출력 접두사 (기본값: '', '--rule-file=*' 완성 시 '--rule-file=')
+#
+# @return COMPREPLY 배열 및 compopt 설정
+##
+_asr_cli_complete_file() {
+  local path_cur="$1"
+  local opt_prefix="${2:-}"
+  local candidate
+
+  if [[ -z "$opt_prefix" ]]; then
+    compopt -o filenames 2>/dev/null || true
+    while IFS= read -r candidate; do
+      [[ -n "$candidate" ]] && COMPREPLY+=("$candidate")
+    done < <(compgen -f -- "$path_cur")
+  else
+    compopt -o filenames 2>/dev/null || true
+    compopt -o nospace 2>/dev/null || true
+    while IFS= read -r candidate; do
+      [[ -n "$candidate" ]] || continue
+      COMPREPLY+=("${opt_prefix}${candidate}")
+    done < <(compgen -f -- "$path_cur")
+  fi
+}
+
+##
 # asr-cli 명령어에 대한 단계별(Sequential State Machine) Bash 자동 완성 처리 함수
 #
 # 추천 순서 (단, '--agent'는 아직 입력되지 않은 경우 모든 단계의 위치에서 함께 제안됨):
@@ -634,6 +662,12 @@ _asr_cli_completion() {
   local category_val=""
   local has_name="false"
   local name_val=""
+  local has_skill_dir="false"
+  local skill_dir_val=""
+  local has_rule_file="false"
+  local rule_file_val=""
+  local has_rule_dir="false"
+  local rule_dir_val=""
   local has_home="false"
   local has_force="false"
   local has_help="false"
@@ -705,6 +739,39 @@ _asr_cli_completion() {
         has_name="true"
         name_val="${tok#--name=}"
         ;;
+      --skill-dir)
+        has_skill_dir="true"
+        if (( i + 1 < COMP_CWORD )); then
+          skill_dir_val="${COMP_WORDS[i+1]}"
+          ((i++)) || true
+        fi
+        ;;
+      --skill-dir=*)
+        has_skill_dir="true"
+        skill_dir_val="${tok#--skill-dir=}"
+        ;;
+      --rule-file)
+        has_rule_file="true"
+        if (( i + 1 < COMP_CWORD )); then
+          rule_file_val="${COMP_WORDS[i+1]}"
+          ((i++)) || true
+        fi
+        ;;
+      --rule-file=*)
+        has_rule_file="true"
+        rule_file_val="${tok#--rule-file=}"
+        ;;
+      --rule-dir)
+        has_rule_dir="true"
+        if (( i + 1 < COMP_CWORD )); then
+          rule_dir_val="${COMP_WORDS[i+1]}"
+          ((i++)) || true
+        fi
+        ;;
+      --rule-dir=*)
+        has_rule_dir="true"
+        rule_dir_val="${tok#--rule-dir=}"
+        ;;
     esac
   done
 
@@ -724,7 +791,7 @@ _asr_cli_completion() {
     esac
   fi
 
-  # 1. 직전 단어(prev)가 값을 요구하는 옵션(--agent, --home, --file, --category, --name)인 경우 값 완성
+  # 1. 직전 단어(prev)가 값을 요구하는 옵션인 경우 값 완성
   case "$prev" in
     --agent)
       COMPREPLY=( $(compgen -W "${agents[*]}" -- "$cur") )
@@ -736,6 +803,7 @@ _asr_cli_completion() {
       ;;
     --file)
       [[ "$subcmd" == "edit" ]] || return 0
+      [[ "$has_category" == "false" && "$has_name" == "false" ]] || return 0
       local file_cands=""
       if [[ "$active_target" == "skill" ]]; then
         file_cands="$(_asr_cli_get_all_skills)"
@@ -749,6 +817,9 @@ _asr_cli_completion() {
       ;;
     --category)
       [[ -n "$subcmd" && -n "$active_target" ]] || return 0
+      if [[ "$subcmd" == "edit" && "$has_file" == "true" ]]; then
+        return 0
+      fi
       local cat_list
       cat_list="$(_asr_cli_get_categories "$active_target" "$subcmd")"
       if [[ "$subcmd" == "remove" || "$subcmd" == "list" ]]; then
@@ -760,6 +831,12 @@ _asr_cli_completion() {
       ;;
     --name)
       [[ -n "$subcmd" && -n "$active_target" && -n "$category_val" ]] || return 0
+      if [[ "$subcmd" == "edit" && "$has_file" == "true" ]]; then
+        return 0
+      fi
+      if [[ "$subcmd" == "add" && ( "$has_skill_dir" == "true" || "$has_rule_file" == "true" || "$has_rule_dir" == "true" ) ]]; then
+        return 0
+      fi
       if [[ "$subcmd" == "add" ]]; then
         _asr_cli_complete_add_name "$active_target" "$category_val" "$cur" ""
       elif [[ "$subcmd" == "edit" ]]; then
@@ -772,6 +849,28 @@ _asr_cli_completion() {
         name_list="$(_asr_cli_get_names_in_category "$active_target" "$category_val" "$subcmd")"
         _asr_cli_complete_csv "$name_list" "$cur" ""
       fi
+      return 0
+      ;;
+    --skill-dir)
+      [[ "$subcmd" == "add" && "$active_target" == "skill" ]] || return 0
+      [[ "$has_name" == "false" ]] || return 0
+      _asr_cli_complete_dir "$cur" ""
+      return 0
+      ;;
+    --rule-file)
+      [[ "$subcmd" == "add" && "$active_target" == "rule" ]] || return 0
+      [[ "$has_name" == "false" ]] || return 0
+      local exp_ag="$(_asr_cli_get_explicit_agent)"
+      [[ "$exp_ag" != "codex" ]] || return 0
+      _asr_cli_complete_file "$cur" ""
+      return 0
+      ;;
+    --rule-dir)
+      [[ "$subcmd" == "add" && "$active_target" == "rule" ]] || return 0
+      [[ "$has_name" == "false" ]] || return 0
+      local exp_ag="$(_asr_cli_get_explicit_agent)"
+      [[ "$exp_ag" == "codex" ]] || return 0
+      _asr_cli_complete_dir "$cur" ""
       return 0
       ;;
   esac
@@ -792,6 +891,7 @@ _asr_cli_completion() {
       ;;
     --file=*)
       [[ "$subcmd" == "edit" ]] || return 0
+      [[ "$has_category" == "false" && "$has_name" == "false" ]] || return 0
       local file_part="${cur#--file=}"
       local file_cands=""
       if [[ "$active_target" == "skill" ]]; then
@@ -809,6 +909,9 @@ _asr_cli_completion() {
       ;;
     --category=*)
       [[ -n "$subcmd" && -n "$active_target" ]] || return 0
+      if [[ "$subcmd" == "edit" && "$has_file" == "true" ]]; then
+        return 0
+      fi
       local cat_part="${cur#--category=}"
       local cat_list
       cat_list="$(_asr_cli_get_categories "$active_target" "$subcmd")"
@@ -824,6 +927,12 @@ _asr_cli_completion() {
       ;;
     --name=*)
       [[ -n "$subcmd" && -n "$active_target" && -n "$category_val" ]] || return 0
+      if [[ "$subcmd" == "edit" && "$has_file" == "true" ]]; then
+        return 0
+      fi
+      if [[ "$subcmd" == "add" && ( "$has_skill_dir" == "true" || "$has_rule_file" == "true" || "$has_rule_dir" == "true" ) ]]; then
+        return 0
+      fi
       local name_part="${cur#--name=}"
       if [[ "$subcmd" == "add" ]]; then
         _asr_cli_complete_add_name "$active_target" "$category_val" "$name_part" "--name="
@@ -841,6 +950,28 @@ _asr_cli_completion() {
       fi
       return 0
       ;;
+    --skill-dir=*)
+      [[ "$subcmd" == "add" && "$active_target" == "skill" ]] || return 0
+      [[ "$has_name" == "false" ]] || return 0
+      _asr_cli_complete_dir "${cur#--skill-dir=}" "--skill-dir="
+      return 0
+      ;;
+    --rule-file=*)
+      [[ "$subcmd" == "add" && "$active_target" == "rule" ]] || return 0
+      [[ "$has_name" == "false" ]] || return 0
+      local exp_ag="$(_asr_cli_get_explicit_agent)"
+      [[ "$exp_ag" != "codex" ]] || return 0
+      _asr_cli_complete_file "${cur#--rule-file=}" "--rule-file="
+      return 0
+      ;;
+    --rule-dir=*)
+      [[ "$subcmd" == "add" && "$active_target" == "rule" ]] || return 0
+      [[ "$has_name" == "false" ]] || return 0
+      local exp_ag="$(_asr_cli_get_explicit_agent)"
+      [[ "$exp_ag" == "codex" ]] || return 0
+      _asr_cli_complete_dir "${cur#--rule-dir=}" "--rule-dir="
+      return 0
+      ;;
   esac
 
   # 3. 단계별(Step-by-Step) 위치 판단 및 후보 제안 ('--agent'는 미입력 시 모든 위치에서 함께 제안)
@@ -848,12 +979,10 @@ _asr_cli_completion() {
 
   # (단계 A) 아직 서브커맨드(add|create|edit|list|remove)가 입력되지 않은 상태
   if [[ -z "$subcmd" ]]; then
-    if [[ "$cur" == -* ]]; then
-      [[ "$has_agent" == "false" ]] && next_opts+=("--agent")
-      next_opts+=("--help")
+    if [[ "$has_agent" == "false" ]]; then
+      next_opts=("--agent" "--help" "list")
     else
-      next_opts+=("${subcommands[@]}")
-      [[ "$has_agent" == "false" ]] && next_opts+=("--agent")
+      next_opts=("add" "create" "edit" "list" "remove" "--help")
     fi
     COMPREPLY=( $(compgen -W "${next_opts[*]}" -- "$cur") )
     return 0
@@ -870,11 +999,7 @@ _asr_cli_completion() {
 
   # (단계 B) 서브커맨드는 입력되었으나 아직 skill|rule이 선택되지 않은 상태
   if [[ -z "$active_target" ]]; then
-    if [[ "$subcmd" == "edit" ]]; then
-      next_opts+=("skill" "rule" "--file" "--help")
-    else
-      next_opts+=("skill" "rule" "--help")
-    fi
+    next_opts+=("skill" "rule" "--help")
     [[ "$has_agent" == "false" ]] && next_opts+=("--agent")
     COMPREPLY=( $(compgen -W "${next_opts[*]}" -- "$cur") )
     return 0
@@ -884,6 +1009,20 @@ _asr_cli_completion() {
   if [[ "$has_category" == "false" ]]; then
     if [[ "$subcmd" == "edit" ]]; then
       next_opts+=("--file" "--category" "--help")
+    elif [[ "$subcmd" == "add" ]]; then
+      next_opts+=("--category")
+      if [[ "$active_target" == "skill" ]]; then
+        [[ "$has_skill_dir" == "false" ]] && next_opts+=("--skill-dir")
+      elif [[ "$active_target" == "rule" ]]; then
+        local exp_ag="$(_asr_cli_get_explicit_agent)"
+        if [[ "$exp_ag" == "codex" ]]; then
+          [[ "$has_rule_dir" == "false" ]] && next_opts+=("--rule-dir")
+        else
+          [[ "$has_rule_file" == "false" ]] && next_opts+=("--rule-file")
+        fi
+      fi
+      [[ "$has_skill_dir" == "true" || "$has_rule_file" == "true" || "$has_rule_dir" == "true" ]] && next_opts+=("--force")
+      next_opts+=("--help")
     else
       next_opts+=("--category" "--help")
     fi
@@ -895,8 +1034,8 @@ _asr_cli_completion() {
     return 0
   fi
 
-  # (단계 D) --category 입력 완료 후, 아직 --name이 입력되지 않은 상태
-  if [[ "$has_name" == "false" ]]; then
+  # (단계 D) --category 입력 완료 후, 아직 대상(--name, --skill-dir, --rule-file, --rule-dir)이 입력되지 않은 상태
+  if [[ "$has_name" == "false" && "$has_skill_dir" == "false" && "$has_rule_file" == "false" && "$has_rule_dir" == "false" ]]; then
     if [[ "$category_val" == *,* ]]; then
       if [[ "$subcmd" == "remove" ]]; then
         next_opts+=("--force")
@@ -908,16 +1047,31 @@ _asr_cli_completion() {
       return 0
     fi
 
-    next_opts+=("--name")
-    if [[ "$subcmd" == "remove" ]]; then
+    if [[ "$subcmd" == "add" ]]; then
+      next_opts+=("--name")
+      if [[ "$active_target" == "skill" ]]; then
+        next_opts+=("--skill-dir")
+      elif [[ "$active_target" == "rule" ]]; then
+        local exp_ag="$(_asr_cli_get_explicit_agent)"
+        if [[ "$exp_ag" == "codex" ]]; then
+          next_opts+=("--rule-dir")
+        else
+          next_opts+=("--rule-file")
+        fi
+      fi
       next_opts+=("--force")
+    elif [[ "$subcmd" == "remove" ]]; then
+      next_opts+=("--name" "--force")
+    elif [[ "$subcmd" == "list" || "$subcmd" == "edit" ]]; then
+      next_opts+=("--name")
     fi
+
     [[ "$has_agent" == "false" ]] && next_opts+=("--agent")
     COMPREPLY=( $(compgen -W "${next_opts[*]}" -- "$cur") )
     return 0
   fi
 
-  # (단계 E) --category와 --name이 모두 입력 완료된 상태
+  # (단계 E) 대상(--name, --skill-dir, --rule-file, --rule-dir)이 모두 입력 완료된 상태
   if [[ "$subcmd" != "edit" ]]; then
     next_opts+=("--force")
   fi
