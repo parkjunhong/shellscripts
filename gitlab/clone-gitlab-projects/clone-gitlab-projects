@@ -46,6 +46,10 @@ help(){
   echo "  --name          클론 디렉토리의 상위 그룹 폴더명을 대체할 이름 (선택)"
   echo "  --dir           프로젝트를 Clone 할 대상 최상위 디렉토리 (선택, 기본값: 현재 경로)"
   echo "  --help          도움말 출력"
+  echo ""
+  echo "필수 환경 변수 (Required Environment Variables):"
+  echo "  GITLAB_URL      GitLab 서비스 URL (예: https://gitlab.your-company.com)"
+  echo "  GITLAB_PAT      GitLab API 접근용 Personal Access Token"
 }
 
 ##
@@ -185,14 +189,54 @@ parse_arguments() {
 main() {
   parse_arguments "$@"
 
-  local exec_gitlab_clone
-  # 반환받는 경로 데이터가 오염되지 않도록 서브 쉘에서 캡처 실행
-  exec_gitlab_clone=$(ensure_gitlab_clone_integrity)
-
   # Gitlab URL (예: https://gitlab.your-company.com)
   local gitlab_url="${GITLAB_URL:-}"
   # Gitlab Personal Access Token
   local gitlab_pat="${GITLAB_PAT:-}"
+
+  # 환경 변수 유효성 검증
+  local -a missing_vars=()
+  [[ -z "$gitlab_url" ]] && missing_vars+=("GITLAB_URL")
+  [[ -z "$gitlab_pat" ]] && missing_vars+=("GITLAB_PAT")
+
+  if (( ${#missing_vars[@]} > 0 )); then
+    echo >&2
+    echo "================================================================================" >&2
+    echo "❌ [ERROR] 필수 환경 변수 값이 비어 있거나 설정되지 않았습니다." >&2
+    echo "--------------------------------------------------------------------------------" >&2
+    local var
+    for var in "${missing_vars[@]}"; do
+      case "$var" in
+        GITLAB_URL)
+          echo " - [미설정] GITLAB_URL : GitLab 서비스 주소 (예: https://gitlab.your-company.com)" >&2
+          ;;
+        GITLAB_PAT)
+          echo " - [미설정] GITLAB_PAT : GitLab API 접근용 Personal Access Token" >&2
+          ;;
+      esac
+    done
+    echo "--------------------------------------------------------------------------------" >&2
+    echo "💡 [환경 변수 설정 안내]" >&2
+    echo "다음 방법 중 하나를 선택하여 환경 변수를 설정한 후 다시 실행해 주십시오." >&2
+    echo >&2
+    echo " 1) 현재 쉘 세션에서 환경 변수 내보내기 (권장):" >&2
+    echo "    export GITLAB_URL=\"https://gitlab.your-company.com\"" >&2
+    echo "    export GITLAB_PAT=\"your-personal-access-token\"" >&2
+    echo >&2
+    echo " 2) 명령어 실행 시 1회성 인라인 지정:" >&2
+    echo "    GITLAB_URL=\"https://gitlab.your-company.com\" GITLAB_PAT=\"your-token\" ./$FILENAME $*" >&2
+    echo >&2
+    echo " 3) 쉘 환경 설정 파일에 영구 등록 (~/.bashrc 또는 ~/.bash_profile):" >&2
+    echo "    echo 'export GITLAB_URL=\"https://gitlab.your-company.com\"' >> ~/.bashrc" >&2
+    echo "    echo 'export GITLAB_PAT=\"your-personal-access-token\"' >> ~/.bashrc" >&2
+    echo "    source ~/.bashrc" >&2
+    echo "================================================================================" >&2
+    exit 1
+  fi
+
+  local exec_gitlab_clone
+  # 반환받는 경로 데이터가 오염되지 않도록 서브 쉘에서 캡처 실행
+  exec_gitlab_clone=$(ensure_gitlab_clone_integrity)
 
   echo "================================================================================" >&2
   echo "▶️  GitLab Clone 프로젝트 작업을 시작합니다." >&2
