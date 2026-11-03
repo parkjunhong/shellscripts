@@ -987,23 +987,21 @@ interactive_select_catalogs() {
     trap 'interrupted=1' SIGINT
 
     local choice_line=""
-    echo -n "> 🛠️  설치할 카탈로그 번호(또는 ID)를 입력하세요 (복수 선택은 띄어쓰기/콤마 구분, 예: 1 4) [취소: q 또는 Ctrl+C]: " >&2
+    echo -n "> 🛠️  설치할 카탈로그 번호(또는 ID)를 입력하세요 (복수 선택은 띄어쓰기/콤마 구분, 예: 1 4) [취소: Enter 또는 q]: " >&2
     read -r choice_line
 
     trap - SIGINT
 
-    if (( interrupted == 1 )) || [[ "$choice_line" == "q" || "$choice_line" == "Q" ]]; then
-      echo_w " - [🛑] 카탈로그 선택을 종료합니다." >&2
+    local trimmed_choice
+    trimmed_choice="$(echo "$choice_line" | xargs)"
+    if (( interrupted == 1 )) || [[ -z "$trimmed_choice" || "$choice_line" == "q" || "$choice_line" == "Q" ]]; then
+      echo_w " - [🛑] 카탈로그 선택을 취소했습니다." >&2
       return 1
     fi
 
     choice_line="${choice_line//,/ }"
     local -a tokens=()
     read -ra tokens <<< "$choice_line"
-    if (( ${#tokens[@]} == 0 )); then
-      echo_w "⚠️  - 번호 또는 카탈로그 ID를 입력해 주세요." >&2
-      continue
-    fi
 
     local -a picked_ids=()
     local valid=true
@@ -1560,14 +1558,14 @@ _install_completion() {
     if ! cmp -s "$temp_comp" "$target_comp_file"; then
       local ch="y"
       if [[ "$force_overwrite" != "true" && -t 0 ]]; then
-        read -r -p "> '${target_cmd} completion' 내용이 다릅니다. 업데이트하시겠습니까? (y/n): " ch
+        read -r -p "> '${target_cmd} completion' 내용이 다릅니다. 업데이트하시겠습니까? (y/Enter: 취소): " ch
       fi
       if [[ "$ch" =~ ^[Yy]$ ]]; then
         $move_cmd "$temp_comp" "$target_comp_file" && $chmod_cmd "$target_comp_file"
         echo_i " - '${target_cmd} completion' 파일이 업데이트되었습니다. ($target_comp_file)"
         installed=1
       else
-        echo_w " - '${target_cmd} completion' 기존 파일을 유지합니다."
+        echo_w " - '${target_cmd} completion' 기존 파일을 유지합니다 (업데이트 취소)."
         rm -f -- "$temp_comp"
       fi
     else
@@ -1640,7 +1638,7 @@ _install_custom_tool() {
     if ! cmp -s "$temp_bin" "$dest_bin"; then
       local ch="y"
       if [[ "$force_overwrite" != "true" && -t 0 ]]; then
-        read -r -p "> '$target_cmd' 실행 파일 내용이 다릅니다. 업데이트하시겠습니까? (y/n): " ch
+        read -r -p "> '$target_cmd' 실행 파일 내용이 다릅니다. 업데이트하시겠습니까? (y/Enter: 취소): " ch
       fi
       if [[ "$ch" =~ ^[Yy]$ ]]; then
         if [[ "$use_sudo" == true ]]; then
@@ -1650,7 +1648,7 @@ _install_custom_tool() {
         fi
         echo_i " - '$target_cmd' 실행 파일이 업데이트되었습니다. ($dest_bin)"
       else
-        echo_w " - '$target_cmd' 기존 실행 파일을 유지합니다."
+        echo_w " - '$target_cmd' 기존 실행 파일을 유지합니다 (업데이트 취소)."
         rm -f -- "$temp_bin"
       fi
     else
@@ -2523,7 +2521,7 @@ cmd_install() {
 
   if [[ "$auto_yes" != "true" && -t 0 ]]; then
     local confirm=""
-    read -r -p "> 위 트랜잭션 계획대로 설치를 진행하시겠습니까? (y/n): " confirm
+    read -r -p "> 위 트랜잭션 계획대로 설치를 진행하시겠습니까? (y/Enter: 취소): " confirm
     if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
       echo_w " - [🛑] 사용자가 설치를 취소했습니다."
       rm -f -- "$NOTICE_MESSAGES_TEMP_FILE"
