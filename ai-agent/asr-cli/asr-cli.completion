@@ -1062,7 +1062,7 @@ _asr_cli_completion() {
       next_opts+=("--force")
     elif [[ "$subcmd" == "remove" ]]; then
       next_opts+=("--name" "--force")
-    elif [[ "$subcmd" == "list" || "$subcmd" == "edit" ]]; then
+    elif [[ "$subcmd" == "create" || "$subcmd" == "list" || "$subcmd" == "edit" ]]; then
       next_opts+=("--name")
     fi
 
