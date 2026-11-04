@@ -18,19 +18,19 @@ REMOVE_PACKAGES=
 INSTALL_PACKAGES=git
 
 # ==============================================================================
-# 3. Custom Tools (<category>/<canonical-name>, 콤마 구분, default-server 상속 포함)
+# 3. CLI Tools (<category>/<canonical-name>, 콤마 구분, default-server 상속 포함)
 # ==============================================================================
-CUSTOM_TOOLS=maven/build-mvn-package, git/git-commit, git/git-merge, git/git-log-abbr, git/git-getpr, git/git-branch-cmd, git/git-init, build/clean-project, utils/diff-file, docker/install-docker-dev-config
+TOOLS=maven/build-mvn-package, git/git-commit, git/git-merge, git/git-log-abbr, git/git-getpr, git/git-branch-cmd, git/git-init, build/clean-project, utils/diff-file, docker/install-docker-dev-config
 
 # ==============================================================================
-# 4. Custom Installers (env/installers/ 식별자 또는 <category>/<tool>, 콤마 구분)
+# 4. Installers (env/installers/ 식별자 또는 <category>/<tool>, 콤마 구분)
 # ==============================================================================
-CUSTOM_INSTALLERS=maven-3.9.15, update-mvn-config
+INSTALLERS=maven-3.9.15, update-mvn-config
 
 # ==============================================================================
 # 5. Post-Install Commands (env/commands/ 식별자, 콤마 구분)
 # ==============================================================================
-CUSTOM_COMMANDS=
+COMMANDS=
 
 # ==============================================================================
 # 6. SSH Public Keys (env/keys/ 식별자, 콤마 구분, default-server 상속 포함)

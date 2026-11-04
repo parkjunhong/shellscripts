@@ -3,7 +3,7 @@
 # @title    : sciectl bash completion.
 # @license  : Apache License 2.0
 # @since    : 2026-05-12
-# @desc     : support Ubuntu 24+, Rocky Linux 9+, RHEL 9+, CentOS Stream 9+
+# @desc     : support Ubuntu 24+, Rocky Linux 9+, RHEL 9+, CentOS Stream 9+, macOS (Homebrew Bash)
 # @installation :
 #   1. insert 'source <path>/sciectl.completion' into ~/.bashrc or ~/.bash_profile for a personal usage.
 #   2. copy the completion file to /usr/share/bash-completion/completions/sciectl (1st) or /etc/bash_completion.d/sciectl.completion (2nd) for all users.
@@ -27,11 +27,235 @@
 # =======================================
 
 ##
+# 로컬 Git 저장소의 최상위 루트 디렉토리를 탐색합니다.
+# 1) Git 저장소 최상위 루트 (git rev-parse --show-toplevel)
+# 2) 현재 작업 디렉토리($PWD)에서 상위로 올라가며 env/catalogs/catalogs.ini 검색
+# 3) 실행 명령어(${COMP_WORDS[0]})의 심볼릭 링크 원본 경로 상위에서 검색
+#
+# @return 저장소 루트 경로 출력 (발견 시 0, 미발견 시 1)
+##
+_sciectl_find_repo_root() {
+  local git_root
+  git_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+  if [[ -n "$git_root" && -f "$git_root/env/catalogs/catalogs.ini" ]]; then
+    printf '%s\n' "$git_root"
+    return 0
+  fi
+
+  local dir="$PWD"
+  while [[ -n "$dir" && "$dir" != "/" ]]; do
+    if [[ -f "$dir/env/catalogs/catalogs.ini" ]]; then
+      printf '%s\n' "$dir"
+      return 0
+    fi
+    dir="$(dirname "$dir")"
+  done
+
+  local cmd_name="${COMP_WORDS[0]:-sciectl}"
+  local bin_path
+  bin_path="$(command -v "$cmd_name" 2>/dev/null || true)"
+  if [[ -n "$bin_path" ]]; then
+    local real_bin
+    real_bin="$(readlink -f "$bin_path" 2>/dev/null || true)"
+    if [[ -n "$real_bin" ]]; then
+      dir="$(dirname "$real_bin")"
+      while [[ -n "$dir" && "$dir" != "/" ]]; do
+        if [[ -f "$dir/env/catalogs/catalogs.ini" ]]; then
+          printf '%s\n' "$dir"
+          return 0
+        fi
+        dir="$(dirname "$dir")"
+      done
+    fi
+  fi
+
+  return 1
+}
+
+##
+# 카탈로그, 도구, 인스톨러, 명령어, 키 등의 자동완성 후보군을 동적으로 로드합니다.
+# 로컬 저장소가 발견되면 저장소 파일들로부터 실시간 추출하고,
+# 로컬 저장소가 없거나 추출되지 않은 항목은 내장 Fallback 기본값을 사용합니다.
+##
+_sciectl_load_candidates() {
+  # 1. Fallback 기본값 (저장소 외부 단독 실행 시 사용)
+  catalog_candidates="default-server default-devops docker network gitlab ai-agent install-lets-encrypt-certificate installer"
+  installer_candidates="temurin-25-jdk update-java-config maven-3.9.15 update-mvn-config htop docker/install-docker"
+  command_candidates="firewall-cmd-set-priority"
+  key_candidates="ymtech-internal letsencrypt"
+  step_candidates="sudoers remove-packages install-packages default-opts custom-installers custom-tools custom-commands ssh-key"
+  tool_candidates="utils/scriptctl sys/vim-cli sudo/sudoers-cli sys/disk-size maven/build-mvn-package git/git-commit git/git-merge git/git-log-abbr git/git-getpr git/git-branch-cmd git/git-init build/clean-project utils/diff-file docker/install-docker-dev-config docker/setup-compose-service docker/setup-docker-compose docker/dknetcli docker/dkcontls net/fwc-cli net/fwc-docker-policy net/add-vlan-routes net/mtr-netstat-conns gitlab/gitlab-clone gitlab/clone-gitlab-projects ai-agent/asr-cli installer/install-albert-with-socket installer/install-antigravity-ide installer/install-antigravity-x64"
+
+  # 2. 로컬 저장소 탐색 및 실시간 동적 후보 추출
+  local repo_root
+  repo_root="$(_sciectl_find_repo_root)"
+  if [[ -n "$repo_root" && -d "$repo_root/env/catalogs" ]]; then
+    # 카탈로그 후보 (catalogs.ini 섹션 목록)
+    local dynamic_cats
+    dynamic_cats="$(grep -E '^\[[a-zA-Z0-9_-]+\]' "$repo_root/env/catalogs/catalogs.ini" 2>/dev/null | tr -d '[]' | tr '\n' ' ')"
+    [[ -n "$dynamic_cats" ]] && catalog_candidates="$dynamic_cats"
+
+    # 도구 후보 (*.catalog의 TOOLS 또는 레거시 CUSTOM_TOOLS)
+    local dynamic_tools
+    dynamic_tools="$(grep -h -E '^(TOOLS|CUSTOM_TOOLS)=' "$repo_root"/env/catalogs/*.catalog 2>/dev/null | sed -E 's/^(TOOLS|CUSTOM_TOOLS)=//' | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$' | sort -u | tr '\n' ' ')"
+    [[ -n "$dynamic_tools" ]] && tool_candidates="$dynamic_tools"
+
+    # 인스톨러 후보 (env/installers/install-*.sh + *.catalog의 INSTALLERS)
+    local dynamic_insts
+    dynamic_insts="$(
+      {
+        for f in "$repo_root"/env/installers/install-*.sh; do
+          [[ -f "$f" ]] || continue
+          local b
+          b="$(basename "$f")"
+          b="${b#install-}"
+          echo "${b%.sh}"
+        done
+        grep -h -E '^(INSTALLERS|CUSTOM_INSTALLERS)=' "$repo_root"/env/catalogs/*.catalog 2>/dev/null | sed -E 's/^(INSTALLERS|CUSTOM_INSTALLERS)=//' | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$'
+      } | sort -u | tr '\n' ' '
+    )"
+    [[ -n "$dynamic_insts" ]] && installer_candidates="$dynamic_insts"
+
+    # 명령어 후보 (env/commands/*.sh + *.catalog의 COMMANDS)
+    local dynamic_cmds
+    dynamic_cmds="$(
+      {
+        for f in "$repo_root"/env/commands/*.sh; do
+          [[ -f "$f" ]] || continue
+          local b
+          b="$(basename "$f")"
+          echo "${b%.sh}"
+        done
+        grep -h -E '^(COMMANDS|CUSTOM_COMMANDS|COMMADNS)=' "$repo_root"/env/catalogs/*.catalog 2>/dev/null | sed -E 's/^(COMMANDS|CUSTOM_COMMANDS|COMMADNS)=//' | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$'
+      } | sort -u | tr '\n' ' '
+    )"
+    [[ -n "$dynamic_cmds" ]] && command_candidates="$dynamic_cmds"
+
+    # SSH 공개키 후보 (env/keys/*.pub + *.catalog의 SSH_KEYS)
+    local dynamic_keys
+    dynamic_keys="$(
+      {
+        for f in "$repo_root"/env/keys/*.pub; do
+          [[ -f "$f" ]] || continue
+          local b
+          b="$(basename "$f")"
+          echo "${b%.pub}"
+        done
+        grep -h '^SSH_KEYS=' "$repo_root"/env/catalogs/*.catalog 2>/dev/null | sed 's/^SSH_KEYS=//' | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$'
+      } | sort -u | tr '\n' ' '
+    )"
+    [[ -n "$dynamic_keys" ]] && key_candidates="$dynamic_keys"
+  fi
+}
+
+##
+# 특정 옵션에 대해 커맨드 라인 전체(COMP_WORDS) 및 현재 토큰에서 이미 사용된 값들을 수집합니다.
+#
+# @param $1 {string} 옵션명 (예: '--catalog', '--tool', '--installer', '--command', '--ssh-key', '--only', '--skip')
+# @param $2 {string} 현재 완성 중인 토큰 ($cur)
+#
+# @return 사용된 값 목록 (한 줄에 하나씩 출력)
+##
+_sciectl_get_used_values() {
+  local target_opt="$1"
+  local cur_token="${2:-}"
+  local -a used=()
+
+  # 1. COMP_WORDS 탐색 (현재 커서 단어 이전까지)
+  local i
+  for (( i=0; i < COMP_CWORD; i++ )); do
+    local w="${COMP_WORDS[i]}"
+    # --opt val 형태
+    if [[ "$w" == "$target_opt" ]]; then
+      local next_idx=$((i + 1))
+      if (( next_idx < COMP_CWORD )); then
+        local next_val="${COMP_WORDS[next_idx]}"
+        if [[ "$next_val" != --* ]]; then
+          local -a parts=()
+          IFS=',' read -ra parts <<< "$next_val"
+          local p
+          for p in "${parts[@]}"; do
+            p="$(echo "$p" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+            [[ -n "$p" ]] && used+=("$p")
+          done
+        fi
+      fi
+    # --opt=val 형태
+    elif [[ "$w" == "${target_opt}="* ]]; then
+      local val="${w#${target_opt}=}"
+      local -a parts=()
+      IFS=',' read -ra parts <<< "$val"
+      local p
+      for p in "${parts[@]}"; do
+        p="$(echo "$p" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+        [[ -n "$p" ]] && used+=("$p")
+      done
+    fi
+  done
+
+  # 2. 현재 토큰 내의 콤마 앞부분 (이미 입력 확정된 값들)
+  local cur_val="$cur_token"
+  [[ "$cur_val" == "${target_opt}="* ]] && cur_val="${cur_val#${target_opt}=}"
+  if [[ "$cur_val" == *,* ]]; then
+    local leading="${cur_val%,*}"
+    local -a parts=()
+    IFS=',' read -ra parts <<< "$leading"
+    local p
+    for p in "${parts[@]}"; do
+      p="$(echo "$p" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+      [[ -n "$p" ]] && used+=("$p")
+    done
+  fi
+
+  printf '%s\n' "${used[@]}" | sort -u
+}
+
+##
+# 전체 후보 목록에서 이미 사용된 값들을 제외한 남은 후보군을 반환합니다.
+#
+# @param $1 {string} 전체 후보 단어 목록 (공백 구분)
+# @param $2 {string} 옵션명 (예: '--catalog')
+# @param $3 {string} 현재 완성 중인 토큰 ($cur)
+#
+# @return 사용되지 않은 후보 단어 목록 (공백 구분 문자열)
+##
+_sciectl_filter_candidates() {
+  local all_candidates="$1"
+  local target_opt="$2"
+  local cur_token="${3:-}"
+
+  local used_str
+  used_str="$(_sciectl_get_used_values "$target_opt" "$cur_token")"
+  if [[ -z "$used_str" ]]; then
+    printf '%s\n' "$all_candidates"
+    return 0
+  fi
+
+  local -A used_map=()
+  local u
+  while IFS= read -r u; do
+    [[ -n "$u" ]] && used_map["$u"]=1
+  done <<< "$used_str"
+
+  local -a filtered=()
+  local c
+  for c in $all_candidates; do
+    if [[ -z "${used_map[$c]:-}" ]]; then
+      filtered+=("$c")
+    fi
+  done
+
+  printf '%s\n' "${filtered[*]}"
+}
+
+##
 # 콤마(,)로 구분된 다중 값 입력 시 마지막 토큰 기준으로 자동 완성을 수행합니다.
+# 이미 입력된 값은 후보에서 자동으로 제외(중복 제안 금지)합니다.
 #
 # @param $1 {string} 후보 단어 목록 (공백 구분)
 # @param $2 {string} 현재 입력 중인 값 부분
 # @param $3 {string} 옵션 접두사 (예: '--catalog=' 또는 '')
+# @param $4 {string} 옵션 식별자 (예: '--catalog', 중복 제외 필터링용)
 #
 # @return COMPREPLY 배열 설정
 ##
@@ -39,6 +263,15 @@ _sciectl_complete_csv_values() {
   local candidates="$1"
   local val_cur="$2"
   local opt_prefix="${3:-}"
+  local opt_name="${4:-}"
+
+  # 콤마로 연결 가능한 다중 값 옵션이므로 완성 후 자동 공백 추가 방지
+  compopt -o nospace 2>/dev/null || true
+
+  local active_candidates="$candidates"
+  if [[ -n "$opt_name" ]]; then
+    active_candidates="$(_sciectl_filter_candidates "$candidates" "$opt_name" "$val_cur")"
+  fi
 
   local prefix="$opt_prefix"
   local target_part="$val_cur"
@@ -50,7 +283,7 @@ _sciectl_complete_csv_values() {
   local item
   while IFS= read -r item; do
     [[ -n "$item" ]] && COMPREPLY+=("${prefix}${item}")
-  done < <(compgen -W "$candidates" -- "$target_part")
+  done < <(compgen -W "$active_candidates" -- "$target_part")
 }
 
 ##
@@ -68,18 +301,27 @@ _sciectl_completion() {
   cur="${COMP_WORDS[COMP_CWORD]:-}"
   prev="${COMP_WORDS[COMP_CWORD-1]:-}"
 
+  # 기본적으로는 공백 추가 활성화 (옵션, 서브커맨드 등 일반 단어 완성 시)
+  compopt +o nospace 2>/dev/null || true
+
   local -a subcommands=("install" "list" "info" "--help")
-  local catalog_candidates="default-server default-devops docker network gitlab ai-agent install-lets-encrypt-certificate"
-  local installer_candidates="temurin-25-jdk update-java-config maven-3.9.15 update-mvn-config htop docker/install-docker"
-  local command_candidates="firewall-cmd-set-priority"
-  local key_candidates="ymtech-internal letsencrypt"
-  local step_candidates="sudoers remove-packages install-packages default-opts custom-installers custom-tools custom-commands ssh-key"
-  local tool_candidates="utils/scriptctl sys/vim-cli sudo/sudoers-cli sys/disk-size maven/build-mvn-package git/git-commit git/git-merge git/git-log-abbr git/git-getpr git/git-branch-cmd git/git-init build/clean-project utils/diff-file docker/install-docker-dev-config docker/setup-compose-service docker/setup-docker-compose docker/dknetcli docker/dkcontls net/fwc-cli net/fwc-docker-policy net/add-vlan-routes net/mtr-netstat-conns gitlab/gitlab-clone gitlab/clone-gitlab-projects ai-agent/asr-cli"
+  local catalog_candidates=""
+  local installer_candidates=""
+  local command_candidates=""
+  local key_candidates=""
+  local step_candidates=""
+  local tool_candidates=""
+
+  _sciectl_load_candidates
 
   # 첫 번째 인자 완성
   if (( COMP_CWORD == 1 )); then
     if [[ "$cur" == --* ]]; then
-      local -a top_opts=("--catalog" "--tool" "--installer" "--command" "--ssh-key" "--only" "--skip" "--user" "--target" "--local" "--remote" "--yes" "--force" "--dry-run" "--help")
+      local -a top_opts=(
+        "--catalog" "--tool" "--installer" "--command" "--ssh-key"
+        "--only" "--skip" "--user" "--target" "--local" "--remote"
+        "--yes" "--force" "--dry-run" "--all" "--no-default-opts" "--help"
+      )
       COMPREPLY=( $(compgen -W "${top_opts[*]}" -- "$cur") )
     else
       COMPREPLY=( $(compgen -W "${subcommands[*]}" -- "$cur") )
@@ -94,41 +336,40 @@ _sciectl_completion() {
 
   case "$subcmd" in
     install)
+      # 레거시 플래그를 제거하고 표준 Option과 Flag로만 단일화 (--only <step> 권장)
       local -a install_opts=(
         "--catalog" "--tool" "--installer" "--command" "--ssh-key"
         "--only" "--skip" "--user" "--target" "--local" "--remote"
-        "--yes" "--force" "--dry-run" "--all" "--add-sudoers"
-        "--remove-packages" "--install-packages" "--custom-tools"
-        "--custom-installers" "--custom-commands" "--no-default-opts" "--help"
+        "--yes" "--force" "--dry-run" "--all" "--no-default-opts" "--help"
       )
 
       case "$cur" in
         --catalog=*)
-          _sciectl_complete_csv_values "$catalog_candidates" "${cur#--catalog=}" "--catalog="
+          _sciectl_complete_csv_values "$catalog_candidates" "${cur#--catalog=}" "--catalog=" "--catalog"
           return 0
           ;;
         --tool=*)
-          _sciectl_complete_csv_values "$tool_candidates" "${cur#--tool=}" "--tool="
+          _sciectl_complete_csv_values "$tool_candidates" "${cur#--tool=}" "--tool=" "--tool"
           return 0
           ;;
         --installer=*)
-          _sciectl_complete_csv_values "$installer_candidates" "${cur#--installer=}" "--installer="
+          _sciectl_complete_csv_values "$installer_candidates" "${cur#--installer=}" "--installer=" "--installer"
           return 0
           ;;
         --command=*)
-          _sciectl_complete_csv_values "$command_candidates" "${cur#--command=}" "--command="
+          _sciectl_complete_csv_values "$command_candidates" "${cur#--command=}" "--command=" "--command"
           return 0
           ;;
         --ssh-key=*)
-          _sciectl_complete_csv_values "$key_candidates" "${cur#--ssh-key=}" "--ssh-key="
+          _sciectl_complete_csv_values "$key_candidates" "${cur#--ssh-key=}" "--ssh-key=" "--ssh-key"
           return 0
           ;;
         --only=*)
-          _sciectl_complete_csv_values "$step_candidates" "${cur#--only=}" "--only="
+          _sciectl_complete_csv_values "$step_candidates" "${cur#--only=}" "--only=" "--only"
           return 0
           ;;
         --skip=*)
-          _sciectl_complete_csv_values "$step_candidates" "${cur#--skip=}" "--skip="
+          _sciectl_complete_csv_values "$step_candidates" "${cur#--skip=}" "--skip=" "--skip"
           return 0
           ;;
         --target=*)
@@ -139,27 +380,31 @@ _sciectl_completion() {
 
       case "$prev" in
         --catalog)
-          _sciectl_complete_csv_values "$catalog_candidates" "$cur" ""
+          _sciectl_complete_csv_values "$catalog_candidates" "$cur" "" "--catalog"
           return 0
           ;;
         --tool)
-          _sciectl_complete_csv_values "$tool_candidates" "$cur" ""
+          _sciectl_complete_csv_values "$tool_candidates" "$cur" "" "--tool"
           return 0
           ;;
         --installer)
-          _sciectl_complete_csv_values "$installer_candidates" "$cur" ""
+          _sciectl_complete_csv_values "$installer_candidates" "$cur" "" "--installer"
           return 0
           ;;
         --command)
-          _sciectl_complete_csv_values "$command_candidates" "$cur" ""
+          _sciectl_complete_csv_values "$command_candidates" "$cur" "" "--command"
           return 0
           ;;
         --ssh-key)
-          _sciectl_complete_csv_values "$key_candidates" "$cur" ""
+          _sciectl_complete_csv_values "$key_candidates" "$cur" "" "--ssh-key"
           return 0
           ;;
-        --only|--skip)
-          _sciectl_complete_csv_values "$step_candidates" "$cur" ""
+        --only)
+          _sciectl_complete_csv_values "$step_candidates" "$cur" "" "--only"
+          return 0
+          ;;
+        --skip)
+          _sciectl_complete_csv_values "$step_candidates" "$cur" "" "--skip"
           return 0
           ;;
         --target)
@@ -180,7 +425,7 @@ _sciectl_completion() {
       local -a list_opts=("--type" "--local" "--remote" "--help")
       case "$cur" in
         --type=*)
-          _sciectl_complete_csv_values "all catalogs installers commands keys" "${cur#--type=}" "--type="
+          COMPREPLY=( $(compgen -W "all catalogs installers commands keys" -- "${cur#--type=}") )
           return 0
           ;;
       esac
@@ -198,13 +443,13 @@ _sciectl_completion() {
       local -a info_opts=("--catalog" "--local" "--remote" "--help")
       case "$cur" in
         --catalog=*)
-          _sciectl_complete_csv_values "$catalog_candidates" "${cur#--catalog=}" "--catalog="
+          _sciectl_complete_csv_values "$catalog_candidates" "${cur#--catalog=}" "--catalog=" "--catalog"
           return 0
           ;;
       esac
       case "$prev" in
         --catalog)
-          _sciectl_complete_csv_values "$catalog_candidates" "$cur" ""
+          _sciectl_complete_csv_values "$catalog_candidates" "$cur" "" "--catalog"
           return 0
           ;;
       esac

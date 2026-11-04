@@ -49,7 +49,7 @@
 | | `--skip <STEPS>` | 선택 | 지정한 단계를 제외하고 실행 (콤마 구분) |
 | | `--user <USERNAME>` | 선택 | `sudoers` 등록 대상 사용자 계정 지정 (미지정 시 프롬프트 또는 `$USER`) |
 | | `--target <local\|global>` | 선택 | 커스텀 도구 설치 범위 (`local`: `~/bin`, `global`: `/usr/local/bin`, 기본값: `local`) |
-| | `--local` / `--remote` | 선택 | 로컬 저장소 파일 우선 사용 또는 원격 GitHub 저장소 강제 사용 |
+| | `--local` / `--remote` | 선택 | 로컬 저장소 파일 우선 사용 또는 원격 GitHub 저장소 사용 (기본값: 원격 GitHub 최신 정보 사용) |
 | | `--yes` | 선택 | 모든 확인 프롬프트(`y/n`) 및 덮어쓰기 자동 승인 |
 | | `--force` | 선택 | 기존 설치된 커스텀 도구/자동완성 파일 확인 없이 강제 업데이트 |
 | | `--dry-run` | 선택 | 실제 설치 없이 병합된 트랜잭션 실행 계획(Transaction Summary)만 출력 |

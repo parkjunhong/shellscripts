@@ -18,19 +18,19 @@ REMOVE_PACKAGES=
 INSTALL_PACKAGES=net-tools, firewalld
 
 # ==============================================================================
-# 3. Custom Tools (<category>/<canonical-name>, 콤마 구분)
+# 3. CLI Tools (<category>/<canonical-name>, 콤마 구분)
 # ==============================================================================
-CUSTOM_TOOLS=utils/scriptctl, net/fwc-cli, net/fwc-docker-policy, net/add-vlan-routes, net/mtr-netstat-conns
+TOOLS=utils/scriptctl, net/fwc-cli, net/fwc-docker-policy, net/add-vlan-routes, net/mtr-netstat-conns
 
 # ==============================================================================
-# 4. Custom Installers (env/installers/ 식별자 또는 <category>/<tool>, 콤마 구분)
+# 4. Installers (env/installers/ 식별자 또는 <category>/<tool>, 콤마 구분)
 # ==============================================================================
-CUSTOM_INSTALLERS=
+INSTALLERS=
 
 # ==============================================================================
 # 5. Post-Install Commands (env/commands/ 식별자, 콤마 구분)
 # ==============================================================================
-CUSTOM_COMMANDS=firewall-cmd-set-priority
+COMMANDS=firewall-cmd-set-priority
 
 # ==============================================================================
 # 6. SSH Public Keys (env/keys/ 식별자, 콤마 구분)

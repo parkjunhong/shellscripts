@@ -18,19 +18,19 @@ REMOVE_PACKAGES=
 INSTALL_PACKAGES=
 
 # ==============================================================================
-# 3. Custom Tools (<category>/<canonical-name>, 콤마 구분)
+# 3. CLI Tools (<category>/<canonical-name>, 콤마 구분)
 # ==============================================================================
-CUSTOM_TOOLS=installer/install-albert-with-socket, installer/install-antigravity-ide, installer/install-antigravity-x64
+TOOLS=installer/install-albert-with-socket, installer/install-antigravity-ide, installer/install-antigravity-x64
 
 # ==============================================================================
-# 4. Custom Installers (env/installers/ 식별자 또는 <category>/<tool>, 콤마 구분)
+# 4. Installers (env/installers/ 식별자 또는 <category>/<tool>, 콤마 구분)
 # ==============================================================================
-CUSTOM_INSTALLERS=
+INSTALLERS=
 
 # ==============================================================================
 # 5. Post-Install Commands (env/commands/ 식별자, 콤마 구분)
 # ==============================================================================
-CUSTOM_COMMANDS=
+COMMANDS=
 
 # ==============================================================================
 # 6. SSH Public Keys (env/keys/ 식별자, 콤마 구분)

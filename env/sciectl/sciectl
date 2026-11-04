@@ -222,22 +222,18 @@ help() {
   --skip <STEPS>                지정한 단계를 제외하고 실행 (콤마 구분)
   --user <USERNAME>             sudoers 등록 대상 사용자 계정 지정 (미지정 시 프롬프트 또는 \$USER)
   --target <local|global>       커스텀 도구 설치 경로 (local: ~/bin, global: /usr/local/bin, 기본값: local)
-  --local                       로컬 저장소 파일 우선 사용
-  --remote                      원격 GitHub 저장소(Raw URL) 강제 사용
+  --local                       로컬 저장소 파일 우선 사용 (기본값: 원격 GitHub 최신 정보 사용)
+  --remote                      원격 GitHub 저장소(Raw URL) 사용 (기본 동작)
   --yes                         모든 확인 프롬프트(y/n) 자동 승인 (무인 자동화 설치)
   --force                       기존 설치된 커스텀 도구/자동완성 파일 확인 없이 강제 업데이트
   --dry-run                     실제 설치 없이 병합된 트랜잭션 실행 계획(Transaction Summary)만 출력
+  --all                         선택한 카탈로그의 모든 단계 및 기본 환경 3종 설정 적용
+  --no-default-opts             기본 환경 3종(~/bin PATH, git 프롬프트, vimrc) 설정 생략
   --help                        install 서브커맨드 도움말 출력
 
-⚙️  단계별 호환 옵션 (Legacy Step Options):
-  --all                         선택한 카탈로그의 모든 단계 및 기본 환경 설정 적용
-  --add-sudoers                 sudoers 설정 단계만 실행 (--no-default-opts 자동 적용)
-  --remove-packages             불필요 OS 패키지 삭제 단계만 실행 (--no-default-opts 자동 적용)
-  --install-packages            기본 OS 패키지 설치 단계만 실행 (--no-default-opts 자동 적용)
-  --custom-tools                커스텀 도구 설치 단계만 실행 (--no-default-opts 자동 적용)
-  --custom-installers           커스텀 인스톨러 실행 단계만 실행 (--no-default-opts 자동 적용)
-  --custom-commands             커스텀 명령어 실행 단계만 실행 (--no-default-opts 자동 적용)
-  --no-default-opts             기본 환경 3종(~/bin PATH, git 프롬프트, vimrc) 설정 생략
+💡 단계 제어 안내:
+  특정 단계만 실행하거나 제외하려면 '--only' 또는 '--skip' 옵션을 사용하세요.
+  (예: --only custom-tools 또는 --skip sudoers,remove-packages)
 
 💡 예시 (Examples):
   $FILENAME
@@ -414,20 +410,21 @@ _ensure_curl() {
 }
 
 # ==========================================
-# 로컬 저장소 vs 원격 저장소 소스 리졸버
+# 로컬 저장소 vs 원격 저장소 소스 리졸버 (기본값: 원격 GitHub)
 # ==========================================
-SOURCE_MODE="auto" # auto | local | remote
+SOURCE_MODE="remote" # remote (기본값) | local
 LOCAL_REPO_ROOT=""
 
 ##
 # 현재 스크립트 위치 기준 로컬 shellscripts 저장소 루트를 탐색합니다.
+# '--local' 옵션이 지정된 경우에만 활성화됩니다.
 #
 # @param 없음
 #
 # @return 0 (발견 시 LOCAL_REPO_ROOT 설정), 1 (미발견)
 ##
 _detect_local_repo() {
-  if [[ "$SOURCE_MODE" == "remote" ]]; then
+  if [[ "$SOURCE_MODE" != "local" ]]; then
     LOCAL_REPO_ROOT=""
     return 1
   fi
@@ -449,10 +446,7 @@ _detect_local_repo() {
     fi
   done
 
-  if [[ "$SOURCE_MODE" == "local" ]]; then
-    error_exit "'--local' 옵션이 지정되었으나 로컬 저장소(env/catalogs/catalogs.ini)를 찾을 수 없습니다." "$LINENO"
-  fi
-  return 1
+  error_exit "'--local' 옵션이 지정되었으나 로컬 저장소(env/catalogs/catalogs.ini)를 찾을 수 없습니다." "$LINENO"
 }
 
 ##
@@ -924,13 +918,13 @@ resolve_catalog() {
         NO_PASSWORD_COMMANDS)  sudoers_val+=",$val" ;;
         REMOVE_PACKAGES)       remove_val+=",$val" ;;
         INSTALL_PACKAGES)      install_val+=",$val" ;;
-        CUSTOM_TOOLS|URL_CUSTOM_TOOL.*)
+        TOOLS|CUSTOM_TOOLS|URL_CUSTOM_TOOL.*)
           tools_val+=",$val"
           ;;
-        CUSTOM_INSTALLERS|URL_CUSTOM_INSTALLER.*)
+        INSTALLERS|CUSTOM_INSTALLERS|URL_CUSTOM_INSTALLER.*)
           installers_val+=",$val"
           ;;
-        CUSTOM_COMMANDS|URL_CUSTOM_COMMAND.*)
+        COMMANDS|CUSTOM_COMMANDS|COMMADNS|URL_CUSTOM_COMMAND.*)
           commands_val+=",$val"
           ;;
         SSH_KEYS|RSA_PUBLIC_KEY.*)
@@ -2096,6 +2090,7 @@ _print_transaction_summary() {
   else
     printf " 📦 적용 카탈로그       : (개별 컴포넌트 직접 지정)\n"
   fi
+  printf " 🌐 리소스 출처        : %s\n" "$([[ "$SOURCE_MODE" == "local" ]] && echo "로컬 저장소 ($LOCAL_REPO_ROOT)" || echo "원격 GitHub ($REPO_BASE_URL)")"
   printf " 🎯 도구 설치 범위      : %s (%s)\n" "$target_scope" "$([[ "$target_scope" == "global" ]] && echo "/usr/local/bin" || echo "$HOME/bin")"
   echo "--------------------------------------------------------------------------------"
 

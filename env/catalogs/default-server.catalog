@@ -18,19 +18,19 @@ REMOVE_PACKAGES=ufw
 INSTALL_PACKAGES=curl, net-tools, vim, jq, firewalld, file
 
 # ==============================================================================
-# 3. Custom Tools (<category>/<canonical-name>, 콤마 구분)
+# 3. CLI Tools (<category>/<canonical-name>, 콤마 구분)
 # ==============================================================================
-CUSTOM_TOOLS=utils/scriptctl, sys/vim-cli, sudo/sudoers-cli, sys/disk-size
+TOOLS=utils/scriptctl, sys/vim-cli, sudo/sudoers-cli, sys/disk-size
 
 # ==============================================================================
-# 4. Custom Installers (env/installers/ 식별자 또는 <category>/<tool>, 콤마 구분)
+# 4. Installers (env/installers/ 식별자 또는 <category>/<tool>, 콤마 구분)
 # ==============================================================================
-CUSTOM_INSTALLERS=temurin-25-jdk, update-java-config, htop
+INSTALLERS=temurin-25-jdk, update-java-config, htop
 
 # ==============================================================================
 # 5. Post-Install Commands (env/commands/ 식별자, 콤마 구분)
 # ==============================================================================
-CUSTOM_COMMANDS=
+COMMANDS=
 
 # ==============================================================================
 # 6. SSH Public Keys (env/keys/ 식별자 또는 공개키 문자열, 콤마 구분)
