@@ -149,6 +149,117 @@ _sciectl_load_candidates() {
 }
 
 ##
+# 지정된 카탈로그 목록(INCLUDES 상속 포함)으로부터 컴포넌트 후보군을 스코핑하여 로드합니다.
+# (방안 A: 비대칭적 계층 스코핑 지원)
+#
+# @param $1 {string} 카탈로그 ID 목록 (줄바꿈 또는 공백 구분)
+# @param $2 {string} 저장소 루트 경로 ($repo_root)
+##
+_sciectl_load_catalog_scoped_candidates() {
+  local specified_cats="$1"
+  local repo_root="$2"
+
+  [[ -n "$specified_cats" && -n "$repo_root" && -d "$repo_root/env/catalogs" ]] || return 0
+
+  local -A visited_cats=()
+  local -a cat_queue=( $specified_cats )
+
+  local -A scoped_tools_map=()
+  local -A scoped_insts_map=()
+  local -A scoped_cmds_map=()
+  local -A scoped_keys_map=()
+
+  while (( ${#cat_queue[@]} > 0 )); do
+    local cid="${cat_queue[0]}"
+    cat_queue=("${cat_queue[@]:1}")
+
+    [[ -n "$cid" ]] || continue
+    [[ -z "${visited_cats[$cid]:-}" ]] || continue
+    visited_cats["$cid"]=1
+
+    local cat_file="$repo_root/env/catalogs/${cid}.catalog"
+    [[ -f "$cat_file" ]] || continue
+
+    # 1. INCLUDES 상속 처리 (재귀 큐 삽입)
+    local inc_line
+    inc_line="$(grep -E '^INCLUDES=' "$cat_file" 2>/dev/null | sed 's/^INCLUDES=//' || true)"
+    if [[ -n "$inc_line" ]]; then
+      local -a inc_arr=()
+      IFS=',' read -ra inc_arr <<< "$inc_line"
+      local inc
+      for inc in "${inc_arr[@]}"; do
+        inc="$(echo "$inc" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+        if [[ -n "$inc" && -z "${visited_cats[$inc]:-}" ]]; then
+          cat_queue+=("$inc")
+        fi
+      done
+    fi
+
+    # 2. TOOLS
+    local tools_line
+    tools_line="$(grep -E '^TOOLS=' "$cat_file" 2>/dev/null | sed 's/^TOOLS=//' || true)"
+    if [[ -n "$tools_line" ]]; then
+      local -a t_arr=()
+      IFS=',' read -ra t_arr <<< "$tools_line"
+      local t
+      for t in "${t_arr[@]}"; do
+        t="$(echo "$t" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+        [[ -n "$t" ]] && scoped_tools_map["$t"]=1
+      done
+    fi
+
+    # 3. INSTALLERS
+    local insts_line
+    insts_line="$(grep -E '^INSTALLERS=' "$cat_file" 2>/dev/null | sed 's/^INSTALLERS=//' || true)"
+    if [[ -n "$insts_line" ]]; then
+      local -a i_arr=()
+      IFS=',' read -ra i_arr <<< "$insts_line"
+      local i
+      for i in "${i_arr[@]}"; do
+        i="$(echo "$i" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+        [[ -n "$i" ]] && scoped_insts_map["$i"]=1
+      done
+    fi
+
+    # 4. COMMANDS
+    local cmds_line
+    cmds_line="$(grep -E '^COMMANDS=' "$cat_file" 2>/dev/null | sed 's/^COMMANDS=//' || true)"
+    if [[ -n "$cmds_line" ]]; then
+      local -a c_arr=()
+      IFS=',' read -ra c_arr <<< "$cmds_line"
+      local c
+      for c in "${c_arr[@]}"; do
+        c="$(echo "$c" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+        [[ -n "$c" ]] && scoped_cmds_map["$c"]=1
+      done
+    fi
+
+    # 5. SSH_KEYS
+    local keys_line
+    keys_line="$(grep -E '^SSH_KEYS=' "$cat_file" 2>/dev/null | sed 's/^SSH_KEYS=//' || true)"
+    if [[ -n "$keys_line" ]]; then
+      local -a k_arr=()
+      IFS=',' read -ra k_arr <<< "$keys_line"
+      local k
+      for k in "${k_arr[@]}"; do
+        k="$(echo "$k" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+        [[ -n "$k" ]] && scoped_keys_map["$k"]=1
+      done
+    fi
+  done
+
+  # 후보군을 스코핑된 목록으로 교체 (항목이 없으면 정확히 빈 문자열)
+  tool_candidates=""
+  (( ${#scoped_tools_map[@]} > 0 )) && tool_candidates="$(printf '%s\n' "${!scoped_tools_map[@]}" | sort | tr '\n' ' ')"
+  installer_candidates=""
+  (( ${#scoped_insts_map[@]} > 0 )) && installer_candidates="$(printf '%s\n' "${!scoped_insts_map[@]}" | sort | tr '\n' ' ')"
+  command_candidates=""
+  (( ${#scoped_cmds_map[@]} > 0 )) && command_candidates="$(printf '%s\n' "${!scoped_cmds_map[@]}" | sort | tr '\n' ' ')"
+  key_candidates=""
+  (( ${#scoped_keys_map[@]} > 0 )) && key_candidates="$(printf '%s\n' "${!scoped_keys_map[@]}" | sort | tr '\n' ' ')"
+}
+
+##
 # 특정 옵션에 대해 커맨드 라인 전체(COMP_WORDS) 및 현재 토큰에서 이미 사용된 값들을 수집합니다.
 #
 # @param $1 {string} 옵션명 (예: '--catalog', '--tool', '--installer', '--command', '--ssh-key', '--only', '--skip')
@@ -336,9 +447,27 @@ _sciectl_completion() {
 
   case "$subcmd" in
     install)
-      # 레거시 플래그를 제거하고 표준 Option과 Flag로만 단일화 (--only <step> 권장)
-      local -a install_opts=(
-        "--catalog" "--tool" "--installer" "--command" "--ssh-key"
+      # [방안 A] 선행 --catalog 옵션이 지정된 경우, 해당 카탈로그(및 INCLUDES 상속) 컴포넌트로 후보군 스코핑
+      local specified_catalogs
+      specified_catalogs="$(_sciectl_get_used_values "--catalog" "")"
+      if [[ -n "$specified_catalogs" ]]; then
+        local repo_root
+        repo_root="$(_sciectl_find_repo_root)"
+        _sciectl_load_catalog_scoped_candidates "$specified_catalogs" "$repo_root"
+      fi
+
+      # 옵션 플래그 동적 구성: --catalog 지정 시 실제 정의된 컴포넌트 옵션만 선별 제안
+      local -a install_opts=("--catalog")
+      if [[ -n "$specified_catalogs" ]]; then
+        [[ -n "${tool_candidates//[[:space:]]/}" ]] && install_opts+=("--tool")
+        [[ -n "${installer_candidates//[[:space:]]/}" ]] && install_opts+=("--installer")
+        [[ -n "${command_candidates//[[:space:]]/}" ]] && install_opts+=("--command")
+        [[ -n "${key_candidates//[[:space:]]/}" ]] && install_opts+=("--ssh-key")
+      else
+        install_opts+=("--tool" "--installer" "--command" "--ssh-key")
+      fi
+
+      install_opts+=(
         "--only" "--skip" "--user" "--target" "--local" "--remote"
         "--yes" "--force" "--dry-run" "--all" "--no-default-opts" "--help"
       )
