@@ -761,7 +761,7 @@ description: >-
 # version: 1.0.0
 
 # [선택] 스킬 작성자 및 관리 주체 정보 (기본값 없음 - 필요 시 주석 해제 후 작성)
-# author: parkjunhong77@gmail.com
+# author: youre-mail@your-company.tld (tld: Top Level Domain)
 
 # [선택] 카테고리 분류용 태그 목록 (기본값 없음 - 필요 시 주석 해제 후 작성)
 # tags: [${category}]
