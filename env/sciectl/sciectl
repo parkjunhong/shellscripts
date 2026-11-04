@@ -212,20 +212,20 @@ help() {
 
 ⚙️  주요 옵션 (Options - Long Option 전용):
   --catalog <ID[,ID2...]>       설치할 카탈로그 ID 지정 (복수 지정 또는 콤마 구분 가능)
-  --tool <CAT/NAME[,...]>       특정 커스텀 도구 단독/추가 설치 (예: git/git-commit)
+  --tool <CAT/NAME[,...]>       특정 CLI 도구 단독/추가 설치 (예: git/git-commit)
   --installer <NAME[,...]>      특정 인스톨러 단독/추가 실행 (예: temurin-25-jdk, htop)
   --command <NAME[,...]>        특정 사후 명령어 단독/추가 실행 (예: firewall-cmd-set-priority)
   --ssh-key <NAME[,...]>        특정 SSH 공개키 단독/추가 등록 (예: ymtech-internal, letsencrypt)
   --only <STEPS>                지정한 단계만 선택 실행 (콤마 구분)
                                 (허용값: sudoers,remove-packages,install-packages,default-opts,
-                                 custom-installers,custom-tools,custom-commands,ssh-key)
+                                 installers,tools,commands,ssh-key)
   --skip <STEPS>                지정한 단계를 제외하고 실행 (콤마 구분)
   --user <USERNAME>             sudoers 등록 대상 사용자 계정 지정 (미지정 시 프롬프트 또는 \$USER)
-  --target <local|global>       커스텀 도구 설치 경로 (local: ~/bin, global: /usr/local/bin, 기본값: local)
+  --target <local|global>       CLI 도구 설치 경로 (local: ~/bin, global: /usr/local/bin, 기본값: local)
   --local                       로컬 저장소 파일 우선 사용 (기본값: 원격 GitHub 최신 정보 사용)
   --remote                      원격 GitHub 저장소(Raw URL) 사용 (기본 동작)
   --yes                         모든 확인 프롬프트(y/n) 자동 승인 (무인 자동화 설치)
-  --force                       기존 설치된 커스텀 도구/자동완성 파일 확인 없이 강제 업데이트
+  --force                       기존 설치된 CLI 도구/자동완성 파일 확인 없이 강제 업데이트
   --dry-run                     실제 설치 없이 병합된 트랜잭션 실행 계획(Transaction Summary)만 출력
   --all                         선택한 카탈로그의 모든 단계 및 기본 환경 3종 설정 적용
   --no-default-opts             기본 환경 3종(~/bin PATH, git 프롬프트, vimrc) 설정 생략
@@ -233,13 +233,13 @@ help() {
 
 💡 단계 제어 안내:
   특정 단계만 실행하거나 제외하려면 '--only' 또는 '--skip' 옵션을 사용하세요.
-  (예: --only custom-tools 또는 --skip sudoers,remove-packages)
+  (예: --only tools 또는 --skip sudoers,remove-packages)
 
 💡 예시 (Examples):
   $FILENAME
   $FILENAME install --catalog default-server,docker,network
   $FILENAME install --catalog default-devops --user parkjunhong --yes
-  $FILENAME install --catalog default-devops --only custom-tools,custom-installers
+  $FILENAME install --catalog default-devops --only tools,installers
   $FILENAME install --installer temurin-25-jdk,htop --tool git/git-commit
   $FILENAME install --catalog default-server --dry-run
 EOF
@@ -767,13 +767,13 @@ declare -A TX_SEEN_REMOVE_PKG=()
 declare -a TX_INSTALL_PKGS=()
 declare -A TX_SEEN_INSTALL_PKG=()
 
-declare -a TX_CUSTOM_TOOLS=()
+declare -a TX_TOOLS=()
 declare -A TX_SEEN_TOOL=()
 
-declare -a TX_CUSTOM_INSTALLERS=()
+declare -a TX_INSTALLERS=()
 declare -A TX_SEEN_INSTALLER=()
 
-declare -a TX_CUSTOM_COMMANDS=()
+declare -a TX_COMMANDS=()
 declare -A TX_SEEN_COMMAND=()
 
 declare -a TX_SSH_KEYS=()
@@ -820,19 +820,19 @@ _add_tx_items() {
         ;;
       tool)
         if [[ -z "${TX_SEEN_TOOL[$trimmed]:-}" ]]; then
-          TX_CUSTOM_TOOLS+=("$trimmed")
+          TX_TOOLS+=("$trimmed")
           TX_SEEN_TOOL["$trimmed"]=1
         fi
         ;;
       installer)
         if [[ -z "${TX_SEEN_INSTALLER[$trimmed]:-}" ]]; then
-          TX_CUSTOM_INSTALLERS+=("$trimmed")
+          TX_INSTALLERS+=("$trimmed")
           TX_SEEN_INSTALLER["$trimmed"]=1
         fi
         ;;
       command)
         if [[ -z "${TX_SEEN_COMMAND[$trimmed]:-}" ]]; then
-          TX_CUSTOM_COMMANDS+=("$trimmed")
+          TX_COMMANDS+=("$trimmed")
           TX_SEEN_COMMAND["$trimmed"]=1
         fi
         ;;
@@ -918,16 +918,16 @@ resolve_catalog() {
         NO_PASSWORD_COMMANDS)  sudoers_val+=",$val" ;;
         REMOVE_PACKAGES)       remove_val+=",$val" ;;
         INSTALL_PACKAGES)      install_val+=",$val" ;;
-        TOOLS|CUSTOM_TOOLS|URL_CUSTOM_TOOL.*)
+        TOOLS)
           tools_val+=",$val"
           ;;
-        INSTALLERS|CUSTOM_INSTALLERS|URL_CUSTOM_INSTALLER.*)
+        INSTALLERS)
           installers_val+=",$val"
           ;;
-        COMMANDS|CUSTOM_COMMANDS|COMMADNS|URL_CUSTOM_COMMAND.*)
+        COMMANDS|COMMADNS)
           commands_val+=",$val"
           ;;
-        SSH_KEYS|RSA_PUBLIC_KEY.*)
+        SSH_KEYS)
           ssh_keys_val+=",$val"
           ;;
       esac
@@ -1589,7 +1589,7 @@ _install_completion() {
 #
 # @return 0
 ##
-_install_custom_tool() {
+_install_tool() {
   local func_name="${FUNCNAME[0]}"
   local raw_id="$1"
   local target_scope="${2:-local}"
@@ -1666,18 +1666,18 @@ _install_custom_tool() {
 }
 
 ##
-# 트랜잭션에 등록된 모든 커스텀 도구를 순차 설치합니다.
+# 트랜잭션에 등록된 모든 도구(Tools)를 순차 설치합니다.
 #
 # @param $1 {string} 설치 범위 (local | global)
 # @param $2 {string} 강제 덮어쓰기 여부 (true | false)
 #
 # @return 0
 ##
-setup_custom_tools() {
+setup_tools() {
   local target_scope="${1:-local}"
   local force_overwrite="${2:-false}"
 
-  if (( ${#TX_CUSTOM_TOOLS[@]} == 0 )); then
+  if (( ${#TX_TOOLS[@]} == 0 )); then
     return 0
   fi
 
@@ -1685,21 +1685,21 @@ setup_custom_tools() {
   [[ "${EXECUTED_JOB_FLAGS[$func_name]:-0}" -eq 1 ]] && return 0
 
   local tool_id
-  for tool_id in "${TX_CUSTOM_TOOLS[@]}"; do
-    [[ -n "$tool_id" ]] && _install_custom_tool "$tool_id" "$target_scope" "$force_overwrite"
+  for tool_id in "${TX_TOOLS[@]}"; do
+    [[ -n "$tool_id" ]] && _install_tool "$tool_id" "$target_scope" "$force_overwrite"
   done
 
   EXECUTED_JOB_FLAGS["$func_name"]=1
 }
 
 ##
-# 커스텀 인스톨러 또는 커스텀 명령어 스크립트를 가져와 무결성/보안 검증 후 서브쉘에서 실행합니다.
+# 인스톨러 또는 사후 명령어 스크립트를 가져와 무결성/보안 검증 후 서브쉘에서 실행합니다.
 #
 # @param $1 {string} 스크립트 상대 경로 또는 HTTPS URL
 #
 # @return 성공 시 0, 실패 시 1
 ##
-_execute_custom_script() {
+_execute_script() {
   local func_name="${FUNCNAME[0]}"
   local script_ref="$1"
   local target_cmd
@@ -1774,14 +1774,14 @@ _execute_custom_script() {
 }
 
 ##
-# 트랜잭션에 등록된 모든 커스텀 인스톨러를 순차 실행합니다.
+# 트랜잭션에 등록된 모든 인스톨러(Installers)를 순차 실행합니다.
 #
 # @param 없음
 #
 # @return 0
 ##
-setup_custom_installers() {
-  if (( ${#TX_CUSTOM_INSTALLERS[@]} == 0 )); then
+setup_installers() {
+  if (( ${#TX_INSTALLERS[@]} == 0 )); then
     return 0
   fi
 
@@ -1789,10 +1789,10 @@ setup_custom_installers() {
   [[ "${EXECUTED_JOB_FLAGS[$func_name]:-0}" -eq 1 ]] && return 0
 
   local inst_id resolved_inst
-  for inst_id in "${TX_CUSTOM_INSTALLERS[@]}"; do
+  for inst_id in "${TX_INSTALLERS[@]}"; do
     if [[ -n "$inst_id" ]]; then
       resolved_inst="$(_resolve_installer_path "$inst_id")"
-      _execute_custom_script "$resolved_inst"
+      _execute_script "$resolved_inst"
     fi
   done
 
@@ -1800,14 +1800,14 @@ setup_custom_installers() {
 }
 
 ##
-# 트랜잭션에 등록된 모든 사후 구성 명령어(Custom Commands)를 순차 실행합니다.
+# 트랜잭션에 등록된 모든 사후 구성 명령어(Commands)를 순차 실행합니다.
 #
 # @param 없음
 #
 # @return 0
 ##
-setup_custom_commands() {
-  if (( ${#TX_CUSTOM_COMMANDS[@]} == 0 )); then
+setup_commands() {
+  if (( ${#TX_COMMANDS[@]} == 0 )); then
     return 0
   fi
 
@@ -1815,10 +1815,10 @@ setup_custom_commands() {
   [[ "${EXECUTED_JOB_FLAGS[$func_name]:-0}" -eq 1 ]] && return 0
 
   local cmd_id resolved_cmd
-  for cmd_id in "${TX_CUSTOM_COMMANDS[@]}"; do
+  for cmd_id in "${TX_COMMANDS[@]}"; do
     if [[ -n "$cmd_id" ]]; then
       resolved_cmd="$(_resolve_command_path "$cmd_id")"
-      _execute_custom_script "$resolved_cmd"
+      _execute_script "$resolved_cmd"
     fi
   done
 
@@ -2049,17 +2049,17 @@ cmd_info() {
   printf " 🗑️  [삭제할 OS 패키지 (%d)]      : %s\n" "${#TX_REMOVE_PKGS[@]}" "${TX_REMOVE_PKGS[*]:-없음}"
   printf " 📥 [설치할 OS 패키지 (%d)]      : %s\n" "${#TX_INSTALL_PKGS[@]}" "${TX_INSTALL_PKGS[*]:-없음}"
   printf " 🔐 [Sudoers NOPASSWD (%d)]     : %s\n" "${#TX_SUDOERS_CMDS[@]}" "${TX_SUDOERS_CMDS[*]:-없음}"
-  printf " 🚀 [커스텀 인스톨러 (%d)]       : %s\n" "${#TX_CUSTOM_INSTALLERS[@]}" "${TX_CUSTOM_INSTALLERS[*]:-없음}"
-  printf " 🛠️  [커스텀 CLI 도구 (%d)]       :\n" "${#TX_CUSTOM_TOOLS[@]}"
-  if (( ${#TX_CUSTOM_TOOLS[@]} == 0 )); then
+  printf " 🚀 [소프트웨어 인스톨러 (%d)]   : %s\n" "${#TX_INSTALLERS[@]}" "${TX_INSTALLERS[*]:-없음}"
+  printf " 🛠️  [CLI 도구 (%d)]             :\n" "${#TX_TOOLS[@]}"
+  if (( ${#TX_TOOLS[@]} == 0 )); then
     echo "      - 없음"
   else
     local t
-    for t in "${TX_CUSTOM_TOOLS[@]}"; do
+    for t in "${TX_TOOLS[@]}"; do
       printf "      - %-32s (-> %s)\n" "$t" "$(_resolve_tool_path "$t")"
     done
   fi
-  printf " ⚡ [사후 실행 명령어 (%d)]      : %s\n" "${#TX_CUSTOM_COMMANDS[@]}" "${TX_CUSTOM_COMMANDS[*]:-없음}"
+  printf " ⚡ [사후 구성 명령어 (%d)]      : %s\n" "${#TX_COMMANDS[@]}" "${TX_COMMANDS[*]:-없음}"
   printf " 🔑 [SSH RSA 공개키 (%d)]        : %s\n" "${#TX_SSH_KEYS[@]}" "${TX_SSH_KEYS[*]:-없음}"
   echo "================================================================================"
   echo
@@ -2120,22 +2120,22 @@ _print_transaction_summary() {
     printf " [Step 4] ⚙️  기본 환경 3종 설정  : 생략 (--no-default-opts)\n"
   fi
 
-  if [[ "$active_steps" == *" custom-installers "* ]] && (( ${#TX_CUSTOM_INSTALLERS[@]} > 0 )); then
-    printf " [Step 5] 🚀 커스텀 인스톨러 (%d) : %s\n" "${#TX_CUSTOM_INSTALLERS[@]}" "${TX_CUSTOM_INSTALLERS[*]}"
+  if [[ "$active_steps" == *" installers "* ]] && (( ${#TX_INSTALLERS[@]} > 0 )); then
+    printf " [Step 5] 🚀 소프트웨어 인스톨러 (%d): %s\n" "${#TX_INSTALLERS[@]}" "${TX_INSTALLERS[*]}"
   else
-    printf " [Step 5] 🚀 커스텀 인스톨러     : 해당 없음 (건너뜀)\n"
+    printf " [Step 5] 🚀 소프트웨어 인스톨러    : 해당 없음 (건너뜀)\n"
   fi
 
-  if [[ "$active_steps" == *" custom-tools "* ]] && (( ${#TX_CUSTOM_TOOLS[@]} > 0 )); then
-    printf " [Step 6] 🛠️  커스텀 CLI 도구 (%d): %s\n" "${#TX_CUSTOM_TOOLS[@]}" "${TX_CUSTOM_TOOLS[*]}"
+  if [[ "$active_steps" == *" tools "* ]] && (( ${#TX_TOOLS[@]} > 0 )); then
+    printf " [Step 6] 🛠️  CLI 도구 (%d)       : %s\n" "${#TX_TOOLS[@]}" "${TX_TOOLS[*]}"
   else
-    printf " [Step 6] 🛠️  커스텀 CLI 도구    : 해당 없음 (건너뜀)\n"
+    printf " [Step 6] 🛠️  CLI 도구            : 해당 없음 (건너뜀)\n"
   fi
 
-  if [[ "$active_steps" == *" custom-commands "* ]] && (( ${#TX_CUSTOM_COMMANDS[@]} > 0 )); then
-    printf " [Step 7] ⚡ 사후 실행 명령어 (%d): %s\n" "${#TX_CUSTOM_COMMANDS[@]}" "${TX_CUSTOM_COMMANDS[*]}"
+  if [[ "$active_steps" == *" commands "* ]] && (( ${#TX_COMMANDS[@]} > 0 )); then
+    printf " [Step 7] ⚡ 사후 구성 명령어 (%d)  : %s\n" "${#TX_COMMANDS[@]}" "${TX_COMMANDS[*]}"
   else
-    printf " [Step 7] ⚡ 사후 실행 명령어    : 해당 없음 (건너뜀)\n"
+    printf " [Step 7] ⚡ 사후 구성 명령어     : 해당 없음 (건너뜀)\n"
   fi
 
   if [[ "$active_steps" == *" ssh-key "* ]] && (( ${#TX_SSH_KEYS[@]} > 0 )); then
@@ -2312,19 +2312,19 @@ cmd_install() {
         shift
         ;;
       --custom-tools)
-        only_steps+=",custom-tools"
+        only_steps+=",tools"
         legacy_step_selected="true"
         no_default_opts="true"
         shift
         ;;
       --custom-installers)
-        only_steps+=",custom-installers"
+        only_steps+=",installers"
         legacy_step_selected="true"
         no_default_opts="true"
         shift
         ;;
       --custom-commands)
-        only_steps+=",custom-commands"
+        only_steps+=",commands"
         legacy_step_selected="true"
         no_default_opts="true"
         shift
@@ -2392,17 +2392,17 @@ cmd_install() {
       avail_opts+=("install-packages")
       opt_desc["install-packages"]="기본 OS 패키지를 설치합니다. (${TX_INSTALL_PKGS[*]})"
     fi
-    if (( ${#TX_CUSTOM_INSTALLERS[@]} > 0 )); then
-      avail_opts+=("custom-installers")
-      opt_desc["custom-installers"]="커스텀 설치 스크립트를 실행합니다. (${TX_CUSTOM_INSTALLERS[*]})"
+    if (( ${#TX_INSTALLERS[@]} > 0 )); then
+      avail_opts+=("installers")
+      opt_desc["installers"]="소프트웨어 인스톨러 스크립트를 실행합니다. (${TX_INSTALLERS[*]})"
     fi
-    if (( ${#TX_CUSTOM_TOOLS[@]} > 0 )); then
-      avail_opts+=("custom-tools")
-      opt_desc["custom-tools"]="커스텀 CLI 도구 및 자동완성을 설치합니다. (${#TX_CUSTOM_TOOLS[@]}개 도구)"
+    if (( ${#TX_TOOLS[@]} > 0 )); then
+      avail_opts+=("tools")
+      opt_desc["tools"]="CLI 도구 및 자동완성을 설치합니다. (${#TX_TOOLS[@]}개 도구)"
     fi
-    if (( ${#TX_CUSTOM_COMMANDS[@]} > 0 )); then
-      avail_opts+=("custom-commands")
-      opt_desc["custom-commands"]="사후 구성 명령어를 실행합니다. (${TX_CUSTOM_COMMANDS[*]})"
+    if (( ${#TX_COMMANDS[@]} > 0 )); then
+      avail_opts+=("commands")
+      opt_desc["commands"]="사후 구성 명령어를 실행합니다. (${TX_COMMANDS[*]})"
     fi
     if (( ${#TX_SSH_KEYS[@]} > 0 )); then
       avail_opts+=("ssh-key")
@@ -2446,7 +2446,7 @@ cmd_install() {
   fi
 
   # 4. 활성화 단계 계산
-  local -a all_step_names=("sudoers" "remove-packages" "install-packages" "default-opts" "custom-installers" "custom-tools" "custom-commands" "ssh-key")
+  local -a all_step_names=("sudoers" "remove-packages" "install-packages" "default-opts" "installers" "tools" "commands" "ssh-key")
   local active_steps_str=""
 
   if [[ -n "$only_steps" ]]; then
@@ -2457,6 +2457,9 @@ cmd_install() {
     for o in "${o_arr[@]}"; do
       o="$(echo "$o" | xargs)"
       [[ "$o" == "add-sudoers" ]] && o="sudoers"
+      [[ "$o" == "custom-tools" ]] && o="tools"
+      [[ "$o" == "custom-installers" ]] && o="installers"
+      [[ "$o" == "custom-commands" ]] && o="commands"
       [[ "$o" == "default-opts" ]] && no_default_opts="false"
       active_steps_str+=" $o "
     done
@@ -2471,6 +2474,9 @@ cmd_install() {
     for sk in "${sk_arr[@]}"; do
       sk="$(echo "$sk" | xargs)"
       [[ "$sk" == "add-sudoers" ]] && sk="sudoers"
+      [[ "$sk" == "custom-tools" ]] && sk="tools"
+      [[ "$sk" == "custom-installers" ]] && sk="installers"
+      [[ "$sk" == "custom-commands" ]] && sk="commands"
       active_steps_str="${active_steps_str// $sk / }"
     done
   fi
@@ -2535,9 +2541,9 @@ cmd_install() {
   #    Step 2: remove-packages
   #    Step 3: install-packages (vim 등 필수 OS 패키지 먼저 확보!)
   #    Step 4: default-opts (~/bin, git-prompt, vim 설치 후 vimrc 설정!)
-  #    Step 5: custom-installers (JDK, Maven, Docker 등)
-  #    Step 6: custom-tools (scriptctl 및 CLI 도구 + completion)
-  #    Step 7: custom-commands (방화벽 정책 등 사후 구성)
+  #    Step 5: installers (JDK, Maven, Docker 등)
+  #    Step 6: tools (CLI 도구 + completion)
+  #    Step 7: commands (방화벽 정책 등 사후 구성)
   #    Step 8: ssh-key (authorized_keys 등록)
   # ==============================================================================
   if [[ "$active_steps_str" == *" sudoers "* ]]; then
@@ -2558,16 +2564,16 @@ cmd_install() {
     _install_vim_options
   fi
 
-  if [[ "$active_steps_str" == *" custom-installers "* ]]; then
-    setup_custom_installers
+  if [[ "$active_steps_str" == *" installers "* ]]; then
+    setup_installers
   fi
 
-  if [[ "$active_steps_str" == *" custom-tools "* ]]; then
-    setup_custom_tools "$target_scope" "$effective_force"
+  if [[ "$active_steps_str" == *" tools "* ]]; then
+    setup_tools "$target_scope" "$effective_force"
   fi
 
-  if [[ "$active_steps_str" == *" custom-commands "* ]]; then
-    setup_custom_commands
+  if [[ "$active_steps_str" == *" commands "* ]]; then
+    setup_commands
   fi
 
   if [[ "$active_steps_str" == *" ssh-key "* ]]; then

@@ -83,7 +83,7 @@ _sciectl_load_candidates() {
   installer_candidates="temurin-25-jdk update-java-config maven-3.9.15 update-mvn-config htop docker/install-docker"
   command_candidates="firewall-cmd-set-priority"
   key_candidates="ymtech-internal letsencrypt"
-  step_candidates="sudoers remove-packages install-packages default-opts custom-installers custom-tools custom-commands ssh-key"
+  step_candidates="sudoers remove-packages install-packages default-opts installers tools commands ssh-key"
   tool_candidates="utils/scriptctl sys/vim-cli sudo/sudoers-cli sys/disk-size maven/build-mvn-package git/git-commit git/git-merge git/git-log-abbr git/git-getpr git/git-branch-cmd git/git-init build/clean-project utils/diff-file docker/install-docker-dev-config docker/setup-compose-service docker/setup-docker-compose docker/dknetcli docker/dkcontls net/fwc-cli net/fwc-docker-policy net/add-vlan-routes net/mtr-netstat-conns gitlab/gitlab-clone gitlab/clone-gitlab-projects ai-agent/asr-cli installer/install-albert-with-socket installer/install-antigravity-ide installer/install-antigravity-x64"
 
   # 2. 로컬 저장소 탐색 및 실시간 동적 후보 추출
@@ -95,9 +95,9 @@ _sciectl_load_candidates() {
     dynamic_cats="$(grep -E '^\[[a-zA-Z0-9_-]+\]' "$repo_root/env/catalogs/catalogs.ini" 2>/dev/null | tr -d '[]' | tr '\n' ' ')"
     [[ -n "$dynamic_cats" ]] && catalog_candidates="$dynamic_cats"
 
-    # 도구 후보 (*.catalog의 TOOLS 또는 레거시 CUSTOM_TOOLS)
+    # 도구 후보 (*.catalog의 TOOLS)
     local dynamic_tools
-    dynamic_tools="$(grep -h -E '^(TOOLS|CUSTOM_TOOLS)=' "$repo_root"/env/catalogs/*.catalog 2>/dev/null | sed -E 's/^(TOOLS|CUSTOM_TOOLS)=//' | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$' | sort -u | tr '\n' ' ')"
+    dynamic_tools="$(grep -h '^TOOLS=' "$repo_root"/env/catalogs/*.catalog 2>/dev/null | sed 's/^TOOLS=//' | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$' | sort -u | tr '\n' ' ')"
     [[ -n "$dynamic_tools" ]] && tool_candidates="$dynamic_tools"
 
     # 인스톨러 후보 (env/installers/install-*.sh + *.catalog의 INSTALLERS)
@@ -111,7 +111,7 @@ _sciectl_load_candidates() {
           b="${b#install-}"
           echo "${b%.sh}"
         done
-        grep -h -E '^(INSTALLERS|CUSTOM_INSTALLERS)=' "$repo_root"/env/catalogs/*.catalog 2>/dev/null | sed -E 's/^(INSTALLERS|CUSTOM_INSTALLERS)=//' | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$'
+        grep -h '^INSTALLERS=' "$repo_root"/env/catalogs/*.catalog 2>/dev/null | sed 's/^INSTALLERS=//' | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$'
       } | sort -u | tr '\n' ' '
     )"
     [[ -n "$dynamic_insts" ]] && installer_candidates="$dynamic_insts"
@@ -126,7 +126,7 @@ _sciectl_load_candidates() {
           b="$(basename "$f")"
           echo "${b%.sh}"
         done
-        grep -h -E '^(COMMANDS|CUSTOM_COMMANDS|COMMADNS)=' "$repo_root"/env/catalogs/*.catalog 2>/dev/null | sed -E 's/^(COMMANDS|CUSTOM_COMMANDS|COMMADNS)=//' | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$'
+        grep -h '^COMMANDS=' "$repo_root"/env/catalogs/*.catalog 2>/dev/null | sed 's/^COMMANDS=//' | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$'
       } | sort -u | tr '\n' ' '
     )"
     [[ -n "$dynamic_cmds" ]] && command_candidates="$dynamic_cmds"

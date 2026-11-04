@@ -65,7 +65,7 @@ Google Antigravity 공식 저장소에서 사용 가능한 **Antigravity Core/CL
 ## 💻 설치 안내
 
 ### 1. `sciectl` 카탈로그를 통한 설치 (권장)
-이 도구는 `shellscripts/env/catalogs/installer.catalog`의 `CUSTOM_TOOLS`에 포함되어 있어 `sciectl`을 통해 원클릭으로 설치할 수 있습니다:
+이 도구는 `shellscripts/env/catalogs/installer.catalog`의 `TOOLS`에 포함되어 있어 `sciectl`을 통해 원클릭으로 설치할 수 있습니다:
 ```bash
 sciectl --catalog installer
 ```

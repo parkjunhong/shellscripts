@@ -18,9 +18,9 @@
   2. `remove-packages` (패키지별 실제 설치 여부 검사 후 존재 시 삭제, 미존재 시 건너뜀)
   3. `install-packages` (미설치 OS 패키지 일괄 설치 — 필요 시에만 패키지 인덱스 업데이트 1회 수행, OS 미지원 패키지는 자동 제외)
   4. `default-opts` (`~/bin` PATH 등록, Git 브랜치 프롬프트, `vimrc` 설정 — Linux: `$HOME/.bashrc`, macOS: `$HOME/.bash_profile` 단독)
-  5. `custom-installers` (`env/installers/` 소프트웨어 설치 스크립트 보안 검증 및 실행 — Linux: deb/rpm, macOS: brew cask/formula)
-  6. `custom-tools` (커스텀 CLI 도구 + `.completion` 자동 설치 및 구버전 `.sh` 정리)
-  7. `custom-commands` (`env/commands/` 시스템 사후 구성 명령어 실행 — Linux 전용 방화벽 등은 macOS에서 자동 건너뜀)
+  5. `installers` (`env/installers/` 소프트웨어 설치 스크립트 보안 검증 및 실행 — Linux: deb/rpm, macOS: brew cask/formula)
+  6. `tools` (CLI 도구 + `.completion` 자동 설치 및 구버전 `.sh` 정리)
+  7. `commands` (`env/commands/` 시스템 사후 구성 명령어 실행 — Linux 전용 방화벽 등은 macOS에서 자동 건너뜀)
   8. `ssh-key` (`~/.ssh/authorized_keys` Base64 본문 중복 검사 후 등록)
 - **대화형(TUI) 및 무인 자동화(`--yes`) 하이브리드 지원**: 인자 없이 실행하면 동적 ASCII 테이블 기반 다중 카탈로그/단계 선택 메뉴를 제공하며, `--yes` 지정 시 모든 확인 프롬프트를 자동 승인하여 무인 프로비저닝을 수행합니다.
 
@@ -45,21 +45,15 @@
 | | `--installer <NAME[,...]>` | 선택 | 특정 인스톨러 단독/추가 실행 (예: `temurin-25-jdk,htop`) |
 | | `--command <NAME[,...]>` | 선택 | 특정 사후 구성 명령어 단독/추가 실행 (예: `firewall-cmd-set-priority`) |
 | | `--ssh-key <NAME[,...]>` | 선택 | 특정 SSH 공개키 단독/추가 등록 (예: `ymtech-internal,letsencrypt`) |
-| | `--only <STEPS>` | 선택 | 지정한 단계만 선택 실행 (`sudoers`, `remove-packages`, `install-packages`, `default-opts`, `custom-installers`, `custom-tools`, `custom-commands`, `ssh-key`) |
+| | `--only <STEPS>` | 선택 | 지정한 단계만 선택 실행 (`sudoers`, `remove-packages`, `install-packages`, `default-opts`, `installers`, `tools`, `commands`, `ssh-key`) |
 | | `--skip <STEPS>` | 선택 | 지정한 단계를 제외하고 실행 (콤마 구분) |
 | | `--user <USERNAME>` | 선택 | `sudoers` 등록 대상 사용자 계정 지정 (미지정 시 프롬프트 또는 `$USER`) |
-| | `--target <local\|global>` | 선택 | 커스텀 도구 설치 범위 (`local`: `~/bin`, `global`: `/usr/local/bin`, 기본값: `local`) |
+| | `--target <local\|global>` | 선택 | CLI 도구 설치 범위 (`local`: `~/bin`, `global`: `/usr/local/bin`, 기본값: `local`) |
 | | `--local` / `--remote` | 선택 | 로컬 저장소 파일 우선 사용 또는 원격 GitHub 저장소 사용 (기본값: 원격 GitHub 최신 정보 사용) |
 | | `--yes` | 선택 | 모든 확인 프롬프트(`y/n`) 및 덮어쓰기 자동 승인 |
-| | `--force` | 선택 | 기존 설치된 커스텀 도구/자동완성 파일 확인 없이 강제 업데이트 |
+| | `--force` | 선택 | 기존 설치된 CLI 도구/자동완성 파일 확인 없이 강제 업데이트 |
 | | `--dry-run` | 선택 | 실제 설치 없이 병합된 트랜잭션 실행 계획(Transaction Summary)만 출력 |
 | | `--all` | 선택 | 선택한 카탈로그의 모든 단계 및 기본 환경 3종 설정 적용 |
-| | `--add-sudoers` | 선택 | `sudoers` 단계만 실행 (`--no-default-opts` 자동 적용) |
-| | `--remove-packages` | 선택 | OS 패키지 삭제 단계만 실행 (`--no-default-opts` 자동 적용) |
-| | `--install-packages` | 선택 | OS 패키지 설치 단계만 실행 (`--no-default-opts` 자동 적용) |
-| | `--custom-tools` | 선택 | 커스텀 도구 설치 단계만 실행 (`--no-default-opts` 자동 적용) |
-| | `--custom-installers` | 선택 | 커스텀 인스톨러 단계만 실행 (`--no-default-opts` 자동 적용) |
-| | `--custom-commands` | 선택 | 사후 실행 명령어 단계만 실행 (`--no-default-opts` 자동 적용) |
 | | `--no-default-opts` | 선택 | 기본 환경 3종(`~/bin` PATH, Git 프롬프트, `vimrc`) 설정 생략 |
 | **`list`** | `--type <TYPE>` | 선택 | 조회 대상 유형 (`all`, `catalogs`, `installers`, `commands`, `keys`, 기본값: `catalogs`) |
 | **`info`** | `--catalog <ID[,ID2...]>` | 필수 | 상세 내역을 조회할 카탈로그 ID (콤마 구분 복수 지정 가능) |
@@ -84,7 +78,7 @@ sciectl install --catalog default-server,docker,network --dry-run
 sciectl install --catalog default-server,docker,network --user parkjunhong --yes
 
 # 5. 카탈로그 내 특정 단계만 선택 실행
-sciectl install --catalog default-devops --only custom-tools,custom-installers
+sciectl install --catalog default-devops --only tools,installers
 
 # 6. 카탈로그 없이 개별 인스톨러나 커스텀 도구만 단독 설치 (dnf/apt 스타일)
 sciectl install --installer temurin-25-jdk,htop --tool git/git-commit,net/fwc-cli
