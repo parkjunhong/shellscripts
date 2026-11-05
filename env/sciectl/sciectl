@@ -12,6 +12,7 @@
 
 readonly FILENAME="$(basename "$0")"
 readonly REPO_BASE_URL="${SCIECTL_REPO_URL:-https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main}"
+readonly REPO_WEB_BASE_URL="${SCIECTL_REPO_WEB_URL:-https://github.com/parkjunhong/shellscripts/blob/main}"
 
 # ==========================================
 # 실행 대상 OS 판별 및 Bash 버전 검증
@@ -2062,9 +2063,10 @@ _print_component_info() {
   summary="$(_extract_readme_summary "$readme_rel")"
 
   echo "- [${emoji} ${disp_name}]"
-  echo "  - 설명: ${summary}"
-  echo "  - Canonical Directory: ${canonical_dir}"
-  echo "  - File Location: ${file_loc}"
+  echo "  - 설명 : ${summary}"
+  echo "  - 경로 : ${canonical_dir}"
+  echo "  - 위치 : ${file_loc}"
+  echo "  - 문서 : ${REPO_WEB_BASE_URL}/${readme_rel}"
 }
 
 ##
