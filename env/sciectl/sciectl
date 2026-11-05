@@ -2103,6 +2103,76 @@ _extract_readme_summary() {
 }
 
 ##
+# 특정 컴포넌트(도구, 인스톨러, 명령어, SSH 공개키)의 상대 README.md 파일 경로를 반환합니다.
+#
+# @param $1 {string} 컴포넌트 종류 (tool | installer | command | ssh-key)
+# @param $2 {string} 컴포넌트 식별자
+#
+# @return 상대 경로 (예: env/installers/install-htop/README.md)
+##
+_resolve_component_readme_rel() {
+  local comp_type="$1"
+  local item="$2"
+
+  case "$comp_type" in
+    tool)
+      if [[ "$item" == *"/"* ]]; then
+        printf '%s/README.md\n' "$item"
+      elif [[ "$item" == "sciectl" ]]; then
+        printf '%s\n' "env/sciectl/README.md"
+      else
+        local found_dir=""
+        if _detect_local_repo; then
+          local cand
+          cand="$(find "${LOCAL_REPO_ROOT}" -mindepth 2 -maxdepth 2 -type d -name "$item" 2>/dev/null | head -n 1)"
+          if [[ -n "$cand" ]]; then
+            found_dir="${cand#${LOCAL_REPO_ROOT}/}"
+          fi
+        fi
+        if [[ -n "$found_dir" ]]; then
+          printf '%s/README.md\n' "$found_dir"
+        else
+          printf '%s/README.md\n' "$item"
+        fi
+      fi
+      ;;
+    installer)
+      local file_loc
+      file_loc="$(_resolve_installer_path "$item")"
+      printf '%s/README.md\n' "$(dirname "$file_loc")"
+      ;;
+    command)
+      local file_loc
+      file_loc="$(_resolve_command_path "$item")"
+      printf '%s/README.md\n' "$(dirname "$file_loc")"
+      ;;
+    ssh-key)
+      local base="${item%.pub}"
+      printf 'env/keys/%s/README.md\n' "$base"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+##
+# 특정 컴포넌트의 GitHub README.md 웹 URL을 반환합니다.
+#
+# @param $1 {string} 컴포넌트 종류 (tool | installer | command | ssh-key)
+# @param $2 {string} 컴포넌트 식별자
+#
+# @return README.md URL 출력
+##
+_resolve_component_readme_url() {
+  local comp_type="$1"
+  local item="$2"
+  local readme_rel
+  readme_rel="$(_resolve_component_readme_rel "$comp_type" "$item")" || return 1
+  printf '%s/%s\n' "$REPO_WEB_BASE_URL" "$readme_rel"
+}
+
+##
 # 특정 컴포넌트(도구, 인스톨러, 명령어, SSH 공개키)의 상세 정보를 출력합니다.
 #
 # @param $1 {string} 컴포넌트 종류 (tool | installer | command | ssh-key)
@@ -2115,78 +2185,42 @@ _print_component_info() {
   local item="$2"
   local emoji=""
   local disp_name=""
-  local canonical_dir=""
-  local file_loc=""
-  local readme_rel=""
 
   case "$comp_type" in
     tool)
       emoji="🚀"
-      if [[ "$item" == *"/"* ]]; then
-        canonical_dir="$item"
-        file_loc="$(_resolve_tool_path "$item")"
-        readme_rel="${canonical_dir}/README.md"
-        disp_name="$(basename "$item")"
-      else
-        local found_dir=""
-        if _detect_local_repo; then
-          local cand
-          cand="$(find "${LOCAL_REPO_ROOT}" -mindepth 2 -maxdepth 2 -type d -name "$item" 2>/dev/null | head -n 1)"
-          if [[ -n "$cand" ]]; then
-            found_dir="${cand#${LOCAL_REPO_ROOT}/}"
-          fi
-        fi
-        if [[ -n "$found_dir" ]]; then
-          canonical_dir="$found_dir"
-          file_loc="${found_dir}/$item"
-          readme_rel="${found_dir}/README.md"
-          disp_name="$item"
-        elif [[ "$item" == "sciectl" ]]; then
-          canonical_dir="env/sciectl"
-          file_loc="env/sciectl/sciectl"
-          readme_rel="env/sciectl/README.md"
-          disp_name="sciectl"
-        else
-          canonical_dir="$item"
-          file_loc="$item"
-          readme_rel="${item}/README.md"
-          disp_name="$item"
-        fi
-      fi
+      disp_name="$(basename "$item")"
       ;;
     installer)
       emoji="🚀"
-      file_loc="$(_resolve_installer_path "$item")"
-      canonical_dir="$(dirname "$file_loc")"
-      readme_rel="${canonical_dir}/README.md"
-      disp_name="$(basename "$canonical_dir")"
+      local file_loc="$(_resolve_installer_path "$item")"
+      disp_name="$(basename "$(dirname "$file_loc")")"
       ;;
     command)
       emoji="⚡"
-      file_loc="$(_resolve_command_path "$item")"
-      canonical_dir="$(dirname "$file_loc")"
-      readme_rel="${canonical_dir}/README.md"
-      disp_name="$(basename "$canonical_dir")"
+      local file_loc="$(_resolve_command_path "$item")"
+      disp_name="$(basename "$(dirname "$file_loc")")"
       ;;
     ssh-key)
       emoji="🔑"
-      local base="${item%.pub}"
-      canonical_dir="env/keys/${base}"
-      file_loc="env/keys/${base}/${base}.pub"
-      readme_rel="env/keys/${base}/README.md"
-      disp_name="$base"
+      disp_name="${item%.pub}"
       ;;
     *)
       return 1
       ;;
   esac
 
+  local readme_rel
+  readme_rel="$(_resolve_component_readme_rel "$comp_type" "$item")"
+  local readme_url
+  readme_url="$(_resolve_component_readme_url "$comp_type" "$item")"
+
   local summary
   summary="$(_extract_readme_summary "$readme_rel")"
 
   echo "- [${emoji} ${disp_name}]"
   echo "  - 설명 : ${summary}"
-  echo "  - 문서 : ${REPO_WEB_BASE_URL}/${readme_rel}"
+  echo "  - 문서 : ${readme_url}"
 }
 
 ##
@@ -2458,18 +2492,43 @@ cmd_info() {
     printf " 🗑️  [삭제할 OS 패키지 (%d)]      : %s\n" "${#TX_REMOVE_PKGS[@]}" "${TX_REMOVE_PKGS[*]:-없음}"
     printf " 📥 [설치할 OS 패키지 (%d)]      : %s\n" "${#TX_INSTALL_PKGS[@]}" "${TX_INSTALL_PKGS[*]:-없음}"
     printf " 🔐 [Sudoers NOPASSWD (%d)]     : %s\n" "${#TX_SUDOERS_CMDS[@]}" "${TX_SUDOERS_CMDS[*]:-없음}"
-    printf " 🚀 [소프트웨어 인스톨러 (%d)]   : %s\n" "${#TX_INSTALLERS[@]}" "${TX_INSTALLERS[*]:-없음}"
+    printf " 🚀 [소프트웨어 인스톨러 (%d)]   :\n" "${#TX_INSTALLERS[@]}"
+    if (( ${#TX_INSTALLERS[@]} == 0 )); then
+      echo "      - 없음"
+    else
+      local inst
+      for inst in "${TX_INSTALLERS[@]}"; do
+        printf "      - %-32s (-> %s)\n" "$inst" "$(_resolve_component_readme_url "installer" "$inst")"
+      done
+    fi
     printf " 🛠️  [CLI 도구 (%d)]             :\n" "${#TX_TOOLS[@]}"
     if (( ${#TX_TOOLS[@]} == 0 )); then
       echo "      - 없음"
     else
       local t
       for t in "${TX_TOOLS[@]}"; do
-        printf "      - %-32s (-> %s)\n" "$t" "$(_resolve_tool_path "$t")"
+        printf "      - %-32s (-> %s)\n" "$t" "$(_resolve_component_readme_url "tool" "$t")"
       done
     fi
-    printf " ⚡ [사후 구성 명령어 (%d)]      : %s\n" "${#TX_COMMANDS[@]}" "${TX_COMMANDS[*]:-없음}"
-    printf " 🔑 [SSH RSA 공개키 (%d)]        : %s\n" "${#TX_SSH_KEYS[@]}" "${TX_SSH_KEYS[*]:-없음}"
+    printf " ⚡ [사후 구성 명령어 (%d)]      :\n" "${#TX_COMMANDS[@]}"
+    if (( ${#TX_COMMANDS[@]} == 0 )); then
+      echo "      - 없음"
+    else
+      local c
+      for c in "${TX_COMMANDS[@]}"; do
+        printf "      - %-32s (-> %s)\n" "$c" "$(_resolve_component_readme_url "command" "$c")"
+      done
+    fi
+    printf " 🔑 [SSH RSA 공개키 (%d)]        :\n" "${#TX_SSH_KEYS[@]}"
+    if (( ${#TX_SSH_KEYS[@]} == 0 )); then
+      echo "      - 없음"
+    else
+      local k base
+      for k in "${TX_SSH_KEYS[@]}"; do
+        base="${k%.pub}"
+        printf "      - %-32s (-> %s)\n" "$base" "$(_resolve_component_readme_url "ssh-key" "$base")"
+      done
+    fi
     echo "================================================================================"
     echo
   fi
