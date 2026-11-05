@@ -19,7 +19,7 @@ Linux 및 macOS 환경에서 직관적인 텍스트 기반 대화형 프로세�
 
 ### 1. `sciectl`을 통한 실행
 ```bash
-sciectl install --installer htop
+sciectl install --installer install-htop
 ```
 
 ### 2. 단독 직접 실행

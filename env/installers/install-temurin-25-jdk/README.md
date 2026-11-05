@@ -19,7 +19,7 @@ Eclipse Adoptium 공식 저장소에서 **Eclipse Temurin 25 JDK**를 시스템�
 
 ### 1. `sciectl`을 통한 실행
 ```bash
-sciectl install --installer temurin-25-jdk
+sciectl install --installer install-temurin-25-jdk
 ```
 
 ### 2. 단독 직접 실행

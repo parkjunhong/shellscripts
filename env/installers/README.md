@@ -10,11 +10,11 @@
 
 | 인스톨러 식별자 | Canonical 디렉토리 | 설명 | 지원 OS |
 | :--- | :--- | :--- | :--- |
-| `htop` | [`install-htop`](./install-htop/) | 프로세스 및 리소스 모니터링 유틸리티(htop) 설치 (EPEL/APT/Homebrew) | Ubuntu, RHEL/Rocky, macOS |
-| `temurin-25-jdk` | [`install-temurin-25-jdk`](./install-temurin-25-jdk/) | Eclipse Temurin 25 JDK 공식 패키지 자동 설치 | Ubuntu, RHEL/Rocky, macOS |
-| `maven-3.9.15` | [`install-maven-3.9.15`](./install-maven-3.9.15/) | Apache Maven 3.9.15 바이너리 배포판 다운로드 및 `/opt` 설치 | Linux 전용 |
-| `update-java-config` | [`install-update-java-config`](./install-update-java-config/) | 다중 Java 버전 전환 도구(`update-java-config`) 설치 및 쉘 자동 동기화 구성 | Ubuntu, RHEL/Rocky, macOS |
-| `update-mvn-config` | [`install-update-mvn-config`](./install-update-mvn-config/) | 다중 Maven 버전 전환 도구(`update-mvn-config`) 설치 및 쉘 자동 동기화 구성 | Ubuntu, RHEL/Rocky, macOS |
+| `install-htop` | [`install-htop`](./install-htop/) | 프로세스 및 리소스 모니터링 유틸리티(htop) 설치 (EPEL/APT/Homebrew) | Ubuntu, RHEL/Rocky, macOS |
+| `install-temurin-25-jdk` | [`install-temurin-25-jdk`](./install-temurin-25-jdk/) | Eclipse Temurin 25 JDK 공식 패키지 자동 설치 | Ubuntu, RHEL/Rocky, macOS |
+| `install-maven-3.9.15` | [`install-maven-3.9.15`](./install-maven-3.9.15/) | Apache Maven 3.9.15 바이너리 배포판 다운로드 및 `/opt` 설치 | Linux 전용 |
+| `install-update-java-config` | [`install-update-java-config`](./install-update-java-config/) | 다중 Java 버전 전환 도구(`update-java-config`) 설치 및 쉘 자동 동기화 구성 | Ubuntu, RHEL/Rocky, macOS |
+| `install-update-mvn-config` | [`install-update-mvn-config`](./install-update-mvn-config/) | 다중 Maven 버전 전환 도구(`update-mvn-config`) 설치 및 쉘 자동 동기화 구성 | Ubuntu, RHEL/Rocky, macOS |
 
 ---
 
@@ -28,7 +28,7 @@
 sciectl install --catalog default-server
 
 # 특정 인스톨러만 단독 실행
-sciectl install --installer temurin-25-jdk,htop
+sciectl install --installer install-temurin-25-jdk,install-htop
 ```
 
 ### 2. 단독 직접 실행

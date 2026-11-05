@@ -19,7 +19,7 @@
 
 ### 1. `sciectl`을 통한 실행
 ```bash
-sciectl install --installer update-java-config
+sciectl install --installer install-update-java-config
 ```
 
 ### 2. 단독 직접 실행

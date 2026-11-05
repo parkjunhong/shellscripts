@@ -25,7 +25,7 @@ TOOLS=utils/scriptctl, sys/vim-cli, sudo/sudoers-cli, sys/disk-size
 # ==============================================================================
 # 4. Installers (env/installers/ 식별자 또는 <category>/<tool>, 콤마 구분)
 # ==============================================================================
-INSTALLERS=temurin-25-jdk, update-java-config, htop
+INSTALLERS=install-temurin-25-jdk, install-update-java-config, install-htop
 
 # ==============================================================================
 # 5. Post-Install Commands (env/commands/ 식별자, 콤마 구분)

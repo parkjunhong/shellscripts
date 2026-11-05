@@ -42,7 +42,7 @@
 | :--- | :--- | :---: | :--- |
 | **`install`** | `--catalog <ID[,ID2...]>` | 선택 | 설치할 카탈로그 ID 지정 (복수 지정 또는 콤마 구분, 생략 시 대화형 선택) |
 | | `--tool <CAT/NAME[,...]>` | 선택 | 특정 커스텀 CLI 도구 단독/추가 설치 (예: `git/git-commit`) |
-| | `--installer <NAME[,...]>` | 선택 | 특정 인스톨러 단독/추가 실행 (예: `temurin-25-jdk,htop`) |
+| | `--installer <NAME[,...]>` | 선택 | 특정 인스톨러 단독/추가 실행 (예: `install-temurin-25-jdk,install-htop`) |
 | | `--command <NAME[,...]>` | 선택 | 특정 사후 구성 명령어 단독/추가 실행 (예: `firewall-cmd-set-priority`) |
 | | `--ssh-key <NAME[,...]>` | 선택 | 특정 SSH 공개키 단독/추가 등록 (예: `ymtech-internal,letsencrypt`) |
 | | `--only <STEPS>` | 선택 | 지정한 단계만 선택 실행 (`sudoers`, `remove-packages`, `install-packages`, `default-opts`, `installers`, `tools`, `commands`, `ssh-key`) |
@@ -81,7 +81,7 @@ sciectl install --catalog default-server,docker,network --user parkjunhong --yes
 sciectl install --catalog default-devops --only tools,installers
 
 # 6. 카탈로그 없이 개별 인스톨러나 커스텀 도구만 단독 설치 (dnf/apt 스타일)
-sciectl install --installer temurin-25-jdk,htop --tool git/git-commit,net/fwc-cli
+sciectl install --installer install-temurin-25-jdk,install-htop --tool git/git-commit,net/fwc-cli
 ```
 
 ---

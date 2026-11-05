@@ -80,7 +80,7 @@ _sciectl_find_repo_root() {
 _sciectl_load_candidates() {
   # 1. Fallback 기본값 (저장소 외부 단독 실행 시 사용)
   catalog_candidates="default-server default-devops docker network gitlab ai-agent install-lets-encrypt-certificate installer"
-  installer_candidates="temurin-25-jdk update-java-config maven-3.9.15 update-mvn-config htop docker/install-docker"
+  installer_candidates="install-temurin-25-jdk install-update-java-config install-maven-3.9.15 install-update-mvn-config install-htop docker/install-docker"
   command_candidates="firewall-cmd-set-priority"
   key_candidates="ymtech-internal letsencrypt"
   step_candidates="sudoers remove-packages install-packages default-opts installers tools commands ssh-key"
@@ -106,10 +106,7 @@ _sciectl_load_candidates() {
       {
         for d in "$repo_root"/env/installers/*; do
           [[ -d "$d" ]] || continue
-          local b
-          b="$(basename "$d")"
-          b="${b#install-}"
-          echo "$b"
+          echo "$(basename "$d")"
         done
         grep -h '^INSTALLERS=' "$repo_root"/env/catalogs/*.catalog 2>/dev/null | sed 's/^INSTALLERS=//' | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$'
       } | sort -u | tr '\n' ' '

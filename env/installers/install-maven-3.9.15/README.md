@@ -19,7 +19,7 @@ Apache 공식 아카이브 저장소에서 **Apache Maven 3.9.15** 바이너리 
 
 ### 1. `sciectl`을 통한 실행
 ```bash
-sciectl install --installer maven-3.9.15
+sciectl install --installer install-maven-3.9.15
 ```
 
 ### 2. 단독 직접 실행
