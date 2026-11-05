@@ -1,0 +1,106 @@
+.TH REPLACE-FILES 1 "2025-04-23" "replace-files 1.0.0" "User Commands"
+.SH NAME
+replace-files \- replace-files: Safe Multi-File String Replacer with Backup & Audit Logging
+
+.SH SYNOPSIS
+.B replace-files
+[\fIOPTIONS\fR]
+
+.SH DESCRIPTION
+지정된 디렉토리 하위의 텍스트 파일들에서 특정 리터럴 문자열(\fB\-\-from\fR)을 찾아 새로운 문자열(\fB\-\-to\fR)로 \fB안전하게 일괄 치환(또는 삭제)\fR하고, 백업(\fB.bak\fR) 및 변경 감사 로그(\fBplain\fR / \fBjson\fR)를 생성하는 CLI 도구입니다.
+
+.SH KEY FEATURES
+.IP \(bu 2
+\fB파이프라인 서브셸(Subshell) 변수 증발 버그 수정\fR
+.IP \(bu 2
+기존 \fBfind ... | while read file\fR 구조에서는 서브셸에서 루프가 실행되어 \fB\-\-summary\fR 통계(\fBcount_total\fR, \fBcount_modified\fR, \fBcount_backup\fR)와 \fB\-\-log\-output\fR 로그 변수가 루프 종료 시 모두 \fB0\fR 및 빈 값으로 초기화되던 치명적 버그를 프로세스 치환(\fBdone 3< <(find ...)\fR)으로 해결했습니다.
+.IP \(bu 2
+\fB사용자 확인(\fB\-\-confirm\fR) 시 \fBstdin\fR 충돌 해결\fR
+.IP \(bu 2
+\fBfind\fR 스트림과 \fBread -rp\fR 키보드 입력이 같은 \fBstdin\fR(FD 0)을 공유하여 파일 경로를 삼켜버리던 문제를 별도 파일 디스크립터(FD 3) 분리 및 \fB</dev/tty\fR 명시로 해결했습니다.
+.IP \(bu 2
+\fB빈 문자열 치환(문자열 삭제) 정상 지원\fR
+.IP \(bu 2
+기존에는 \fB[[ -z "$replacement" ]]\fR일 때 필수 인자 누락 에러가 발생하여 빈 문자열로 삭제할 수 없던 문제를 옵션 전달 여부(\fBhas_to\fR) 체크로 수정하여 \fB\-\-to ""\fR 삭제를 완벽히 지원합니다.
+.IP \(bu 2
+\fB치환 전 로그 캡처 순서 바로잡기\fR
+.IP \(bu 2
+기존에는 \fBsed -i\fR로 문자열을 먼저 바꾼 뒤에 \fBgrep\fR으로 로그를 수집하여 실제 변경 시 로그가 비어버리던 순서 역전 버그를 수정했습니다.
+.IP \(bu 2
+\fB정규식 메타문자 안전 이스케이프 및 바이너리/백업 파일 보호\fR
+.IP \(bu 2
+\fB.\fR \fB*\fR \fB[\fR \fB]\fR \fB^\fR \fB$\fR \fB/\fR \fB&\fR 등 모든 BRE 메타문자를 안전하게 이스케이프하여 리터럴 문자열을 정확히 치환하며, 바이너리 파일(\fBgrep -I\fR), \fB.git\fR 폴더, \fB.bak\fR 백업 파일은 치환 대상에서 자동 제외합니다.
+
+.SH OPTIONS
+.TP
+.B \-\-from <STRING>
+[필수, 불가] 검색할 원본 리터럴 문자열
+.TP
+.B \-\-to <STRING>
+[필수, 불가] 치환할 결과 리터럴 문자열 (빈 문자열 "" 입력 시 검색 문자열 삭제)
+.TP
+.B \-\-dir <DIR>
+[선택, 현재 디렉토리($PWD), 가능] 검색 시작 디렉토리
+.TP
+.B \-\-exclude\-dir <DIR>
+[선택, .git 기본 제외, 가능] 제외할 디렉토리 경로 또는 폴더명
+.TP
+.B \-\-ext <EXT1[,EXT2...]>
+[선택, 전체 텍스트 파일, 가능] 파일 확장자 필터 (대소문자 무시, 예: sh,conf,xml)
+.TP
+.B \-\-filename <RULE>
+[선택, 가능] 파일명 매칭 규칙 (^접두어, 접미어$, 포함문자열)
+.TP
+.B \-\-backup
+[선택, false, 불가] 치환 전 원본 파일을 <파일명>.bak으로 백업
+.TP
+.B \-\-confirm
+[선택, false, 불가] 각 파일 치환 전 사용자에게 실행 여부(y/N) 확인
+.TP
+.B \-\-dry\-run
+[선택, false, 불가] 실제 변경 없이 매칭 파일 및 라인만 시뮬레이션 출력
+.TP
+.B \-\-summary
+[선택, false, 불가] 작업 완료 후 상세 요약 통계 박스 출력
+.TP
+.B \-\-log\-output <FILE>
+[선택, 불가] 치환 내역 로그를 지정한 파일에 저장
+.TP
+.B \-\-log\-format <plain|json>
+[선택, plain, 불가] 로그 파일 저장 형식 (plain 또는 json)
+.TP
+.B \-\-help
+[선택, 불가] 도움말 출력
+
+.SH EXAMPLES
+.nf
+  # 1) 시뮬레이션(\-\-dry\-run)으로 변경될 파일과 줄 번호/내용 미리 확인
+  \&./replace\-files \-\-dir ./config \-\-ext conf,properties \\
+                  \-\-from "localhost:8080" \-\-to "10.0.0.10:8080" \\
+                  \-\-dry\-run \-\-summary
+  
+  # 2) 백업(.bak) 생성과 함께 실제 치환 및 JSON 감사 로그 기록
+  \&./replace\-files \-\-dir ./src \-\-ext java \\
+                  \-\-from "oldMethodName" \-\-to "newMethodName" \\
+                  \-\-backup \-\-summary \-\-log\-output audit.json \-\-log\-format json
+  
+  # 3) 파일 내 특정 문자열 일괄 삭제 (\-\-to "")
+  \&./replace\-files \-\-dir ./scripts \-\-ext sh \\
+                  \-\-from "DEPRECATED_OPTION" \-\-to "" \-\-confirm
+.fi
+.PP
+
+.SH COMPLETION
+.B replace-files
+는 Bash 자동완성 스크립트(\fIreplace-files.completion\fR)를 지원한다.
+.BR scriptctl (1)
+또는
+.BR sciectl (1)
+을 통해 설치 시 시스템 표준 completion 경로에 자동으로 등록된다.
+
+.SH SEE ALSO
+.BR scriptctl (1),
+.BR sciectl (1)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.

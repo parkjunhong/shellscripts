@@ -1646,7 +1646,128 @@ _install_completion() {
 }
 
 ##
-# 단일 커스텀 도구 및 연관 .completion 파일을 설치합니다.
+# 도구의 연관 man 페이지 파일들을 시스템 표준 man 경로에 설치합니다.
+#
+# @param $1 {string} 도구 상대 경로 (예: utils/scriptctl/scriptctl)
+# @param $2 {string} 대상 명령어 이름 (예: scriptctl)
+# @param $3 {string} 설치 범위 (local | global)
+# @param $4 {string} 강제 덮어쓰기 여부 (true | false)
+#
+# @return 0
+##
+_install_manpages() {
+  local resolved_ref="$1"
+  local target_cmd="$2"
+  local target_scope="${3:-local}"
+  local force_overwrite="${4:-false}"
+
+  [[ "$resolved_ref" == https://* || "$resolved_ref" == http://* ]] && return 0
+
+  local tool_dir
+  tool_dir="$(dirname "$resolved_ref")"
+  [[ -n "$tool_dir" && "$tool_dir" != "." ]] || return 0
+
+  local man_base_dir=""
+  if [[ "$target_scope" == "local" ]]; then
+    man_base_dir="${XDG_DATA_HOME:-$HOME/.local/share}/man"
+  else
+    if [[ "$TARGET_OS" == "darwin" ]] && command -v brew &>/dev/null; then
+      local brew_prefix
+      brew_prefix="$(brew --prefix 2>/dev/null || true)"
+      if [[ -n "$brew_prefix" && -d "${brew_prefix}/share/man" ]]; then
+        man_base_dir="${brew_prefix}/share/man"
+      fi
+    fi
+    [[ -z "$man_base_dir" ]] && man_base_dir="/usr/local/share/man"
+  fi
+
+  local -a man_rel_list=()
+  if _detect_local_repo && [[ -d "${LOCAL_REPO_ROOT}/${tool_dir}/man" ]]; then
+    local f
+    while IFS= read -r f; do
+      [[ -n "$f" ]] && man_rel_list+=("${f#${LOCAL_REPO_ROOT}/}")
+    done < <(find "${LOCAL_REPO_ROOT}/${tool_dir}/man" -maxdepth 2 -type f -name "*.[1-8]" 2>/dev/null | sort -u)
+  else
+    man_rel_list+=("${tool_dir}/man/man1/${target_cmd}.1")
+    if [[ "$target_cmd" == "sshctl" ]]; then
+      man_rel_list+=("${tool_dir}/man/man5/sshctl.conf.5" "${tool_dir}/man/man7/sshctl-security.7")
+    elif [[ "$target_cmd" == "sciectl" ]]; then
+      man_rel_list+=("${tool_dir}/man/man5/sciectl-catalog.5")
+    fi
+  fi
+
+  (( ${#man_rel_list[@]} > 0 )) || return 0
+
+  local man_rel man_bname man_sec man_sec_dir target_man_file temp_man
+  local any_installed=0
+  local need_sudo_man=false
+
+  for man_rel in "${man_rel_list[@]}"; do
+    man_bname="$(basename "$man_rel")"
+    man_sec="${man_bname##*.}"
+    man_sec_dir="${man_base_dir}/man${man_sec}"
+    target_man_file="${man_sec_dir}/${man_bname}"
+
+    temp_man="$(mktemp "/tmp/${man_bname}.XXXXXX")"
+    if ! _fetch_resource "$man_rel" "$temp_man" 2>/dev/null; then
+      rm -f -- "$temp_man"
+      continue
+    fi
+
+    local check_dir="$man_sec_dir"
+    while [[ ! -e "$check_dir" && "$check_dir" != "/" && "$check_dir" != "." ]]; do
+      check_dir="$(dirname "$check_dir")"
+    done
+
+    local move_cmd="sudo mv"
+    local chmod_cmd="sudo chmod 644"
+    local mkdir_cmd="sudo mkdir -p"
+    if [[ -w "$check_dir" ]] && [[ ! -e "$target_man_file" || -w "$target_man_file" ]]; then
+      move_cmd="mv"
+      chmod_cmd="chmod 644"
+      mkdir_cmd="mkdir -p"
+    else
+      need_sudo_man=true
+    fi
+
+    [[ -d "$man_sec_dir" ]] || $mkdir_cmd "$man_sec_dir"
+
+    if [[ -f "$target_man_file" ]]; then
+      if ! cmp -s "$temp_man" "$target_man_file"; then
+        local ch="y"
+        if [[ "$force_overwrite" != "true" && -t 0 ]]; then
+          read -r -p "> '${man_bname} man page' 내용이 다릅니다. 업데이트하시겠습니까? (y/Enter: 취소): " ch
+        fi
+        if [[ "$ch" =~ ^[Yy]$ ]]; then
+          $move_cmd "$temp_man" "$target_man_file" && $chmod_cmd "$target_man_file"
+          echo_i " - '${man_bname} man page' 파일이 업데이트되었습니다. ($target_man_file)"
+          any_installed=1
+        else
+          echo_w " - '${man_bname} man page' 기존 파일을 유지합니다 (업데이트 취소)."
+          rm -f -- "$temp_man"
+        fi
+      else
+        echo_w " - '${man_bname} man page' 파일이 이미 최신입니다."
+        rm -f -- "$temp_man"
+      fi
+    else
+      $move_cmd "$temp_man" "$target_man_file" && $chmod_cmd "$target_man_file"
+      echo_i " - '${man_bname} man page' 파일을 설치했습니다. ($target_man_file)"
+      any_installed=1
+    fi
+  done
+
+  if (( any_installed == 1 )) && command -v mandb &>/dev/null; then
+    if [[ "$need_sudo_man" == true ]]; then
+      sudo mandb -q >/dev/null 2>&1 || true
+    else
+      mandb -q "$man_base_dir" >/dev/null 2>&1 || true
+    fi
+  fi
+}
+
+##
+# 단일 커스텀 도구 및 연관 .completion, man 페이지 파일을 설치합니다.
 #
 # @param $1 {string} 커스텀 도구 식별자 또는 URL
 # @param $2 {string} 설치 범위 (local | global)
@@ -1724,6 +1845,7 @@ _install_tool() {
   fi
 
   _install_completion "${resolved_ref}.completion" "$target_cmd" "$force_overwrite"
+  _install_manpages "$resolved_ref" "$target_cmd" "$target_scope" "$force_overwrite"
 
   if [[ "$target_cmd" != *.sh ]]; then
     _remove_legacy_sh_tool "${target_cmd}.sh" "$bin_dir"

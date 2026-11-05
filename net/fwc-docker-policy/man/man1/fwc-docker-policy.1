@@ -1,0 +1,103 @@
+.TH FWC-DOCKER-POLICY 1 "2026-10-24" "fwc-docker-policy 1.0.0" "User Commands"
+.SH NAME
+fwc-docker-policy \- firewalld Docker Container Port-Forwarding Policy Generator.
+
+.SH SYNOPSIS
+.B fwc-docker-policy
+\-\-policy <정책명> \-\-zone <존1[,존2,...]> \-\-host\-port <호스트포트> \-\-cont\-ip <컨테이너IP> \-\-cont\-port <컨테이너포트>
+.br
+.B fwc-docker-policy
+\-\-policy <정책명> \-\-zone <존1[,존2,...]> \-\-port <공통포트> \-\-cont\-ip <컨테이너IP>
+
+.SH DESCRIPTION
+외부(지정된 하나 이상의 firewalld Ingress Zone)에서 호스트로 유입되는 네트워크 요청을 Docker 브릿지 네트워크 내부의 대상 컨테이너로 포트 포워딩(DNAT)하는 \fBfirewalld Policy\fR를 자동 생성 및 영구 적용하는 방화벽 정책 자동화 CLI 도구입니다.
+
+.SH KEY FEATURES
+.IP \(bu 2
+\fB최신 firewalld Policy 아키텍처 완벽 지원\fR
+.IP \(bu 2
+firewalld 0.9.0+ 이상에서 도입된 Policy 오브젝트를 기반으로 Ingress Zone과 Egress Zone 간의 라우팅 및 포트 포워딩을 일관되게 구성합니다.
+.IP \(bu 2
+\fB버전별 Egress Zone 자동 감지\fR
+.IP \(bu 2
+시스템의 \fBfirewall-cmd\fR 버전을 자동 분석하여 2.3.2 이상 공식 릴리즈 환경에서는 \fBHOST\fR, 그 외 버전에서는 \fBANY\fR를 Egress Zone으로 최적 자동 선택합니다.
+.IP \(bu 2
+\fB유연한 포트 매핑 (개별 매핑 vs 1:1 매핑)\fR
+.IP \(bu 2
+호스트 포트와 컨테이너 포트가 상이한 경우(\fB\-\-host\-port\fR, \fB\-\-cont\-port\fR)와 동일한 경우(\fB\-\-port\fR)를 상호 배타적 검증을 거쳐 명확하게 분기 처리합니다.
+.IP \(bu 2
+\fB다중 Ingress Zone 지원\fR
+.IP \(bu 2
+콤마(\fB,\fR) 구분자를 통해 복수의 Ingress Zone(예: \fBtrusted,work\fR)을 단일 정책 내에 동시에 묶어 구성할 수 있습니다.
+.IP \(bu 2
+\fB원자적 롤백 및 안전 장치\fR
+.IP \(bu 2
+정책 생성 중 유효성 검증 실패 또는 런타임 오류 발생 시 생성 중이던 불완전한 정책을 자동으로 안전하게 롤백(제거)합니다.
+.IP \(bu 2
+\fB지능형 Bash 자동 완성 (\fBfwc-docker-policy.completion\fR)\fR
+.IP \(bu 2
+시스템에 현재 구성된 firewalld Zone 목록과 정책 옵션을 동적으로 스캔하여 자동 완성을 지원합니다.
+
+.SH OPTIONS
+.TP
+.B \-\-policy <name>
+[필수] 생성할 firewalld Policy 이름 (예: workToMariaDB)
+.TP
+.B \-\-zone <zone1[,zone2...]>
+[필수] 패킷을 수신할 Ingress Zone 이름 (콤마 구분 다중 지정 지원)
+.TP
+.B \-\-cont\-ip <ipv4>
+[필수] 컨테이너 내부 Unicast IPv4 주소 (예: 172.30.10.2)
+.TP
+.B \-\-host\-port <port>
+[조건부 필수] 호스트 수신 포트 번호 (1 ~ 65535, \-\-port와 동시 사용 불가)
+.TP
+.B \-\-cont\-port <port>
+[조건부 필수] 컨테이너 내부 수신 포트 번호 (1 ~ 65535, \-\-port와 동시 사용 불가)
+.TP
+.B \-\-port <port>
+[조건부 필수] 호스트와 컨테이너 포트가 동일할 때 지정 (1 ~ 65535, 개별 포트 옵션과 동시 사용 불가)
+.TP
+.B \-\-help
+[선택] 도움말 메시지 출력 및 종료
+
+.SH EXAMPLES
+.nf
+  # 1) 호스트 포트(13306)를 컨테이너 포트(3306)로 개별 매핑하여 정책 생성
+  sudo ./fwc\-docker\-policy \\
+    \-\-policy workToMariaDB \\
+    \-\-zone work \\
+    \-\-host\-port 13306 \\
+    \-\-cont\-ip 172.30.10.2 \\
+    \-\-cont\-port 3306
+  
+  # 2) 호스트와 컨테이너 포트가 동일한 경우 (\-\-port 단일 옵션)
+  sudo ./fwc\-docker\-policy \\
+    \-\-policy webPublicAccess \\
+    \-\-zone public \\
+    \-\-port 8080 \\
+    \-\-cont\-ip 172.30.10.5
+  
+  # 3) 복수의 수신 존(trusted, work)에 동시에 적용되는 정책 생성
+  sudo ./fwc\-docker\-policy \\
+    \-\-policy dbMultiZoneAccess \\
+    \-\-zone trusted,work \\
+    \-\-port 5432 \\
+    \-\-cont\-ip 172.30.10.8
+.fi
+.PP
+
+.SH COMPLETION
+.B fwc-docker-policy
+는 Bash 자동완성 스크립트(\fIfwc-docker-policy.completion\fR)를 지원한다.
+.BR scriptctl (1)
+또는
+.BR sciectl (1)
+을 통해 설치 시 시스템 표준 completion 경로에 자동으로 등록된다.
+
+.SH SEE ALSO
+.BR scriptctl (1),
+.BR sciectl (1)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.

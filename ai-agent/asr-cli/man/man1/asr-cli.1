@@ -1,0 +1,349 @@
+.TH ASR-CLI 1 "2026-10-28" "asr-cli 1.0.0" "User Commands"
+.SH NAME
+asr-cli \- asr-cli: AI-Agent Customization System CLI (Skill & Rule Manager)
+
+.SH SYNOPSIS
+.B asr-cli
+[\fIOPTIONS\fR]
+
+.SH DESCRIPTION
+AI-Agent Customization System에서 사용하는 \fB다중 AI 에이전트(\fBantigravity\fR/\fBagy\fR, \fBclaude\fR, \fBcodex\fR)\fR 전용 \fB스킬(\fBskill\fR)\fR과 \fB규칙(\fBrule\fR)\fR 디렉토리를 카테고리별로 \fB생성(\fBcreate\fR)\fR, \fB삭제(\fBremove\fR)\fR, \fB심볼릭 링크 참조 추가(\fBadd\fR)\fR, \fB편집(\fBedit\fR)\fR, \fB트리 구조 조회(\fBlist\fR)\fR하는 통합 관리 CLI 도구입니다.
+
+.SH KEY FEATURES
+.IP \(bu 2
+\fB다중 AI Agent(\fB\-\-agent\fR) 전용 경로 및 규격 분리 관리\fR
+.IP \(bu 2
+\fB\-\-agent <antigravity|agy|claude|codex>\fR 옵션을 통해 대상 AI 에이전트를 지정합니다. (\fBagy\fR는 \fBantigravity\fR의 약어입니다.)
+.IP \(bu 2
+\fB명령어별 \fB\-\-agent\fR 동작\fR:
+.IP \(bu 2
+\fBcreate\fR / \fBremove\fR / \fBadd\fR / \fBedit\fR: \fB\fB\-\-agent\fR 필수 지정\fR (커맨드라인 최우선 순위 권장: \fBasr-cli \-\-agent <AGENT> ...\fR). 기본값(\fBantigravity\fR)은 적용되지 않으므로 반드시 명시해야 합니다.
+.IP \(bu 2
+\fBlist\fR: \fB\-\-agent\fR 생략 시(\fBasr-cli list\fR) \fB존재하는 모든 에이전트(\fBantigravity\fR, \fBclaude\fR, \fBcodex\fR)\fR의 \fBskill\fR/\fBrule\fR 정보를 통합 조회하며, \fB\-\-agent <agent>\fR 지정 시(\fBasr-cli \-\-agent <agent> list\fR) 해당 에이전트의 정보만 필터링하여 조회합니다.
+.IP \(bu 2
+환경변수 \fBAI_AGENT_CUSTOMIZATION_HOME\fR (또는 \fB\-\-home <경로>\fR 옵션) 하위에 에이전트별 상위 폴더(\fB${AI_AGENT_CUSTOMIZATION_HOME}/{antigravity|claude|codex}/{skills,rules}/...\fR)를 독립적으로 분리하여 관리합니다.
+.IP \(bu 2
+워크스페이스에 폴더를 추가했을 때 일반 개발 프로젝트 폴더와 명확히 구분되도록 실제 카테고리 디렉토리명에 \fBskill-\fR 및 \fBrule-\fR 접두사를 자동 부여합니다. (단, CLI \fB\-\-category\fR 입력 및 자동완성 추천 시에는 \fBskill-\fR, \fBrule-\fR가 제외된 논리 카테고리 이름을 그대로 사용합니다.)
+.IP \(bu 2
+\fB에이전트별 생성 경로 규격\fR:
+.IP \(bu 2
+\fB\fBantigravity\fR (\fBagy\fR)\fR:
+.IP \(bu 2
+.na
+Skill: \fB${AI_AGENT_CUSTOMIZATION_HOME}/antigravity/skills/skill-${CATEGORY}/.agents/skills/${NAME}/{SKILL.md,scripts/,templates/,references/}\fR
+.IP \(bu 2
+.na
+Rule : \fB${AI_AGENT_CUSTOMIZATION_HOME}/antigravity/rules/rule-${CATEGORY}/.agents/rules/{${NAME}.md,${NAME}/{scripts/,templates/,references/}}\fR
+.IP \(bu 2
+\fB\fBclaude\fR (Claude Code)\fR:
+.IP \(bu 2
+.na
+Skill: \fB${AI_AGENT_CUSTOMIZATION_HOME}/claude/skills/skill-${CATEGORY}/.claude/skills/${NAME}/{SKILL.md,references/,scripts/,assets/}\fR
+.IP \(bu 2
+.na
+Rule : \fB${AI_AGENT_CUSTOMIZATION_HOME}/claude/rules/rule-${CATEGORY}/.claude/rules/{${NAME}.md,${NAME}/{references/,scripts/,assets/}}\fR
+.IP \(bu 2
+\fB\fBcodex\fR (OpenAI Codex)\fR:
+.IP \(bu 2
+.na
+Skill: \fB${AI_AGENT_CUSTOMIZATION_HOME}/codex/skills/skill-${CATEGORY}/.agents/skills/${NAME}/{SKILL.md,agents/openai.yaml,references/,scripts/,assets/}\fR
+.IP \(bu 2
+.na
+Rule : \fB${AI_AGENT_CUSTOMIZATION_HOME}/codex/rules/rule-${CATEGORY}/${NAME}/{AGENTS.md,references/,scripts/,assets/}\fR
+.IP \(bu 2
+\fB에이전트별 맞춤형 초기 템플릿 및 참조 리소스 디렉토리 자동 생성 (\fBcreate\fR)\fR
+.IP \(bu 2
+\fB\fBantigravity\fR (\fBagy\fR)\fR:
+.IP \(bu 2
+\fBSKILL.md\fR: 필수 속성(\fBname\fR, \fBdescription\fR)과 선택 속성(\fB# version\fR, \fB# author\fR, \fB# tags\fR)이 주석으로 안내된 Frontmatter, 6단계 표준 섹션 및 하위 참조 디렉토리(\fBscripts/\fR, \fBtemplates/\fR, \fBreferences/\fR)를 생성합니다.
+.IP \(bu 2
+.na
+\fB${NAME}.md\fR: Antigravity Rule 파서의 엄격한 스키마(Strict Schema)를 준수하여 \fBtrigger: always_on\fR만 기본 활성화하고 선택 속성인 \fB# globs\fR만 주석으로 안내된 미니멀 Frontmatter, 4단계 표준 섹션 및 전용 참조 디렉토리(\fB.agents/rules/${NAME}/{scripts/,templates/,references/}\fR)를 생성합니다.
+.IP \(bu 2
+\fB\fBclaude\fR (Claude Code)\fR:
+.IP \(bu 2
+\fBSKILL.md\fR: 필수 속성(\fBname\fR, \fBdescription\fR)과 Claude Code 전용 호출 제어 키(\fB# disable-model-invocation\fR, \fB# user-invocable\fR, \fB# allowed-tools\fR, \fB# context\fR, \fB# agent\fR, \fB# argument-hint\fR, \fB# model\fR)가 주석으로 안내된 Frontmatter, 7단계 표준 섹션(\fBPurpose\fR, \fBPreconditions\fR, \fBInputs\fR, \fBWorkflow\fR, \fBSafety\fR, \fBFailure handling\fR, \fBOutput contract\fR) 및 하위 참조 디렉토리(\fBreferences/\fR, \fBscripts/\fR, \fBassets/\fR)를 생성합니다.
+.IP \(bu 2
+.na
+\fB${NAME}.md\fR: 경로 조건부 적용을 위한 \fB# paths:\fR가 주석 처리된 Frontmatter(\fBtrigger:\fR 등 타 도구 전용 속성 배제), 4단계 표준 섹션 및 전용 참조 디렉토리(\fB.claude/rules/${NAME}/{references/,scripts/,assets/}\fR)를 생성합니다.
+.IP \(bu 2
+\fB\fBcodex\fR (OpenAI Codex)\fR:
+.IP \(bu 2
+\fBSKILL.md\fR: 행위·대상·사용 시점·제외 조건(\fBDo not use for...\fR)을 명시한 \fBname\fR/\fBdescription\fR Frontmatter, 8단계 표준 섹션(\fBPurpose / When to use\fR, \fBPreconditions\fR, \fBInputs\fR, \fBProcedure\fR, \fBReferences / Scripts\fR, \fBValidation\fR, \fBOutputs\fR, \fBSafety / Stop conditions\fR), 인터페이스 메타데이터 템플릿(\fBagents/openai.yaml\fR) 및 하위 참조 디렉토리(\fBagents/\fR, \fBreferences/\fR, \fBscripts/\fR, \fBassets/\fR)를 생성합니다.
+.IP \(bu 2
+\fB${NAME}/AGENTS.md\fR: Codex 표준에 맞춰 YAML Frontmatter를 배제한 순수 Markdown 기반 \fBAGENTS.md\fR 규칙 파일과 하위 참조 디렉토리(\fBreferences/\fR, \fBscripts/\fR, \fBassets/\fR)를 생성합니다.
+.IP \(bu 2
+\fB에이전트 내 전역 스킬 이름 중복 검증 (\fBcreate skill\fR)\fR: 동일 에이전트 내 서로 다른 카테고리에 같은 이름의 스킬이 중복 생성되지 않도록 디렉토리명 및 \fBSKILL.md\fR 내 \fBname:\fR 속성을 전수 검사하여 이미 사용 중인 이름이면 생성을 차단하고 종료합니다.
+.IP \(bu 2
+\fB지능형 내부/외부 심볼릭 링크 참조 추가 (\fBadd\fR)\fR
+.IP \(bu 2
+\fB내부 참조 (\fB\-\-name\fR)\fR: 선택된 에이전트(\fB\-\-agent\fR) 내 다른 카테고리에 이미 존재하는 스킬 디렉토리 또는 규칙 파일을 대상 카테고리(\fB\-\-category\fR)에 절대 경로 심볼릭 링크로 추가합니다. (Bash 자동완성 시 \fB{category}/{name}\fR 형태로 추천받아 전체 경로로 자동 치환)
+.IP \(bu 2
+\fB외부 참조 (상호 배타적)\fR: \fB${AI_AGENT_CUSTOMIZATION_HOME}\fR 외부 경로에 존재하는 독립 스킬/규칙도 심볼릭 링크로 참조 추가할 수 있습니다.
+.IP \(bu 2
+\fB\-\-skill\-dir <디렉토리>\fR : 외부 스킬 디렉토리 참조 (\fBSKILL.md\fR 필수, 스킬 전용)
+.IP \(bu 2
+\fB\-\-rule\-file <마크다운파일>\fR : 외부 규칙 마크다운 파일 참조 (\fB.md\fR 필수, \fBantigravity\fR/\fBclaude\fR 규칙 전용)
+.IP \(bu 2
+\fB\-\-rule\-dir <디렉토리>\fR : 외부 Codex 규칙 디렉토리 참조 (\fBAGENTS.md\fR 필수, \fBcodex\fR 규칙 전용)
+.IP \(bu 2
+\fB단일/다중 항목 삭제, 빈 카테고리 자동 정리 및 복수 카테고리 전체 삭제 지원 (\fBremove\fR)\fR
+.IP \(bu 2
+\fB\-\-category\fR 및 \fB\-\-name\fR에 콤마(\fB,\fR)로 구분된 다중 입력(\fB<입력>,<입력>\fR)을 지원합니다.
+.IP \(bu 2
+\fB\-\-category <cat1,cat2>\fR 다중 지정 시 \fB\-\-name\fR 입력은 허용하지 않으며, 지정된 복수 카테고리와 하위 목록을 각 라인별로 출력한 뒤 \fB1회 \fB[y/n]\fR 확인\fR으로 일괄 삭제합니다.
+.IP \(bu 2
+\fB\-\-category <cat> \-\-name <name1,name2>\fR 지정 시 해당 스킬/규칙들을 별도 라인으로 출력하고 \fB1회 \fB[y/n]\fR 확인\fR으로 일괄 삭제하며, 삭제 후 해당 카테고리에 더 이상 스킬이나 규칙이 남아 있지 않으면 \fB카테고리 디렉토리까지 자동으로 함께 삭제\fR합니다.
+.IP \(bu 2
+모든 삭제 작업은 \fB[y/n]\fR 사용자 확인(\fBy\fR만 진행, \fBn\fR 또는 \fBEnter\fR는 취소)을 거치며, \fB\-\-force\fR 지정 시 즉시 삭제합니다.
+.IP \(bu 2
+\fB\fBvim\fR 기반 스킬/규칙 파일 즉시 편집 및 미설치 시 자동 설치 지원 (\fBedit\fR)\fR
+.IP \(bu 2
+하나의 AI 에이전트 내에서 스킬 이름은 고유하므로, \fB\fB\-\-category\fR 없이 \fB\-\-file <스킬명>\fR\fR만으로 대상 스킬(\fBSKILL.md\fR)을 즉시 찾아 \fBvim\fR으로 열어 편집할 수 있습니다. 규칙 파일 역시 \fB\-\-file <규칙명>\fR으로 직접 편집 가능합니다.
+.IP \(bu 2
+심볼릭 링크 파일인 경우 실제 원본 파일의 절대 경로(Canonical Path)를 해석하여 \fBvim\fR으로 열기 때문에, 심볼릭 링크가 깨지거나 분리되는 현상을 방지합니다.
+.IP \(bu 2
+기존 방식인 \fB\-\-category <카테고리> \-\-name <이름>\fR 조합도 지원하며, \fB\-\-file\fR과 \fB\-\-category\fR/\fB\-\-name\fR은 상호 배타적으로 검증됩니다.
+.IP \(bu 2
+시스템에 \fBvim\fR이 설치되어 있지 않은 경우 OS 패키지 매니저(\fBbrew\fR, \fBapt-get\fR, \fBdnf\fR, \fByum\fR, \fBzypper\fR, \fBpacman\fR, \fBapk\fR)를 자동으로 감지하여 설치를 진행한 뒤 편집기를 실행합니다.
+.IP \(bu 2
+\fB순수 Bash 기반 \fBtree\fR 선(\fB├──\fR, \fB└──\fR) 스타일 계층 조회 및 태그 시각화 (\fBlist\fR)\fR
+.IP \(bu 2
+\fB최상단 루트 헤더 출력\fR: 실행 시 \fB🏠 AI_AGENT_CUSTOMIZATION_HOME: <경로>\fR 및 구분선을 1회 표시하여 기준 경로를 안내합니다.
+.IP \(bu 2
+\fB상대 경로 및 스킬/규칙 전용 이모지 태그 표시\fR: 절대 경로 대신 가독성이 높은 상대 경로(\fB./${agent}/{skills|rules}/${category}\fR)로 표시하며, 복잡한 문자열과 에이전트 이모지를 배제하고 대상 종류(skill: \fB[🚀]\fR, rule: \fB[📜]\fR)만 직관적이고 미니멀하게 식별할 수 있는 전용 이모지 태그를 부여합니다.
+.IP \(bu 2
+\fB하위 트리 열(Column) 5칸 고정 정렬\fR: 모든 이모지 태그의 터미널 시각적 너비가 5칸으로 완벽히 통일되어, 하위 트리 라인(\fB└── \fR, \fB├── \fR)이 카테고리 경로(\fB./...\fR) 시작 위치에 오차 없이 일치합니다.
+.IP \(bu 2
+\fB빈 디렉토리 자동 제외\fR: 하위에 파일이나 디렉토리가 전혀 없거나, 비어 있는 하위 디렉토리만 존재하는 폴더는 출력에서 자동으로 제외하여 실제 유효한 리소스만 깔끔하게 표시합니다.
+.IP \(bu 2
+\fBasr-cli list\fR 단독 실행 시 존재하는 모든 에이전트(\fBantigravity\fR, \fBclaude\fR, \fBcodex\fR)의 \fBskill\fR과 \fBrule\fR 정보를 통합 출력하며, \fB\-\-agent <agent>\fR 지정 시 특정 에이전트의 정보만 필터링하여 출력합니다.
+.IP \(bu 2
+\fB\-\-category <cat1,cat2>\fR 또는 \fB\-\-category <cat> \-\-name <name1,name2>\fR 형태의 콤마(\fB,\fR) 다중 조회를 지원합니다.
+.IP \(bu 2
+\fB\fB\-\-agent\fR 최우선 순위 및 엄격한 단계별(Step-by-Step) Bash 자동완성 (\fBasr-cli.completion\fR)\fR
+.IP \(bu 2
+\fB최초 후보 제한\fR: \fBasr-cli <TAB>\fR 시 \fB\-\-agent\fR가 필수인 다른 서브커맨드는 노출하지 않고, \fB\fB\-\-agent\fR, \fB\-\-help\fR, \fBlist\fR만 엄격히 제안\fR합니다. (에이전트가 지정된 \fBasr-cli \-\-agent <AGENT> <TAB>\fR 상태에서 전체 서브커맨드 제안)
+.IP \(bu 2
+\fB\fBadd\fR 서브커맨드 제안 최적화\fR:
+.IP \(bu 2
+\fBadd skill <TAB>\fR: \fB\-\-category\fR, \fB\-\-skill\-dir\fR, \fB\-\-help\fR 제안
+.IP \(bu 2
+\fBadd rule <TAB>\fR (\fBantigravity\fR/\fBclaude\fR): \fB\-\-category\fR, \fB\-\-rule\-file\fR, \fB\-\-help\fR 제안
+.IP \(bu 2
+\fBadd rule <TAB>\fR (\fBcodex\fR): \fB\-\-category\fR, \fB\-\-rule\-dir\fR, \fB\-\-help\fR 제안
+.IP \(bu 2
+내부 참조(\fB\-\-name\fR)와 외부 참조(\fB\-\-skill\-dir\fR, \fB\-\-rule\-file\fR, \fB\-\-rule\-dir\fR) 간의 상호 배타성을 완벽히 반영하여 중복 입력을 사전에 방지합니다.
+
+.SH OPTIONS
+.SS 공통 옵션
+.TP
+.B \-\-agent <antigravity|agy|claude|codex>
+[명령어별 상이, create/remove/add/edit: 필수<br>list: 선택 (생략 시 전체 에이전트)] 대상 AI Agent 지정 (agy는 antigravity의 약어, 최우선 위치 권장)
+.TP
+.B \-\-home <경로>
+[선택, $AI_AGENT_CUSTOMIZATION_HOME] 커스터마이징 루트 디렉토리 경로 직접 지정
+.TP
+.B \-\-help
+[선택] 전체 도움말 또는 서브커맨드별 도움말 출력
+.SS 1. asr-cli \-\-agent <AGENT> create <skill|rule>
+.TP
+.B \-\-agent <AGENT>
+[필수] 생성할 대상 AI Agent (antigravity | agy | claude | codex)
+.TP
+.B skill | rule
+[필수] 생성할 커스터마이징 대상 종류 지정
+.TP
+.B \-\-category <카테고리>
+[필수] 스킬 또는 규칙을 생성할 논리 카테고리 이름
+.TP
+.B \-\-name <이름>
+[필수] 생성할 스킬 또는 규칙의 이름 (.md 확장자 생략 가능)
+.TP
+.B \-\-home <경로>
+[선택, $AI_AGENT_CUSTOMIZATION_HOME] 커스터마이징 루트 디렉토리 경로 직접 지정
+.TP
+.B \-\-force
+[선택, false] 동일 카테고리 내 동일 이름의 항목이 존재할 때 확인 없이 덮어쓰기
+.TP
+.B \-\-help
+[선택] create 서브커맨드 도움말 출력
+.SS 2. asr-cli \-\-agent <AGENT> remove <skill|rule>
+.TP
+.B \-\-agent <AGENT>
+[필수] 삭제할 대상 AI Agent (antigravity | agy | claude | codex)
+.TP
+.B skill | rule
+[필수] 삭제할 커스터마이징 대상 종류 지정
+.TP
+.B \-\-category <CAT[,CAT2,...]>
+[필수] 삭제할 대상 카테고리 이름 (콤마 구분 다중 입력 지원)
+.TP
+.B \-\-name <NAME[,NAME2,...]>
+[선택] 삭제할 스킬/규칙 이름 (단일 카테고리 지정 시 콤마 구분 다중 입력 지원, 다중 카테고리 지정 시 사용 불가)
+.TP
+.B \-\-home <경로>
+[선택, $AI_AGENT_CUSTOMIZATION_HOME] 커스터마이징 루트 디렉토리 경로 직접 지정
+.TP
+.B \-\-force
+[선택, false] 삭제 확인 프롬프트([y/n]) 생략 및 즉시 삭제
+.TP
+.B \-\-help
+[선택] remove 서브커맨드 도움말 출력
+.SS 3. asr-cli \-\-agent <AGENT> add <skill|rule>
+.TP
+.B \-\-agent <AGENT>
+[필수] 참조를 추가할 대상 AI Agent (antigravity | agy | claude | codex)
+.TP
+.B skill | rule
+[필수] 심볼릭 링크로 추가할 대상 종류 지정
+.TP
+.B \-\-category <카테고리>
+[필수] 심볼릭 링크가 생성될 대상 카테고리 이름
+.TP
+.B \-\-name <전체경로>
+[조건부 필수] 내부 스킬 디렉토리 또는 규칙 파일/폴더 경로 ({category}/{name} 형식 지원, 외부 옵션과 상호 배타적)
+.TP
+.B \-\-skill\-dir <DIR>
+[조건부 필수] 외부 스킬 디렉토리 경로 (SKILL.md 필수, skill 전용)
+.TP
+.B \-\-rule\-file <FILE>
+[조건부 필수] 외부 마크다운 규칙 파일 경로 (.md 필수, antigravity/claude rule 전용)
+.TP
+.B \-\-rule\-dir <DIR>
+[조건부 필수] 외부 Codex 규칙 디렉토리 경로 (AGENTS.md 필수, codex rule 전용)
+.TP
+.B \-\-home <경로>
+[선택, $AI_AGENT_CUSTOMIZATION_HOME] 커스터마이징 루트 디렉토리 경로 직접 지정
+.TP
+.B \-\-force
+[선택, false] 동일 이름의 항목이 이미 존재할 때 기존 항목을 교체
+.TP
+.B \-\-help
+[선택] add 서브커맨드 도움말 출력
+.SS 4. asr-cli \-\-agent <AGENT> edit <skill|rule>
+.TP
+.B \-\-agent <AGENT>
+[필수] 편집할 대상 AI Agent (antigravity | agy | claude | codex)
+.TP
+.B skill | rule
+[필수] 편집할 커스터마이징 대상 종류 지정
+.TP
+.B \-\-file <스킬명|규칙명>
+[조건부 필수] 대상 스킬/규칙 이름 직접 지정 (\-\-category/\-\-name과 상호 배타적)
+.TP
+.B \-\-category <카테고리>
+[조건부 필수] 편집할 스킬/규칙이 속한 논리 카테고리 이름 (\-\-name 필수)
+.TP
+.B \-\-name <이름>
+[조건부 필수] 편집할 스킬/규칙 이름 (\-\-category 필수)
+.TP
+.B \-\-home <경로>
+[선택, $AI_AGENT_CUSTOMIZATION_HOME] 커스터마이징 루트 디렉토리 경로 직접 지정
+.TP
+.B \-\-help
+[선택] edit 서브커맨드 도움말 출력
+.SS 5. asr-cli list [skill|rule]
+.TP
+.B skill | rule
+[선택, 전체(skill→rule)] 조회할 커스터마이징 대상 종류 지정 (생략 시 모두 출력)
+.TP
+.B \-\-category <CAT[,CAT2,...]>
+[선택, 전체 카테고리] 특정 카테고리만 필터링하여 트리 구조 출력 (콤마 구분 다중 입력 지원)
+.TP
+.B \-\-name <NAME[,NAME2,...]>
+[선택, 전체 항목] 특정 스킬/규칙만 필터링하여 트리 구조 출력 (단일 카테고리 지정 시 콤마 구분 다중 입력 지원, 다중 카테고리 지정 시 사용 불가)
+.TP
+.B \-\-agent <AGENT>
+[선택, 전체 에이전트] 특정 AI Agent만 필터링하여 조회 (생략 시 존재하는 모든 에이전트 통합 조회)
+.TP
+.B \-\-home <경로>
+[선택, $AI_AGENT_CUSTOMIZATION_HOME] 커스터마이징 루트 디렉토리 경로 직접 지정
+.TP
+.B \-\-help
+[선택] list 서브커맨드 도움말 출력
+
+.SH EXAMPLES
+.nf
+  export AI_AGENT_CUSTOMIZATION_HOME="$HOME/dev/ai\-agents"
+  
+  # 1) Antigravity (\-\-agent antigravity 또는 \-\-agent agy)
+  asr\-cli \-\-agent antigravity create skill \-\-category bash \-\-name bash\-scripts
+  asr\-cli \-\-agent agy         create rule  \-\-category java \-\-name javadoc\-spec
+  
+  # 2) Claude Code (\-\-agent claude)
+  asr\-cli \-\-agent claude create skill \-\-category java \-\-name java\-code\-review
+  asr\-cli \-\-agent claude create rule  \-\-category java \-\-name spring\-security
+  
+  # 3) OpenAI Codex (\-\-agent codex)
+  asr\-cli \-\-agent codex create skill \-\-category java \-\-name java\-code\-review
+  asr\-cli \-\-agent codex create rule  \-\-category java \-\-name backend\-architecture
+.fi
+.PP
+.nf
+  # 1) 내부 스킬 참조 (<TAB> 시 'bash/bash\-scripts' 추천 후 전체 경로로 자동 치환)
+  asr\-cli \-\-agent antigravity add skill \-\-category devops \-\-name "${AI_AGENT_CUSTOMIZATION_HOME}/antigravity/skills/skill\-bash/.agents/skills/bash\-scripts"
+  
+  # 2) 외부 스킬 디렉토리 참조 (\-\-skill\-dir)
+  asr\-cli \-\-agent antigravity add skill \-\-category devops \-\-skill\-dir ~/my\-external\-skills/docker\-builder
+  
+  # 3) 외부 규칙 마크다운 파일 참조 (\-\-rule\-file, antigravity / claude)
+  asr\-cli \-\-agent antigravity add rule \-\-category team\-rules \-\-rule\-file ~/shared\-docs/git\-commit\-convention.md
+  
+  # 4) 외부 Codex 규칙 디렉토리 참조 (\-\-rule\-dir, codex)
+  asr\-cli \-\-agent codex add rule \-\-category team\-rules \-\-rule\-dir ~/shared\-docs/codex\-architecture\-rules
+.fi
+.PP
+.nf
+  # 1) 존재하는 모든 에이전트(antigravity, claude, codex)의 전체 skill/rule 통합 조회
+  asr\-cli list
+  
+  # 2) 특정 에이전트(claude)의 전체 skill/rule 조회
+  asr\-cli \-\-agent claude list
+  # 또는
+  asr\-cli list \-\-agent claude
+  
+  # 3) 특정 에이전트(codex)의 규칙 카테고리 필터링 조회
+  asr\-cli \-\-agent codex list rule \-\-category java
+.fi
+.PP
+.nf
+  # 1) 단일 카테고리 내 복수 스킬 일괄 삭제 (별도 라인 출력 후 1회 [y/n] 확인)
+  asr\-cli \-\-agent antigravity remove skill \-\-category bash \-\-name bash\-scripts,shell\-linter
+  
+  # 2) 복수 카테고리 전체 일괄 삭제 (하위 목록 제시 후 1회 [y/n] 확인)
+  asr\-cli \-\-agent claude remove skill \-\-category java,devops
+  
+  # 3) 확인 프롬프트 없이 즉시 삭제 (\-\-force)
+  asr\-cli \-\-agent codex remove rule \-\-category java \-\-name backend\-architecture \-\-force
+.fi
+.PP
+.nf
+  # 1) 스킬명 단독 지정으로 Antigravity 스킬 파일(SKILL.md) vim 편집 (\-\-category 생략)
+  asr\-cli \-\-agent antigravity edit skill \-\-file bash\-scripts
+  
+  # 2) Claude Code 규칙 파일(<name>.md) 단독 vim 편집 (\-\-category 생략)
+  asr\-cli \-\-agent claude edit rule \-\-file javadoc\-guide
+  
+  # 3) 기존 카테고리/이름 지정 방식으로 Antigravity 스킬 파일 vim 편집
+  asr\-cli \-\-agent antigravity edit skill \-\-category bash \-\-name bash\-scripts
+  
+  # 4) Codex 규칙 파일(AGENTS.md) vim 편집
+  asr\-cli \-\-agent codex edit rule \-\-file backend\-architecture
+.fi
+.PP
+
+.SH COMPLETION
+.B asr-cli
+는 Bash 자동완성 스크립트(\fIasr-cli.completion\fR)를 지원한다.
+.BR scriptctl (1)
+또는
+.BR sciectl (1)
+을 통해 설치 시 시스템 표준 completion 경로에 자동으로 등록된다.
+
+.SH SEE ALSO
+.BR scriptctl (1),
+.BR sciectl (1)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.

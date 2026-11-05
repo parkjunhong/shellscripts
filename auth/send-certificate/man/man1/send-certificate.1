@@ -1,0 +1,114 @@
+.TH SEND-CERTIFICATE 1 "2026-10-13" "send-certificate 1.0.0" "User Commands"
+.SH NAME
+send-certificate \- convert wildcard certificate to multiple formats and deploy to remote services
+
+.SH SYNOPSIS
+.B send-certificate
+<type>;<userid>@<target>:/absolute/path[;<cli>]
+
+.SH DESCRIPTION
+Let's Encrypt를 통해 발급된 와일드카드 인증서 원본(\fBcert1.pem\fR, \fBchain1.pem\fR, \fBfullchain1.pem\fR, \fBprivkey1.pem\fR)을 \fB4가지 포맷(\fBpem\fR, Nginx용 \fBsslca\fR, \fBpkcs12\fR, Java \fBjks\fR)\fR으로 일괄 변환하고, 서비스 목록 설정 파일(\fBservices-list.txt\fR)에 정의된 다수의 원격 서버로 \fBscp\fR 전송 및 \fBssh\fR 사후 명령어(서비스 재기동 등)를 자동 수행하는 통합 인증서 변환·배포 도구입니다.
+
+.SH KEY FEATURES
+.IP \(bu 2
+\fB4종 인증서 포맷 원스톱 일괄 변환\fR
+.IP \(bu 2
+\fBpem\fR: Let's Encrypt 원본 PEM 파일(\fBcert1.pem\fR, \fBchain1.pem\fR, \fBfullchain1.pem\fR, \fBprivkey1.pem\fR)
+.IP \(bu 2
+\fBsslca\fR: Nginx 등 웹서버 적용을 위한 \fB.crt\fR(\fBfullchain1.pem\fR 복사본) 및 \fB.key\fR(\fBopenssl pkey\fR 변환본)
+.IP \(bu 2
+\fBpkcs12\fR: OpenSSL 기반 표준 \fB.p12\fR 키스토어 번들 생성
+.IP \(bu 2
+\fBjks\fR: \fB.p12\fR를 기반으로 Java KeyStore(\fB.jks\fR)를 생성하고, 최신 \fBISRG Root X1 CA\fR 및 \fBIntermediate CA\fR 인증서까지 체인에 자동 주입
+.IP \(bu 2
+\fB원격 서버 SSH Host Key 변경 자동 복구 및 재시도 (\fBhandle_host_key_changed\fR)\fR
+.IP \(bu 2
+\fBscp\fR 전송 또는 \fBssh\fR 사후 명령 실행 중 원격 서버 재설치 등으로 인한 \fBREMOTE HOST IDENTIFICATION HAS CHANGED\fR 오류가 감지되면, 자동으로 \fBssh-keygen -R <host>\fR를 실행하여 기존 호스트 키를 제거하고 \fBStrictHostKeyChecking=accept-new\fR 옵션으로 즉시 재전송/재실행을 수행합니다.
+.IP \(bu 2
+\fB유연한 배포 제어 및 시뮬레이션 모드\fR
+.IP \(bu 2
+\fB\-\-target\-ca\fR: \fBpem,sslca,pkcs12,jks\fR 중 특정 유형의 서버만 선별하여 배포 가능
+.IP \(bu 2
+\fB\-\-no\-send\fR: 변환만 수행하고 원격 서버 전송 및 CLI 실행은 생략
+.IP \(bu 2
+\fB\-\-no\-delete\fR: 배포 완료 후 생성된 변환 디렉토리(\fBssl_ca\fR, \fBpkcs12\fR, \fBjks\fR)를 삭제하지 않고 보존
+.IP \(bu 2
+\fB\-\-dry\-run\fR: \fB\-\-no\-send\fR와 \fB\-\-no\-delete\fR를 동시에 활성화하여 안전하게 변환 결과 검증
+.IP \(bu 2
+\fB지능형 Bash 자동완성 (\fBsend-certificate.completion\fR)\fR
+.IP \(bu 2
+파일 경로(\fB\-\-service\-files\fR, \fB\-\-ssh\-key\fR) 및 콤마(\fB,\fR) 구분 다중 인증서 유형(\fB\-\-target\-ca\fR) 자동완성을 지원합니다.
+
+.SH OPTIONS
+.SS 1. CLI 파라미터
+.TP
+.B \-\-wildcard\-domain <도메인>
+[필수] 대상 와일드카드 기준 루트 도메인 (예: example.com)
+.TP
+.B \-\-service\-files <파일경로>
+[필수] 배포 대상 서버 및 사후 명령어가 정의된 설정 파일 경로 ([services-list.txt](services-list.txt) 참조)
+.TP
+.B \-\-ssh\-key <파일경로>
+[필수] 원격 서버 scp/ssh 접속에 사용할 SSH 개인키 파일 경로
+.TP
+.B \-\-p12\-pwd <비밀번호>
+[필수] PKCS#12(.p12) 및 JKS(.jks) 생성에 사용할 비밀번호 (공백 제외 4자 이상)
+.TP
+.B \-\-target\-ca <유형목록>
+[선택, 전체 (pem,sslca,pkcs12,jks)] 전송할 인증서 유형을 쉼표(,)로 구분하여 지정
+.TP
+.B \-\-no\-send
+[선택, 비활성] 원격 서버로 파일을 전송하지 않고 변환만 수행
+.TP
+.B \-\-no\-delete
+[선택, 비활성] 작업 종료 후 변환된 임시 인증서 디렉토리를 삭제하지 않고 유지
+.TP
+.B \-\-dry\-run
+[선택, 비활성] \-\-no\-send와 \-\-no\-delete를 동시에 활성화
+.TP
+.B \-\-help
+[선택] 도움말 메시지를 출력하고 종료합니다.
+.SS 2. 필수 환경변수
+.TP
+.B LETSENC_INSTDIR
+[필수, /etc/letsencrypt] Let's Encrypt archive/<domain> 디렉토리가 위치한 루트 경로
+.SS 3. 서비스 목록 파일 포맷 ([services-list.txt](services-list.txt))
+
+.SH EXAMPLES
+.nf
+  export LETSENC_INSTDIR="/etc/letsencrypt"
+  
+  send\-certificate \\
+    \-\-wildcard\-domain "example.com" \\
+    \-\-service\-files ./services\-list.txt \\
+    \-\-ssh\-key ~/.ssh/id_rsa \\
+    \-\-p12\-pwd "MyKeystorePass123!"
+.fi
+.PP
+.nf
+  export LETSENC_INSTDIR="/etc/letsencrypt"
+  
+  send\-certificate \\
+    \-\-wildcard\-domain "example.com" \\
+    \-\-service\-files ./services\-list.txt \\
+    \-\-ssh\-key ~/.ssh/id_rsa \\
+    \-\-p12\-pwd "MyKeystorePass123!" \\
+    \-\-target\-ca sslca,pkcs12 \\
+    \-\-dry\-run
+.fi
+.PP
+
+.SH COMPLETION
+.B send-certificate
+는 Bash 자동완성 스크립트(\fIsend-certificate.completion\fR)를 지원한다.
+.BR scriptctl (1)
+또는
+.BR sciectl (1)
+을 통해 설치 시 시스템 표준 completion 경로에 자동으로 등록된다.
+
+.SH SEE ALSO
+.BR scriptctl (1),
+.BR sciectl (1)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.

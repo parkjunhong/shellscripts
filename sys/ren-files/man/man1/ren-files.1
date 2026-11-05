@@ -1,0 +1,64 @@
+.TH REN-FILES 1 "2021-01-07" "ren-files 1.0.0" "User Commands"
+.SH NAME
+ren-files \- batch rename files using regular expression
+
+.SH SYNOPSIS
+.B ren-files
+[\fIOPTIONS\fR]
+
+.SH DESCRIPTION
+대상 디렉토리 내의 파일명들을 \fBsed\fR 확장 정규표현식(ERE) 그룹 캡처 및 후방 참조(\fB\\1\fR, \fB\\2\fR) 패턴을 이용하여 일괄 변경(배치 리네이밍)하는 파일명 일괄 변경 도구입니다.
+
+.SH KEY FEATURES
+.IP \(bu 2
+\fB정규식 기반 대량 파일명 변경\fR: \fBsed -r\fR 정규표현식을 활용하여 특정 패턴에 일치하는 파일명을 원하는 구조로 변환합니다.
+.IP \(bu 2
+\fB그룹 캡처 및 재배치\fR: 정규식 괄호(\fB(...)\fR)를 통한 캡처 그룹과 후방 참조(\fB\\1\fR, \fB\\2\fR 등)를 완벽하게 지원합니다.
+.IP \(bu 2
+\fB안전 확인 모드\fR: 기본적으로 \fBmv -i\fR를 통해 기존 파일이 덮어쓰여지는 경우 확인을 거치며, \fB\-\-force\fR 지정 시 강제 치환합니다.
+.IP \(bu 2
+\fB지능형 Bash 자동완성\fR: 디렉토리 경로 및 파라미터 옵션 자동완성을 지원합니다.
+
+.SH OPTIONS
+.TP
+.B \-\-dir <디렉토리>
+[필수] 대상 파일들이 위치한 디렉토리 경로
+.TP
+.B \-\-input <입력정규식>
+[필수] 매칭할 파일명 sed 정규표현식 패턴
+.TP
+.B \-\-output <출력패턴>
+[필수] 변경할 파일명 출력 패턴 (후방 참조 \\1, \\2 사용 가능)
+.TP
+.B \-\-force
+[선택] 기존 동일 파일명이 존재할 경우 확인 없이 강제 덮어쓰기 (mv -f)
+.TP
+.B \-\-help
+[선택] 도움말 메시지를 표시합니다.
+
+.SH EXAMPLES
+.nf
+  # 원본: a\-b.txt, a\-c.txt, b\-c.txt
+  ren\-files \-\-dir . \-\-input '(a)\-(.+)' \-\-output '\\2\-\\1'
+  # 결과: b\-a.txt, c\-a.txt, b\-c.txt
+.fi
+.PP
+.nf
+  ren\-files \-\-dir /data/logs \-\-input '^(error)_(.*)' \-\-output 'warn_\\2'
+.fi
+.PP
+
+.SH COMPLETION
+.B ren-files
+는 Bash 자동완성 스크립트(\fIren-files.completion\fR)를 지원한다.
+.BR scriptctl (1)
+또는
+.BR sciectl (1)
+을 통해 설치 시 시스템 표준 completion 경로에 자동으로 등록된다.
+
+.SH SEE ALSO
+.BR scriptctl (1),
+.BR sciectl (1)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.

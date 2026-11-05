@@ -1,0 +1,80 @@
+.TH DIFF-FILE 1 "2026-08-12" "diff-file 1.0.0" "User Commands"
+.SH NAME
+diff-file \- compare files with source file and generate normalization report.
+
+.SH SYNOPSIS
+.B diff-file
+[\fIOPTIONS\fR]
+
+.SH DESCRIPTION
+기준 파일(\fB\-\-source\fR)과 대상 디렉토리 하위의 검색 패턴(\fB\-\-file\fR)에 일치하는 파일들의 내용을 정규화 비교하여 일치/불일치 상세 보고서를 생성하고, 옵션에 따라 내용을 동기화(\fB\-\-copy\-content\fR)하거나 가상 검증(\fB\-\-dry\-run\fR)을 수행하는 대형 정밀 파일 비교 도구입니다.
+
+.SH KEY FEATURES
+.IP \(bu 2
+\fB정규화 비교 엔진\fR: 공백 및 줄바꿈 차이를 안전하게 정규화하여 실제 내용의 일치 여부를 정확히 판별합니다.
+.IP \(bu 2
+\fB다양한 실행 모드 지원\fR:
+.IP \(bu 2
+기본 모드: 비교 결과 요약 통계 및 불일치 파일 목록 출력
+.IP \(bu 2
+\fB\-\-copy\-content\fR: 내용이 다른 대상 파일을 기준 파일 내용으로 자동 동기화/덮어쓰기
+.IP \(bu 2
+\fB\-\-dry\-run\fR: 실제 파일 수정 없이 변경 예정 파일 및 작업 흐름 시뮬레이션
+.IP \(bu 2
+\fB\-\-no\-ne\-files\fR: 불일치 파일 목록 출력을 생략하고 요약 통계만 표시
+.IP \(bu 2
+\fB임시 리소스 격리 및 정리\fR: 임시 디렉토리를 생성하여 안전하게 정규화 작업을 수행하며 \fBcleanup\fR 트랩을 통해 종료 시 완벽히 제거합니다.
+.IP \(bu 2
+\fB지능형 Bash 자동완성\fR: 디렉토리, 파일 및 전용 옵션들을 스마트하게 추천합니다.
+
+.SH OPTIONS
+.TP
+.B \-\-source <파일>
+[필수] 비교 기준이 되는 원본 파일 경로
+.TP
+.B \-\-file <패턴>
+[필수] 검색할 대상 파일명 또는 패턴 (예: *.yml, application-*)
+.TP
+.B \-\-directory <디렉토리>
+[선택, . (현재 디렉토리)] 비교 대상을 탐색할 기준 디렉토리
+.TP
+.B \-\-copy\-content
+[선택, 비활성] 내용이 다른 대상 파일의 내용을 기준 파일 내용으로 덮어씁니다.
+.TP
+.B \-\-no\-ne\-files
+[선택, 비활성] 동일하지 않은 파일 목록 출력을 보고서에서 제외합니다.
+.TP
+.B \-\-dry\-run
+[선택, 비활성] 실제 비교 및 파일 복사 과정을 가상으로 시뮬레이션합니다.
+.TP
+.B \-\-help
+[선택] 도움말 메시지를 표시합니다.
+
+.SH EXAMPLES
+.nf
+  diff\-file \-\-source ./config\-template.yml \-\-file "config.yml" \-\-directory /opt/services
+.fi
+.PP
+.nf
+  diff\-file \-\-source ./standard\-env.sh \-\-file "env.sh" \-\-directory . \-\-copy\-content \-\-dry\-run
+.fi
+.PP
+.nf
+  diff\-file \-\-source ./standard\-env.sh \-\-file "env.sh" \-\-directory /data/projects \-\-copy\-content
+.fi
+.PP
+
+.SH COMPLETION
+.B diff-file
+는 Bash 자동완성 스크립트(\fIdiff-file.completion\fR)를 지원한다.
+.BR scriptctl (1)
+또는
+.BR sciectl (1)
+을 통해 설치 시 시스템 표준 completion 경로에 자동으로 등록된다.
+
+.SH SEE ALSO
+.BR scriptctl (1),
+.BR sciectl (1)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.

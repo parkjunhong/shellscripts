@@ -1,0 +1,76 @@
+.TH GIT-MERGE 1 "2026-06-23" "git-merge 1.0.0" "User Commands"
+.SH NAME
+git-merge \- git merge from A to B
+
+.SH SYNOPSIS
+.B git-merge
+[\fIOPTIONS\fR]
+
+.SH DESCRIPTION
+소스(Source) 브랜치의 변경 사항을 타겟(Target) 브랜치로 \fB최신화(\fBgit pull\fR) &rarr; 병합(\fBgit merge\fR) &rarr; 원격 반영(\fBgit push\fR) &rarr; 원래 작업 브랜치 복귀(\fBgit checkout\fR)\fR까지 안전하게 일괄 수행하는 CLI 도구입니다.
+
+.SH KEY FEATURES
+.IP \(bu 2
+\fB안전한 5단계 브랜치 병합 파이프라인 자동화\fR
+.IP \(bu 2
+소스 브랜치 체크아웃 및 \fBgit pull\fR (단, \fB-l/\-\-local\-source\fR 지정 시 생략)
+.IP \(bu 2
+타겟 브랜치 체크아웃 및 \fBgit pull\fR
+.IP \(bu 2
+타겟 브랜치에서 소스 브랜치 병합(\fBgit merge\fR)
+.IP \(bu 2
+병합된 타겟 브랜치 원격 푸시(\fBgit push\fR)
+.IP \(bu 2
+실행 전 머물고 있던 원래 브랜치로 자동 복귀
+.IP \(bu 2
+\fB대화형 브랜치 선택 및 스마트 기본값 할당\fR
+.IP \(bu 2
+\fB-s/\-\-source\fR와 \fB-t/\-\-target\fR을 모두 생략하면 로컬 브랜치 목록을 번호와 함께 출력하여 대화형으로 선택할 수 있습니다.
+.IP \(bu 2
+둘 중 하나만 지정한 경우, 생략된 쪽은 현재 체크아웃된 브랜치로 자동 설정됩니다.
+.IP \(bu 2
+\fB사전 무결성 점검 (Uncommitted 변경사항 보호)\fR
+.IP \(bu 2
+병합 시작 전 커밋되지 않은 변경 사항(\fBgit diff-index \-\-quiet HEAD --\fR)이 존재하면 작업 손실을 막기 위해 즉시 중단하고 커밋 또는 스태시(stash)를 안내합니다.
+
+.SH OPTIONS
+.TP
+.B \-\-source <branch>
+[선택] 병합할 원본(Source) 브랜치 이름
+.TP
+.B \-\-target <branch>
+[선택] 병합 대상(Target) 브랜치 이름
+.TP
+.B \-\-local\-source
+[선택] 소스 브랜치가 원격 없이 로컬에만 존재하는 경우 사용 (source 브랜치의 git pull 생략)
+.TP
+.B \-\-help
+[선택] 도움말 출력
+
+.SH EXAMPLES
+.nf
+  # 1) 'feature/login' 브랜치를 'develop' 브랜치로 병합 및 푸시 후 원래 브랜치로 복귀
+  \&./git\-merge \-\-source feature/login \-\-target develop
+  
+  # 2) 로컬 전용 브랜치를 'develop'에 병합 (소스 브랜치 git pull 생략)
+  \&./git\-merge \-s feature/local\-test \-t develop \-\-local\-source
+  
+  # 3) 옵션 없이 실행하여 번호 선택 방식으로 소스/타겟 브랜치 지정
+  \&./git\-merge
+.fi
+.PP
+
+.SH COMPLETION
+.B git-merge
+는 Bash 자동완성 스크립트(\fIgit-merge.completion\fR)를 지원한다.
+.BR scriptctl (1)
+또는
+.BR sciectl (1)
+을 통해 설치 시 시스템 표준 completion 경로에 자동으로 등록된다.
+
+.SH SEE ALSO
+.BR scriptctl (1),
+.BR sciectl (1)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.

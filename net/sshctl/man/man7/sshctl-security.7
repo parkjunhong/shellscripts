@@ -1,0 +1,59 @@
+.TH SSHCTL-SECURITY 7 "2026-11-05" "sshctl 2.1.0" "Security Architecture"
+.SH NAME
+sshctl-security \- security design and policies for sshctl
+
+.SH DESCRIPTION
+.B sshctl-security
+는
+.BR sshctl (1)
+및
+.BR sshctl.conf (5)
+에서 사용하는 보안 아키텍처, 암복호화 메커니즘, masterkey 무결성 검증 및 CLI 출력 마스킹 정책을 기술한 문서이다.
+
+.SH THREAT MODEL
+.B sshctl
+의 보안 설계는 다음 위협을 방어하도록 설계되었다:
+.IP \(bu 2
+SSH 접속정보(username, password, key path)가 디스크에 평문으로 저장되어 유출되는 위협
+.IP \(bu 2
+설정 파일(\fIconfiguration.conf\fR)이 외부에 노출되었을 때 자격증명이 즉시 탈취되는 위협
+.IP \(bu 2
+잘못된 masterkey 사용으로 인해 설정 데이터가 손상되거나 오복호화되는 문제
+.IP \(bu 2
+터미널 화면 출력(shoulder surfing)을 통해 비밀번호가 평문 노출되는 위협
+
+.SH MASTERKEY & ENCRYPTION
+.IP \(bu 2
+masterkey는 기본적으로 \fI$HOME/.sshctl/masterkey\fR 경로의 OpenSSH 개인키 파일을 사용한다.
+.IP \(bu 2
+masterkey로부터 SHA-256 해시 기반 대칭키(AES-256-CBC)를 파생시켜 민감 필드를 암호화한다.
+.IP \(bu 2
+실행 시마다 masterkey 파일의 MD5 해시를 설정 파일의 \fBmasterkey_md5\fR와 대조하여 키 정합성을 검증한다.
+
+.SH CLI OUTPUT POLICY
+.IP \(bu 2
+\fB\-\-list\-all\fR 및 기본 접속 목록에서는 항상 자격증명을 마스킹(\fB********\fR)하여 표시한다.
+.IP \(bu 2
+\fB\-\-add\-connection\fR, \fB\-\-modify\-connection\fR, \fB\-\-modify\-credential\fR 모드에서는 사용자의 입력 오타 검증을 위해 미리보기 단계에서만 예외적으로 평문을 표시한다.
+.IP \(bu 2
+\fB\-\-delete\-connection\fR 및 \fB\-\-move\-group\-connection\fR에서는 어떠한 경우에도 평문을 노출하지 않는다.
+
+.SH FILE PERMISSIONS
+.TP
+.B $HOME/.sshctl/
+권장 퍼미션: \fB0700\fR
+.TP
+.B $HOME/.sshctl/configuration.conf
+권장 퍼미션: \fB0600\fR
+.TP
+.B $HOME/.sshctl/masterkey
+권장 퍼미션: \fB0600\fR
+
+.SH SEE ALSO
+.BR sshctl (1),
+.BR sshctl.conf (5),
+.BR ssh (1),
+.BR openssl (1)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.

@@ -1,0 +1,73 @@
+.TH AUTHELIA-CRYPTO-HASH 1 "2026-09-03" "authelia-crypto-hash 1.0.0" "User Commands"
+.SH NAME
+authelia-crypto-hash \- authelia-crypto-hash: Generate Authelia password crypto hashes via Docker.
+
+.SH SYNOPSIS
+.B authelia-crypto-hash
+[옵션]
+
+.SH DESCRIPTION
+Docker 컨테이너 환경에서 Authelia 인증 시스템에 사용되는 강력한 암호화 해시(Argon2id, bcrypt, pbkdf2, scrypt, sha2crypt)를 안전하게 생성하는 CLI 도구입니다.
+
+.SH KEY FEATURES
+.IP \(bu 2
+\fB안전한 비밀번호 마스킹 입력 및 복잡도 정책 검증\fR
+.IP \(bu 2
+커맨드라인 히스토리에 평문 비밀번호가 남지 않도록 대화형 마스킹 입력을 제공합니다.
+.IP \(bu 2
+엄격한 보안 정책(최소 10자, 대/소문자·숫자·특수문자 조합, 3개 이상 연속/동일 문자 제한)을 내장 검증합니다 (개발 테스트용 'test' 예외 허용).
+.IP \(bu 2
+\fBDocker 독립 컨테이너 기반 생성\fR
+.IP \(bu 2
+호스트에 별도의 Authelia 바이너리나 종속성을 설치할 필요 없이, 공식 Docker 이미지를 통해 원클릭으로 해시를 생성합니다.
+.IP \(bu 2
+\fB동시 실행 충돌 방지\fR
+.IP \(bu 2
+난수 기반의 임시 고유 컨테이너명을 생성하고 완료 즉시 자동 제거(\fB\-\-rm\fR)하여 다중 사용자 및 동시 작업 환경에서도 안전합니다.
+.IP \(bu 2
+\fB다양한 해시 알고리즘 지원\fR
+.IP \(bu 2
+\fBargon2\fR (기본값), \fBbcrypt\fR, \fBpbkdf2\fR, \fBscrypt\fR, \fBsha2crypt\fR 등 Authelia가 지원하는 모든 표준 해시 알고리즘을 지원합니다.
+.IP \(bu 2
+\fB지능형 Bash 자동 완성 (\fBauthelia-crypto-hash.completion\fR)\fR
+.IP \(bu 2
+옵션 자동 완성뿐만 아니라 로컬에 다운로드된 Authelia Docker 이미지 목록 및 지원 알고리즘 목록을 동적으로 추천합니다.
+
+.SH OPTIONS
+.TP
+.B \-\-algorithm <알고리즘>
+[argon2] 해시 알고리즘 (argon2, bcrypt, pbkdf2, scrypt, sha2crypt)
+.TP
+.B \-\-image <이미지명>
+[authelia/authelia:latest] 실행에 사용할 Authelia Docker 이미지
+.TP
+.B \-\-help
+도움말 메시지 출력 및 종료
+
+.SH EXAMPLES
+.nf
+  # 1) 기본 설정으로 실행 (Argon2id 알고리즘, 대화형 비밀번호 입력)
+  \&./authelia\-crypto\-hash
+  
+  # 2) bcrypt 알고리즘으로 해시 생성
+  \&./authelia\-crypto\-hash \-\-algorithm bcrypt
+  
+  # 3) 특정 버전의 Authelia Docker 이미지 지정
+  \&./authelia\-crypto\-hash \-\-image authelia/authelia:4.38.0 \-\-algorithm argon2
+.fi
+.PP
+
+.SH COMPLETION
+.B authelia-crypto-hash
+는 Bash 자동완성 스크립트(\fIauthelia-crypto-hash.completion\fR)를 지원한다.
+.BR scriptctl (1)
+또는
+.BR sciectl (1)
+을 통해 설치 시 시스템 표준 completion 경로에 자동으로 등록된다.
+
+.SH SEE ALSO
+.BR scriptctl (1),
+.BR sciectl (1)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.

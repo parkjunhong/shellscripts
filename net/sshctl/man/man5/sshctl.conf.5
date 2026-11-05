@@ -1,0 +1,93 @@
+.TH SSHCTL.CONF 5 "2026-11-05" "sshctl 2.1.0" "File Formats"
+.SH NAME
+sshctl.conf \- JSON configuration file for sshctl connections
+
+.SH SYNOPSIS
+.B $HOME/.sshctl/configuration.conf
+
+.SH DESCRIPTION
+.B sshctl.conf
+는
+.BR sshctl (1)
+에서 사용하는 SSH 연결정보를 저장하는 JSON 기반 설정 파일이다.
+
+이 파일에는 \fBversion\fR, \fBmasterkey_md5\fR, \fBconnections\fR 배열이 포함되며,
+각 connection 객체는 SSH 접속에 필요한 host, port, username, credential 정보를 가진다.
+민감정보(username, credential)는 평문이 아니라 암호문 형태(\fBENC::<base64>\fR)로 저장된다.
+
+.SH LOCATION
+기본 설정 파일 위치는 다음과 같다:
+.nf
+  Directory: $HOME/.sshctl
+  File     : $HOME/.sshctl/configuration.conf
+.fi
+\fB\-\-config\fR \fIFILE\fR 옵션을 사용하면 다른 경로의 설정 파일을 지정할 수 있다.
+
+.SH FORMAT
+최상위 JSON 구조는 다음과 같은 필드를 가진다.
+
+.TP
+.B version (string)
+설정 파일 스키마의 버전 문자열이다. (예: "2.0.0")
+.TP
+.B masterkey_md5 (string)
+masterkey 파일의 MD5 해시값을 저장한다. 실행 시 masterkey 파일과의 무결성 및 정합성을 검증하는 데 사용된다.
+.TP
+.B connections (array)
+각 SSH 연결정보 객체(connection)를 담는 배열이다.
+
+.SH CONNECTION OBJECT
+\fBconnections\fR 배열의 각 원소는 다음 필드를 가진다.
+
+.TP
+.B group (string)
+논리적인 그룹 이름 (예: "dev", "ops", "prod").
+.TP
+.B name (string)
+식별하기 쉬운 서버 연결 이름 (예: "api-server", "db-master").
+.TP
+.B host_type (string)
+호스트 주소 형식 ("ipv4", "ipv6", "domain").
+.TP
+.B host (string)
+접속 대상 호스트 IP 주소 또는 도메인.
+.TP
+.B port (number)
+SSH 접속 포트 번호 (기본값: 22).
+.TP
+.B username (string)
+암호화된 SSH 접속 계정명 (\fBENC::<base64>\fR).
+.TP
+.B auth_type (string)
+인증 방식 ("password" 또는 "key").
+.TP
+.B credential (string)
+암호화된 비밀번호 또는 개인키 파일 경로 (\fBENC::<base64>\fR).
+
+.SH EXAMPLE
+.nf
+{
+  "version": "2.0.0",
+  "masterkey_md5": "4a7d1ed414474e4033ac29ccb8653d9b",
+  "connections": [
+    {
+      "group": "dev",
+      "name": "api",
+      "host_type": "domain",
+      "host": "api.example.com",
+      "port": 22,
+      "username": "ENC::ZGV2dXNlcgo=",
+      "auth_type": "password",
+      "credential": "ENC::dGVzdC1jaXBoZXJ0ZXh0LWNvbnRlbnQ="
+    }
+  ]
+}
+.fi
+
+.SH SEE ALSO
+.BR sshctl (1),
+.BR jq (1),
+.BR sshctl-security (7)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.

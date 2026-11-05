@@ -19,7 +19,7 @@
   3. `install-packages` (미설치 OS 패키지 일괄 설치 — 필요 시에만 패키지 인덱스 업데이트 1회 수행, OS 미지원 패키지는 자동 제외)
   4. `default-opts` (`~/bin` PATH 등록, Git 브랜치 프롬프트, `vimrc` 설정 — Linux: `$HOME/.bashrc`, macOS: `$HOME/.bash_profile` 단독)
   5. `installers` (`env/installers/` 소프트웨어 설치 스크립트 보안 검증 및 실행 — Linux: deb/rpm, macOS: brew cask/formula)
-  6. `tools` (CLI 도구 + `.completion` 자동 설치 및 구버전 `.sh` 정리)
+  6. `tools` (CLI 도구 + `.completion` 자동완성 + `man` 매뉴얼 페이지 자동 설치 및 구버전 `.sh` 정리)
   7. `commands` (`env/commands/` 시스템 사후 구성 명령어 실행 — Linux 전용 방화벽 등은 macOS에서 자동 건너뜀)
   8. `ssh-key` (`~/.ssh/authorized_keys` Base64 본문 중복 검사 후 등록)
 - **대화형(TUI) 및 무인 자동화(`--yes`) 하이브리드 지원**: 인자 없이 실행하면 동적 ASCII 테이블 기반 다중 카탈로그/단계 선택 메뉴를 제공하며, `--yes` 지정 시 모든 확인 프롬프트를 자동 승인하여 무인 프로비저닝을 수행합니다.
@@ -103,12 +103,12 @@ sciectl install --installer install-temurin-25-jdk,install-htop --tool git/git-c
 
 ## 💻 설치 안내
 
-저장소의 `utils/scriptctl` 도구를 사용하여 개인 실행 경로(`~/bin`) 또는 시스템 전역 경로에 간편하게 설치할 수 있습니다. 설치 시 Bash 자동완성 스크립트도 시스템 표준 경로에 자동으로 등록됩니다.
+저장소의 `utils/scriptctl` 도구를 사용하여 개인 실행 경로(`~/bin`) 또는 시스템 전역 경로에 간편하게 설치할 수 있습니다. 설치 시 Bash 자동완성 스크립트와 `man` 매뉴얼 페이지도 시스템 표준 경로에 자동으로 등록됩니다.
 
 ```bash
-# 개인 환경 설치 (~/bin, 사용자 자동완성 등록)
+# 개인 환경 설치 (~/bin, 사용자 자동완성 및 ~/.local/share/man 등록)
 ../../utils/scriptctl/scriptctl install --script ./sciectl --target local
 
-# 시스템 전역 설치 (/usr/local/bin, /usr/share/bash-completion/completions/ 등록)
+# 시스템 전역 설치 (/usr/local/bin, /usr/share/bash-completion/completions/ 및 /usr/local/share/man 등록)
 ../../utils/scriptctl/scriptctl install --script ./sciectl --target global
 ```

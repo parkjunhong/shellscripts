@@ -1,0 +1,79 @@
+.TH NEXUS-MAVEN-EXPORT 1 "2026-08-14" "nexus-maven-export 1.0.0" "User Commands"
+.SH NAME
+nexus-maven-export \- nexus-maven-export: Bulk export and download Maven artifacts from Sonatype Nexus Repository
+
+.SH SYNOPSIS
+.B nexus-maven-export
+[\fIOPTIONS\fR]
+
+.SH DESCRIPTION
+\fBnexus-maven-export\fR는 Sonatype Nexus Repository의 지정된 저장소들로부터 전체 Maven 아티팩트(\fBjar\fR, \fBpom\fR, \fBwar\fR 등)를 페이지네이션(\fBcontinuationToken\fR) 방식으로 전수 조회하여 로컬 디렉터리로 계층적 디렉터리 구조를 유지하며 일괄 다운로드(내보내기)하는 CLI 도구입니다.
+
+.SH KEY FEATURES
+.IP \(bu 2
+\fB대용량 저장소 안전 순회\fR: Nexus REST API의 \fBcontinuationToken\fR을 활용하여 수만 개 이상의 아티팩트가 존재하는 대규모 저장소도 메모리 누수 없이 안정적으로 순회합니다.
+.IP \(bu 2
+\fB다중 저장소 동시 지정\fR: \fB\-\-repository\fR 옵션을 여러 번 사용하여 여러 저장소(\fBmaven-releases\fR, \fBmaven-snapshots\fR 등)를 순차적으로 일괄 내보낼 수 있습니다.
+.IP \(bu 2
+\fB원래의 Maven 그룹/아티팩트 구조 보존\fR: Nexus 내부 경로(\fBdownloadUrl\fR의 상대 경로)를 해석하여 원본과 동일한 디렉터리 트리(\fBkr/co/ymtech/...\fR)로 자동 저장합니다.
+.IP \(bu 2
+\fB실패 자동 재시도 및 로깅\fR: 다운로드 실패 시 자동 재시도하며, 작업별 고유 실행 ID(\fBRUN_ID\fR)와 상세 로그를 생성합니다.
+
+.SH OPTIONS
+.PP
+[!NOTE]
+.PP
+본 도구는 Long Option 전용으로 동작하며, Short Option은 지원하지 않습니다.
+.TP
+.B \-\-url <URL>
+[선택, http://localhost:8081] 원본 Nexus 서버 베이스 URL
+.TP
+.B \-\-user <사용자명>
+[선택, admin] Nexus 접속 사용자 계정
+.TP
+.B \-\-output <디렉토리>
+[선택, ./nexus-export] 아티팩트가 다운로드될 최상위 디렉토리
+.TP
+.B \-\-repository <저장소명>
+[선택, 기본 저장소 세트] 내보낼 Nexus 저장소명 (다중 지정 가능)
+.TP
+.B \-\-insecure
+[선택, false] HTTPS 인증서 검증 비활성화 (curl -k)
+.TP
+.B \-\-verbose
+[선택, false] 상세 디버그 로그 출력
+.TP
+.B \-\-help
+[선택] 도움말 및 옵션 안내 출력
+.PP
+[!TIP]
+.PP
+비밀번호는 명령행 옵션 대신 NEXUS_PASSWORD 환경 변수를 사용하거나 실행 시 대화형 프롬프트로 안전하게 입력할 수 있습니다.
+
+.SH EXAMPLES
+.nf
+  nexus\-maven\-export \-\-url "http://nexus.internal:8081" \-\-user admin \-\-output ./backup
+.fi
+.PP
+.nf
+  nexus\-maven\-export \-\-url "http://nexus.internal:8081" \\
+    \-\-output ./export\-releases \\
+    \-\-repository "maven\-releases" \\
+    \-\-repository "custom\-releases"
+.fi
+.PP
+
+.SH COMPLETION
+.B nexus-maven-export
+는 Bash 자동완성 스크립트(\fInexus-maven-export.completion\fR)를 지원한다.
+.BR scriptctl (1)
+또는
+.BR sciectl (1)
+을 통해 설치 시 시스템 표준 completion 경로에 자동으로 등록된다.
+
+.SH SEE ALSO
+.BR scriptctl (1),
+.BR sciectl (1)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.

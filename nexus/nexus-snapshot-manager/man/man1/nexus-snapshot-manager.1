@@ -1,0 +1,80 @@
+.TH NEXUS-SNAPSHOT-MANAGER 1 "2026-06-01" "nexus-snapshot-manager 1.0.0" "User Commands"
+.SH NAME
+nexus-snapshot-manager \- nexus-snapshot-manager: Interactive management and retention cleanup of Nexus Maven SNAPSHOT artifacts
+
+.SH SYNOPSIS
+.B nexus-snapshot-manager
+[\fIOPTIONS\fR]
+
+.SH DESCRIPTION
+\fBnexus-snapshot-manager\fR는 Sonatype Nexus Repository 내 Maven 스냅샷 저장소(\fBmaven-snapshots\fR)를 대상으로 오래되었거나 불필요한 SNAPSHOT 아티팩트들을 대화형(Interactive) 또는 CLI 인자 기반으로 탐색하고, 버전별 보관 개수 설정에 따라 안전하게 선별 삭제하여 저장 공간을 확보하는 관리 CLI 도구입니다.
+
+.SH KEY FEATURES
+.IP \(bu 2
+\fB대화형(Interactive) & 비대화형 모드 지원\fR:
+.IP \(bu 2
+인자 없이 실행 시 그룹 ID 및 아티팩트 ID를 대화형 목록에서 번호로 선택할 수 있습니다.
+.IP \(bu 2
+\fB\-\-group\-id\fR 및 \fB\-\-artifact\-id\fR 옵션을 통해 콤마(\fB,\fR) 구분으로 특정 대상들을 직접 지정할 수 있습니다.
+.IP \(bu 2
+\fB버전별 정밀 탐색 및 보관 개수 제어\fR: 각 아티팩트의 스냅샷 타임스탬프 빌드 목록을 조회하여 최신 N개만 유지하고 나머지를 일괄 삭제할 수 있습니다.
+.IP \(bu 2
+\fB안전한 실행 및 상세 로그 기록\fR: 삭제 시 생성되는 로그 파일은 \fB/tmp\fR 디렉토리에 고유 타임스탬프로 저장되며, 30일 경과 시 자동 청소됩니다.
+.IP \(bu 2
+\fB인터럽트 안전 종료\fR: 실행 도중 언제든지 \fBCtrl + C\fR를 누르면 즉시 작업을 안전하게 중단합니다.
+
+.SH OPTIONS
+.PP
+[!NOTE]
+.PP
+본 도구는 Long Option 전용으로 동작하며, Short Option은 지원하지 않습니다.
+.TP
+.B \-\-group\-id <id>
+[선택] 조회/삭제 대상 Nexus Group ID (콤마로 다중 지정 가능)
+.TP
+.B \-\-artifact\-id <id>
+[선택] 조회/삭제 대상 Nexus Artifact ID (콤마로 다중 지정 가능, Group ID 필수)
+.TP
+.B \-\-help
+[선택] 도움말 및 옵션 안내 출력
+.PP
+[!IMPORTANT]
+.PP
+본 도구 실행 전 다음 환경 변수가 사전에 설정되어 있어야 합니다:
+.PP
+- NEXUS_URL: 대상 Nexus 서버 베이스 URL (예: http://nexus.internal:8081)
+.PP
+- NEXUS_REPO: 스냅샷 저장소 이름 (예: maven-snapshots)
+.PP
+- NEXUS_USER: API 권한을 가진 계정명
+.PP
+- NEXUS_PASS: 계정 비밀번호
+
+.SH EXAMPLES
+.nf
+  nexus\-snapshot\-manager
+.fi
+.PP
+.nf
+  nexus\-snapshot\-manager \-\-group\-id "kr.co.ymtech,com.example"
+.fi
+.PP
+.nf
+  nexus\-snapshot\-manager \-\-group\-id "kr.co.ymtech" \-\-artifact\-id "core\-module,web\-module"
+.fi
+.PP
+
+.SH COMPLETION
+.B nexus-snapshot-manager
+는 Bash 자동완성 스크립트(\fInexus-snapshot-manager.completion\fR)를 지원한다.
+.BR scriptctl (1)
+또는
+.BR sciectl (1)
+을 통해 설치 시 시스템 표준 completion 경로에 자동으로 등록된다.
+
+.SH SEE ALSO
+.BR scriptctl (1),
+.BR sciectl (1)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.

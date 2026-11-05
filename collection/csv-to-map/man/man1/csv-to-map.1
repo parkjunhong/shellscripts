@@ -1,0 +1,82 @@
+.TH CSV-TO-MAP 1 "2021-06-24" "csv-to-map 1.0.0" "User Commands"
+.SH NAME
+csv-to-map \- csv-to-map: Create key-value map file from CSV data by column indexes
+
+.SH SYNOPSIS
+.B csv-to-map
+[\fIOPTIONS\fR]
+
+.SH DESCRIPTION
+\fBcsv-to-map\fR은 CSV 형태의 텍스트 데이터를 읽어, 지정된 컬럼 인덱스를 기반으로 Key-Value 형태의 맵(\fB.map\fR) 파일로 변환 및 추출하는 CLI 도구입니다.
+
+.SH KEY FEATURES
+.IP \(bu 2
+\fB컬럼 인덱스 기반 키-값 매핑\fR: 0부터 시작하는 인덱스를 지정하여 임의의 컬럼을 Key(\fB\-\-index\-key\fR)와 Value(\fB\-\-index\-value\fR)로 유연하게 추출합니다.
+.IP \(bu 2
+\fB인용 부호(\fBQuote\fR) 지원\fR: 필드 내 구분자가 포함되어 따옴표로 감싸진 필드도 정확하게 파싱합니다.
+.IP \(bu 2
+\fB헤더 건너뛰기 지원\fR: \fB\-\-skip\fR 옵션으로 CSV 첫 번째 행(헤더)을 손쉽게 건너뜁니다.
+.IP \(bu 2
+\fB실시간 진행률 표시\fR: 대용량 CSV 파일 처리 시 읽은 행 수와 경과 시간을 실시간 프로그레스 바로 확인할 수 있습니다.
+
+.SH OPTIONS
+.PP
+[!NOTE]
+.PP
+본 도구는 Long Option 전용으로 동작하며, Short Option은 지원하지 않습니다.
+.TP
+.B \-\-file <경로> (또는 파일명)
+[필수] 처리할 대상 CSV 파일 경로
+.TP
+.B \-\-delim <구분자>
+[필수] CSV 컬럼 구분자 (예: ,, \\t, |)
+.TP
+.B \-\-index\-key <인덱스>
+[필수] Map의 Key로 사용할 컬럼의 0-based 인덱스
+.TP
+.B \-\-index\-value <인덱스>
+[필수] Map의 Value로 사용할 컬럼의 0-based 인덱스
+.TP
+.B \-\-quotechar <문자>
+[선택, " (큰따옴표)] 필드를 감싸는 인용 부호 문자
+.TP
+.B \-\-skip
+[선택, false] 첫 번째 행(헤더 라인) 건너뛰기 여부
+.TP
+.B \-\-write\-count <개수>
+[선택, 2] 진행률 표시 및 데이터 기록 갱신 주기
+.TP
+.B \-\-verbose
+[선택, false] 상세 에러 및 디버깅 메시지 출력
+.TP
+.B \-\-help
+[선택] 도움말 및 사용법 안내 출력
+
+.SH EXAMPLES
+.nf
+  csv\-to\-map \-\-file users.csv \-\-delim "," \-\-index\-key 0 \-\-index\-value 2
+.fi
+.PP
+.nf
+  csv\-to\-map \-\-file products.csv \-\-delim "," \-\-index\-key 1 \-\-index\-value 4 \-\-skip
+.fi
+.PP
+.nf
+  csv\-to\-map \-\-file data.tsv \-\-delim $'\\t' \-\-index\-key 0 \-\-index\-value 1 \-\-skip
+.fi
+.PP
+
+.SH COMPLETION
+.B csv-to-map
+는 Bash 자동완성 스크립트(\fIcsv-to-map.completion\fR)를 지원한다.
+.BR scriptctl (1)
+또는
+.BR sciectl (1)
+을 통해 설치 시 시스템 표준 completion 경로에 자동으로 등록된다.
+
+.SH SEE ALSO
+.BR scriptctl (1),
+.BR sciectl (1)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.

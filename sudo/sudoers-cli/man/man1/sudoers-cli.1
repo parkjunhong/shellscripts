@@ -1,0 +1,96 @@
+.TH SUDOERS-CLI 1 "2026-06-05" "sudoers-cli 1.0.0" "User Commands"
+.SH NAME
+sudoers-cli \- manage sudoers policies for users and groups with visudo validation
+
+.SH SYNOPSIS
+.B sudoers-cli
+[\fIOPTIONS\fR]
+
+.SH DESCRIPTION
+시스템 계정 또는 그룹을 대상으로 \fB/etc/sudoers.d/\fR 디렉토리 하위에 안전하고 표준화된 Sudoers 권한 정책을 생성·병합하고, \fBvisudo\fR 엔진을 통해 문법 정합성을 사전 검증하여 오류 발생 시 자동 롤백하는 안전한 CLI 권한 관리 도구입니다.
+
+.SH KEY FEATURES
+.IP \(bu 2
+\fB계정 및 그룹 대상 정책 분리 관리\fR:
+.IP \(bu 2
+사용자 계정(\fB-u, \-\-user\fR): \fB/etc/sudoers.d/user-<계정명>\fR으로 격리 생성
+.IP \(bu 2
+시스템 그룹(\fB-g, \-\-group\fR): \fB/etc/sudoers.d/group-<그룹명>\fR으로 격리 생성
+.IP \(bu 2
+\fB세부 정책 속성 및 Sudoers 태그 제어\fR:
+.IP \(bu 2
+호스트(\fB-H, \-\-host\fR, 기본값: \fBALL\fR), RunAs(\fB-r, \-\-runas\fR, 기본값: \fBALL\fR), 태그 옵션(\fB-o, \-\-option\fR, 기본값: \fBNONE\fR) 지정
+.IP \(bu 2
+\fBNOPASSWD\fR, \fBPASSWD\fR, \fBNOEXEC\fR, \fBEXEC\fR, \fBSETENV\fR, \fBNOSETENV\fR, \fBLOG_INPUT\fR, \fBNOLOG_INPUT\fR 등 복수 태그 옵션 지원
+.IP \(bu 2
+\fB실행 명령어 검증 및 패키지 설치 연계\fR:
+.IP \(bu 2
+명령어의 절대 경로(\fBcommand -v\fR, \fBrealpath\fR)를 자동 해석하여 기재
+.IP \(bu 2
+시스템에 존재하지 않는 명령어 입력 시 OS 패키지 관리자(\fBdnf\fR, \fByum\fR, \fBapt-get\fR)를 감지하여 대화형 설치 지원
+.IP \(bu 2
+\fB지능형 정책 병합(Merge) 및 최적화\fR:
+.IP \(bu 2
+동일한 접두사(호스트, RunAs, 옵션)를 가진 기존 정책 라인을 찾아 신규 명령어를 안전하게 병합
+.IP \(bu 2
+전역 권한인 \fBALL\fR이 추가되거나 이미 등록된 경우, 불필요한 개별 명령어를 자동으로 흡수 및 중복 제거
+.IP \(bu 2
+\fB원자적 검증 및 자동 롤백 (Atomic Validation & Rollback)\fR:
+.IP \(bu 2
+설정 파일 생성 직후 \fBchmod 0440\fR 권한을 설정하고 \fBvisudo -c -f\fR 명령어로 문법 정합성을 사전 검증
+.IP \(bu 2
+문법 오류 발생 시 생성 파일을 즉시 삭제(롤백)하여 관리자 잠김(Lockout) 사고를 원천 방지
+.IP \(bu 2
+\fB고급 Bash 자동완성\fR: 시스템 계정(\fB/etc/passwd\fR), 시스템 그룹(\fB/etc/group\fR), 태그 옵션 및 시스템 실행 명령어(\fBcompgen -c\fR, \fBcompgen -f\fR)를 상황에 맞게 동적으로 추천합니다.
+
+.SH OPTIONS
+.TP
+.B \-\-user <계정명>
+[조건부 필수] 권한을 부여할 대상 시스템 계정 (계정 또는 그룹 중 택 1 필수)
+.TP
+.B \-\-group <그룹명>
+[조건부 필수] 권한을 부여할 대상 시스템 그룹 (계정 또는 그룹 중 택 1 필수)
+.TP
+.B \-\-host <호스트>
+[선택, ALL] 명령어 실행을 허용할 호스트 (예: ALL, localhost, web-01)
+.TP
+.B \-\-runas <사용자>
+[선택, ALL] 명령 실행 시 차용할 권한 (예: ALL, root, tomcat:was)
+.TP
+.B \-\-option <옵션>
+[선택, NONE] Sudoers 태그 옵션 (예: NOPASSWD, NOEXEC, SETENV 등 콤마 구분)
+.TP
+.B [명령어1] [명령어2]...
+[필수] 실행을 허용할 명령어 목록 (절대 경로, 바이너리명 또는 ALL)
+.TP
+.B \-\-help
+[선택] 도움말 메시지를 표시합니다.
+
+.SH EXAMPLES
+.nf
+  sudoers\-cli \-\-user devuser \-\-option NOPASSWD /usr/bin/systemctl /usr/bin/cat
+.fi
+.PP
+.nf
+  sudoers\-cli \-\-group devops \-\-host web\-server\-01 \-\-option NOPASSWD,NOEXEC /usr/bin/systemctl
+.fi
+.PP
+.nf
+  sudoers\-cli \-\-user admin ALL
+.fi
+.PP
+
+.SH COMPLETION
+.B sudoers-cli
+는 Bash 자동완성 스크립트(\fIsudoers-cli.completion\fR)를 지원한다.
+.BR scriptctl (1)
+또는
+.BR sciectl (1)
+을 통해 설치 시 시스템 표준 completion 경로에 자동으로 등록된다.
+
+.SH SEE ALSO
+.BR scriptctl (1),
+.BR sciectl (1)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.

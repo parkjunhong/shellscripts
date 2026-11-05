@@ -1,0 +1,105 @@
+.TH NEXUS-MAVEN-IMPORT 1 "2026-08-14" "nexus-maven-import 1.0.0" "User Commands"
+.SH NAME
+nexus-maven-import \- nexus-maven-import: Bulk import and migrate Maven artifacts to Sonatype Nexus Repository
+
+.SH SYNOPSIS
+.B nexus-maven-import
+[\fIOPTIONS\fR]
+
+.SH DESCRIPTION
+\fBnexus-maven-import\fR는 로컬 디렉토리에 백업되거나 내보내진 Maven 아티팩트(\fBjar\fR, \fBpom\fR, \fBwar\fR 등)들을 Sonatype Nexus Repository의 지정된 저장소로 일괄 업로드하고 마이그레이션하는 고도화된 운영 관리 CLI 도구입니다.
+
+.SH KEY FEATURES
+.IP \(bu 2
+\fB저장소 1:1 매핑 업로드\fR: \fB\-\-repository\-map <src_repo>=<target_repo>\fR 옵션을 통해 원본 저장소 구조를 새로운 대상 저장소로 유연하게 변환하여 업로드합니다.
+.IP \(bu 2
+\fB원격 존재 여부 사전 검증\fR: 기본적으로 Nexus REST API를 조회하여 원격에 이미 동일 아티팩트가 존재하는지 검증하고 건너뜁니다. (강제 덮어쓰기는 \fB\-\-force\fR, 원격 검증 생략은 \fB\-\-no\-verify\fR)
+.IP \(bu 2
+\fB실패 자동 재시도 및 백오프\fR: 네트워크 불안정에 대비하여 지수 백오프 기반의 자동 재시도 로직을 탑재하고 있습니다.
+.IP \(bu 2
+\fB체크섬 및 메타데이터 스마트 처리\fR: Nexus가 자체 계산하는 체크섬 파일(\fB.sha1\fR, \fB.md5\fR 등)을 스마트하게 필터링하며 필요 시 \fB\-\-include\-checksum\-assets\fR로 포함할 수 있습니다.
+.IP \(bu 2
+\fB작업 제한 및 부분 마이그레이션\fR: \fB\-\-path\-prefix\fR를 통한 특정 경로 필터링 및 \fB\-\-limit\fR을 통한 테스트 업로드 건수 제한을 지원합니다.
+.IP \(bu 2
+\fBDry-run 시뮬레이션 지원\fR: \fB\-\-dry\-run\fR 옵션으로 실제 파일 업로드 없이 업로드 대상 목록 및 계획을 안전하게 확인합니다.
+
+.SH OPTIONS
+.PP
+[!NOTE]
+.PP
+본 도구는 Long Option 전용으로 동작하며, Short Option은 지원하지 않습니다.
+.TP
+.B \-\-url <URL>
+[선택, http://localhost:8081] 대상 Nexus 서버 베이스 URL
+.TP
+.B \-\-user <사용자명>
+[선택, migration-test] Nexus 접속 사용자 계정
+.TP
+.B \-\-input <디렉토리>
+[선택, ./nexus-export] 업로드할 아티팩트가 위치한 최상위 디렉토리
+.TP
+.B \-\-repository\-map <원문=대상>
+[선택, 기본 릴리스/스냅샷 매핑] 저장소 매핑 규칙 (예: maven-releases=target-releases)
+.TP
+.B \-\-path\-prefix <접두어>
+[선택, 없음] 특정 하위 경로(그룹 ID 등)만 필터링하여 업로드
+.TP
+.B \-\-limit <개수>
+[선택, 0 (전체)] 업로드할 최대 아티팩트 개수 제한
+.TP
+.B \-\-dry\-run
+[선택, false] 실제 업로드를 수행하지 않고 계획만 시뮬레이션 출력
+.TP
+.B \-\-force
+[선택, false] 원격에 동일 파일이 존재해도 강제 덮어쓰기 업로드
+.TP
+.B \-\-no\-verify
+[선택, false] 업로드 전 원격 존재 여부 사전 검증 생략
+.TP
+.B \-\-include\-checksum\-assets
+[선택, false] \&.sha1, .md5 등의 체크섬 파일도 함께 업로드
+.TP
+.B \-\-insecure
+[선택, false] HTTPS 인증서 검증 비활성화 (curl -k)
+.TP
+.B \-\-verbose
+[선택, false] 상세 디버그 로그 출력
+.TP
+.B \-\-help
+[선택] 도움말 및 옵션 안내 출력
+.PP
+[!TIP]
+.PP
+Nexus 사용자 비밀번호는 보안을 위해 명령행 인자가 아닌 NEXUS_PASSWORD 환경 변수를 사용하거나 실행 시 대화형 프롬프트로 입력하는 것을 권장합니다.
+
+.SH EXAMPLES
+.nf
+  nexus\-maven\-import \-\-url "http://nexus.internal:8081" \-\-user admin \-\-input ./nexus\-export
+.fi
+.PP
+.nf
+  nexus\-maven\-import \-\-url "http://nexus.internal:8081" \\
+    \-\-input ./backup \\
+    \-\-repository\-map "old\-releases=new\-releases" \\
+    \-\-path\-prefix "kr/co/ymtech"
+.fi
+.PP
+.nf
+  nexus\-maven\-import \-\-input ./nexus\-export \-\-limit 10 \-\-dry\-run
+.fi
+.PP
+
+.SH COMPLETION
+.B nexus-maven-import
+는 Bash 자동완성 스크립트(\fInexus-maven-import.completion\fR)를 지원한다.
+.BR scriptctl (1)
+또는
+.BR sciectl (1)
+을 통해 설치 시 시스템 표준 completion 경로에 자동으로 등록된다.
+
+.SH SEE ALSO
+.BR scriptctl (1),
+.BR sciectl (1)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.

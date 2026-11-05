@@ -1,0 +1,75 @@
+.TH REDIS-SEARCH 1 "2021-04-19" "redis-search 1.0.0" "User Commands"
+.SH NAME
+redis-search \- redis-search: Advanced Redis querying, regex filtering and cursor scanning CLI tool
+
+.SH SYNOPSIS
+.B redis-search
+<database> <command | built-in> [arguments...] [\-\-key] [\-\-help] [\-\-dbinfo]
+
+.SH DESCRIPTION
+\fBredis-search\fR는 Redis 데이터베이스를 대상으로 커서 기반의 안전한 전체 키 스캔(\fBscan\fR), 정규식 패턴 매칭 필터링, 다중값 및 단일값 데이터 조회를 지원하는 고도화된 Redis CLI 검색 도구입니다.
+
+.SH KEY FEATURES
+.IP \(bu 2
+\fB정규식 패턴 필터링\fR:
+.IP \(bu 2
+\fB__filter_in__\fR: 정규식 패턴과 일치하는 키만 필터링하여 데이터 조회
+.IP \(bu 2
+\fB__filter_out__\fR: 정규식 패턴과 일치하지 않는 키만 필터링하여 데이터 조회
+.IP \(bu 2
+\fB안전한 전체 데이터 조회 (\fB__get_all__\fR)\fR: Redis 서버의 부하를 유발하는 \fBkeys *\fR 대신 커서 기반의 \fBscan\fR 명령어를 사용하여 대용량 데이터베이스에서도 안전하게 전체 키를 순회합니다.
+.IP \(bu 2
+\fBKey-Value 매핑 출력\fR: \fB\-\-key\fR 옵션을 추가하면 키와 값을 탭(\fB\\t\fR)으로 구분하여 직관적으로 출력합니다.
+.IP \(bu 2
+\fB다양한 자료구조 지원\fR: \fBget\fR, \fBlrange\fR, \fBhgetall\fR, \fBsmembers\fR 등 다양한 Redis 명령어와 유연하게 결합됩니다.
+
+.SH OPTIONS
+.PP
+[!NOTE]
+.PP
+본 도구는 Long Option 전용으로 동작하며, Short Option은 지원하지 않습니다.
+.SS 명령어 형식
+.TP
+.B 파라미터 / 옵션
+[필수 여부] 설명
+.TP
+.B <database>
+[필수] 대상 Redis 데이터베이스 번호 (0 ~ 15)
+.TP
+.B <command>
+[필수] 일반 Redis 명령어 또는 아래의 내장 커맨드
+.TP
+.B \-\-key
+[선택] 조회 결과 출력 시 키<tab>값 형식으로 키를 함께 출력
+.TP
+.B \-\-dbinfo
+[선택] Redis 데이터베이스 정보 확인
+.TP
+.B \-\-help
+[선택] 도움말 및 사용법 안내 출력
+.SS 내장 커맨드 (Built-in Commands)
+
+.SH EXAMPLES
+.nf
+  redis\-search 4 __filter_in__ "^session_" get \-\-key
+.fi
+.PP
+.nf
+  redis\-search 1 __get_all__ lrange 0 \-1 \-\-key
+.fi
+.PP
+
+.SH COMPLETION
+.B redis-search
+는 Bash 자동완성 스크립트(\fIredis-search.completion\fR)를 지원한다.
+.BR scriptctl (1)
+또는
+.BR sciectl (1)
+을 통해 설치 시 시스템 표준 completion 경로에 자동으로 등록된다.
+
+.SH SEE ALSO
+.BR scriptctl (1),
+.BR sciectl (1)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.

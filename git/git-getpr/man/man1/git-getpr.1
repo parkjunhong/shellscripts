@@ -1,0 +1,82 @@
+.TH GIT-GETPR 1 "2026-07-08" "git-getpr 1.0.0" "User Commands"
+.SH NAME
+git-getpr \- Download specific files or directories from a remote Git repository (sparse-checkout).
+
+.SH SYNOPSIS
+.B git-getpr
+[\fIOPTIONS\fR]
+
+.SH DESCRIPTION
+원격 Git 저장소 전체를 복제하지 않고 \fBGit Sparse-Checkout(\fB\-\-filter=blob:none \-\-no\-checkout\fR)\fR을 활용하여, 원하는 \fB특정 디렉토리 또는 단일 파일만 빠르게 다운로드\fR하는 CLI 도구입니다.
+
+.SH KEY FEATURES
+.IP \(bu 2
+\fB초경량 부분 다운로드 (Blobless Clone + Sparse-Checkout)\fR
+.IP \(bu 2
+대용량 저장소에서 전체 히스토리나 불필요한 파일을 받지 않고, 지정한 리소스(\fBdirectory\fR 또는 \fBfile\fR)만 선택적으로 체크아웃하여 지정 경로로 추출합니다.
+.IP \(bu 2
+\fBSHA-256 해시 비교 및 지능형 덮어쓰기/백업 프롬프트\fR
+.IP \(bu 2
+대상 경로에 이미 동일한 파일/디렉토리가 존재하는 경우 SHA-256 해시를 비교하여 내용이 동일하면 건너뛰고, 다를 경우 \fB현재만 덮어쓰기(\fBy\fR), 전체 덮어쓰기(\fBf\fR), 현재만 백업 후 진행(\fBb\fR), 전체 백업 후 진행(\fBu\fR), 건너뛰기(\fBn\fR/\fBx\fR)\fR 대화형 선택지를 제공합니다.
+.IP \(bu 2
+\fB환경변수(\fBGIT_GETPR_GIT_URL\fR) 연동 및 순차적 Wizard 자동완성\fR
+.IP \(bu 2
+\fBGIT_GETPR_GIT_URL\fR 환경변수에 자주 사용하는 Git 서버 URL들을 콤마(\fB,\fR)로 등록해 두면 \fB-g\fR 생략 시 대화형 선택 메뉴를 제공하며, 탭(TAB) 입력 시에도 URL 및 원격 브랜치 목록(\fBgit ls-remote\fR)을 동적으로 자동 완성합니다.
+
+.SH OPTIONS
+.TP
+.B \-\-git\-url <url>
+[선택*] Git 서비스 기본 URL (https://..., 미입력 시 GIT_GETPR_GIT_URL 환경변수 사용)
+.TP
+.B \-\-project <path>
+[필수] Git 서비스 내 프로젝트 경로 (예: parkjunhong/shellscripts)
+.TP
+.B \-\-resource\-type <type>
+[필수] 다운로드할 리소스 유형 (directory/d: 디렉토리, file/f: 단일 파일)
+.TP
+.B \-\-resource <path>
+[필수] 저장소 내 다운로드할 대상의 상대 경로
+.TP
+.B \-\-branch <branch>
+[선택] 대상 브랜치 이름 (기본값: main, 실패 시 master 자동 재시도)
+.TP
+.B \-\-output\-path <path>
+[선택] 로컬에 저장할 경로 (기본값: 현재 디렉토리 하위에 리소스의 마지막 이름)
+.TP
+.B \-\-help
+[선택] 도움말 출력
+
+.SH EXAMPLES
+.nf
+  # 1) 원격 저장소의 특정 디렉토리(net/sshctl)만 현재 경로로 다운로드
+  \&./git\-getpr \\
+    \-\-git\-url https://github.com \\
+    \-\-project parkjunhong/shellscripts \\
+    \-\-resource\-type directory \\
+    \-\-resource net/sshctl
+  
+  # 2) 특정 브랜치의 단일 파일만 지정 경로로 다운로드
+  \&./git\-getpr \\
+    \-g https://github.com \\
+    \-p parkjunhong/shellscripts \\
+    \-b main \\
+    \-t file \\
+    \-r env/setup\-env.sh \\
+    \-o ./setup\-env.sh
+.fi
+.PP
+
+.SH COMPLETION
+.B git-getpr
+는 Bash 자동완성 스크립트(\fIgit-getpr.completion\fR)를 지원한다.
+.BR scriptctl (1)
+또는
+.BR sciectl (1)
+을 통해 설치 시 시스템 표준 completion 경로에 자동으로 등록된다.
+
+.SH SEE ALSO
+.BR scriptctl (1),
+.BR sciectl (1)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.

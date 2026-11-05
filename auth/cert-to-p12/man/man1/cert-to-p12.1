@@ -1,0 +1,74 @@
+.TH CERT-TO-P12 1 "2018-12-20" "cert-to-p12 1.0.0" "User Commands"
+.SH NAME
+cert-to-p12 \- convert PEM certificate and key files to a PKCS#12 (.p12) file
+
+.SH SYNOPSIS
+.B cert-to-p12
+[\fIOPTIONS\fR]
+
+.SH DESCRIPTION
+PEM 형식의 SSL/TLS 인증서(\fB\-\-cert\fR), 개인키(\fB\-\-privkey\fR), 체인 인증서(\fB\-\-chain\fR) 파일을 입력받아 OpenSSL 기반으로 표준 \fBPKCS#12(\fB.p12\fR) 키스토어 파일\fR로 변환하는 CLI 유틸리티입니다.
+
+.SH KEY FEATURES
+.IP \(bu 2
+\fB표준 PKCS#12(\fB.p12\fR) 번들 변환\fR
+.IP \(bu 2
+서버 인증서, 개인키, CA 체인 파일을 하나의 암호화된 \fB.p12\fR 파일로 통합 생성하여 Java(Spring Boot/Tomcat) 및 다양한 웹 서버에 즉시 적용할 수 있습니다.
+.IP \(bu 2
+\fB사전 파일 무결성 및 덮어쓰기 보호\fR
+.IP \(bu 2
+변환 전 입력 PEM 파일들의 존재 여부를 검증하며, 동일한 이름의 \fB.p12\fR 출력 파일이 이미 존재할 경우 사용자 확인을 거쳐 안전하게 처리합니다.
+.IP \(bu 2
+\fB개인키 암호(\fB-passin\fR) 대화형 지원\fR
+.IP \(bu 2
+원본 PEM 개인키에 암호가 설정되어 있는 경우 대화형 프롬프트를 통해 입력받아 안전하게 복호화 및 변환을 수행합니다.
+.IP \(bu 2
+\fB지능형 Bash 자동완성 (\fBcert-to-p12.completion\fR)\fR
+.IP \(bu 2
+이미 입력한 옵션은 중복 추천에서 제외하며, 파일 경로가 필요한 옵션 뒤에서는 파일/디렉토리 경로 자동완성을 제공합니다.
+
+.SH OPTIONS
+.TP
+.B \-\-cert <파일경로>
+[필수] 변환할 PEM 인증서 파일 경로 (예: cert.pem, fullchain.pem)
+.TP
+.B \-\-privkey <파일경로>
+[필수] 변환할 PEM 개인키 파일 경로 (예: privkey.pem)
+.TP
+.B \-\-chain <파일경로>
+[필수] 함께 번들링할 PEM CA 체인 파일 경로 (예: chain.pem)
+.TP
+.B \-\-pkcs12\-file <파일경로>
+[필수] 생성할 PKCS#12(.p12) 출력 파일 경로
+.TP
+.B \-\-pkcs12\-password <비밀번호>
+[필수] 생성될 PKCS#12 파일에 설정할 내보내기(Export) 비밀번호
+.TP
+.B \-\-help
+[선택] 도움말 메시지를 출력하고 종료합니다.
+
+.SH EXAMPLES
+.nf
+  cert\-to\-p12 \\
+    \-\-cert ./cert1.pem \\
+    \-\-privkey ./privkey1.pem \\
+    \-\-chain ./chain1.pem \\
+    \-\-pkcs12\-file ./keystore.p12 \\
+    \-\-pkcs12\-password "MySecretPassword123!"
+.fi
+.PP
+
+.SH COMPLETION
+.B cert-to-p12
+는 Bash 자동완성 스크립트(\fIcert-to-p12.completion\fR)를 지원한다.
+.BR scriptctl (1)
+또는
+.BR sciectl (1)
+을 통해 설치 시 시스템 표준 completion 경로에 자동으로 등록된다.
+
+.SH SEE ALSO
+.BR scriptctl (1),
+.BR sciectl (1)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.

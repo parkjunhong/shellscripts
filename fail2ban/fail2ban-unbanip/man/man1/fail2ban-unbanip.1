@@ -1,0 +1,68 @@
+.TH FAIL2BAN-UNBANIP 1 "2026-09-03" "fail2ban-unbanip 1.0.0" "User Commands"
+.SH NAME
+fail2ban-unbanip \- Fail2ban Interactive Unban IP Manager
+
+.SH SYNOPSIS
+.B fail2ban-unbanip
+[\fIOPTIONS\fR]
+
+.SH DESCRIPTION
+\fBfail2ban-client\fR를 래핑하여 현재 활성화된 \fBFail2ban 감옥(Jail) 목록과 각 감옥에 차단된 IP 현황을 대화형(Interactive) 테이블로 조회\fR하고, 번호 선택만으로 \fB단일 또는 다중 IP 차단을 손쉽게 해제(\fBunbanip\fR)\fR하는 관리 도구입니다.
+
+.SH KEY FEATURES
+.IP \(bu 2
+\fB전체 Jail 및 차단 IP 현황 한눈에 조회\fR
+.IP \(bu 2
+실행 즉시 활성화된 모든 Fail2ban Jail을 순회하며 각 Jail별 \fB현재 차단 수(\fBCurrently banned\fR)\fR와 \fB차단된 IP 목록(\fBBanned IP list\fR)\fR을 정렬된 표 형태로 출력합니다.
+.IP \(bu 2
+\fB대화형(Interactive) 번호 선택 및 다중 IP 일괄 해제\fR
+.IP \(bu 2
+복잡한 \fBfail2ban-client set <jail> unbanip <ip>\fR 명령어나 긴 IP 주소를 직접 타이핑할 필요 없이, 화면에 표시된 Jail 번호(\fB#\fR)와 IP 번호(\fB[01]\fR, \fB[02]\fR 등)를 입력하여 해제할 수 있습니다.
+.IP \(bu 2
+IP 번호 입력 시 콤마(\fB,\fR)로 구분(예: \fB1,3,4\fR)하여 여러 개의 차단 IP를 한 번에 일괄 해제할 수 있으며, 중복 입력된 번호는 자동으로 제거됩니다.
+.IP \(bu 2
+\fB해제 후 실시간 상태 재조회 및 검증\fR
+.IP \(bu 2
+차단 해제 명령 수행 후 각 IP별 성공/실패 요약을 출력하고, 해당 Jail의 최신 상태(\fBfail2ban-client status <jail>\fR)를 즉시 다시 조회하여 차단이 정상 해제되었는지 검증합니다.
+.IP \(bu 2
+\fB데몬 연결 사전 점검 및 권한 자동 처리\fR
+.IP \(bu 2
+실행 시 \fBfail2ban-client ping\fR을 통해 데몬 구동 상태 및 소켓 응답(\fBpong\fR)을 먼저 검증하며, 일반 사용자 실행 시 내부적으로 \fBsudo\fR 권한을 확인합니다.
+.IP \(bu 2
+\fB데몬 점검\fR: \fBfail2ban-client\fR 설치 여부 및 데몬 동작 상태(\fBping\fR) 확인
+.IP \(bu 2
+\fB전체 현황 출력 및 Jail 선택\fR: 활성화된 전체 Jail 목록과 차단 현황 표를 출력하고 대상 Jail 번호(\fB#\fR) 입력 대기 (\fBEnter\fR 입력 시 즉시 종료)
+.IP \(bu 2
+\fB선택한 Jail 상세 조회 및 IP 선택\fR: 해당 Jail의 상세 상태와 번호가 부여된 차단 IP 목록을 출력하고 해제할 IP 번호(콤마 구분 다중 선택 가능) 입력 대기
+.IP \(bu 2
+\fB차단 해제 및 결과 확인\fR: 선택한 IP들에 대해 \fBunbanip\fR을 실행하고 최신 Jail 상태를 재출력
+
+.SH OPTIONS
+.TP
+.B \-\-help
+[선택] 도움말 및 진행 순서 안내를 출력하고 종료합니다.
+
+.SH EXAMPLES
+.nf
+  # 대화형 모드로 Fail2ban 차단 IP 조회 및 해제 실행
+  \&./fail2ban\-unbanip
+  
+  # 도움말 확인
+  \&./fail2ban\-unbanip \-\-help
+.fi
+.PP
+
+.SH COMPLETION
+.B fail2ban-unbanip
+는 Bash 자동완성 스크립트(\fIfail2ban-unbanip.completion\fR)를 지원한다.
+.BR scriptctl (1)
+또는
+.BR sciectl (1)
+을 통해 설치 시 시스템 표준 completion 경로에 자동으로 등록된다.
+
+.SH SEE ALSO
+.BR scriptctl (1),
+.BR sciectl (1)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.

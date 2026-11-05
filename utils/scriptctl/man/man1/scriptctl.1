@@ -1,0 +1,109 @@
+.TH SCRIPTCTL 1 "2026-11-05" "scriptctl 1.0.0" "User Commands"
+.SH NAME
+scriptctl \- Custom Script, Bash Completion & Man Page Lifecycle Manager
+
+.SH SYNOPSIS
+.B scriptctl install
+\fB\-\-script\fR \fIPATH\fR [\fB\-\-target\fR \fIlocal\fR|\fIglobal\fR] [\fB\-\-force\fR] [\fB\-\-dry\-run\fR]
+.br
+.B scriptctl remove
+\fB\-\-name\fR \fINAME_OR_PATTERN\fR [\fB\-\-target\fR \fIlocal\fR|\fIglobal\fR|\fIall\fR] [\fB\-\-force\fR] [\fB\-\-dry\-run\fR]
+.br
+.B scriptctl list
+[\fB\-\-target\fR \fIlocal\fR|\fIglobal\fR|\fIall\fR]
+
+.SH DESCRIPTION
+.B scriptctl
+은 커스텀 CLI 스크립트와 연관된 Bash 자동완성(\fI.completion\fR) 파일 및 \fIman\fR 매뉴얼 페이지의 설치(\fBinstall\fR), 삭제(\fBremove\fR), 현황 조회(\fBlist\fR)를 통합 관리하는 CLI 도구이다.
+
+단축 옵션(Short Option)은 지원하지 않으며 정규 Long Option만 사용한다. 보안 원칙에 따라 외부에서 \fBsudo scriptctl\fR 형태로 직접 실행하는 것을 차단하며, 대상 경로에 관리자 권한이 필요한 시점에만 내부적으로 \fBsudo\fR 인증을 요청한다. 또한 OS 핵심 유틸리티 블랙리스트, ELF 바이너리 및 패키지 매니저(\fBrpm\fR/\fBdpkg\fR) 소속 파일은 덮어쓰기 및 삭제가 원천 차단된다.
+
+.SH SUBCOMMANDS
+.TP
+.B install
+지정한 커스텀 스크립트를 개인 실행 공간(\fI$HOME/bin\fR) 또는 전역 실행 공간(\fI/usr/local/bin\fR)에 설치하고, 동일 디렉토리 내 연관된 \fI<script>.completion\fR 파일과 \fIman/\fR 디렉토리 하위의 매뉴얼 페이지(\fI*.1\fR, \fI*.5\fR, \fI*.7\fR 등)가 존재하면 시스템 표준 경로에 함께 설치한다.
+.TP
+.B remove
+설치된 커스텀 스크립트와 연관된 Bash completion 및 man 페이지 파일을 탐색하여 안전하게 삭제한다. 와일드카드 패턴(예: \fB'yes\-*'\fR)을 지원한다.
+.TP
+.B list
+개인 및 전역 실행 공간에 설치된 커스텀 스크립트 목록과 연관된 Bash completion 및 man 페이지 설치 현황을 조회한다.
+
+.SH OPTIONS (install)
+.TP
+.BR \-\-script " " \fIPATH\fR
+설치할 스크립트 파일 경로 (필수, 절대/상대 경로 지원).
+.TP
+.BR \-\-target " " \fIlocal\fR|\fIglobal\fR
+설치 대상 범위 지정 (기본값: \fBlocal\fR).
+.RS
+.IP \(bu 2
+\fBlocal\fR: 스크립트는 \fI$HOME/bin\fR, 매뉴얼은 \fI~/.local/share/man/man<N>/\fR에 설치
+.IP \(bu 2
+\fBglobal\fR: 스크립트는 \fI/usr/local/bin\fR, 매뉴얼은 \fI/usr/local/share/man/man<N>/\fR에 설치
+.RE
+.TP
+.B \-\-force
+동일 이름의 파일이 이미 설치되어 있을 때 확인 프롬프트 없이 덮어쓴다.
+.TP
+.B \-\-dry\-run
+실제 파일 복사를 수행하지 않고 예정된 설치 계획과 필요 권한(\fBsudo\fR 여부)만 출력한다.
+
+.SH OPTIONS (remove)
+.TP
+.BR \-\-name " " \fINAME_OR_PATTERN\fR
+삭제할 스크립트 이름, 경로 또는 와일드카드 패턴 (필수). 와일드카드 사용 시 셸 확장을 방지하기 위해 작은따옴표로 감싸야 한다.
+.TP
+.BR \-\-target " " \fIlocal\fR|\fIglobal\fR|\fIall\fR
+탐색 및 삭제 범위 지정 (기본값: \fBall\fR).
+.TP
+.B \-\-force
+사용자 확인 프롬프트(y/N)를 건너뛰고 즉시 삭제한다.
+.TP
+.B \-\-dry\-run
+실제 삭제 없이 탐색된 삭제 대상 파일(스크립트, completion, man) 목록과 필요 권한만 출력한다.
+
+.SH OPTIONS (list)
+.TP
+.BR \-\-target " " \fIlocal\fR|\fIglobal\fR|\fIall\fR
+조회할 대상 범위 지정 (기본값: \fBall\fR).
+
+.SH INSTALLATION PATHS
+.TP
+.B Bash Completion 우선순위
+.RS
+.IP "1순위:" 8
+\fI/usr/share/bash-completion/completions/<script>\fR (확장자 제거, 동적 로딩)
+.IP "2순위:" 8
+\fI/etc/bash_completion.d/<script>.completion\fR
+.RE
+.TP
+.B Man Page 설치 경로
+.RS
+.IP "local:" 8
+.na
+\fI${XDG_DATA_HOME:-$HOME/.local/share}/man/man<sec>/<file>.<sec>\fR
+.IP "global:" 8
+\fI/usr/local/share/man/man<sec>/<file>.<sec>\fR (macOS Homebrew 환경은 \fI$(brew --prefix)/share/man/man<sec>/\fR 우선)
+.RE
+
+.SH EXAMPLES
+.TP
+.B scriptctl install \-\-script ./sciectl
+개인 실행 공간(\fI$HOME/bin\fR)에 sciectl 스크립트, completion, man 페이지를 설치한다.
+.TP
+.B scriptctl install \-\-script ../net/ps\-port/ps\-port \-\-target global \-\-dry\-run
+전역 설치 작업 계획과 필요 권한을 시뮬레이션한다.
+.TP
+.B scriptctl list \-\-target local
+개인 실행 공간에 설치된 스크립트 및 연관 리소스 현황을 조회한다.
+.TP
+.B scriptctl remove \-\-name ps\-port \-\-target local
+설치된 ps-port 스크립트와 연관된 completion, man 파일을 모두 삭제한다.
+
+.SH SEE ALSO
+.BR sciectl (1),
+.BR man (1)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.

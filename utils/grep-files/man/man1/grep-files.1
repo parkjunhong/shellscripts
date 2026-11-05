@@ -1,0 +1,98 @@
+.TH GREP-FILES 1 "2024-03-10" "grep-files 1.0.0" "User Commands"
+.SH NAME
+grep-files \- grep-files: File Content Pattern Presence/Absence Scanner & Directory Report Generator
+
+.SH SYNOPSIS
+.B grep-files
+[\fIOPTIONS\fR]
+
+.SH DESCRIPTION
+지정된 디렉토리(복수 지원)에서 파일들을 대상으로 특정 문자열(\fB\-\-pattern\fR)이 \fB포함된 파일(\fBmatch\fR)\fR 또는 \fB누락된 파일(\fBmissing\fR)\fR을 스캔하여 \fB디렉토리·서브디렉토리별 건수 통계 및 매칭 줄 번호·내용(\fBgrep -rn\fR 형식) 리포트\fR를 생성하는 CLI 도구입니다.
+
+.SH KEY FEATURES
+.IP \(bu 2
+\fB확장자(\fB\-\-ext\fR) 선택화 및 다중 확장자 지원\fR
+.IP \(bu 2
+\fB\-\-ext\fR를 생략하면 확장자에 구애받지 않고 \fB모든 텍스트 파일\fR을 대상으로 검색합니다 (\fB.git\fR 디렉토리 및 바이너리 파일 자동 제외).
+.IP \(bu 2
+\fB\-\-ext sh,completion,properties\fR처럼 콤마(\fB,\fR)로 구분하거나 \fB\-\-ext\fR를 여러 번 지정하여 복수 확장자를 한 번에 검색할 수 있습니다.
+.IP \(bu 2
+\fB파일 목록 전용 모드(\fB\-\-files\-only\fR) 및 고속 스캔\fR
+.IP \(bu 2
+매칭된 줄 번호 및 상세 내용 출력을 생략하고 조건에 부합하는 \fB파일 목록만 빠르게 확인\fR할 수 있습니다.
+.IP \(bu 2
+\fBmatch\fR 모드에서 \fB\-\-files\-only\fR 사용 시 첫 번째 일치 항목 발견 즉시 파일 검사를 완료(\fBgrep -q\fR)하여 대용량 파일 및 대규모 디렉토리 탐색 성능을 대폭 최적화합니다.
+.IP \(bu 2
+\fB검사 모수(Scanned Count) 및 매칭 통계 동시 제공\fR
+.IP \(bu 2
+전체 검사 대상 파일 수(\fBtotal_scanned\fR) 대비 매칭된 파일 수(\fBtotal_count\fR)를 디렉토리별로 함께 출력하여 검색 범위를 명확히 파악할 수 있습니다.
+.IP \(bu 2
+\fB\fBgrep -rn\fR 스타일 줄 번호 및 매칭 내용 출력 (\fBmatch\fR 모드 기본)\fR
+.IP \(bu 2
+\fB📋 검색된 파일 목록 및 매칭 내용\fR 섹션에서 각 파일 경로 하단에 매칭된 줄 번호(\fB[L줄번호]\fR)와 해당 줄의 내용을 함께 출력합니다.
+.IP \(bu 2
+\fB안전한 배열 기반 실행 (\fBeval\fR 제거)\fR
+.IP \(bu 2
+공백이나 특수문자가 포함된 경로에서도 단어 분리(Word Splitting) 없이 안전하게 동작합니다.
+
+.SH OPTIONS
+.TP
+.B \-\-pattern <STRING>
+[필수, 불가] 파일 내부에서 찾을 문자열
+.TP
+.B \-\-ext <EXT1[,EXT2...]>
+[선택, 전체 텍스트 파일(*), 가능] 검색할 파일 확장자 (콤마 구분 가능, 대소문자 무시)
+.TP
+.B \-\-dir <DIR>
+[선택, 현재 디렉토리($PWD), 가능] 검색 대상 디렉토리 경로
+.TP
+.B \-\-exclude\-dir <DIR>
+[선택, .git 기본 제외, 가능] 검색에서 제외할 디렉토리 경로 또는 폴더명
+.TP
+.B \-\-mode <match|missing>
+[선택, match, 불가] match(문자열 포함 파일) 또는 missing(문자열 누락 파일)
+.TP
+.B \-\-files\-only
+[선택, false, 불가] 매칭된 줄 번호 및 내용 출력을 생략하고 파일 목록만 출력
+.TP
+.B \-\-ignore\-case
+[선택, false, 불가] 찾을 문자열(\-\-pattern)의 대소문자 무시
+.TP
+.B \-\-output <FILE>
+[선택, 화면 출력, 불가] 결과 리포트를 지정한 파일로 저장
+.TP
+.B \-\-help
+[선택, 불가] 도움말 출력
+
+.SH EXAMPLES
+.nf
+  \&./grep\-files \-\-pattern searching\-word \-\-dir ../../
+.fi
+.PP
+.nf
+  \&./grep\-files \-\-ext sh,completion,properties \-\-pattern searching\-word \-\-dir ../../
+.fi
+.PP
+.nf
+  \&./grep\-files \-\-pattern searching\-word \-\-dir ../../ \-\-files\-only
+.fi
+.PP
+.nf
+  \&./grep\-files \-\-dir /path/to/project/src \-\-ext java \-\-pattern "@NullMarked" \-\-mode missing
+.fi
+.PP
+
+.SH COMPLETION
+.B grep-files
+는 Bash 자동완성 스크립트(\fIgrep-files.completion\fR)를 지원한다.
+.BR scriptctl (1)
+또는
+.BR sciectl (1)
+을 통해 설치 시 시스템 표준 completion 경로에 자동으로 등록된다.
+
+.SH SEE ALSO
+.BR scriptctl (1),
+.BR sciectl (1)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.

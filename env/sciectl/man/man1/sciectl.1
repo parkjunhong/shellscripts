@@ -1,0 +1,156 @@
+.TH SCIECTL 1 "2026-11-05" "sciectl 1.0.0" "User Commands"
+.SH NAME
+sciectl \- Script, Command, Installer & Environment Controller
+
+.SH SYNOPSIS
+.B sciectl
+[\fBinstall\fR] [\fIOPTIONS\fR]
+.br
+.B sciectl list
+[\fB\-\-type\fR \fIall\fR|\fIcatalogs\fR|\fItools\fR|\fIinstallers\fR|\fIcommands\fR|\fIkeys\fR] [\fB\-\-local\fR|\fB\-\-remote\fR]
+.br
+.B sciectl info
+[\fB\-\-catalog\fR \fIID\fR[,...]] [\fB\-\-tool\fR \fINAME\fR[,...]] [\fB\-\-installer\fR \fINAME\fR[,...]] [\fB\-\-command\fR \fINAME\fR[,...]] [\fB\-\-ssh\-key\fR \fINAME\fR[,...]] [\fB\-\-local\fR|\fB\-\-remote\fR]
+
+.SH DESCRIPTION
+.B sciectl
+(Script, Command, Installer & Environment Controller)은 리눅스 패키지 매니저(\fBdnf\fR, \fBapt\fR) 및 macOS 패키지 매니저(\fBbrew\fR)와 동일한 방식으로 목적별 환경 카탈로그(\fB@catalog\fR) 및 개별 컴포넌트(커스텀 CLI 도구, 인스톨러, 사후 명령어, Sudoers 권한, SSH 공개키)를 단일 트랜잭션 파이프라인으로 일괄 설치·관리하는 통합 프로비저닝 CLI 도구이다.
+
+단축 옵션(Short Option)은 지원하지 않으며 정규 Long Option만 사용한다. 인자 없이 \fBsciectl\fR만 실행하면 대화형(TUI) 카탈로그 및 단계 선택 메뉴로 진입한다.
+
+.SH PIPELINE ARCHITECTURE (8 STEPS)
+.B sciectl install
+명령은 엄격한 의존성 순서에 따라 다음 8단계 파이프라인으로 실행된다:
+.IP "1. \fBsudoers\fR" 4
+\fI/etc/sudoers.d/user\-<계정>\fR 파일에 NOPASSWD 명령어를 병합·정렬하고 \fBvisudo \-c\fR로 문법을 사전 검증한다 (macOS는 자동 생략).
+.IP "2. \fBremove\-packages\fR" 4
+충돌하거나 불필요한 OS 패키지의 실제 설치 여부를 확인한 후 제거한다.
+.IP "3. \fBinstall\-packages\fR" 4
+미설치된 OS 필수 패키지를 일괄 설치한다 (필요 시에만 패키지 인덱스 업데이트 1회 수행).
+.IP "4. \fBdefault\-opts\fR" 4
+\fI~/bin\fR PATH 등록, Git 브랜치 프롬프트, \fIvimrc\fR 옵션을 구성한다 (Linux: \fI~/.bashrc\fR, macOS: \fI~/.bash_profile\fR).
+.IP "5. \fBinstallers\fR" 4
+\fIenv/installers/\fR 하위의 서드파티 소프트웨어 설치 스크립트를 보안 검증 후 실행한다.
+.IP "6. \fBtools\fR" 4
+커스텀 CLI 도구, 연관 \fI.completion\fR 자동완성 스크립트 및 \fIman\fR 매뉴얼 페이지를 시스템 표준 경로에 설치한다.
+.IP "7. \fBcommands\fR" 4
+\fIenv/commands/\fR 하위의 시스템 사후 구성 명령어를 실행한다.
+.IP "8. \fBssh\-key\fR" 4
+\fI~/.ssh/authorized_keys\fR에 Base64 본문 중복 검사 후 SSH RSA 공개키를 등록한다.
+
+.SH SUBCOMMANDS
+.TP
+.B install
+카탈로그 또는 개별 컴포넌트를 설치한다 (기본 서브커맨드이므로 생략 가능).
+.TP
+.B list
+제공되는 카탈로그, 커스텀 CLI 도구, 인스톨러, 사후 명령어, SSH 공개키 목록을 조회한다.
+.TP
+.B info
+지정한 카탈로그의 병합된 구성 내역 또는 개별 컴포넌트(도구, 인스톨러, 명령어, SSH 공개키)의 개요 설명과 GitHub 웹 문서 URL을 조회한다.
+
+.SH OPTIONS (install)
+.TP
+.BR \-\-catalog " " \fIID\fR[,\fIID2\fR...]
+설치할 카탈로그 ID를 지정한다. 콤마(,) 구분 또는 다중 플래그 지정을 지원하며, 상위 상속(\fBINCLUDES\fR)을 자동 해석·병합한다.
+.TP
+.BR \-\-tool " " \fICAT/NAME\fR[,...]
+특정 커스텀 CLI 도구를 단독 또는 추가 설치한다 (예: \fBgit/git-commit\fR, \fButils/scriptctl\fR).
+.TP
+.BR \-\-installer " " \fINAME\fR[,...]
+특정 소프트웨어 인스톨러를 단독 또는 추가 실행한다 (예: \fBinstall-temurin-25-jdk\fR, \fBinstall-htop\fR).
+.TP
+.BR \-\-command " " \fINAME\fR[,...]
+특정 사후 구성 명령어를 단독 또는 추가 실행한다 (예: \fBfirewall-cmd-set-priority\fR).
+.TP
+.BR \-\-ssh\-key " " \fINAME\fR[,...]
+특정 SSH 공개키를 단독 또는 추가 등록한다 (예: \fBymtech-internal\fR, \fBletsencrypt\fR).
+.TP
+.BR \-\-only " " \fISTEPS\fR
+8단계 중 지정한 단계만 선택하여 실행한다 (콤마 구분).
+허용값: \fBsudoers\fR, \fBremove-packages\fR, \fBinstall-packages\fR, \fBdefault-opts\fR, \fBinstallers\fR, \fBtools\fR, \fBcommands\fR, \fBssh-key\fR.
+.TP
+.BR \-\-skip " " \fISTEPS\fR
+지정한 단계를 제외하고 실행한다 (콤마 구분).
+.TP
+.BR \-\-user " " \fIUSERNAME\fR
+\fBsudoers\fR 단계에서 NOPASSWD 권한을 부여할 대상 사용자 계정을 지정한다.
+.TP
+.BR \-\-target " " \fIlocal\fR|\fIglobal\fR
+CLI 도구 및 매뉴얼 설치 범위를 지정한다 (\fBlocal\fR: \fI~/bin\fR 및 \fI~/.local/share/man\fR, \fBglobal\fR: \fI/usr/local/bin\fR 및 \fI/usr/local/share/man\fR, 기본값: \fBlocal\fR).
+.TP
+.B \-\-local
+원격 GitHub 대신 로컬 저장소 파일을 우선 사용한다.
+.TP
+.B \-\-remote
+원격 GitHub 저장소(Raw URL)의 최신 리소스를 사용한다 (기본값).
+.TP
+.B \-\-yes
+모든 확인 프롬프트(y/N)를 자동 승인하여 무인 프로비저닝을 수행한다.
+.TP
+.B \-\-force
+이미 설치된 CLI 도구, 자동완성, man 페이지의 변경 여부 확인 없이 강제 업데이트한다.
+.TP
+.B \-\-dry\-run
+실제 설치를 수행하지 않고 병합된 트랜잭션 실행 계획 요약표(Transaction Summary)만 출력한다.
+.TP
+.B \-\-all
+선택한 카탈로그의 모든 단계 및 기본 환경 3종 설정을 활성화한다.
+.TP
+.B \-\-no\-default\-opts
+기본 환경 3종(\fI~/bin\fR PATH, Git 프롬프트, \fIvimrc\fR) 설정을 생략한다.
+
+.SH OPTIONS (list)
+.TP
+.BR \-\-type " " \fITYPE\fR
+조회할 리소스 유형을 지정한다 (기본값: \fBcatalogs\fR).
+허용값: \fBall\fR, \fBcatalogs\fR, \fBtools\fR, \fBinstallers\fR, \fBcommands\fR, \fBkeys\fR.
+.TP
+.BR \-\-local " | " \-\-remote
+조회 기준 저장소 모드를 지정한다.
+
+.SH OPTIONS (info)
+.TP
+.BR \-\-catalog " " \fIID\fR[,...]
+상세 구성 내역을 조회할 카탈로그 ID를 지정한다.
+.TP
+.BR \-\-tool " " \fICAT/NAME\fR[,...]
+개별 CLI 도구의 개요 설명 및 공식 문서 링크를 조회한다 (예: \fBsciectl\fR, \fButils/scriptctl\fR).
+.TP
+.BR \-\-installer " " \fINAME\fR[,...]
+개별 인스톨러의 개요 설명 및 문서 링크를 조회한다.
+.TP
+.BR \-\-command " " \fINAME\fR[,...]
+개별 사후 명령어의 개요 설명 및 문서 링크를 조회한다.
+.TP
+.BR \-\-ssh\-key " " \fINAME\fR[,...]
+개별 SSH 공개키의 개요 설명 및 문서 링크를 조회한다.
+
+.SH COMPLETION
+.B sciectl.completion
+은 서브커맨드별 옵션 자동완성 및 콤마(,) 구분 다중 값 입력 시 중복 후보 자동 제외 기능을 제공한다.
+특히 \fB\-\-catalog\fR가 선행 지정된 경우 해당 카탈로그(상속 포함)에 실제 정의된 컴포넌트 옵션과 후보값만 지능적으로 필터링(Scoping)하여 제안한다.
+
+.SH EXAMPLES
+.TP
+.B sciectl
+대화형(Interactive) 모드로 진입하여 카탈로그와 실행 단계를 선택 설치한다.
+.TP
+.B sciectl list \-\-type all \-\-local
+로컬 저장소 기준 전체 카탈로그, 도구, 인스톨러, 명령어, SSH 공개키 목록을 출력한다.
+.TP
+.B sciectl info \-\-tool sciectl \-\-installer install\-htop
+sciectl 도구와 install-htop 인스톨러의 요약 설명 및 문서 URL을 조회한다.
+.TP
+.B sciectl install \-\-catalog default\-server,docker \-\-user parkjunhong \-\-yes
+다중 카탈로그를 병합하여 무인 일괄 설치한다.
+.TP
+.B sciectl install \-\-tool git/git\-commit,net/fwc\-cli \-\-target global
+지정한 CLI 도구들을 시스템 전역 경로(\fI/usr/local/bin\fR)에 단독 설치한다.
+
+.SH SEE ALSO
+.BR scriptctl (1),
+.BR sciectl-catalog (5)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.

@@ -1,19 +1,19 @@
 # 🛠️ scriptctl
 
-커스텀 스크립트와 연관된 Bash 자동 완성(`.completion`) 파일의 **설치(`install`)**, **삭제(`remove`)**, **현황 조회(`list`)**를 하나로 통합 관리하는 CLI 도구입니다.
+커스텀 스크립트와 연관된 Bash 자동 완성(`.completion`) 파일 및 매뉴얼 페이지(`man`)의 **설치(`install`)**, **삭제(`remove`)**, **현황 조회(`list`)**를 하나로 통합 관리하는 CLI 도구입니다.
 
 ---
 
 ## ✨ 주요 특징
 
 1. **서브커맨드 기반 통합 인터페이스 (`scriptctl <command> [options]`)**
-   * `scriptctl install ...` : 커스텀 스크립트 및 연관 `.completion` 파일 설치
-   * `scriptctl remove ...` : 설치된 커스텀 스크립트 및 연관 `.completion` 파일 안전 삭제
-   * `scriptctl list ...` : 개인/전역 실행 공간에 설치된 커스텀 스크립트 및 `.completion` 매핑 현황 조회
-2. **개인(`local`) 및 전역(`global`) 실행 공간 완벽 지원**
+   * `scriptctl install ...` : 커스텀 스크립트, 연관 `.completion` 파일 및 `man/` 디렉토리 하위 매뉴얼 페이지(`*.1`, `*.5`, `*.7` 등) 설치
+   * `scriptctl remove ...` : 설치된 커스텀 스크립트, 연관 `.completion` 및 `man` 페이지 파일 안전 삭제
+   * `scriptctl list ...` : 개인/전역 실행 공간에 설치된 커스텀 스크립트 및 `.completion` / `man` 매핑 현황 조회
+2. **개인(`local`) 및 전역(`global`) 실행 공간 및 매뉴얼 경로 완벽 지원**
    * **설치 (`install`)**:
-     * `--target local` (기본값): `$HOME/bin`에 설치 (미존재 시 자동 생성, 일반 파일로 존재 시 상태 출력 후 오류 종료)
-     * `--target global`: `/usr/local/bin`에 설치
+     * `--target local` (기본값): 스크립트는 `$HOME/bin`, 매뉴얼은 `${XDG_DATA_HOME:-$HOME/.local/share}/man/man<N>/`에 설치 (미존재 시 자동 생성)
+     * `--target global`: 스크립트는 `/usr/local/bin`, 매뉴얼은 `/usr/local/share/man/man<N>/` (macOS Homebrew 환경은 `$(brew --prefix)/share/man/man<N>/`)에 설치
    * **삭제 (`remove`) 및 조회 (`list`)**:
      * `--target local`: 개인 실행 공간(`$HOME/bin`, `$HOME/.local/bin`) 탐색
      * `--target global`: 전역 실행 공간(`/usr/local/bin`) 탐색

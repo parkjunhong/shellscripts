@@ -85,20 +85,23 @@ help() {
 
 📝 설명 (Description):
   지정된 커스텀 스크립트를 개인 실행 공간(\$HOME/bin) 또는 전역 실행 공간(/usr/local/bin)에 설치하고,
-  동일 디렉토리에 연관된 '<script>.completion' 파일이 존재하면 시스템 자동 완성 경로에 함께 설치합니다.
+  동일 디렉토리에 연관된 '<script>.completion' 파일 및 'man/' 디렉토리 하위의 매뉴얼 페이지(*.1, *.5, *.7 등)가
+  존재하면 시스템 자동 완성 경로 및 표준 man 경로에 함께 설치합니다.
 
 ⚙️  옵션 (Options):
   --script <PATH>           설치할 스크립트 파일 경로 (필수, 절대/상대 경로 지원)
   --target <local|global>   설치 대상 범위 (기본값: local)
-                            - local  : 개인 사용자 전용 (\$HOME/bin, 미존재 시 자동 생성)
-                            - global : 전체 사용자 공용 (/usr/local/bin)
+                            - local  : 개인 사용자 전용 (\$HOME/bin, ~/.local/share/man)
+                            - global : 전체 사용자 공용 (/usr/local/bin, /usr/local/share/man)
   --force                   동일 이름의 파일이 이미 설치되어 있을 때 확인 없이 덮어쓰기
   --dry-run                 실제 설치를 수행하지 않고 예정된 작업 과정과 필요 권한만 출력
   --help                    install 서브커맨드 도움말 출력
 
-📂 Bash Completion 설치 경로 우선순위:
-  - 1순위 (최신 경로) : /usr/share/bash-completion/completions/
-  - 2순위 (대체 경로) : /etc/bash_completion.d/
+📂 Bash Completion 및 Man Page 설치 경로:
+  - Completion 1순위 : /usr/share/bash-completion/completions/
+  - Completion 2순위 : /etc/bash_completion.d/
+  - Man Page (local) : \${XDG_DATA_HOME:-\$HOME/.local/share}/man/man<N>/
+  - Man Page (global): /usr/local/share/man/man<N>/ (macOS Homebrew 환경은 \$(brew --prefix)/share/man 우선)
 
 💡 예시 (Examples):
   $FILENAME install --script ./ps-port
@@ -577,6 +580,148 @@ find_installed_completions() {
 }
 
 ##
+# 설치할 스크립트와 동일한 디렉토리 하위의 'man/' 디렉토리에서 man 페이지 파일들을 탐색합니다.
+# - 지원 레이아웃: man/man[1-8]/*.[1-8], man/[1-8]/*.[1-8], man/*.[1-8]
+#
+# @param $1 {string} 원본 스크립트 절대 경로
+#
+# @return 발견된 man 파일 절대 경로 목록 (개행 구분)
+##
+find_companion_manpages() {
+  local script_abs="$1"
+  local script_dir
+  script_dir="$(dirname "$script_abs")"
+  local man_root="${script_dir}/man"
+
+  [[ -d "$man_root" ]] || return 0
+
+  local -a found_mans=()
+  local f
+  while IFS= read -r f; do
+    [[ -n "$f" ]] && found_mans+=("$f")
+  done < <(find "$man_root" -maxdepth 2 -type f \( -name "*.[1-8]" \) 2>/dev/null | sort -u)
+
+  if (( ${#found_mans[@]} > 0 )); then
+    printf "%s\n" "${found_mans[@]}"
+  fi
+  return 0
+}
+
+##
+# 설치 범위(local | global)에 따른 시스템 man 베이스 디렉토리를 결정합니다.
+# - local : ${XDG_DATA_HOME:-$HOME/.local/share}/man
+# - global: macOS Homebrew $(brew --prefix)/share/man 또는 /usr/local/share/man
+#
+# @param $1 {string} 설치 범위 (local | global)
+#
+# @return man 베이스 디렉토리 경로 출력
+##
+resolve_man_install_base_dir() {
+  local scope="${1:-local}"
+  if [[ "$scope" == "local" ]]; then
+    printf '%s\n' "${XDG_DATA_HOME:-$HOME/.local/share}/man"
+    return 0
+  fi
+
+  if [[ "${OSTYPE:-}" == "darwin"* ]] && command -v brew >/dev/null 2>&1; then
+    local brew_prefix
+    brew_prefix="$(brew --prefix 2>/dev/null || true)"
+    if [[ -n "$brew_prefix" && -d "${brew_prefix}/share/man" ]]; then
+      printf '%s\n' "${brew_prefix}/share/man"
+      return 0
+    fi
+  fi
+
+  printf '%s\n' "/usr/local/share/man"
+  return 0
+}
+
+##
+# 시스템에 설치된 man 페이지 파일을 탐색합니다 (리터럴 및 와일드카드 패턴 지원).
+#
+# @param $1 {string} 스크립트 이름, 경로 또는 와일드카드 패턴
+# @param $2 {string} 탐색 범위 (local | global | all)
+#
+# @return 발견된 man 파일 절대 경로 목록 (개행 구분)
+##
+find_installed_manpages() {
+  local raw_name="$1"
+  local target_scope="${2:-all}"
+  local base_name
+  base_name="$(basename "$raw_name")"
+
+  local -a base_dirs=()
+  case "$target_scope" in
+    local)
+      base_dirs+=(
+        "${XDG_DATA_HOME:-$HOME/.local/share}/man"
+        "$HOME/man"
+      )
+      ;;
+    global)
+      base_dirs+=(
+        "/usr/local/share/man"
+        "/usr/share/man"
+      )
+      if command -v brew >/dev/null 2>&1; then
+        local bp
+        bp="$(brew --prefix 2>/dev/null || true)"
+        [[ -n "$bp" ]] && base_dirs+=("${bp}/share/man")
+      fi
+      ;;
+    all|*)
+      base_dirs+=(
+        "${XDG_DATA_HOME:-$HOME/.local/share}/man"
+        "$HOME/man"
+        "/usr/local/share/man"
+        "/usr/share/man"
+      )
+      if command -v brew >/dev/null 2>&1; then
+        local bp
+        bp="$(brew --prefix 2>/dev/null || true)"
+        [[ -n "$bp" ]] && base_dirs+=("${bp}/share/man")
+      fi
+      ;;
+  esac
+
+  local -a found_mans=()
+  local bdir sec_dir abs_sec entry bname sec_num
+  for bdir in "${base_dirs[@]}"; do
+    [[ -d "$bdir" ]] || continue
+    for sec_num in 1 2 3 4 5 6 7 8; do
+      sec_dir="${bdir}/man${sec_num}"
+      [[ -d "$sec_dir" ]] || continue
+      abs_sec="$(cd -P -- "$sec_dir" >/dev/null 2>&1 && pwd -P || true)"
+      [[ -n "$abs_sec" ]] || continue
+
+      for entry in "$abs_sec"/*."$sec_num"; do
+        [[ -f "$entry" || -L "$entry" ]] || continue
+        bname="$(basename "$entry")"
+        if [[ "$sec_num" == "1" ]]; then
+          # Section 1: 명령어 이름과 정확히 1:1 매칭 (<name>.1)
+          # shellcheck disable=SC2053
+          if [[ "$bname" == ${base_name}.1 ]]; then
+            if ! is_protected_system_tool "${base_name}"; then
+              found_mans+=("${abs_sec}/${bname}")
+            fi
+          fi
+        else
+          # Section 2~8: <name>.<sec>, <name>.conf.<sec>, <name>-*.<sec> 매칭
+          # shellcheck disable=SC2053
+          if [[ "$bname" == ${base_name}.${sec_num} || "$bname" == ${base_name}.conf.${sec_num} || "$bname" == ${base_name}-*.${sec_num} ]]; then
+            found_mans+=("${abs_sec}/${bname}")
+          fi
+        fi
+      done
+    done
+  done
+
+  if (( ${#found_mans[@]} > 0 )); then
+    printf "%s\n" "${found_mans[@]}" | sort -u
+  fi
+}
+
+##
 # [install 서브커맨드] 커스텀 스크립트 및 연관 completion 파일 설치
 #
 # @param $@ {array} install 서브커맨드 인자
@@ -738,7 +883,7 @@ cmd_install() {
     exit 0
   fi
 
-  echo "🧩 [2/5] 연관 Bash Completion 파일을 탐색합니다..."
+  echo "🧩 [2/5] 연관 Bash Completion 및 Man Page 파일을 탐색합니다..."
   local comp_src=""
   local comp_install_dir=""
   local comp_dest=""
@@ -765,12 +910,35 @@ cmd_install() {
       comp_src=""
     fi
   else
-    echo "  ℹ️  동일 디렉토리 내 연관된 '.completion' 파일이 없어 스크립트만 설치합니다."
+    echo "  ℹ️  동일 디렉토리 내 연관된 '.completion' 파일이 없습니다."
+  fi
+
+  local -a man_srcs=()
+  local -a man_dests=()
+  local man_base_dir=""
+  local m_line
+  while IFS= read -r m_line; do
+    [[ -n "$m_line" ]] && man_srcs+=("$m_line")
+  done < <(find_companion_manpages "$script_abs")
+
+  if (( ${#man_srcs[@]} > 0 )); then
+    man_base_dir="$(resolve_man_install_base_dir "$target_scope")"
+    local m_src m_bname m_sec m_dest
+    for m_src in "${man_srcs[@]}"; do
+      m_bname="$(basename "$m_src")"
+      m_sec="${m_bname##*.}"
+      m_dest="${man_base_dir}/man${m_sec}/${m_bname}"
+      man_dests+=("$m_dest")
+      echo "  ✅ Man Page 파일 발견 (Section ${m_sec}): $m_src -> $m_dest"
+    done
+  else
+    echo "  ℹ️  동일 디렉토리 내 연관된 'man/' 페이지 파일이 없습니다."
   fi
 
   local need_sudo_for_dir=false
   local need_sudo_for_script=false
   local need_sudo_for_comp=false
+  local need_sudo_for_man=false
   local need_any_sudo=false
 
   if [[ "$need_create_dir" == true ]] && is_sudo_required_for_write "$install_dir"; then
@@ -786,6 +954,17 @@ cmd_install() {
   if [[ -n "$comp_dest" ]] && is_sudo_required_for_write "$comp_dest"; then
     need_sudo_for_comp=true
     need_any_sudo=true
+  fi
+
+  if (( ${#man_dests[@]} > 0 )); then
+    local md
+    for md in "${man_dests[@]}"; do
+      if is_sudo_required_for_write "$md"; then
+        need_sudo_for_man=true
+        need_any_sudo=true
+        break
+      fi
+    done
   fi
 
   echo
@@ -816,6 +995,19 @@ cmd_install() {
   else
     printf " 🧩 Completion 설치      : 해당 없음\n"
   fi
+
+  if (( ${#man_dests[@]} > 0 )); then
+    local idx
+    for (( idx=0; idx<${#man_dests[@]}; idx++ )); do
+      if [[ "$need_sudo_for_man" == true ]]; then
+        printf " 📖 Man Page 설치        : %s -> %s (권한: 0644) [🔐 sudo 권한 필요]\n" "${man_srcs[$idx]}" "${man_dests[$idx]}"
+      else
+        printf " 📖 Man Page 설치        : %s -> %s (권한: 0644) [👤 일반 권한]\n" "${man_srcs[$idx]}" "${man_dests[$idx]}"
+      fi
+    done
+  else
+    printf " 📖 Man Page 설치        : 해당 없음\n"
+  fi
   echo "=================================================================="
   echo
 
@@ -824,10 +1016,24 @@ cmd_install() {
     exit 0
   fi
 
-  if [[ "$is_force" == false ]] && [[ -e "$dest_script" || ( -n "$comp_dest" && -e "$comp_dest" ) ]]; then
+  local has_existing_man=false
+  if (( ${#man_dests[@]} > 0 )); then
+    local md
+    for md in "${man_dests[@]}"; do
+      [[ -e "$md" ]] && has_existing_man=true
+    done
+  fi
+
+  if [[ "$is_force" == false ]] && [[ -e "$dest_script" || ( -n "$comp_dest" && -e "$comp_dest" ) || "$has_existing_man" == true ]]; then
     echo "⚠️  [주의] 이미 설치된 파일이 존재합니다:"
     [[ -e "$dest_script" ]] && echo "   - 스크립트   : $dest_script"
     [[ -n "$comp_dest" && -e "$comp_dest" ]] && echo "   - Completion : $comp_dest"
+    if [[ "$has_existing_man" == true ]]; then
+      local md
+      for md in "${man_dests[@]}"; do
+        [[ -e "$md" ]] && echo "   - Man Page   : $md"
+      done
+    fi
     local confirm=""
     printf "❓ 기존 파일을 덮어쓰시겠습니까? (y/N): "
     read -r confirm
@@ -879,6 +1085,31 @@ cmd_install() {
     else
       install -m 0644 "$comp_src" "$comp_dest"
       echo "  ✅ Bash Completion 설치 완료 (일반 권한): $comp_dest"
+    fi
+  fi
+
+  if (( ${#man_dests[@]} > 0 )); then
+    local idx m_src m_dest m_dir
+    for (( idx=0; idx<${#man_dests[@]}; idx++ )); do
+      m_src="${man_srcs[$idx]}"
+      m_dest="${man_dests[$idx]}"
+      m_dir="$(dirname "$m_dest")"
+      if [[ "$need_sudo_for_man" == true ]]; then
+        [[ -d "$m_dir" ]] || sudo mkdir -p "$m_dir"
+        sudo install -m 0644 "$m_src" "$m_dest"
+        echo "  ✅ Man Page 설치 완료 (sudo 적용): $m_dest"
+      else
+        [[ -d "$m_dir" ]] || mkdir -p "$m_dir"
+        install -m 0644 "$m_src" "$m_dest"
+        echo "  ✅ Man Page 설치 완료 (일반 권한): $m_dest"
+      fi
+    done
+    if command -v mandb >/dev/null 2>&1; then
+      if [[ "$need_sudo_for_man" == true ]]; then
+        sudo mandb -q >/dev/null 2>&1 || true
+      else
+        mandb -q "${man_base_dir}" >/dev/null 2>&1 || true
+      fi
     fi
   fi
 
@@ -997,7 +1228,7 @@ cmd_remove() {
     fi
   fi
 
-  echo "🔍 [1/4] 삭제 대상 스크립트 및 completion 파일 탐색 시작: '$target_name' (범위: $target_scope)"
+  echo "🔍 [1/4] 삭제 대상 스크립트, completion 및 man page 파일 탐색 시작: '$target_name' (범위: $target_scope)"
 
   local -a script_targets=()
   local line
@@ -1031,8 +1262,26 @@ cmd_remove() {
     done < <(printf "%s\n" "${raw_completions[@]}" | sort -u)
   fi
 
-  if (( ${#script_targets[@]} == 0 && ${#completion_targets[@]} == 0 )); then
-    echo "⚠️  [WARN] 삭제 대상 스크립트 및 bash completion 파일을 찾을 수 없습니다."
+  # 매칭된 각 스크립트의 연관 man page 및 패턴 매칭 man page 수집 (중복 제거)
+  local -a raw_mans=()
+  for file in "${script_targets[@]}"; do
+    while IFS= read -r line; do
+      [[ -n "$line" ]] && raw_mans+=("$line")
+    done < <(find_installed_manpages "$(basename "$file")" "$target_scope")
+  done
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && raw_mans+=("$line")
+  done < <(find_installed_manpages "$target_name" "$target_scope")
+
+  local -a man_targets=()
+  if (( ${#raw_mans[@]} > 0 )); then
+    while IFS= read -r line; do
+      [[ -n "$line" ]] && man_targets+=("$line")
+    done < <(printf "%s\n" "${raw_mans[@]}" | sort -u)
+  fi
+
+  if (( ${#script_targets[@]} == 0 && ${#completion_targets[@]} == 0 && ${#man_targets[@]} == 0 )); then
+    echo "⚠️  [WARN] 삭제 대상 스크립트, bash completion 및 man page 파일을 찾을 수 없습니다."
     exit 0
   fi
 
@@ -1060,6 +1309,17 @@ cmd_remove() {
       fi
     done
   fi
+
+  if (( ${#man_targets[@]} > 0 )); then
+    echo " 📖 [Man Page 파일]"
+    for item in "${man_targets[@]}"; do
+      if is_sudo_required_for_delete "$item"; then
+        echo "  -> $item [🔐 sudo 권한 필요]"
+      else
+        echo "  -> $item [👤 일반 권한]"
+      fi
+    done
+  fi
   echo "=================================================================="
   echo
 
@@ -1078,7 +1338,7 @@ cmd_remove() {
     fi
   fi
 
-  local -a all_targets=("${script_targets[@]}" "${completion_targets[@]}")
+  local -a all_targets=("${script_targets[@]}" "${completion_targets[@]}" "${man_targets[@]}")
   local need_sudo=false
 
   for file in "${all_targets[@]}"; do
@@ -1183,7 +1443,7 @@ cmd_list() {
   esac
 
   echo "==================== 📋 [설치된 커스텀 스크립트 현황 (범위: ${target_scope})] ===================="
-  local dir entry bname comp_list
+  local dir entry bname comp_list man_list comp_str man_str
   local total_count=0
   for dir in "${dirs[@]}"; do
     if [[ ! -d "$dir" ]]; then
@@ -1200,11 +1460,10 @@ cmd_list() {
       fi
       bname="$(basename "$entry")"
       comp_list="$(find_installed_completions "$bname" | tr '\n' ' ')"
-      if [[ -n "$comp_list" ]]; then
-        printf "   - %-28s (🧩 completion: %s)\n" "$bname" "${comp_list% }"
-      else
-        printf "   - %-28s (🧩 completion: 없음)\n" "$bname"
-      fi
+      man_list="$(find_installed_manpages "$bname" "$target_scope" | tr '\n' ' ')"
+      comp_str="${comp_list% }"
+      man_str="${man_list% }"
+      printf "   - %-28s (🧩 completion: %s | 📖 man: %s)\n" "$bname" "${comp_str:-없음}" "${man_str:-없음}"
       ((dir_count++)) || true
       ((total_count++)) || true
     done

@@ -1,0 +1,93 @@
+.TH SETUP-COMPOSE-SERVICE 1 "2026-09-10" "setup-compose-service 1.0.0" "User Commands"
+.SH NAME
+setup-compose-service \- Register Container Service As a OS Service.
+
+.SH SYNOPSIS
+.B setup-compose-service
+[\fIOPTIONS\fR]
+
+.SH DESCRIPTION
+Docker Compose 기반 애플리케이션을 \fBSystemd OS 서비스(\fB.service\fR)\fR로 등록하고, 전체 또는 개별 컨테이너 제어 및 원클릭 활성화/비활성화(\fBenable\fR/\fBdisable\fR)를 제공하는 \fB전용 제어 스크립트(\fB<service>-ctl.sh\fR)와 Bash Completion 파일\fR을 자동으로 생성하는 도구입니다.
+
+.SH KEY FEATURES
+.IP \(bu 2
+\fB체계적인 산출물 디렉토리 분리 (\fBbin/\fR & \fBsystem/\fR)\fR
+.IP \(bu 2
+\fB\-\-output\-dir\fR(미지정 시 \fB\-\-docker\-compose\-dir\fR) 하위에 \fBbin/\fR과 \fBsystem/\fR 디렉토리를 자동 구성합니다.
+.IP \(bu 2
+\fBbin/<service>[-<version>]-ctl.sh\fR: 서비스 제어 스크립트 (\fBstart\fR, \fBstop\fR, \fBrestart\fR, \fBstatus\fR, \fBenable\fR, \fBdisable\fR)
+.IP \(bu 2
+\fBbin/<service>[-<version>]-ctl.sh.completion\fR: 제어 스크립트 전용 Bash 자동완성 파일 (2번째 인자로 \fBdocker-compose.yml\fR 내 정의된 개별 서비스명을 동적 추천)
+.IP \(bu 2
+\fBsystem/<service>[-<version>].service\fR: Systemd 서비스 유닛 파일
+.IP \(bu 2
+\fB원클릭 시스템 등록(\fBenable\fR) 및 해제(\fBdisable\fR)\fR
+.IP \(bu 2
+생성된 \fB<service>-ctl.sh enable\fR 실행 시:
+.IP \(bu 2
+\fB/etc/systemd/system/\fR에 유닛 파일 복사, \fBdaemon-reload\fR 및 \fBsystemctl enable\fR 수행
+.IP \(bu 2
+\fB$HOME/bin\fR 디렉토리 생성 및 \fB~/.bashrc\fR(또는 \fB~/.bash_profile\fR)에 \fB$PATH\fR 영구 등록
+.IP \(bu 2
+\fB$HOME/bin/<service>-ctl.sh\fR 심볼릭 링크 생성
+.IP \(bu 2
+\fB/usr/share/bash-completion/completions/\fR(또는 \fB/etc/bash_completion.d/\fR)에 자동완성 등록
+.IP \(bu 2
+\fB<service>-ctl.sh disable\fR 실행 시 위 4가지 등록 내역을 깔끔하게 역순으로 제거합니다.
+.IP \(bu 2
+\fBSELinux 보안 컨텍스트 및 권한 자동화\fR
+.IP \(bu 2
+RHEL / Rocky Linux 등 SELinux 활성화 환경에서 Systemd가 스크립트를 차단하지 않도록 산출물의 소유권을 \fBroot:root\fR로 설정하고 \fBrestorecon\fR 및 \fBchcon\fR(\fBbin_t\fR, \fBsystemd_unit_file_t\fR)을 자동으로 부여합니다.
+.IP \(bu 2
+\fB사전 무결성 점검 (Pre-flight Check)\fR
+.IP \(bu 2
+기동 전 \fBdocker compose config\fR를 통해 \fBdocker-compose.yml\fR 및 \fB.env\fR 파일의 문법/환경변수 누락 여부를 검증하며, 기존 Systemd 서비스와의 이름 충돌을 사전에 차단합니다.
+
+.SH OPTIONS
+.TP
+.B \-\-docker\-compose\-dir <path>
+[필수] docker-compose.yml 또는 docker-compose.yaml 파일이 위치한 디렉토리 경로
+.TP
+.B \-\-service <name>
+[필수] 등록할 서비스 식별자 이름 (영문, 숫자, -, _ 허용)
+.TP
+.B \-\-version <version>
+[선택] 서비스 버전 문자열 (지정 시 <service>-<version> 형태로 식별자 구성)
+.TP
+.B \-\-output\-dir <path>
+[선택] bin/ 및 system/ 산출물 디렉토리를 생성할 기준 경로 (기본값: \-\-docker\-compose\-dir)
+.TP
+.B \-\-help
+[선택] 도움말을 출력하고 종료합니다.
+
+.SH EXAMPLES
+.nf
+  # 1) /opt/apps/keycloak 디렉토리의 Compose 프로젝트를 기반으로 제어 스크립트 및 Systemd 유닛 생성
+  \&./setup\-compose\-service \\
+    \-\-docker\-compose\-dir /opt/apps/keycloak \\
+    \-\-service keycloak \\
+    \-\-version 26.0.0
+  
+  # 2) 생성된 제어 스크립트를 통해 Systemd 서비스, $HOME/bin 심볼릭 링크, 자동완성 일괄 활성화
+  sudo /opt/apps/keycloak/bin/keycloak\-26.0.0\-ctl.sh enable
+  
+  # 3) 이후 어디서나 제어 명령 및 탭(TAB) 자동완성 사용
+  keycloak\-26.0.0\-ctl.sh start
+  keycloak\-26.0.0\-ctl.sh status
+.fi
+.PP
+
+.SH COMPLETION
+.B setup-compose-service
+는 Bash 자동완성 스크립트(\fIsetup-compose-service.completion\fR)를 지원한다.
+.BR scriptctl (1)
+또는
+.BR sciectl (1)
+을 통해 설치 시 시스템 표준 completion 경로에 자동으로 등록된다.
+
+.SH SEE ALSO
+.BR scriptctl (1),
+.BR sciectl (1)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.

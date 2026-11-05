@@ -1,0 +1,110 @@
+.TH CLONE-GITLAB-PROJECTS 1 "2026-07-24" "clone-gitlab-projects 1.0.0" "User Commands"
+.SH NAME
+clone-gitlab-projects \- clone-gitlab-projects
+
+.SH SYNOPSIS
+.B clone-gitlab-projects
+[\fIOPTIONS\fR]
+
+.SH DESCRIPTION
+원격 저장소에서 최신 [\fBgitlab-clone\fR](../gitlab-clone/gitlab-clone) 스크립트를 다운로드하여 로컬(\fB$HOME/bin/gitlab-clone\fR) 무결성을 자동으로 검증·업데이트한 뒤, 사전에 구성된 GitLab URL 및 Personal Access Token(PAT)을 주입하여 \fB특정 GitLab 그룹 하위의 전체 프로젝트를 일괄 복제(\fBgit clone\fR)\fR하는 래퍼(Wrapper) CLI 도구입니다.
+
+.SH KEY FEATURES
+.IP \(bu 2
+\fB\fBgitlab-clone\fR 자동 설치 및 무결성(최신 버전) 검증\fR
+.IP \(bu 2
+실행 시 GitHub 원격 저장소의 최신 \fBgitlab-clone\fR 스크립트와 로컬에 설치된 \fBgitlab-clone\fR을 \fBcmp -s\fR로 비교합니다.
+.IP \(bu 2
+로컬에 설치되어 있지 않거나 버전이 다르면 자동으로 \fB$HOME/bin/gitlab-clone\fR에 최신 버전을 설치·갱신한 뒤 실행합니다.
+.IP \(bu 2
+\fB사전 설정된 환경 변수(\fBGITLAB_URL\fR / \fBGITLAB_PAT\fR) 기반 간편 실행\fR
+.IP \(bu 2
+매번 \fB\-\-url <GitLab URL>\fR과 \fB\-\-token <AccessToken>\fR을 수동으로 입력하지 않고, 환경 변수(\fBGITLAB_URL\fR, \fBGITLAB_PAT\fR)에 저장된 접속 정보를 활용하여 그룹 경로(\fB\-\-group\fR)만으로 신속하게 일괄 복제할 수 있습니다.
+.IP \(bu 2
+필수 환경 변수가 비어있을 경우 명확한 오류 진단 및 설정 가이드를 제공합니다.
+.IP \(bu 2
+\fB자동 디렉토리 생성 및 Bash Completion 지원\fR
+.IP \(bu 2
+복제 대상 최상위 디렉토리(\fB\-\-dir\fR)가 존재하지 않을 경우 중간 경로까지 자동 생성(\fBmkdir -p\fR)하며, \fB\-\-dir\fR 입력 시 디렉토리 전용 탭(TAB) 자동완성을 제공합니다.
+
+.SH OPTIONS
+.TP
+.B \-\-group <group-path>
+[필수] 복제할 GitLab 대상 그룹 경로 (예: my-security, devops/backend)
+.TP
+.B \-\-name <custom-name>
+[선택] 클론 디렉토리의 최상위 그룹 폴더명을 대체할 사용자 정의 이름
+.TP
+.B \-\-dir <target-dir>
+[선택] 프로젝트를 복제할 대상 최상위 디렉토리 경로 (기본값: 현재 작업 디렉토리)
+.TP
+.B \-\-help
+[선택] 도움말을 출력하고 종료합니다.
+.TP
+.B 환경 변수명
+[필수 여부, 설명] 예시
+.TP
+.B GITLAB_URL
+[필수, 대상 GitLab 서비스 주소] https://gitlab.your-company.com
+.TP
+.B GITLAB_PAT
+[필수, GitLab API 접근용 Personal Access Token] glpat-xxxxxxxxxxxxxxxxxxxx
+.PP
+[!TIP]
+.PP
+환경 변수 설정 방법:
+.PP
+```bash
+.PP
+# 1) 현재 쉘 세션에서 임시 설정 (권장)
+.PP
+export GITLAB_URL="https://gitlab.your-company.com"
+.PP
+export GITLAB_PAT="your-personal-access-token"
+.PP
+
+.PP
+# 2) 쉘 환경 설정 파일에 영구 등록 (~/.bashrc)
+.PP
+echo 'export GITLAB_URL="https://gitlab.your-company.com"' >> ~/.bashrc
+.PP
+echo 'export GITLAB_PAT="your-personal-access-token"' >> ~/.bashrc
+.PP
+source ~/.bashrc
+.PP
+
+.PP
+# 3) 실행 시 인라인 지정
+.PP
+GITLAB_URL="https://gitlab.your-company.com" GITLAB_PAT="your-token" ./clone-gitlab-projects \-\-group my-security
+.PP
+```
+
+.SH EXAMPLES
+.nf
+  # 1) 환경 변수 설정 후 대상 그룹 일괄 복제
+  export GITLAB_URL="https://gitlab.your\-company.com"
+  export GITLAB_PAT="glpat\-xxxxxxxxxxxxxxxxxxxx"
+  
+  # 현재 디렉토리 하위에 'my\-security' 그룹의 모든 프로젝트 및 하위 그룹 복제
+  \&./clone\-gitlab\-projects \-\-group my\-security
+  
+  # 2) /home/dev/workspace 하위에 상위 폴더명을 'security\-src'로 변경하여 복제
+  \&./clone\-gitlab\-projects \-\-group my\-security \-\-name security\-src \-\-dir /home/dev/workspace
+.fi
+.PP
+
+.SH COMPLETION
+.B clone-gitlab-projects
+는 Bash 자동완성 스크립트(\fIclone-gitlab-projects.completion\fR)를 지원한다.
+.BR scriptctl (1)
+또는
+.BR sciectl (1)
+을 통해 설치 시 시스템 표준 completion 경로에 자동으로 등록된다.
+
+.SH SEE ALSO
+.BR scriptctl (1),
+.BR sciectl (1)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.
