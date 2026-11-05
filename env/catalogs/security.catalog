@@ -1,0 +1,12 @@
+# ==============================================================================
+# Catalog Metadata
+# ==============================================================================
+CATALOG_ID=security
+CATALOG_TITLE=security 관련 기능 제공
+CATALOG_DESC=authelia-crypto-hash, ssl-del, ssl-inst 외 기능을 제공합니다.
+INCLUDES=
+
+# ==============================================================================
+# 3. CLI Tools (<category>/<canonical-name>, 콤마 구분, default-server 상속 포함)
+# ==============================================================================
+TOOLS=security/authelia-crypto-hash, security/ssl-del, security/ssl-inst
