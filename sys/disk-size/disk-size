@@ -132,7 +132,7 @@ while IFS=$'\t' read -r raw_size path_val; do
   type="f"
   [[ -d "${path_val}" ]] && type="d"
   printf "[%s] %6s %s\n" "${type}" "${raw_size}" "${path_val}"
-done < <(find "${DIR}" "${find_args[@]}" -print0 2>/dev/null | xargs -0 -r du -sh 2>/dev/null | eval "${SORT_CMD}")
+done < <(find "${DIR}" "${find_args[@]}" -print0 2>/dev/null | xargs -0 -r du -sh -l 2>/dev/null | eval "${SORT_CMD}")
 
 if [[ "$has_results" -eq 0 ]]; then
   echo "[INFO] 탐색할 대상 파일이나 디렉토리가 없습니다."
