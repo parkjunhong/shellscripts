@@ -56,9 +56,11 @@ _nexus_maven_export_completion() {
   case "$prev" in
     --output)
       # 디렉터리 경로 자동완성 추천 -> compgen -d 사용
-      local dirs
-      dirs="$(compgen -d -- "$cur")"
-      COMPREPLY=($dirs)
+      compopt -o filenames 2>/dev/null || true
+      COMPREPLY=( $(compgen -d -- "$cur") )
+      if (( ${#COMPREPLY[@]} == 1 )) && [[ -d "${COMPREPLY[0]}" ]]; then
+        compopt -o nospace 2>/dev/null || true
+      fi
       return 0
       ;;
     --url|--user|--repository)

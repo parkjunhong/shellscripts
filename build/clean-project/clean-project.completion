@@ -41,7 +41,11 @@ _clean_project_completion() {
   # --directory 옵션 다음에는 반드시 디렉토리만 추천되도록 처리
   # Recommend only directories after --directory
   if [[ "${prev}" == "--directory" ]]; then
+    compopt -o filenames 2>/dev/null || true
     COMPREPLY=( $(compgen -d -- "${cur}") )
+    if (( ${#COMPREPLY[@]} == 1 )) && [[ -d "${COMPREPLY[0]}" ]]; then
+      compopt -o nospace 2>/dev/null || true
+    fi
     return 0
   fi
 
@@ -53,10 +57,11 @@ _clean_project_completion() {
   # '-' 또는 '--'를 입력하지 않고 <TAB> 만 입력해도 파라미터가 추천되도록 처리
   # Recommend options and directories even if <TAB> is pressed without '-' or '--'
   if [[ ${cur} == * ]] ; then
-    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
-    # 디렉토리 파라미터가 있을 경우를 위해 bash 내장 디렉토리 자동완성 추가 
-    # Add built-in directory completion fallback
-    COMPREPLY+=($(compgen -d -- "${cur}"))
+    compopt -o filenames 2>/dev/null || true
+    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") $(compgen -d -- "${cur}") )
+    if (( ${#COMPREPLY[@]} == 1 )) && [[ -d "${COMPREPLY[0]}" ]]; then
+      compopt -o nospace 2>/dev/null || true
+    fi
     return 0
   fi
 }

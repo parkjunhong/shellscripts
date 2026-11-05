@@ -262,8 +262,11 @@ _canonical_status_completion() {
 
   # 2. 직전 토큰이 --target-dir 인 경우 디렉토리 자동완성
   if [[ "$prev" == "--target-dir" ]]; then
-    compopt -o dirnames 2>/dev/null || true
+    compopt -o filenames 2>/dev/null || true
     COMPREPLY=( $(compgen -d -- "${cur}") )
+    if (( ${#COMPREPLY[@]} == 1 )) && [[ -d "${COMPREPLY[0]}" ]]; then
+      compopt -o nospace 2>/dev/null || true
+    fi
     return 0
   fi
 

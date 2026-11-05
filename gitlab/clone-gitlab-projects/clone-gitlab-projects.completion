@@ -60,8 +60,11 @@ _clone_gitlab_projects_completions() {
       ;;
     --dir)
       # 파라미터가 파일/경로인 경우 디렉토리 전용 자동완성
-      compopt -o dirnames
+      compopt -o filenames 2>/dev/null || true
       COMPREPLY=( $(compgen -d -- "${cur}") )
+      if (( ${#COMPREPLY[@]} == 1 )) && [[ -d "${COMPREPLY[0]}" ]]; then
+        compopt -o nospace 2>/dev/null || true
+      fi
       return 0
       ;;
     *)

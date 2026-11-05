@@ -47,8 +47,11 @@ _git_push_after_sync_completion() {
   # 디렉토리 경로 입력 지원
   case "${prev}" in
     --source|--target)
-      compopt -o dirnames
+      compopt -o filenames 2>/dev/null || true
       COMPREPLY=( $(compgen -d -- "${cur}") )
+      if (( ${#COMPREPLY[@]} == 1 )) && [[ -d "${COMPREPLY[0]}" ]]; then
+        compopt -o nospace 2>/dev/null || true
+      fi
       return 0
       ;;
   esac
@@ -73,8 +76,11 @@ _git_push_after_sync_completion() {
   
   # 사용할 수 있는 옵션이 더 이상 없을 경우, 디렉토리 입력을 기본값으로 제안
   if [[ ${#COMPREPLY[@]} -eq 0 && ! "${cur}" == -* ]]; then
-    compopt -o dirnames
+    compopt -o filenames 2>/dev/null || true
     COMPREPLY=( $(compgen -d -- "${cur}") )
+    if (( ${#COMPREPLY[@]} == 1 )) && [[ -d "${COMPREPLY[0]}" ]]; then
+      compopt -o nospace 2>/dev/null || true
+    fi
   fi
 
   return 0

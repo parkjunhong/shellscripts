@@ -156,8 +156,11 @@ _git_getpr_completion() {
         return 0
         ;;
       --output-path)
-        compopt -o nospace 2>/dev/null
+        compopt -o filenames 2>/dev/null || true
         COMPREPLY=( $(compgen -f -d -- "$bash_cur") )
+        if (( ${#COMPREPLY[@]} == 1 )) && [[ -d "${COMPREPLY[0]}" ]]; then
+          compopt -o nospace 2>/dev/null || true
+        fi
         return 0
         ;;
     esac
