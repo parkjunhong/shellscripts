@@ -33,8 +33,8 @@
 | 명령어 | 설명 |
 | :--- | :--- |
 | `install` | 카탈로그 또는 개별 컴포넌트(도구/인스톨러/커맨드/SSH키) 설치 (기본 명령어, 생략 가능) |
-| `list` | 제공되는 카탈로그, 인스톨러, 사후 명령어, SSH 공개키 목록 조회 |
-| `info` | 특정 카탈로그(상속 포함)에 정의된 모든 구성 요소 상세 내역 조회 |
+| `list` | 제공되는 카탈로그, 커스텀 CLI 도구, 인스톨러, 사후 명령어, SSH 공개키 목록 조회 |
+| `info` | 특정 카탈로그 또는 개별 컴포넌트(도구/인스톨러/커맨드/SSH키)의 상세 구성 내역 및 개요 설명 조회 |
 
 ### 2. 주요 옵션 (Long Option 전용)
 
@@ -55,8 +55,14 @@
 | | `--dry-run` | 선택 | 실제 설치 없이 병합된 트랜잭션 실행 계획(Transaction Summary)만 출력 |
 | | `--all` | 선택 | 선택한 카탈로그의 모든 단계 및 기본 환경 3종 설정 적용 |
 | | `--no-default-opts` | 선택 | 기본 환경 3종(`~/bin` PATH, Git 프롬프트, `vimrc`) 설정 생략 |
-| **`list`** | `--type <TYPE>` | 선택 | 조회 대상 유형 (`all`, `catalogs`, `installers`, `commands`, `keys`, 기본값: `catalogs`) |
-| **`info`** | `--catalog <ID[,ID2...]>` | 필수 | 상세 내역을 조회할 카탈로그 ID (콤마 구분 복수 지정 가능) |
+| **`list`** | `--type <TYPE>` | 선택 | 조회 대상 유형 (`all`, `catalogs`, `tools`, `installers`, `commands`, `keys`, 기본값: `catalogs`) |
+| **`info`** | `--catalog <ID[,ID2...]>` | 조건부 | 상세 내역을 조회할 카탈로그 ID (콤마 구분 복수 지정 가능) |
+| | `--tool <CAT/NAME[,...]>` | 조건부 | 특정 CLI 도구 상세 정보 및 설명 조회 (예: `sciectl`, `utils/scriptctl`) |
+| | `--installer <NAME[,...]>` | 조건부 | 특정 인스톨러 상세 정보 및 설명 조회 (예: `install-htop`) |
+| | `--command <NAME[,...]>` | 조건부 | 특정 사후 구성 명령어 상세 정보 및 설명 조회 (예: `firewall-cmd-set-priority`) |
+| | `--ssh-key <NAME[,...]>` | 조건부 | 특정 SSH 공개키 상세 정보 및 설명 조회 (예: `ymtech-internal`) |
+| | `--local` / `--remote` | 선택 | 로컬 저장소 기준 또는 원격 GitHub 저장소 기준 조회 |
+| | | | *※ `--catalog`, `--tool`, `--installer`, `--command`, `--ssh-key` 중 1개 이상 지정 필요* |
 | **공통** | `--help` | 선택 | 전체 또는 서브커맨드별 상세 도움말 출력 |
 
 ---
@@ -67,20 +73,29 @@
 # 1. 대화형(Interactive) 모드 실행 (다중 카탈로그 번호 및 단계 선택)
 sciectl
 
-# 2. 전체 카탈로그 및 인스톨러/커맨드/키 목록 조회
+# 2. 전체 카탈로그 및 컴포넌트 목록 조회
 sciectl list --type all
 
-# 3. 특정 카탈로그(상속 포함) 상세 구성 요소 확인
+# 3. 커스텀 CLI 도구 목록만 조회
+sciectl list --type tools
+
+# 4. 특정 카탈로그(상속 포함) 상세 구성 요소 확인
 sciectl info --catalog default-devops
 
-# 4. 다중 카탈로그 시뮬레이션(Dry-run) 및 무인 일괄 설치
+# 5. 개별 컴포넌트(도구/인스톨러/커맨드/키) 개요 및 파일 경로 조회
+sciectl info --tool sciectl
+sciectl info --installer install-htop --command firewall-cmd-set-priority
+sciectl info --ssh-key ymtech-internal
+sciectl info --catalog default-server --tool utils/scriptctl
+
+# 6. 다중 카탈로그 시뮬레이션(Dry-run) 및 무인 일괄 설치
 sciectl install --catalog default-server,docker,network --dry-run
 sciectl install --catalog default-server,docker,network --user parkjunhong --yes
 
-# 5. 카탈로그 내 특정 단계만 선택 실행
+# 7. 카탈로그 내 특정 단계만 선택 실행
 sciectl install --catalog default-devops --only tools,installers
 
-# 6. 카탈로그 없이 개별 인스톨러나 커스텀 도구만 단독 설치 (dnf/apt 스타일)
+# 8. 카탈로그 없이 개별 인스톨러나 커스텀 도구만 단독 설치 (dnf/apt 스타일)
 sciectl install --installer install-temurin-25-jdk,install-htop --tool git/git-commit,net/fwc-cli
 ```
 

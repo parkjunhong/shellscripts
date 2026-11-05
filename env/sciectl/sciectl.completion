@@ -95,9 +95,31 @@ _sciectl_load_candidates() {
     dynamic_cats="$(grep -E '^\[[a-zA-Z0-9_-]+\]' "$repo_root/env/catalogs/catalogs.ini" 2>/dev/null | tr -d '[]' | tr '\n' ' ')"
     [[ -n "$dynamic_cats" ]] && catalog_candidates="$dynamic_cats"
 
-    # 도구 후보 (*.catalog의 TOOLS)
+    # 도구 후보 (*.catalog의 TOOLS + 저장소 내 <category>/<name> + env/sciectl)
     local dynamic_tools
-    dynamic_tools="$(grep -h '^TOOLS=' "$repo_root"/env/catalogs/*.catalog 2>/dev/null | sed 's/^TOOLS=//' | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$' | sort -u | tr '\n' ' ')"
+    dynamic_tools="$(
+      {
+        grep -h '^TOOLS=' "$repo_root"/env/catalogs/*.catalog 2>/dev/null | sed 's/^TOOLS=//' | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$'
+        echo "env/sciectl"
+        echo "sciectl"
+        local c_dir t_dir c_name t_name
+        for c_dir in "$repo_root"/*; do
+          [[ -d "$c_dir" ]] || continue
+          c_name="$(basename "$c_dir")"
+          [[ "$c_name" == .* || "$c_name" == "tmp" || "$c_name" == "docs" ]] && continue
+          for t_dir in "$c_dir"/*; do
+            [[ -d "$t_dir" ]] || continue
+            t_name="$(basename "$t_dir")"
+            if [[ "$c_name" == "env" && ("$t_name" == "installers" || "$t_name" == "commands" || "$t_name" == "keys" || "$t_name" == "catalogs") ]]; then
+              continue
+            fi
+            if [[ -f "$t_dir/$t_name" || -f "$t_dir/${t_name}.sh" ]]; then
+              echo "${c_name}/${t_name}"
+            fi
+          done
+        done
+      } | sort -u | tr '\n' ' '
+    )"
     [[ -n "$dynamic_tools" ]] && tool_candidates="$dynamic_tools"
 
     # 인스톨러 후보 (env/installers/* 디렉토리 + *.catalog의 INSTALLERS)
@@ -547,13 +569,13 @@ _sciectl_completion() {
       local -a list_opts=("--type" "--local" "--remote" "--help")
       case "$cur" in
         --type=*)
-          COMPREPLY=( $(compgen -W "all catalogs installers commands keys" -- "${cur#--type=}") )
+          COMPREPLY=( $(compgen -W "all catalogs tools installers commands keys" -- "${cur#--type=}") )
           return 0
           ;;
       esac
       case "$prev" in
         --type)
-          COMPREPLY=( $(compgen -W "all catalogs installers commands keys" -- "$cur") )
+          COMPREPLY=( $(compgen -W "all catalogs tools installers commands keys" -- "$cur") )
           return 0
           ;;
       esac
@@ -562,16 +584,67 @@ _sciectl_completion() {
       ;;
 
     info)
-      local -a info_opts=("--catalog" "--local" "--remote" "--help")
+      # 선행 --catalog 옵션이 지정된 경우, 해당 카탈로그 컴포넌트로 후보군 스코핑
+      local specified_catalogs
+      specified_catalogs="$(_sciectl_get_used_values "--catalog" "")"
+      if [[ -n "$specified_catalogs" ]]; then
+        local repo_root
+        repo_root="$(_sciectl_find_repo_root)"
+        _sciectl_load_catalog_scoped_candidates "$specified_catalogs" "$repo_root"
+      fi
+
+      local -a info_opts=("--catalog")
+      if [[ -n "$specified_catalogs" ]]; then
+        [[ -n "${tool_candidates//[[:space:]]/}" ]] && info_opts+=("--tool")
+        [[ -n "${installer_candidates//[[:space:]]/}" ]] && info_opts+=("--installer")
+        [[ -n "${command_candidates//[[:space:]]/}" ]] && info_opts+=("--command")
+        [[ -n "${key_candidates//[[:space:]]/}" ]] && info_opts+=("--ssh-key")
+      else
+        info_opts+=("--tool" "--installer" "--command" "--ssh-key")
+      fi
+      info_opts+=("--local" "--remote" "--help")
+
       case "$cur" in
         --catalog=*)
           _sciectl_complete_csv_values "$catalog_candidates" "${cur#--catalog=}" "--catalog=" "--catalog"
+          return 0
+          ;;
+        --tool=*)
+          _sciectl_complete_csv_values "$tool_candidates" "${cur#--tool=}" "--tool=" "--tool"
+          return 0
+          ;;
+        --installer=*)
+          _sciectl_complete_csv_values "$installer_candidates" "${cur#--installer=}" "--installer=" "--installer"
+          return 0
+          ;;
+        --command=*)
+          _sciectl_complete_csv_values "$command_candidates" "${cur#--command=}" "--command=" "--command"
+          return 0
+          ;;
+        --ssh-key=*)
+          _sciectl_complete_csv_values "$key_candidates" "${cur#--ssh-key=}" "--ssh-key=" "--ssh-key"
           return 0
           ;;
       esac
       case "$prev" in
         --catalog)
           _sciectl_complete_csv_values "$catalog_candidates" "$cur" "" "--catalog"
+          return 0
+          ;;
+        --tool)
+          _sciectl_complete_csv_values "$tool_candidates" "$cur" "" "--tool"
+          return 0
+          ;;
+        --installer)
+          _sciectl_complete_csv_values "$installer_candidates" "$cur" "" "--installer"
+          return 0
+          ;;
+        --command)
+          _sciectl_complete_csv_values "$command_candidates" "$cur" "" "--command"
+          return 0
+          ;;
+        --ssh-key)
+          _sciectl_complete_csv_values "$key_candidates" "$cur" "" "--ssh-key"
           return 0
           ;;
       esac
