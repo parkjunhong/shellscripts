@@ -505,6 +505,7 @@ _resolve_tool_path() {
 
 ##
 # 논리적 인스톨러 식별자(예: temurin-25-jdk 또는 docker/install-docker)를 상대 경로로 변환합니다.
+# Canonical 경로(env/installers/install-<name>/install-<name>)를 우선 반환합니다.
 #
 # @param $1 {string} 인스톨러 식별자
 #
@@ -522,11 +523,28 @@ _resolve_installer_path() {
   fi
   local base="${item%.sh}"
   base="${base#install-}"
-  printf 'env/installers/install-%s.sh\n' "$base"
+
+  # 1. 로컬 저장소 탐지 시 실제 파일 존재 여부 우선 검사 (Canonical 우선, 레거시 Fallback)
+  if _detect_local_repo; then
+    if [[ -f "${LOCAL_REPO_ROOT}/env/installers/install-${base}/install-${base}" ]]; then
+      printf 'env/installers/install-%s/install-%s\n' "$base" "$base"
+      return 0
+    elif [[ -f "${LOCAL_REPO_ROOT}/env/installers/${base}/${base}" ]]; then
+      printf 'env/installers/%s/%s\n' "$base" "$base"
+      return 0
+    elif [[ -f "${LOCAL_REPO_ROOT}/env/installers/install-${base}.sh" ]]; then
+      printf 'env/installers/install-%s.sh\n' "$base"
+      return 0
+    fi
+  fi
+
+  # 2. 기본 Canonical 표준 경로 반환
+  printf 'env/installers/install-%s/install-%s\n' "$base" "$base"
 }
 
 ##
 # 논리적 사후 명령어 식별자(예: firewall-cmd-set-priority)를 상대 경로로 변환합니다.
+# Canonical 경로(env/commands/<name>/<name>)를 우선 반환합니다.
 #
 # @param $1 {string} 명령어 식별자
 #
@@ -539,15 +557,29 @@ _resolve_command_path() {
     return 0
   fi
   if [[ "$item" == *"/"* ]]; then
-    printf '%s\n' "$item"
+    _resolve_tool_path "$item"
     return 0
   fi
   local base="${item%.sh}"
-  printf 'env/commands/%s.sh\n' "$base"
+
+  # 1. 로컬 저장소 탐지 시 실제 파일 존재 여부 우선 검사 (Canonical 우선, 레거시 Fallback)
+  if _detect_local_repo; then
+    if [[ -f "${LOCAL_REPO_ROOT}/env/commands/${base}/${base}" ]]; then
+      printf 'env/commands/%s/%s\n' "$base" "$base"
+      return 0
+    elif [[ -f "${LOCAL_REPO_ROOT}/env/commands/${base}.sh" ]]; then
+      printf 'env/commands/%s.sh\n' "$base"
+      return 0
+    fi
+  fi
+
+  # 2. 기본 Canonical 표준 경로 반환
+  printf 'env/commands/%s/%s\n' "$base" "$base"
 }
 
 ##
 # 논리적 SSH 공개키 식별자(예: ymtech-internal) 또는 공개키 문자열을 실제 공개키 문자열로 변환합니다.
+# Canonical 경로(env/keys/<name>/<name>.pub)를 우선 탐색합니다.
 #
 # @param $1 {string} SSH 키 식별자 또는 공개키 원문
 #
@@ -560,10 +592,13 @@ _resolve_ssh_key_content() {
     return 0
   fi
   local base="${item%.pub}"
-  local rel_path="env/keys/${base}.pub"
+  local canonical_rel_path="env/keys/${base}/${base}.pub"
+  local legacy_rel_path="env/keys/${base}.pub"
   local tmp_key
   tmp_key="$(mktemp /tmp/sciectl_key.XXXXXX)"
-  if _fetch_resource "$rel_path" "$tmp_key"; then
+
+  # 1. 신규 Canonical 경로 우선 로드 시도
+  if _fetch_resource "$canonical_rel_path" "$tmp_key" 2>/dev/null; then
     local content
     content="$(grep -v '^[[:space:]]*#' "$tmp_key" | sed '/^[[:space:]]*$/d' | head -n 1)"
     rm -f -- "$tmp_key"
@@ -572,6 +607,18 @@ _resolve_ssh_key_content() {
       return 0
     fi
   fi
+
+  # 2. 구형 플랫 경로 Fallback 로드 시도
+  if _fetch_resource "$legacy_rel_path" "$tmp_key" 2>/dev/null; then
+    local content
+    content="$(grep -v '^[[:space:]]*#' "$tmp_key" | sed '/^[[:space:]]*$/d' | head -n 1)"
+    rm -f -- "$tmp_key"
+    if [[ -n "$content" ]]; then
+      printf '%s\n' "$content"
+      return 0
+    fi
+  fi
+
   rm -f -- "$tmp_key"
   return 1
 }
@@ -1925,23 +1972,30 @@ cmd_list() {
   esac
 
   if [[ "$list_type" == "installers" || "$list_type" == "all" ]]; then
-    echo_i "🛠️  [커스텀 인스톨러(Installers) 목록]"
+    echo_i "🛠️  [소프트웨어 인스톨러(Installers) 목록]"
     if _detect_local_repo && [[ -d "${LOCAL_REPO_ROOT}/env/installers" ]]; then
-      local f bname
-      for f in "${LOCAL_REPO_ROOT}/env/installers"/install-*.sh; do
-        [[ -f "$f" ]] || continue
-        bname="$(basename "$f")"
-        bname="${bname#install-}"
-        bname="${bname%.sh}"
-        printf "  - %-24s (env/installers/%s)\n" "$bname" "$(basename "$f")"
+      local d bname exec_f
+      for d in "${LOCAL_REPO_ROOT}/env/installers"/*; do
+        [[ -d "$d" ]] || continue
+        bname="$(basename "$d")"
+        if [[ -f "$d/$bname" ]]; then
+          exec_f="$d/$bname"
+        elif [[ -f "$d/${bname}.sh" ]]; then
+          exec_f="$d/${bname}.sh"
+        else
+          continue
+        fi
+        local disp_id="$bname"
+        [[ "$disp_id" == install-* ]] && disp_id="${disp_id#install-}"
+        printf "  - %-24s (env/installers/%s/%s)\n" "$disp_id" "$bname" "$(basename "$exec_f")"
       done
       printf "  - %-24s (docker/install-docker/install-docker)\n" "docker/install-docker"
     else
-      echo "  - temurin-25-jdk           (env/installers/install-temurin-25-jdk.sh)"
-      echo "  - update-java-config       (env/installers/install-update-java-config.sh)"
-      echo "  - maven-3.9.15             (env/installers/install-maven-3.9.15.sh)"
-      echo "  - update-mvn-config        (env/installers/install-update-mvn-config.sh)"
-      echo "  - htop                     (env/installers/install-htop.sh)"
+      echo "  - temurin-25-jdk           (env/installers/install-temurin-25-jdk/install-temurin-25-jdk)"
+      echo "  - update-java-config       (env/installers/install-update-java-config/install-update-java-config)"
+      echo "  - maven-3.9.15             (env/installers/install-maven-3.9.15/install-maven-3.9.15)"
+      echo "  - update-mvn-config        (env/installers/install-update-mvn-config/install-update-mvn-config)"
+      echo "  - htop                     (env/installers/install-htop/install-htop)"
       echo "  - docker/install-docker    (docker/install-docker/install-docker)"
     fi
     echo
@@ -1950,14 +2004,21 @@ cmd_list() {
   if [[ "$list_type" == "commands" || "$list_type" == "all" ]]; then
     echo_i "⚡ [사후 실행 명령어(Commands) 목록]"
     if _detect_local_repo && [[ -d "${LOCAL_REPO_ROOT}/env/commands" ]]; then
-      local f bname
-      for f in "${LOCAL_REPO_ROOT}/env/commands"/*.sh; do
-        [[ -f "$f" ]] || continue
-        bname="$(basename "$f" .sh)"
-        printf "  - %-28s (env/commands/%s)\n" "$bname" "$(basename "$f")"
+      local d bname exec_f
+      for d in "${LOCAL_REPO_ROOT}/env/commands"/*; do
+        [[ -d "$d" ]] || continue
+        bname="$(basename "$d")"
+        if [[ -f "$d/$bname" ]]; then
+          exec_f="$d/$bname"
+        elif [[ -f "$d/${bname}.sh" ]]; then
+          exec_f="$d/${bname}.sh"
+        else
+          continue
+        fi
+        printf "  - %-28s (env/commands/%s/%s)\n" "$bname" "$bname" "$(basename "$exec_f")"
       done
     else
-      echo "  - firewall-cmd-set-priority    (env/commands/firewall-cmd-set-priority.sh)"
+      echo "  - firewall-cmd-set-priority    (env/commands/firewall-cmd-set-priority/firewall-cmd-set-priority)"
     fi
     echo
   fi
@@ -1965,15 +2026,17 @@ cmd_list() {
   if [[ "$list_type" == "keys" || "$list_type" == "all" ]]; then
     echo_i "🔑 [SSH RSA 공개키(Keys) 목록]"
     if _detect_local_repo && [[ -d "${LOCAL_REPO_ROOT}/env/keys" ]]; then
-      local f bname
-      for f in "${LOCAL_REPO_ROOT}/env/keys"/*.pub; do
-        [[ -f "$f" ]] || continue
-        bname="$(basename "$f" .pub)"
-        printf "  - %-24s (env/keys/%s)\n" "$bname" "$(basename "$f")"
+      local d bname pub_f
+      for d in "${LOCAL_REPO_ROOT}/env/keys"/*; do
+        [[ -d "$d" ]] || continue
+        bname="$(basename "$d")"
+        pub_f="$d/${bname}.pub"
+        [[ -f "$pub_f" ]] || continue
+        printf "  - %-24s (env/keys/%s/%s.pub)\n" "$bname" "$bname" "$bname"
       done
     else
-      echo "  - ymtech-internal          (env/keys/ymtech-internal.pub)"
-      echo "  - letsencrypt              (env/keys/letsencrypt.pub)"
+      echo "  - ymtech-internal          (env/keys/ymtech-internal/ymtech-internal.pub)"
+      echo "  - letsencrypt              (env/keys/letsencrypt/letsencrypt.pub)"
     fi
     echo
   fi

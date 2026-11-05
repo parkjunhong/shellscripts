@@ -100,46 +100,42 @@ _sciectl_load_candidates() {
     dynamic_tools="$(grep -h '^TOOLS=' "$repo_root"/env/catalogs/*.catalog 2>/dev/null | sed 's/^TOOLS=//' | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$' | sort -u | tr '\n' ' ')"
     [[ -n "$dynamic_tools" ]] && tool_candidates="$dynamic_tools"
 
-    # 인스톨러 후보 (env/installers/install-*.sh + *.catalog의 INSTALLERS)
+    # 인스톨러 후보 (env/installers/* 디렉토리 + *.catalog의 INSTALLERS)
     local dynamic_insts
     dynamic_insts="$(
       {
-        for f in "$repo_root"/env/installers/install-*.sh; do
-          [[ -f "$f" ]] || continue
+        for d in "$repo_root"/env/installers/*; do
+          [[ -d "$d" ]] || continue
           local b
-          b="$(basename "$f")"
+          b="$(basename "$d")"
           b="${b#install-}"
-          echo "${b%.sh}"
+          echo "$b"
         done
         grep -h '^INSTALLERS=' "$repo_root"/env/catalogs/*.catalog 2>/dev/null | sed 's/^INSTALLERS=//' | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$'
       } | sort -u | tr '\n' ' '
     )"
     [[ -n "$dynamic_insts" ]] && installer_candidates="$dynamic_insts"
 
-    # 명령어 후보 (env/commands/*.sh + *.catalog의 COMMANDS)
+    # 명령어 후보 (env/commands/* 디렉토리 + *.catalog의 COMMANDS)
     local dynamic_cmds
     dynamic_cmds="$(
       {
-        for f in "$repo_root"/env/commands/*.sh; do
-          [[ -f "$f" ]] || continue
-          local b
-          b="$(basename "$f")"
-          echo "${b%.sh}"
+        for d in "$repo_root"/env/commands/*; do
+          [[ -d "$d" ]] || continue
+          echo "$(basename "$d")"
         done
         grep -h '^COMMANDS=' "$repo_root"/env/catalogs/*.catalog 2>/dev/null | sed 's/^COMMANDS=//' | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$'
       } | sort -u | tr '\n' ' '
     )"
     [[ -n "$dynamic_cmds" ]] && command_candidates="$dynamic_cmds"
 
-    # SSH 공개키 후보 (env/keys/*.pub + *.catalog의 SSH_KEYS)
+    # SSH 공개키 후보 (env/keys/* 디렉토리 + *.catalog의 SSH_KEYS)
     local dynamic_keys
     dynamic_keys="$(
       {
-        for f in "$repo_root"/env/keys/*.pub; do
-          [[ -f "$f" ]] || continue
-          local b
-          b="$(basename "$f")"
-          echo "${b%.pub}"
+        for d in "$repo_root"/env/keys/*; do
+          [[ -d "$d" ]] || continue
+          echo "$(basename "$d")"
         done
         grep -h '^SSH_KEYS=' "$repo_root"/env/catalogs/*.catalog 2>/dev/null | sed 's/^SSH_KEYS=//' | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$'
       } | sort -u | tr '\n' ' '
