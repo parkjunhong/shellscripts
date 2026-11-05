@@ -2064,8 +2064,6 @@ _print_component_info() {
 
   echo "- [${emoji} ${disp_name}]"
   echo "  - 설명 : ${summary}"
-  echo "  - 경로 : ${canonical_dir}"
-  echo "  - 위치 : ${file_loc}"
   echo "  - 문서 : ${REPO_WEB_BASE_URL}/${readme_rel}"
 }
 

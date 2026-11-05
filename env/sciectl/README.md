@@ -82,7 +82,7 @@ sciectl list --type tools
 # 4. 특정 카탈로그(상속 포함) 상세 구성 요소 확인
 sciectl info --catalog default-devops
 
-# 5. 개별 컴포넌트(도구/인스톨러/커맨드/키) 상세 정보 조회 (설명, 경로, 위치, 문서)
+# 5. 개별 컴포넌트(도구/인스톨러/커맨드/키) 상세 정보 조회 (설명, 문서)
 sciectl info --tool sciectl
 sciectl info --installer install-htop --command firewall-cmd-set-priority
 sciectl info --ssh-key ymtech-internal
