@@ -78,17 +78,21 @@ _disk_size_completion() {
 
   # 5. 경로/디렉토리 입력 중인 경우
   if [[ -n "${cur}" ]]; then
-    compopt -o filenames 2>/dev/null || true
-    COMPREPLY=( $(compgen -d -- "${cur}") )
-    if (( ${#COMPREPLY[@]} == 1 )) && [[ -d "${COMPREPLY[0]}" ]]; then
-      compopt -o nospace 2>/dev/null || true
-    fi
+    compopt -o filenames -o nospace 2>/dev/null || true
+    local candidate
+    while IFS= read -r candidate; do
+      [[ -n "$candidate" ]] && COMPREPLY+=("${candidate%/}/")
+    done < <(compgen -d -- "${cur}")
     return 0
   fi
 
   # 6. 아무것도 입력하지 않은 초기 상태: 옵션 및 디렉토리 모두 제안
   compopt -o filenames 2>/dev/null || true
-  COMPREPLY=( $(compgen -W "${filtered_opts[*]}" -- "${cur}") $(compgen -d -- "${cur}") )
+  local candidate
+  COMPREPLY=( $(compgen -W "${filtered_opts[*]}" -- "${cur}") )
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] && COMPREPLY+=("${candidate%/}/")
+  done < <(compgen -d -- "${cur}")
   if (( ${#COMPREPLY[@]} == 1 )) && [[ -d "${COMPREPLY[0]}" ]]; then
     compopt -o nospace 2>/dev/null || true
   fi

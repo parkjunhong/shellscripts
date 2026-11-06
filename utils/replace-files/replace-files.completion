@@ -104,7 +104,7 @@ _replace_files_completion() {
       opt_prefix="${opt_prefix%_}"
       local dir_part="${cur#*=}"
       local candidate
-      compopt -o nospace 2>/dev/null || true
+      compopt -o filenames -o nospace 2>/dev/null || true
       while IFS= read -r candidate; do
         [[ -n "$candidate" ]] && COMPREPLY+=("${opt_prefix}${candidate%/}/")
       done < <(compgen -d -- "$dir_part")
@@ -113,11 +113,12 @@ _replace_files_completion() {
     --log-output=*)
       local file_part="${cur#--log-output=}"
       local candidate
-      compopt -o nospace 2>/dev/null || true
+      compopt -o filenames 2>/dev/null || true
       while IFS= read -r candidate; do
         [[ -n "$candidate" ]] || continue
         if [[ -d "$candidate" ]]; then
           COMPREPLY+=("--log-output=${candidate%/}/")
+          compopt -o nospace 2>/dev/null || true
         else
           COMPREPLY+=("--log-output=${candidate}")
         fi
@@ -144,19 +145,25 @@ _replace_files_completion() {
   # 2. 직전 토큰(prev)에 따른 인자 자동 완성
   case "$prev" in
     --dir|--exclude-dir|--exclude)
-      compopt -o filenames 2>/dev/null || true
-      COMPREPLY=( $(compgen -d -- "$cur") )
-      if (( ${#COMPREPLY[@]} == 1 )) && [[ -d "${COMPREPLY[0]}" ]]; then
-        compopt -o nospace 2>/dev/null || true
-      fi
+      compopt -o filenames -o nospace 2>/dev/null || true
+      local candidate
+      while IFS= read -r candidate; do
+        [[ -n "$candidate" ]] && COMPREPLY+=("${candidate%/}/")
+      done < <(compgen -d -- "$cur")
       return 0
       ;;
     --log-output)
       compopt -o filenames 2>/dev/null || true
-      COMPREPLY=( $(compgen -f -- "$cur") )
-      if (( ${#COMPREPLY[@]} == 1 )) && [[ -d "${COMPREPLY[0]}" ]]; then
-        compopt -o nospace 2>/dev/null || true
-      fi
+      local candidate
+      while IFS= read -r candidate; do
+        [[ -n "$candidate" ]] || continue
+        if [[ -d "$candidate" ]]; then
+          COMPREPLY+=("${candidate%/}/")
+          compopt -o nospace 2>/dev/null || true
+        else
+          COMPREPLY+=("${candidate}")
+        fi
+      done < <(compgen -f -- "$cur")
       return 0
       ;;
     --log-format)

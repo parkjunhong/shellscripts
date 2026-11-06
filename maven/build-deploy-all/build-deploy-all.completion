@@ -92,12 +92,12 @@ _build_deploy_all_completion() {
     return 0
   fi
 
-  # 디렉토리 인자 자동완성
-  compopt -o filenames 2>/dev/null || true
-  COMPREPLY=( $(compgen -d -- "${cur}") )
-  if (( ${#COMPREPLY[@]} == 1 )) && [[ -d "${COMPREPLY[0]}" ]]; then
-    compopt -o nospace 2>/dev/null || true
-  fi
+  # 디렉토리 인자 자동완성 (단일/복수 매칭 시 슬래시 부착 및 공백 방지)
+  compopt -o filenames -o nospace 2>/dev/null || true
+  local candidate
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] && COMPREPLY+=("${candidate%/}/")
+  done < <(compgen -d -- "${cur}")
   return 0
 }
 

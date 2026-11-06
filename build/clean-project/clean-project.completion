@@ -41,24 +41,30 @@ _clean_project_completion() {
   # --directory 옵션 다음에는 반드시 디렉토리만 추천되도록 처리
   # Recommend only directories after --directory
   if [[ "${prev}" == "--directory" ]]; then
-    compopt -o filenames 2>/dev/null || true
-    COMPREPLY=( $(compgen -d -- "${cur}") )
-    if (( ${#COMPREPLY[@]} == 1 )) && [[ -d "${COMPREPLY[0]}" ]]; then
-      compopt -o nospace 2>/dev/null || true
-    fi
+    compopt -o filenames -o nospace 2>/dev/null || true
+    local candidate
+    while IFS= read -r candidate; do
+      [[ -n "$candidate" ]] && COMPREPLY+=("${candidate%/}/")
+    done < <(compgen -d -- "${cur}")
     return 0
   fi
 
   # 이미 입력한 옵션은 다시 제안하지 않음 (Remove already typed non-repeatable options)
   for word in "${COMP_WORDS[@]}"; do
-    opts=$(echo "$opts" | sed "s/\b$word\b//g")
+    if [[ "$word" == -* ]]; then
+      opts=$(echo "$opts" | sed "s/\b$word\b//g" 2>/dev/null || true)
+    fi
   done
 
   # '-' 또는 '--'를 입력하지 않고 <TAB> 만 입력해도 파라미터가 추천되도록 처리
   # Recommend options and directories even if <TAB> is pressed without '-' or '--'
   if [[ ${cur} == * ]] ; then
     compopt -o filenames 2>/dev/null || true
-    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") $(compgen -d -- "${cur}") )
+    local candidate
+    COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+    while IFS= read -r candidate; do
+      [[ -n "$candidate" ]] && COMPREPLY+=("${candidate%/}/")
+    done < <(compgen -d -- "${cur}")
     if (( ${#COMPREPLY[@]} == 1 )) && [[ -d "${COMPREPLY[0]}" ]]; then
       compopt -o nospace 2>/dev/null || true
     fi

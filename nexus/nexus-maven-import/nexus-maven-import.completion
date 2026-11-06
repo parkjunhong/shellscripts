@@ -55,12 +55,12 @@ _nexus_maven_import_completion() {
   # 이전 파라미터($prev)에 따른 자동완성 처리
   case "$prev" in
     --input)
-      # 디렉터리 경로 자동완성 추천 -> compgen -d 사용
-      compopt -o filenames 2>/dev/null || true
-      COMPREPLY=( $(compgen -d -- "$cur") )
-      if (( ${#COMPREPLY[@]} == 1 )) && [[ -d "${COMPREPLY[0]}" ]]; then
-        compopt -o nospace 2>/dev/null || true
-      fi
+      # 디렉터리 경로 자동완성 추천 (단일/복수 매칭 시 슬래시 부착 및 공백 방지)
+      compopt -o filenames -o nospace 2>/dev/null || true
+      local candidate
+      while IFS= read -r candidate; do
+        [[ -n "$candidate" ]] && COMPREPLY+=("${candidate%/}/")
+      done < <(compgen -d -- "$cur")
       return 0
       ;;
     --url|--user|--repository-map|--path-prefix|--limit)

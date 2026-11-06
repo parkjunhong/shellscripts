@@ -39,12 +39,12 @@ _setup_docker_compose_sh_complete(){
   # 이전 인자($prev)에 따른 컨텍스트 처리 / Context-sensitive handling based on previous option ($prev)
   case "$prev" in
     --directory)
-      # 디렉토리 경로 자동완성 지원 / Directory path completion support
-      compopt -o filenames 2>/dev/null || true
-      COMPREPLY=( $(compgen -d -- "$cur") )
-      if (( ${#COMPREPLY[@]} == 1 )) && [[ -d "${COMPREPLY[0]}" ]]; then
-        compopt -o nospace 2>/dev/null || true
-      fi
+      # 디렉토리 경로 자동완성 지원 (단일/복수 매칭 시 슬래시 부착 및 공백 방지)
+      compopt -o filenames -o nospace 2>/dev/null || true
+      local candidate
+      while IFS= read -r candidate; do
+        [[ -n "$candidate" ]] && COMPREPLY+=("${candidate%/}/")
+      done < <(compgen -d -- "$cur")
       return 0
       ;;
     --service)

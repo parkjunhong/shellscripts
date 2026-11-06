@@ -244,7 +244,7 @@ _canonical_status_completion() {
     --target-dir=*)
       local dir_part="${cur#--target-dir=}"
       local candidate
-      compopt -o nospace 2>/dev/null || true
+      compopt -o filenames -o nospace 2>/dev/null || true
       while IFS= read -r candidate; do
         [[ -n "$candidate" ]] && COMPREPLY+=("--target-dir=${candidate%/}/")
       done < <(compgen -d -- "$dir_part")
@@ -260,13 +260,13 @@ _canonical_status_completion() {
       ;;
   esac
 
-  # 2. 직전 토큰이 --target-dir 인 경우 디렉토리 자동완성
+  # 2. 직전 토큰이 --target-dir 인 경우 디렉토리 자동완성 (단일/복수 매칭 시 슬래시 부착 및 공백 방지)
   if [[ "$prev" == "--target-dir" ]]; then
-    compopt -o filenames 2>/dev/null || true
-    COMPREPLY=( $(compgen -d -- "${cur}") )
-    if (( ${#COMPREPLY[@]} == 1 )) && [[ -d "${COMPREPLY[0]}" ]]; then
-      compopt -o nospace 2>/dev/null || true
-    fi
+    compopt -o filenames -o nospace 2>/dev/null || true
+    local candidate
+    while IFS= read -r candidate; do
+      [[ -n "$candidate" ]] && COMPREPLY+=("${candidate%/}/")
+    done < <(compgen -d -- "${cur}")
     return 0
   fi
 

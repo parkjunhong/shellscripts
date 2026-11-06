@@ -157,10 +157,16 @@ _git_getpr_completion() {
         ;;
       --output-path)
         compopt -o filenames 2>/dev/null || true
-        COMPREPLY=( $(compgen -f -d -- "$bash_cur") )
-        if (( ${#COMPREPLY[@]} == 1 )) && [[ -d "${COMPREPLY[0]}" ]]; then
-          compopt -o nospace 2>/dev/null || true
-        fi
+        local candidate
+        while IFS= read -r candidate; do
+          [[ -n "$candidate" ]] || continue
+          if [[ -d "$candidate" ]]; then
+            COMPREPLY+=("${candidate%/}/")
+            compopt -o nospace 2>/dev/null || true
+          else
+            COMPREPLY+=("${candidate}")
+          fi
+        done < <(compgen -f -- "$bash_cur")
         return 0
         ;;
     esac

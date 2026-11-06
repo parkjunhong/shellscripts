@@ -35,12 +35,12 @@ _init_wrangler_d1_completion() {
     # 값 입력 컨텍스트 처리
     case "${prev}" in
         --run-dir)
-            # 디렉토리만 추천
-            compopt -o filenames 2>/dev/null || true
-            COMPREPLY=( $(compgen -d -- "${cur}") )
-            if (( ${#COMPREPLY[@]} == 1 )) && [[ -d "${COMPREPLY[0]}" ]]; then
-                compopt -o nospace 2>/dev/null || true
-            fi
+            # 디렉토리만 추천 (단일/복수 매칭 시 슬래시 부착 및 공백 방지)
+            compopt -o filenames -o nospace 2>/dev/null || true
+            local candidate
+            while IFS= read -r candidate; do
+                [[ -n "$candidate" ]] && COMPREPLY+=("${candidate%/}/")
+            done < <(compgen -d -- "${cur}")
             return 0
             ;;
         --d1-location)

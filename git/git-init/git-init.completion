@@ -43,12 +43,12 @@ _git_init_completion() {
       return 0
       ;;
     --repository)
-      # 파라미터가 경로일 경우 파일/디렉토리 추천 / Recommend files/directories if parameter is a path
-      compopt -o filenames 2>/dev/null || true
-      COMPREPLY=( $(compgen -f -d -- "${cur}") )
-      if (( ${#COMPREPLY[@]} == 1 )) && [[ -d "${COMPREPLY[0]}" ]]; then
-        compopt -o nospace 2>/dev/null || true
-      fi
+      # 파라미터가 경로일 경우 디렉토리 추천 (단일/복수 매칭 시 슬래시 부착 및 공백 방지)
+      compopt -o filenames -o nospace 2>/dev/null || true
+      local candidate
+      while IFS= read -r candidate; do
+        [[ -n "$candidate" ]] && COMPREPLY+=("${candidate%/}/")
+      done < <(compgen -d -- "${cur}")
       return 0
       ;;
     *)
