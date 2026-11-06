@@ -565,7 +565,9 @@ _asr_cli_complete_add_name() {
 }
 
 ##
-# 디렉토리 경로 자동 완성을 수행합니다. (--home 옵션용)
+# 디렉토리 경로 자동 완성을 수행합니다. (--home, --skill-dir, --rule-dir 옵션용)
+# 단일/복수 디렉토리 매칭 시 항상 끝에 슬래시('/')를 부여하고 공백 추가를 방지하여(nospace)
+# 플랫폼(Linux, macOS) 및 Bash 버전에 관계없이 하위 디렉토리 연속 탐색을 보장합니다.
 #
 # @param $1 {string} 현재 입력 중인 경로 문자열
 # @param $2 {string} 출력 접두사 (기본값: '', '--home=*' 완성 시 '--home=')
@@ -577,25 +579,17 @@ _asr_cli_complete_dir() {
   local opt_prefix="${2:-}"
   local candidate
 
-  if [[ -z "$opt_prefix" ]]; then
-    compopt -o filenames 2>/dev/null || true
-    while IFS= read -r candidate; do
-      [[ -n "$candidate" ]] && COMPREPLY+=("$candidate")
-    done < <(compgen -d -- "$path_cur")
-    if (( ${#COMPREPLY[@]} == 1 )) && [[ -d "${COMPREPLY[0]}" ]]; then
-      compopt -o nospace 2>/dev/null || true
-    fi
-  else
-    compopt -o nospace 2>/dev/null || true
-    while IFS= read -r candidate; do
-      [[ -n "$candidate" ]] || continue
-      COMPREPLY+=("${opt_prefix}${candidate%/}/")
-    done < <(compgen -d -- "$path_cur")
-  fi
+  compopt -o filenames -o nospace 2>/dev/null || true
+
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] || continue
+    COMPREPLY+=("${opt_prefix}${candidate%/}/")
+  done < <(compgen -d -- "$path_cur")
 }
 
 ##
 # 파일 경로 자동 완성을 수행합니다. (--rule-file 옵션용)
+# 디렉토리가 매칭된 경우 끝에 슬래시('/')를 부여하고 공백을 방지하여 하위 탐색을 지원합니다.
 #
 # @param $1 {string} 현재 입력 중인 경로 문자열
 # @param $2 {string} 출력 접두사 (기본값: '', '--rule-file=*' 완성 시 '--rule-file=')
@@ -607,19 +601,17 @@ _asr_cli_complete_file() {
   local opt_prefix="${2:-}"
   local candidate
 
-  if [[ -z "$opt_prefix" ]]; then
-    compopt -o filenames 2>/dev/null || true
-    while IFS= read -r candidate; do
-      [[ -n "$candidate" ]] && COMPREPLY+=("$candidate")
-    done < <(compgen -f -- "$path_cur")
-  else
-    compopt -o filenames 2>/dev/null || true
-    compopt -o nospace 2>/dev/null || true
-    while IFS= read -r candidate; do
-      [[ -n "$candidate" ]] || continue
+  compopt -o filenames 2>/dev/null || true
+
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] || continue
+    if [[ -d "$candidate" ]]; then
+      COMPREPLY+=("${opt_prefix}${candidate%/}/")
+      compopt -o nospace 2>/dev/null || true
+    else
       COMPREPLY+=("${opt_prefix}${candidate}")
-    done < <(compgen -f -- "$path_cur")
-  fi
+    fi
+  done < <(compgen -f -- "$path_cur")
 }
 
 ##
