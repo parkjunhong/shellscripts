@@ -89,10 +89,10 @@ _dknetcli_completions() {
 
     case "$action" in
       create)
-        all_options="--name --bridge --gateway --subnet --help"
+        all_options="--name --bridge --gateway --subnet --dry-run --help"
         ;;
       delete)
-        all_options="--name --help"
+        all_options="--name --dry-run --help"
         ;;
       inspect)
         all_options="--name --containers --help"

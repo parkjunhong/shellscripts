@@ -23,6 +23,7 @@ NET_BRIDGE=""
 NET_GATEWAY=""
 NET_SUBNET=""
 OPT_CONTAINERS=false
+OPT_DRY_RUN=false
 
 ##
 # 스크립트 실행 오류 시 진단 정보와 함께 사용법(Usage)을 표준 출력으로 안내합니다.
@@ -54,8 +55,8 @@ help(){
   fi 
   echo 
   echo "사용법:"
-  echo "  $FILENAME network create --name <network-name> --bridge <bridge-name> --gateway <network-gateway> --subnet <network-subnet>"
-  echo "  $FILENAME network delete --name <network-name>"
+  echo "  $FILENAME network create --name <network-name> --bridge <bridge-name> --gateway <network-gateway> --subnet <network-subnet> [--dry-run]"
+  echo "  $FILENAME network delete --name <network-name> [--dry-run]"
   echo "  $FILENAME network inspect [--name <network-name|pattern>] [--containers]"
   echo "  $FILENAME --help"
   echo
@@ -71,6 +72,7 @@ help(){
   echo "  --gateway     <network-gateway>  네트워크 게이트웨이 IPv4 주소 (예: 172.31.255.1, create 전용)"
   echo "  --subnet      <network-subnet>   CIDR 포맷의 서브넷 대역 (예: 172.31.255.0/24, create 전용)"
   echo "  --containers                     네트워크에 연결된 컨테이너 상세 정보 포함 (inspect 전용)"
+  echo "  --dry-run                        실제 작업을 수행하지 않고 사전 검증 및 실행 예정 명령만 시뮬레이션 출력 (create, delete 전용)"
   echo "  --help                           도움말 출력"
   echo
 }
@@ -372,6 +374,14 @@ parse_arguments() {
         OPT_CONTAINERS=true
         shift 1
         ;;
+      --dry-run)
+        if [[ "$COMMAND_ACTION" != "create" && "$COMMAND_ACTION" != "delete" ]]; then
+          help "'--dry-run' 옵션은 'network create' 또는 'network delete' 명령에서만 사용할 수 있습니다." "$LINENO"
+          exit 1
+        fi
+        OPT_DRY_RUN=true
+        shift 1
+        ;;
       --help)
         help "" "$LINENO"
         exit 0
@@ -466,6 +476,19 @@ ensure_privileges_early() {
     SUDO_CMD=()
     DOCKER_CMD=(docker)
   else
+    if docker info >/dev/null 2>&1; then
+      DOCKER_CMD=(docker)
+    else
+      DOCKER_CMD=(sudo docker)
+    fi
+
+    if [[ "$OPT_DRY_RUN" == "true" ]]; then
+      # Dry-run 모드에서는 실제 시스템 변경을 하지 않으므로 Docker 소켓 접근이 가능하면 sudo 인증을 요구하지 않음
+      if "${DOCKER_CMD[@]}" info >/dev/null 2>&1; then
+        return 0
+      fi
+    fi
+
     if ! command -v sudo >/dev/null 2>&1; then
       help "루트 권한 작업을 위해 sudo 명령어가 필요하나 시스템에 없습니다." "$LINENO"
       exit 1
@@ -479,12 +502,6 @@ ensure_privileges_early() {
       }
     fi
     SUDO_CMD=(sudo)
-
-    if docker info >/dev/null 2>&1; then
-      DOCKER_CMD=(docker)
-    else
-      DOCKER_CMD=(sudo docker)
-    fi
   fi
 
   if ! "${DOCKER_CMD[@]}" info >/dev/null 2>&1; then
@@ -567,6 +584,28 @@ preflight_check_create_conflicts() {
 setup_docker_network() {
   # 사전 충돌 전수 검사 실행
   preflight_check_create_conflicts
+
+  if [[ "$OPT_DRY_RUN" == "true" ]]; then
+    echo "🌐 [네트워크] Docker 브릿지 네트워크 생성 (시뮬레이션 모드: --dry-run)"
+    echo "--------------------------------------------------------------------------------"
+    echo "ℹ️  [DRY-RUN] 실제 환경을 변경하지 않고 사전 검증 및 실행 계획만 확인합니다."
+    echo "--------------------------------------------------------------------------------"
+    echo "  - 대상 네트워크 이름: ${NET_NAME}"
+    echo "  - 브릿지 인터페이스 : ${NET_BRIDGE}"
+    echo "  - 게이트웨이 주소   : ${NET_GATEWAY}"
+    echo "  - 서브넷 CIDR 대역  : ${NET_SUBNET}"
+    echo "--------------------------------------------------------------------------------"
+    echo "🚀 [실행 예정 명령어]:"
+    echo "   ${DOCKER_CMD[*]} network create \\"
+    echo "     --driver bridge \\"
+    echo "     --subnet \"${NET_SUBNET}\" \\"
+    echo "     --gateway \"${NET_GATEWAY}\" \\"
+    echo "     --opt \"com.docker.network.bridge.name=${NET_BRIDGE}\" \\"
+    echo "     \"${NET_NAME}\""
+    echo "--------------------------------------------------------------------------------"
+    echo "✅ [DRY-RUN] 사전 충돌 검증 통과! 해당 네트워크를 안전하게 생성할 수 있습니다."
+    return 0
+  fi
 
   echo "🌐 [네트워크] Docker 브릿지 네트워크 생성 시작..."
   echo "  🚀 [생성] Docker 네트워크 '${NET_NAME}' 생성 중..."
@@ -782,6 +821,22 @@ delete_docker_network() {
 
   local br_name
   br_name=$("${DOCKER_CMD[@]}" network inspect "${NET_NAME}" --format '{{index .Options "com.docker.network.bridge.name"}}' 2>/dev/null || true)
+
+  if [[ "$OPT_DRY_RUN" == "true" ]]; then
+    echo "🌐 [네트워크] Docker 네트워크 삭제 작업 (시뮬레이션 모드: --dry-run): '${NET_NAME}'"
+    echo "--------------------------------------------------------------------------------"
+    echo "ℹ️  [DRY-RUN] 실제 환경을 변경하지 않고 삭제 가능 여부 및 실행 계획만 확인합니다."
+    echo "--------------------------------------------------------------------------------"
+    echo "  - 대상 네트워크 이름    : ${NET_NAME}"
+    echo "  - 커널 브릿지 인터페이스: ${br_name:-N/A}"
+    echo "  - 연결된 컨테이너       : 없음 (삭제 안전 조건 충족)"
+    echo "--------------------------------------------------------------------------------"
+    echo "🗑️  [실행 예정 명령어]:"
+    echo "   ${DOCKER_CMD[*]} network rm \"${NET_NAME}\""
+    echo "--------------------------------------------------------------------------------"
+    echo "✅ [DRY-RUN] 사전 검증 통과! 해당 네트워크를 안전하게 삭제할 수 있습니다."
+    return 0
+  fi
 
   echo "  🗑️  [삭제] Docker 네트워크 '${NET_NAME}' 삭제 중..."
   "${DOCKER_CMD[@]}" network rm "${NET_NAME}" >/dev/null

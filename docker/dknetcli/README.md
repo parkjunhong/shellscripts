@@ -42,6 +42,7 @@ Docker 브릿지(Bridge) 네트워크의 **생성(`create`)**, **삭제(`delete`
 | `--gateway <ipv4>` | `create` | **필수** | 네트워크 게이트웨이 IPv4 주소 (예: `172.31.255.1`) |
 | `--subnet <cidr>` | `create` | **필수** | CIDR 포맷의 서브넷 대역 (예: `172.31.255.0/24`, prefix `1~30`) |
 | `--containers` | `inspect` | 선택 | 네트워크에 연결된 컨테이너 목록 및 IPv4/MAC 주소 상세 출력 |
+| `--dry-run` | `create`, `delete` | 선택 | 실제 작업을 수행하지 않고 사전 충돌 검증 및 실행 예정 명령 시뮬레이션 출력 |
 | `--help` | 공통 | 선택 | 도움말 출력 |
 
 ---
@@ -49,20 +50,31 @@ Docker 브릿지(Bridge) 네트워크의 **생성(`create`)**, **삭제(`delete`
 ## 🚀 사용 예시
 
 ```bash
-# 1) 새로운 Docker 브릿지 네트워크 생성
+# 1) 새로운 Docker 브릿지 네트워크 생성 (시뮬레이션 모드)
+./dknetcli network create \
+  --name app-backend-net \
+  --bridge br-app-back \
+  --gateway 172.31.250.1 \
+  --subnet 172.31.250.0/24 \
+  --dry-run
+
+# 2) 새로운 Docker 브릿지 네트워크 실제 생성
 ./dknetcli network create \
   --name app-backend-net \
   --bridge br-app-back \
   --gateway 172.31.250.1 \
   --subnet 172.31.250.0/24
 
-# 2) 전체 브릿지 네트워크 및 연결된 컨테이너 상세 조회
+# 3) 전체 브릿지 네트워크 및 연결된 컨테이너 상세 조회
 ./dknetcli network inspect --containers
 
-# 3) 이름에 'app'이 포함된 브릿지 네트워크만 필터링하여 컨테이너와 함께 조회
+# 4) 이름에 'app'이 포함된 브릿지 네트워크만 필터링하여 컨테이너와 함께 조회
 ./dknetcli network inspect --name %app% --containers
 
-# 4) 특정 Docker 브릿지 네트워크 삭제
+# 5) Docker 브릿지 네트워크 삭제 시뮬레이션
+./dknetcli network delete --name app-backend-net --dry-run
+
+# 6) 특정 Docker 브릿지 네트워크 실제 삭제
 ./dknetcli network delete --name app-backend-net
 ```
 
