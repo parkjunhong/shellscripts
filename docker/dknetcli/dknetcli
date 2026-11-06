@@ -19,11 +19,13 @@ DOCKER_CMD=()
 
 COMMAND_ACTION=""
 NET_NAME=""
+NET_NAMES=()
 NET_BRIDGE=""
 NET_GATEWAY=""
 NET_SUBNET=""
 OPT_CONTAINERS=false
 OPT_DRY_RUN=false
+IS_INTERACTIVE=false
 
 ##
 # 스크립트 실행 오류 시 진단 정보와 함께 사용법(Usage)을 표준 출력으로 안내합니다.
@@ -55,24 +57,26 @@ help(){
   fi 
   echo 
   echo "사용법:"
-  echo "  $FILENAME network create --name <network-name> --bridge <bridge-name> --gateway <network-gateway> --subnet <network-subnet> [--dry-run]"
-  echo "  $FILENAME network delete --name <network-name> [--dry-run]"
-  echo "  $FILENAME network inspect [--name <network-name|pattern>] [--containers]"
+  echo "  $FILENAME network create [--name <network-name> --bridge <bridge-name> --gateway <network-gateway> --subnet <network-subnet>] [--dry-run]"
+  echo "  $FILENAME network remove [--name <network-name> ...] [--dry-run]"
+  echo "  $FILENAME network inspect [--name <network-name|pattern> ...] [--containers]"
   echo "  $FILENAME --help"
+  echo
+  echo "  * 옵션을 생략하고 'network [create|remove|inspect]'만 실행 시 단계별 대화형(Step-by-Step) 입력 모드로 자동 진입합니다."
   echo
   echo "서브커맨드:"
   echo "  network create   Docker 브릿지 네트워크 생성"
-  echo "  network delete   Docker 브릿지 네트워크 삭제"
+  echo "  network remove   Docker 브릿지 네트워크 삭제"
   echo "  network inspect  Docker 브릿지 네트워크 및 연결된 컨테이너 정보 조회"
   echo
   echo "옵션 상세:"
-  echo "  --name        <network-name>     대상 Docker 네트워크 이름"
+  echo "  --name        <network-name>     대상 Docker 네트워크 이름 (remove, inspect 시 여러 번 지정 가능)"
   echo "                                   (inspect 시 '%' 와일드카드 패턴 지원: <word>%, %<word>, %<word>%)"
   echo "  --bridge      <bridge-name>      호스트 커널에 바인딩할 브릿지 인터페이스 이름 (최대 15자, create 전용)"
   echo "  --gateway     <network-gateway>  네트워크 게이트웨이 IPv4 주소 (예: 172.31.255.1, create 전용)"
   echo "  --subnet      <network-subnet>   CIDR 포맷의 서브넷 대역 (예: 172.31.255.0/24, create 전용)"
   echo "  --containers                     네트워크에 연결된 컨테이너 상세 정보 포함 (inspect 전용)"
-  echo "  --dry-run                        실제 작업을 수행하지 않고 사전 검증 및 실행 예정 명령만 시뮬레이션 출력 (create, delete 전용)"
+  echo "  --dry-run                        실제 작업을 수행하지 않고 사전 검증 및 실행 예정 명령만 시뮬레이션 출력 (create, remove 전용)"
   echo "  --help                           도움말 출력"
   echo
 }
@@ -289,7 +293,7 @@ parse_arguments() {
   fi
 
   if (( $# < 2 )); then
-    help "'network' 뒤에 서브커맨드('create', 'delete', 'inspect')가 지정되지 않았습니다." "$LINENO"
+    help "'network' 뒤에 서브커맨드('create', 'remove', 'inspect')가 지정되지 않았습니다." "$LINENO"
     exit 1
   fi
 
@@ -302,8 +306,8 @@ parse_arguments() {
     create)
       COMMAND_ACTION="create"
       ;;
-    delete)
-      COMMAND_ACTION="delete"
+    remove)
+      COMMAND_ACTION="remove"
       ;;
     inspect)
       COMMAND_ACTION="inspect"
@@ -313,12 +317,17 @@ parse_arguments() {
       exit 1
       ;;
     *)
-      help "지원하지 않는 서브커맨드입니다: '$2' ('create', 'delete', 'inspect' 만 지원합니다)" "$LINENO"
+      help "지원하지 않는 서브커맨드입니다: '$2' ('create', 'remove', 'inspect' 만 지원합니다)" "$LINENO"
       exit 1
       ;;
   esac
 
   shift 2
+
+  if (( $# == 0 )); then
+    IS_INTERACTIVE=true
+    return 0
+  fi
 
   while (( $# > 0 )); do
     case "$1" in
@@ -327,7 +336,24 @@ parse_arguments() {
           help "'--name' 옵션에 유효한 네트워크 이름이 전달되지 않았습니다." "$LINENO"
           exit 1
         fi
-        NET_NAME="$2"
+        local raw_val="$2"
+        if [[ "$COMMAND_ACTION" == "create" ]]; then
+          if (( ${#NET_NAMES[@]} > 0 )) || [[ "$raw_val" == *,* ]]; then
+            help "'network create' 명령에서는 단일 네트워크 이름만 지정할 수 있습니다." "$LINENO"
+            exit 1
+          fi
+          NET_NAMES+=("$raw_val")
+        else
+          if [[ "$raw_val" == *,* ]]; then
+            local item
+            IFS=',' read -r -a split_items <<< "$raw_val"
+            for item in "${split_items[@]}"; do
+              [[ -n "$item" ]] && NET_NAMES+=("$item")
+            done
+          else
+            NET_NAMES+=("$raw_val")
+          fi
+        fi
         shift 2
         ;;
       --bridge)
@@ -375,8 +401,8 @@ parse_arguments() {
         shift 1
         ;;
       --dry-run)
-        if [[ "$COMMAND_ACTION" != "create" && "$COMMAND_ACTION" != "delete" ]]; then
-          help "'--dry-run' 옵션은 'network create' 또는 'network delete' 명령에서만 사용할 수 있습니다." "$LINENO"
+        if [[ "$COMMAND_ACTION" != "create" && "$COMMAND_ACTION" != "remove" ]]; then
+          help "'--dry-run' 옵션은 'network create' 또는 'network remove' 명령에서만 사용할 수 있습니다." "$LINENO"
           exit 1
         fi
         OPT_DRY_RUN=true
@@ -397,25 +423,43 @@ parse_arguments() {
     esac
   done
 
-  if [[ -n "$NET_NAME" ]]; then
-    if [[ "$COMMAND_ACTION" == "inspect" ]]; then
-      if ! validate_network_name_pattern "$NET_NAME"; then
-        help "네트워크 검색 이름('$NET_NAME')이 올바르지 않습니다. (허용 형식: <word>, <word>%, %<word>, %<word>% / 허용 문자: 영문, 숫자, '-', '_', '.')" "$LINENO"
-        exit 1
+  # remove 및 inspect에서 중복 지정된 네트워크 이름 제거
+  local -a unique_names=()
+  local n un exists
+  for n in "${NET_NAMES[@]}"; do
+    exists=0
+    for un in "${unique_names[@]}"; do
+      if [[ "$un" == "$n" ]]; then
+        exists=1
+        break
       fi
-    else
-      if ! validate_network_name "$NET_NAME"; then
-        help "네트워크 이름('$NET_NAME')이 올바르지 않습니다. (영문/숫자로 시작하며 영문, 숫자, '-', '_', '.' 만 허용)" "$LINENO"
-        exit 1
+    done
+    (( exists == 0 )) && unique_names+=("$n")
+  done
+  NET_NAMES=("${unique_names[@]}")
+
+  if (( ${#NET_NAMES[@]} > 0 )); then
+    for n in "${NET_NAMES[@]}"; do
+      if [[ "$COMMAND_ACTION" == "inspect" ]]; then
+        if ! validate_network_name_pattern "$n"; then
+          help "네트워크 검색 이름('$n')이 올바르지 않습니다. (허용 형식: <word>, <word>%, %<word>, %<word>% / 허용 문자: 영문, 숫자, '-', '_', '.')" "$LINENO"
+          exit 1
+        fi
+      else
+        if ! validate_network_name "$n"; then
+          help "네트워크 이름('$n')이 올바르지 않습니다. (영문/숫자로 시작하며 영문, 숫자, '-', '_', '.' 만 허용)" "$LINENO"
+          exit 1
+        fi
       fi
-    fi
+    done
   fi
 
   if [[ "$COMMAND_ACTION" == "create" ]]; then
-    if [[ -z "$NET_NAME" ]]; then
+    if (( ${#NET_NAMES[@]} == 0 )); then
       help "필수 파라미터 '--name'이 지정되지 않았습니다." "$LINENO"
       exit 1
     fi
+    NET_NAME="${NET_NAMES[0]}"
 
     if [[ -z "$NET_BRIDGE" ]]; then
       help "필수 파라미터 '--bridge'가 지정되지 않았습니다." "$LINENO"
@@ -451,8 +495,8 @@ parse_arguments() {
       help "게이트웨이('$NET_GATEWAY')가 지정된 서브넷 대역('$NET_SUBNET')에 포함되지 않습니다." "$LINENO"
       exit 1
     fi
-  elif [[ "$COMMAND_ACTION" == "delete" ]]; then
-    if [[ -z "$NET_NAME" ]]; then
+  elif [[ "$COMMAND_ACTION" == "remove" ]]; then
+    if (( ${#NET_NAMES[@]} == 0 )); then
       help "필수 파라미터 '--name'이 지정되지 않았습니다." "$LINENO"
       exit 1
     fi
@@ -475,39 +519,393 @@ ensure_privileges_early() {
   if (( EUID == 0 )); then
     SUDO_CMD=()
     DOCKER_CMD=(docker)
-  else
-    if docker info >/dev/null 2>&1; then
-      DOCKER_CMD=(docker)
-    else
-      DOCKER_CMD=(sudo docker)
-    fi
-
-    if [[ "$OPT_DRY_RUN" == "true" ]]; then
-      # Dry-run 모드에서는 실제 시스템 변경을 하지 않으므로 Docker 소켓 접근이 가능하면 sudo 인증을 요구하지 않음
-      if "${DOCKER_CMD[@]}" info >/dev/null 2>&1; then
-        return 0
-      fi
-    fi
-
-    if ! command -v sudo >/dev/null 2>&1; then
-      help "루트 권한 작업을 위해 sudo 명령어가 필요하나 시스템에 없습니다." "$LINENO"
-      exit 1
-    fi
-
-    if ! sudo -n true 2>/dev/null; then
-      echo "🔐 [AUTH] 네트워크 제어 및 Docker 관리를 위해 sudo 권한 확인이 필요합니다."
-      sudo -v || {
-        help "sudo 권한 획득에 실패하여 작업을 진행할 수 없습니다." "$LINENO"
-        exit 1
-      }
-    fi
-    SUDO_CMD=(sudo)
+    return 0
   fi
+
+  if docker info >/dev/null 2>&1; then
+    DOCKER_CMD=(docker)
+    SUDO_CMD=()
+    return 0
+  fi
+
+  # 일반 사용자로 docker 접근이 불가능한 경우 sudo docker 사용 및 sudo 인증 진행
+  DOCKER_CMD=(sudo docker)
+  if ! command -v sudo >/dev/null 2>&1; then
+    help "Docker 소켓 접근을 위해 루트 권한(sudo)이 필요하나 시스템에 sudo 명령어가 없습니다." "$LINENO"
+    exit 1
+  fi
+
+  if ! sudo -n true 2>/dev/null; then
+    echo "🔐 [AUTH] 네트워크 제어 및 Docker 관리를 위해 sudo 권한 확인이 필요합니다."
+    sudo -v || {
+      help "sudo 권한 획득에 실패하여 작업을 진행할 수 없습니다." "$LINENO"
+      exit 1
+    }
+  fi
+  SUDO_CMD=(sudo)
 
   if ! "${DOCKER_CMD[@]}" info >/dev/null 2>&1; then
     help "Docker 데몬이 현재 실행 중이지 않거나 소켓 접근이 불가능합니다." "$LINENO"
     exit 1
   fi
+}
+
+##
+# 'network create' 대화형(Step-by-Step) 입력 모드를 실행합니다.
+#
+# @param 없음
+#
+# @return 전역 변수 설정 (NET_NAME, NET_NAMES, NET_BRIDGE, NET_GATEWAY, NET_SUBNET, OPT_DRY_RUN)
+##
+prompt_step_by_step_create() {
+  local input_name=""
+  local input_bridge=""
+  local input_gateway=""
+  local input_subnet=""
+  local input_dry=""
+
+  # 1) 네트워크 이름 입력
+  while true; do
+    printf "  1) 네트워크 이름을 입력하세요. : "
+    read -r input_name || exit 1
+    if [[ -z "$input_name" ]]; then
+      echo "  ⚠️ 네트워크 이름을 반드시 입력해야 합니다."
+      continue
+    fi
+    if ! validate_network_name "$input_name"; then
+      echo "  ⚠️ 네트워크 이름이 올바르지 않습니다. (영문/숫자로 시작하며 영문, 숫자, '-', '_', '.' 만 허용)"
+      continue
+    fi
+    break
+  done
+
+  # 2) 호스트 커널 브릿지 인터페이스 이름 입력
+  while true; do
+    printf "  2) 호스트 커널에 바인딩할 브릿지 인터페이스 이름을 입력하세요. (최대 15자) : "
+    read -r input_bridge || exit 1
+    if [[ -z "$input_bridge" ]]; then
+      echo "  ⚠️ 브릿지 인터페이스 이름을 반드시 입력해야 합니다."
+      continue
+    fi
+    if ! validate_bridge_name "$input_bridge"; then
+      echo "  ⚠️ 브릿지 인터페이스 이름은 커널 한계(IFNAMSIZ)로 최대 15자 이하의 영문/숫자/-/_/. 조합이어야 합니다."
+      continue
+    fi
+    break
+  done
+
+  # 3) 네트워크 게이트웨이(IPv4) 입력
+  while true; do
+    printf "  3) 네트워크 게이트웨이(IPv4)를 입력하세요. (예: 172.31.255.1) : "
+    read -r input_gateway || exit 1
+    if [[ -z "$input_gateway" ]]; then
+      echo "  ⚠️ 게이트웨이 IP를 반드시 입력해야 합니다."
+      continue
+    fi
+    if ! validate_ipv4 "$input_gateway"; then
+      echo "  ⚠️ 올바른 IPv4 형식이 아닙니다. (예: 172.31.255.1)"
+      continue
+    fi
+    break
+  done
+
+  # 4) 서브넷 대역(CIDR) 입력
+  while true; do
+    printf "  4) CIDR 포맷의 서브넷 대역을 입력하세요. (예: 172.31.255.0/24) : "
+    read -r input_subnet || exit 1
+    if [[ -z "$input_subnet" ]]; then
+      echo "  ⚠️ 서브넷 대역을 반드시 입력해야 합니다."
+      continue
+    fi
+    if ! validate_cidr "$input_subnet"; then
+      echo "  ⚠️ 올바른 IPv4 CIDR(prefix: 1~30) 형식이 아닙니다. (예: 172.31.255.0/24)"
+      continue
+    fi
+    if ! validate_gateway_in_subnet "$input_subnet" "$input_gateway"; then
+      echo "  ⚠️ 게이트웨이('$input_gateway')가 지정된 서브넷 대역('$input_subnet')에 포함되지 않습니다."
+      continue
+    fi
+    break
+  done
+
+  # 5) 검증 여부 선택
+  while true; do
+    printf "  5) 실행 전에 검증만 하시겠습니까? (y: 검증 / n: 생성) : "
+    read -r input_dry || exit 1
+    case "$input_dry" in
+      y|Y)
+        OPT_DRY_RUN=true
+        break
+        ;;
+      n|N)
+        OPT_DRY_RUN=false
+        break
+        ;;
+      *)
+        echo "  ⚠️ 'y' 또는 'n'을 입력해 주세요."
+        continue
+        ;;
+    esac
+  done
+
+  NET_NAME="$input_name"
+  NET_NAMES=("$input_name")
+  NET_BRIDGE="$input_bridge"
+  NET_GATEWAY="$input_gateway"
+  NET_SUBNET="$input_subnet"
+}
+
+##
+# 'network remove' 대화형(Step-by-Step) 입력 모드를 실행합니다.
+#
+# @param 없음
+#
+# @return 전역 변수 설정 (NET_NAMES, OPT_DRY_RUN)
+##
+prompt_step_by_step_remove() {
+  local -a removable_nets=()
+  local net
+  while IFS= read -r net; do
+    [[ -z "$net" ]] && continue
+    if [[ "$net" != "bridge" && "$net" != "host" && "$net" != "none" ]]; then
+      removable_nets+=("$net")
+    fi
+  done < <("${DOCKER_CMD[@]}" network ls --filter "driver=bridge" --format '{{.Name}}' 2>/dev/null || true)
+
+  if (( ${#removable_nets[@]} == 0 )); then
+    echo "  1) 삭제할 네트워크를 선택하세요."
+    echo "  ⚠️ 삭제 가능한 사용자 정의 Docker 브릿지 네트워크가 시스템에 존재하지 않습니다."
+    exit 0
+  fi
+
+  echo "  1) 삭제할 네트워크를 선택하세요."
+  local idx
+  for idx in "${!removable_nets[@]}"; do
+    printf "    [%d] %s\n" "$((idx + 1))" "${removable_nets[idx]}"
+  done
+
+  while true; do
+    printf "    - 번호를 입력하세요. (여러 개는 콤마(,)로 분리) : "
+    local input_num=""
+    read -r input_num || exit 1
+    if [[ -z "$input_num" ]]; then
+      echo "    ⚠️ 번호를 입력해야 합니다."
+      continue
+    fi
+
+    local -a sel_indices=()
+    local item valid=1
+    IFS=',' read -r -a split_nums <<< "$input_num"
+    for item in "${split_nums[@]}"; do
+      item="${item// /}"
+      if [[ ! "$item" =~ ^[0-9]+$ ]] || (( item < 1 || item > ${#removable_nets[@]} )); then
+        echo "    ⚠️ 올바른 번호가 아닙니다: '$item' (1 ~ ${#removable_nets[@]} 범위의 번호를 입력하세요)"
+        valid=0
+        break
+      fi
+      sel_indices+=("$((item - 1))")
+    done
+
+    if (( valid == 0 )); then
+      continue
+    fi
+
+    NET_NAMES=()
+    for s_idx in "${sel_indices[@]}"; do
+      NET_NAMES+=("${removable_nets[s_idx]}")
+    done
+
+    # 중복 선택 제거
+    local -a unique_names=()
+    local n un exists
+    for n in "${NET_NAMES[@]}"; do
+      exists=0
+      for un in "${unique_names[@]}"; do
+        if [[ "$un" == "$n" ]]; then exists=1; break; fi
+      done
+      (( exists == 0 )) && unique_names+=("$n")
+    done
+    NET_NAMES=("${unique_names[@]}")
+    break
+  done
+
+  # 2) 검증 여부 선택
+  while true; do
+    printf "  2) 실행 전에 검증만 하시겠습니까? (y: 검증 / n: 삭제) : "
+    local input_dry=""
+    read -r input_dry || exit 1
+    case "$input_dry" in
+      y|Y)
+        OPT_DRY_RUN=true
+        break
+        ;;
+      n|N)
+        OPT_DRY_RUN=false
+        break
+        ;;
+      *)
+        echo "  ⚠️ 'y' 또는 'n'을 입력해 주세요."
+        continue
+        ;;
+    esac
+  done
+}
+
+##
+# 'network inspect' 대화형(Step-by-Step) 입력 모드를 실행합니다.
+#
+# @param 없음
+#
+# @return 전역 변수 설정 (NET_NAMES, OPT_CONTAINERS)
+##
+prompt_step_by_step_inspect() {
+  local -a available_nets=()
+  local net
+  while IFS= read -r net; do
+    [[ -n "$net" ]] && available_nets+=("$net")
+  done < <("${DOCKER_CMD[@]}" network ls --filter "driver=bridge" --format '{{.Name}}' 2>/dev/null || true)
+
+  if (( ${#available_nets[@]} == 0 )); then
+    echo "  1) 살펴볼 네트워크를 선택하세요."
+    echo "  ⚠️ 조회 가능한 Docker 브릿지 네트워크가 시스템에 존재하지 않습니다."
+    exit 0
+  fi
+
+  echo "  1) 살펴볼 네트워크를 선택하세요."
+  local idx
+  for idx in "${!available_nets[@]}"; do
+    printf "    [%d] %s\n" "$((idx + 1))" "${available_nets[idx]}"
+  done
+
+  while true; do
+    printf "    - 번호를 입력하세요. (여러 개는 콤마(,)로 분리) : "
+    local input_num=""
+    read -r input_num || exit 1
+    if [[ -z "$input_num" ]]; then
+      echo "    ⚠️ 번호를 입력해야 합니다."
+      continue
+    fi
+
+    local -a sel_indices=()
+    local item valid=1
+    IFS=',' read -r -a split_nums <<< "$input_num"
+    for item in "${split_nums[@]}"; do
+      item="${item// /}"
+      if [[ ! "$item" =~ ^[0-9]+$ ]] || (( item < 1 || item > ${#available_nets[@]} )); then
+        echo "    ⚠️ 올바른 번호가 아닙니다: '$item' (1 ~ ${#available_nets[@]} 범위의 번호를 입력하세요)"
+        valid=0
+        break
+      fi
+      sel_indices+=("$((item - 1))")
+    done
+
+    if (( valid == 0 )); then
+      continue
+    fi
+
+    NET_NAMES=()
+    for s_idx in "${sel_indices[@]}"; do
+      NET_NAMES+=("${available_nets[s_idx]}")
+    done
+
+    # 중복 선택 제거
+    local -a unique_names=()
+    local n un exists
+    for n in "${NET_NAMES[@]}"; do
+      exists=0
+      for un in "${unique_names[@]}"; do
+        if [[ "$un" == "$n" ]]; then exists=1; break; fi
+      done
+      (( exists == 0 )) && unique_names+=("$n")
+    done
+    NET_NAMES=("${unique_names[@]}")
+    break
+  done
+
+  # 2) 컨테이너 목록 포함 여부 선택
+  while true; do
+    printf "  2) 컨테이너 목록을 포함할까요? (y/n) : "
+    local input_c=""
+    read -r input_c || exit 1
+    case "$input_c" in
+      y|Y)
+        OPT_CONTAINERS=true
+        break
+        ;;
+      n|N)
+        OPT_CONTAINERS=false
+        break
+        ;;
+      *)
+        echo "  ⚠️ 'y' 또는 'n'을 입력해 주세요."
+        continue
+        ;;
+    esac
+  done
+}
+
+##
+# 'network create' 대화형 검증(--dry-run) 성공 후 실제 생성 진행 여부를 확인하고 실행합니다.
+#
+# @param 없음
+#
+# @return 0
+##
+prompt_confirm_and_execute_create() {
+  local proceed=""
+  echo
+  while true; do
+    printf "  생성 작업을 진행할까요? (y/n) : "
+    read -r proceed || exit 1
+    case "$proceed" in
+      y|Y)
+        OPT_DRY_RUN=false
+        echo
+        setup_docker_network
+        break
+        ;;
+      n|N)
+        echo "  ℹ️  생성 작업이 취소되었습니다."
+        break
+        ;;
+      *)
+        echo "  ⚠️ 'y' 또는 'n'을 입력해 주세요."
+        continue
+        ;;
+    esac
+  done
+}
+
+##
+# 'network remove' 대화형 검증(--dry-run) 성공 후 실제 삭제 진행 여부를 확인하고 실행합니다.
+#
+# @param 없음
+#
+# @return 0
+##
+prompt_confirm_and_execute_remove() {
+  local proceed=""
+  echo
+  while true; do
+    printf "  삭제 작업을 진행할까요? (y/n) : "
+    read -r proceed || exit 1
+    case "$proceed" in
+      y|Y)
+        OPT_DRY_RUN=false
+        echo
+        remove_docker_networks
+        break
+        ;;
+      n|N)
+        echo "  ℹ️  삭제 작업이 취소되었습니다."
+        break
+        ;;
+      *)
+        echo "  ⚠️ 'y' 또는 'n'을 입력해 주세요."
+        continue
+        ;;
+    esac
+  done
 }
 
 ##
@@ -703,80 +1101,104 @@ inspect_docker_networks() {
   local bridge_networks
   bridge_networks=$("${DOCKER_CMD[@]}" network ls --filter "driver=bridge" --format '{{.Name}}' 2>/dev/null || true)
 
-  if [[ -n "$NET_NAME" ]]; then
-    if [[ "$NET_NAME" == *%* ]]; then
-      local word=""
-      local mode=""
-      if [[ "$NET_NAME" == %*% ]]; then
-        word="${NET_NAME#%}"
-        word="${word%\%}"
-        mode="contains"
-      elif [[ "$NET_NAME" == *% ]]; then
-        word="${NET_NAME%\%}"
-        mode="prefix"
-      elif [[ "$NET_NAME" == %* ]]; then
-        word="${NET_NAME#%}"
-        mode="suffix"
-      fi
+  if (( ${#NET_NAMES[@]} > 0 )); then
+    local -a final_target_nets=()
+    local -A seen_nets=()
+    local target_pattern
 
-      local matched_networks=()
-      local net
-      while read -r net; do
-        [[ -n "$net" ]] || continue
-        case "$mode" in
-          contains)
-            if [[ "$net" == *"${word}"* ]]; then
-              matched_networks+=("$net")
-            fi
-            ;;
-          prefix)
-            if [[ "$net" == "${word}"* ]]; then
-              matched_networks+=("$net")
-            fi
-            ;;
-          suffix)
-            if [[ "$net" == *"${word}" ]]; then
-              matched_networks+=("$net")
-            fi
-            ;;
-        esac
-      done <<< "$bridge_networks"
-
-      if (( ${#matched_networks[@]} == 0 )); then
-        echo "ℹ️  조건('${NET_NAME}')에 일치하는 Docker bridge 네트워크가 존재하지 않습니다."
-        return 0
-      fi
-
-      for net in "${matched_networks[@]}"; do
-        inspect_single_network "$net" "$OPT_CONTAINERS"
-      done
-    else
-      local exact_match=false
-      local net
-      while read -r net; do
-        if [[ -n "$net" && "$net" == "$NET_NAME" ]]; then
-          exact_match=true
-          break
+    for target_pattern in "${NET_NAMES[@]}"; do
+      if [[ "$target_pattern" == *%* ]]; then
+        local word=""
+        local mode=""
+        if [[ "$target_pattern" == %*% ]]; then
+          word="${target_pattern#%}"
+          word="${word%\%}"
+          mode="contains"
+        elif [[ "$target_pattern" == *% ]]; then
+          word="${target_pattern%\%}"
+          mode="prefix"
+        elif [[ "$target_pattern" == %* ]]; then
+          word="${target_pattern#%}"
+          mode="suffix"
         fi
-      done <<< "$bridge_networks"
 
-      if [[ "$exact_match" == "false" ]]; then
-        local existing_name
-        existing_name=$("${DOCKER_CMD[@]}" network inspect "$NET_NAME" --format '{{.Name}}' 2>/dev/null || true)
-        if [[ "$existing_name" == "$NET_NAME" ]]; then
-          local driver
-          driver=$("${DOCKER_CMD[@]}" network inspect "$NET_NAME" --format '{{.Driver}}' 2>/dev/null || true)
-          if [[ "$driver" != "bridge" ]]; then
-            help "네트워크 '$NET_NAME'는 'bridge' 드라이버 네트워크가 아닙니다 (현재 드라이버: '$driver')." "$LINENO"
+        local matched_count=0
+        local net
+        while read -r net; do
+          [[ -n "$net" ]] || continue
+          local matched=0
+          case "$mode" in
+            contains)
+              [[ "$net" == *"${word}"* ]] && matched=1
+              ;;
+            prefix)
+              [[ "$net" == "${word}"* ]] && matched=1
+              ;;
+            suffix)
+              [[ "$net" == *"${word}" ]] && matched=1
+              ;;
+          esac
+          if (( matched == 1 )); then
+            ((matched_count++)) || true
+            if [[ -z "${seen_nets["$net"]:-}" ]]; then
+              seen_nets["$net"]=1
+              final_target_nets+=("$net")
+            fi
+          fi
+        done <<< "$bridge_networks"
+
+        if (( matched_count == 0 )); then
+          echo "ℹ️  조건('${target_pattern}')에 일치하는 Docker bridge 네트워크가 존재하지 않습니다."
+        fi
+      else
+        local exact_match=false
+        local net
+        while read -r net; do
+          if [[ -n "$net" && "$net" == "$target_pattern" ]]; then
+            exact_match=true
+            break
+          fi
+        done <<< "$bridge_networks"
+
+        if [[ "$exact_match" == "true" ]]; then
+          if [[ -z "${seen_nets["$target_pattern"]:-}" ]]; then
+            seen_nets["$target_pattern"]=1
+            final_target_nets+=("$target_pattern")
+          fi
+        else
+          local existing_name
+          existing_name=$("${DOCKER_CMD[@]}" network inspect "$target_pattern" --format '{{.Name}}' 2>/dev/null || true)
+          if [[ "$existing_name" == "$target_pattern" ]]; then
+            local driver
+            driver=$("${DOCKER_CMD[@]}" network inspect "$target_pattern" --format '{{.Driver}}' 2>/dev/null || true)
+            if [[ "$driver" != "bridge" ]]; then
+              if (( ${#NET_NAMES[@]} == 1 )); then
+                help "네트워크 '$target_pattern'는 'bridge' 드라이버 네트워크가 아닙니다 (현재 드라이버: '$driver')." "$LINENO"
+                exit 1
+              else
+                echo "⚠️  [경고] 네트워크 '$target_pattern'는 'bridge' 드라이버 네트워크가 아닙니다 (현재 드라이버: '$driver')." >&2
+                continue
+              fi
+            fi
+          fi
+          if (( ${#NET_NAMES[@]} == 1 )); then
+            help "조회할 Docker 네트워크 '$target_pattern'가 존재하지 않습니다." "$LINENO"
             exit 1
+          else
+            echo "⚠️  [경고] 조회할 Docker 네트워크 '$target_pattern'가 존재하지 않습니다." >&2
           fi
         fi
-        help "조회할 Docker 네트워크 '$NET_NAME'가 존재하지 않습니다." "$LINENO"
-        exit 1
       fi
+    done
 
-      inspect_single_network "$NET_NAME" "$OPT_CONTAINERS"
+    if (( ${#final_target_nets[@]} == 0 )); then
+      return 0
     fi
+
+    local net
+    for net in "${final_target_nets[@]}"; do
+      inspect_single_network "$net" "$OPT_CONTAINERS"
+    done
   else
     if [[ -z "${bridge_networks// /}" ]]; then
       echo "ℹ️  시스템에 등록된 Docker bridge 네트워크가 존재하지 않습니다."
@@ -793,53 +1215,69 @@ inspect_docker_networks() {
 }
 
 ##
-# 지정된 Docker bridge network를 삭제하고 호스트 커널 리소스를 정리합니다.
+# 단일 Docker bridge network를 삭제하고 호스트 커널 리소스를 정리합니다.
 #
-# @param 없음
+# @param $1 {string} 삭제할 네트워크 이름
 #
-# @return Docker 네트워크 삭제 결과 화면 출력
+# @return 성공 시 0, 실패 시 1 반환
 ##
-delete_docker_network() {
-  echo "🌐 [네트워크] Docker 네트워크 삭제 작업 시작: '${NET_NAME}'"
+remove_single_network() {
+  local target_net="$1"
+  echo "🌐 [네트워크] Docker 네트워크 삭제 작업 시작: '${target_net}'"
 
-  if ! "${DOCKER_CMD[@]}" network inspect "${NET_NAME}" >/dev/null 2>&1; then
-    help "삭제할 Docker 네트워크 '${NET_NAME}'가 존재하지 않습니다." "$LINENO"
-    exit 1
+  if ! "${DOCKER_CMD[@]}" network inspect "${target_net}" >/dev/null 2>&1; then
+    if (( ${#NET_NAMES[@]} == 1 )); then
+      help "삭제할 Docker 네트워크 '${target_net}'가 존재하지 않습니다." "$LINENO"
+      exit 1
+    else
+      echo "❌ [오류] 삭제할 Docker 네트워크 '${target_net}'가 존재하지 않습니다." >&2
+      return 1
+    fi
   fi
 
-  if [[ "$NET_NAME" =~ ^(bridge|host|none)$ ]]; then
-    help "기본 Docker 네트워크('${NET_NAME}')는 시스템 보호를 위해 삭제할 수 없습니다." "$LINENO"
-    exit 1
+  if [[ "$target_net" =~ ^(bridge|host|none)$ ]]; then
+    if (( ${#NET_NAMES[@]} == 1 )); then
+      help "기본 Docker 네트워크('${target_net}')는 시스템 보호를 위해 삭제할 수 없습니다." "$LINENO"
+      exit 1
+    else
+      echo "❌ [오류] 기본 Docker 네트워크('${target_net}')는 시스템 보호를 위해 삭제할 수 없습니다." >&2
+      return 1
+    fi
   fi
 
   local connected_containers
-  connected_containers=$("${DOCKER_CMD[@]}" network inspect "${NET_NAME}" --format '{{range $k, $v := .Containers}}{{$v.Name}} {{end}}' 2>/dev/null || true)
+  connected_containers=$("${DOCKER_CMD[@]}" network inspect "${target_net}" --format '{{range $k, $v := .Containers}}{{$v.Name}} {{end}}' 2>/dev/null || true)
   if [[ -n "${connected_containers// /}" ]]; then
-    help "Docker 네트워크 '${NET_NAME}'에 활성/정지 상태의 컨테이너가 연결되어 있어 삭제할 수 없습니다. (연결된 컨테이너: ${connected_containers})" "$LINENO"
-    exit 1
+    if (( ${#NET_NAMES[@]} == 1 )); then
+      help "Docker 네트워크 '${target_net}'에 활성/정지 상태의 컨테이너가 연결되어 있어 삭제할 수 없습니다. (연결된 컨테이너: ${connected_containers})" "$LINENO"
+      exit 1
+    else
+      echo "❌ [오류] Docker 네트워크 '${target_net}'에 활성/정지 상태의 컨테이너가 연결되어 있어 삭제할 수 없습니다. (연결된 컨테이너: ${connected_containers})" >&2
+      return 1
+    fi
   fi
 
   local br_name
-  br_name=$("${DOCKER_CMD[@]}" network inspect "${NET_NAME}" --format '{{index .Options "com.docker.network.bridge.name"}}' 2>/dev/null || true)
+  br_name=$("${DOCKER_CMD[@]}" network inspect "${target_net}" --format '{{index .Options "com.docker.network.bridge.name"}}' 2>/dev/null || true)
 
   if [[ "$OPT_DRY_RUN" == "true" ]]; then
-    echo "🌐 [네트워크] Docker 네트워크 삭제 작업 (시뮬레이션 모드: --dry-run): '${NET_NAME}'"
+    echo "🌐 [네트워크] Docker 네트워크 삭제 작업 (시뮬레이션 모드: --dry-run): '${target_net}'"
     echo "--------------------------------------------------------------------------------"
     echo "ℹ️  [DRY-RUN] 실제 환경을 변경하지 않고 삭제 가능 여부 및 실행 계획만 확인합니다."
     echo "--------------------------------------------------------------------------------"
-    echo "  - 대상 네트워크 이름    : ${NET_NAME}"
+    echo "  - 대상 네트워크 이름    : ${target_net}"
     echo "  - 커널 브릿지 인터페이스: ${br_name:-N/A}"
     echo "  - 연결된 컨테이너       : 없음 (삭제 안전 조건 충족)"
     echo "--------------------------------------------------------------------------------"
     echo "🗑️  [실행 예정 명령어]:"
-    echo "   ${DOCKER_CMD[*]} network rm \"${NET_NAME}\""
+    echo "   ${DOCKER_CMD[*]} network rm \"${target_net}\""
     echo "--------------------------------------------------------------------------------"
     echo "✅ [DRY-RUN] 사전 검증 통과! 해당 네트워크를 안전하게 삭제할 수 있습니다."
     return 0
   fi
 
-  echo "  🗑️  [삭제] Docker 네트워크 '${NET_NAME}' 삭제 중..."
-  "${DOCKER_CMD[@]}" network rm "${NET_NAME}" >/dev/null
+  echo "  🗑️  [삭제] Docker 네트워크 '${target_net}' 삭제 중..."
+  "${DOCKER_CMD[@]}" network rm "${target_net}" >/dev/null
 
   if [[ -n "$br_name" ]]; then
     echo "  🔍 [검증] 커널 인터페이스('${br_name}') 해제 확인 중..."
@@ -858,7 +1296,47 @@ delete_docker_network() {
     fi
   fi
 
-  echo "  ✅ [완료] Docker 네트워크 '${NET_NAME}' 가 정상적으로 삭제되었습니다."
+  echo "  ✅ [완료] Docker 네트워크 '${target_net}' 가 정상적으로 삭제되었습니다."
+  return 0
+}
+
+##
+# 지정된 하나 이상의 Docker bridge network를 순회 삭제하고 결과를 종합합니다.
+#
+# @param 없음
+#
+# @return 모든 대상 정상 처리 시 0, 실패 발생 시 1 반환
+##
+remove_docker_networks() {
+  local target_net
+  local success_count=0
+  local fail_count=0
+
+  for target_net in "${NET_NAMES[@]}"; do
+    if (( ${#NET_NAMES[@]} > 1 )); then
+      echo "================================================================================"
+    fi
+    if remove_single_network "$target_net"; then
+      ((success_count++)) || true
+    else
+      ((fail_count++)) || true
+    fi
+  done
+
+  if (( ${#NET_NAMES[@]} > 1 )); then
+    echo "================================================================================"
+    if [[ "$OPT_DRY_RUN" == "true" ]]; then
+      echo "📊 [DRY-RUN 요약] 검증 성공: ${success_count}개 / 검증 실패: ${fail_count}개 (총 ${#NET_NAMES[@]}개)"
+    else
+      echo "📊 [작업 요약] 삭제 성공: ${success_count}개 / 삭제 실패: ${fail_count}개 (총 ${#NET_NAMES[@]}개)"
+    fi
+    echo "================================================================================"
+  fi
+
+  if (( fail_count > 0 )); then
+    return 1
+  fi
+  return 0
 }
 
 ##
@@ -871,12 +1349,31 @@ delete_docker_network() {
 main() {
   parse_arguments "$@"
   ensure_privileges_early
+  if [[ "$IS_INTERACTIVE" == "true" ]]; then
+    case "$COMMAND_ACTION" in
+      create)
+        prompt_step_by_step_create
+        ;;
+      remove)
+        prompt_step_by_step_remove
+        ;;
+      inspect)
+        prompt_step_by_step_inspect
+        ;;
+    esac
+  fi
   case "$COMMAND_ACTION" in
     create)
       setup_docker_network
+      if [[ "$IS_INTERACTIVE" == "true" && "$OPT_DRY_RUN" == "true" ]]; then
+        prompt_confirm_and_execute_create
+      fi
       ;;
-    delete)
-      delete_docker_network
+    remove)
+      remove_docker_networks
+      if [[ "$IS_INTERACTIVE" == "true" && "$OPT_DRY_RUN" == "true" ]]; then
+        prompt_confirm_and_execute_remove
+      fi
       ;;
     inspect)
       inspect_docker_networks

@@ -7,13 +7,13 @@ dknetcli \- Docker network management CLI.
 [\fIOPTIONS\fR]
 
 .SH DESCRIPTION
-Docker 브릿지(Bridge) 네트워크의 \fB생성(\fBcreate\fR)\fR, \fB삭제(\fBdelete\fR)\fR, \fB상세 조회(\fBinspect\fR)\fR를 수행하며, 커널 브릿지 인터페이스 바인딩 검증과 서브넷 대역 충돌(Overlap) 사전 진단 기능을 제공하는 CLI 유틸리티입니다.
+Docker 브릿지(Bridge) 네트워크의 \fB생성(\fBcreate\fR)\fR, \fB삭제(\fBremove\fR)\fR, \fB상세 조회(\fBinspect\fR)\fR를 수행하며, 커널 브릿지 인터페이스 바인딩 검증과 서브넷 대역 충돌(Overlap) 사전 진단 기능을 제공하는 CLI 유틸리티입니다.
 
 .SH KEY FEATURES
 .IP \(bu 2
 \fB서브커맨드 기반 직관적 인터페이스 (Short Option 배제)\fR
 .IP \(bu 2
-\fBdknetcli network <create|delete|inspect> [옵션]\fR 구조를 따르며, 모든 옵션은 정규 롱 옵션(Full Option)만 허용합니다.
+\fBdknetcli network <create|remove|inspect> [옵션]\fR 구조를 따르며, 모든 옵션은 정규 롱 옵션(Full Option)만 허용합니다.
 .IP \(bu 2
 \fB네트워크 생성 전 5단계 사전 충돌 검증 (Pre-flight Validation)\fR
 .IP \(bu 2
@@ -33,11 +33,19 @@ Docker 브릿지(Bridge) 네트워크의 \fB생성(\fBcreate\fR)\fR, \fB삭제(\
 .IP \(bu 2
 \fB\-\-containers\fR 옵션 추가 시 해당 네트워크에 연결된 컨테이너들의 이름, ID, IPv4 주소, MAC 주소를 함께 출력합니다.
 .IP \(bu 2
-\fB안전한 네트워크 삭제 (\fBdelete\fR) 및 커널 인터페이스 해제 검증\fR
+\fB안전한 네트워크 삭제 (\fBremove\fR) 및 커널 인터페이스 해제 검증\fR
 .IP \(bu 2
 시스템 기본 네트워크(\fBbridge\fR, \fBhost\fR, \fBnone\fR) 및 활성/정지 컨테이너가 연결된 네트워크의 삭제를 차단하여 사고를 예방합니다.
 .IP \(bu 2
 삭제 후 호스트 커널에서 브릿지 인터페이스가 정상적으로 해제되었는지 확인합니다.
+.IP \(bu 2
+\fB단계별 대화형 (Step\-by\-Step) 입력 모드 지원\fR
+.IP \(bu 2
+옵션을 생략하고 \fBdknetcli network <create|remove|inspect>\fR만 실행할 경우, 대화형 프롬프트를 통해 단계별로 필요한 정보를 안내받아 손쉽게 입력할 수 있습니다.
+.IP \(bu 2
+\fBremove\fR 및 \fBinspect\fR에서는 현재 시스템의 Docker 브릿지 네트워크 목록이 번호 목록으로 제공되어 콤마(,)를 이용해 여러 대상을 손쉽게 선택할 수 있습니다.
+.IP \(bu 2
+\fBcreate\fR 및 \fBremove\fR에서 사전 검증(\fBy\fR)을 선택하여 \fB\-\-dry-run\fR 결과를 확인한 후에도 작업을 다시 입력하지 않고 바로 실제 생성/삭제 작업을 이어서 진행할 수 있습니다.
 
 .SH OPTIONS
 .SS 1. 서브커맨드
@@ -45,7 +53,7 @@ Docker 브릿지(Bridge) 네트워크의 \fB생성(\fBcreate\fR)\fR, \fB삭제(\
 .B network create
 커스텀 브릿지 인터페이스 및 IPAM(서브넷/게이트웨이) 설정을 적용하여 Docker 브릿지 네트워크 생성
 .TP
-.B network delete
+.B network remove
 지정한 Docker 브릿지 네트워크 삭제 및 커널 인터페이스 해제 확인
 .TP
 .B network inspect
@@ -53,7 +61,7 @@ Docker 브릿지(Bridge) 네트워크의 \fB생성(\fBcreate\fR)\fR, \fB삭제(\
 .SS 2. 옵션 상세
 .TP
 .B \-\-name <name|pattern>
-[create, delete, inspect, create/delete 시 필수] 대상 Docker 네트워크 이름 (inspect 시 <word>%, %<word>, %<word>% 패턴 지원)
+[create, remove, inspect, create/remove 시 필수] 대상 Docker 네트워크 이름 (remove, inspect 시 여러 번 지정 가능, inspect 시 <word>%, %<word>, %<word>% 패턴 지원)
 .TP
 .B \-\-bridge <bridge-name>
 [create, 필수] 호스트 커널에 바인딩할 브릿지 인터페이스 이름 (최대 15자, 영문/숫자/-/_/.)
@@ -68,7 +76,7 @@ Docker 브릿지(Bridge) 네트워크의 \fB생성(\fBcreate\fR)\fR, \fB삭제(\
 [inspect, 선택] 네트워크에 연결된 컨테이너 목록 및 IPv4/MAC 주소 상세 출력
 .TP
 .B \-\-dry-run
-[create, delete, 선택] 실제 작업을 수행하지 않고 사전 충돌 검증 및 실행 예정 명령 시뮬레이션 출력
+[create, remove, 선택] 실제 작업을 수행하지 않고 사전 충돌 검증 및 실행 예정 명령 시뮬레이션 출력
 .TP
 .B \-\-help
 [공통, 선택] 도움말 출력
@@ -93,14 +101,19 @@ Docker 브릿지(Bridge) 네트워크의 \fB생성(\fBcreate\fR)\fR, \fB삭제(\
   # 3) 전체 브릿지 네트워크 및 연결된 컨테이너 상세 조회
   \&./dknetcli network inspect \-\-containers
   
-  # 4) 이름에 'app'이 포함된 브릿지 네트워크만 필터링하여 컨테이너와 함께 조회
-  \&./dknetcli network inspect \-\-name %app% \-\-containers
+  # 4) 복수 네트워크 및 패턴 필터링 조회 (다중 \-\-name 지정)
+  \&./dknetcli network inspect \-\-name %app% \-\-name test\-net \-\-containers
   
-  # 5) Docker 브릿지 네트워크 삭제 시뮬레이션
-  \&./dknetcli network delete \-\-name app\-backend\-net \-\-dry-run
+  # 5) 복수 Docker 브릿지 네트워크 일괄 삭제 시뮬레이션
+  \&./dknetcli network remove \-\-name app\-backend\-net \-\-name test\-net \-\-dry-run
 
-  # 6) 특정 Docker 브릿지 네트워크 삭제
-  \&./dknetcli network delete \-\-name app\-backend\-net
+  # 6) 복수 Docker 브릿지 네트워크 일괄 삭제
+  \&./dknetcli network remove \-\-name app\-backend\-net \-\-name test\-net
+
+  # 7) 단계별 대화형 (Step\-by\-Step) 입력 모드 실행
+  \&./dknetcli network create
+  \&./dknetcli network remove
+  \&./dknetcli network inspect
 .fi
 .PP
 
