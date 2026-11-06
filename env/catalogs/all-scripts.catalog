@@ -1,0 +1,53 @@
+# ==============================================================================
+# Catalog Metadata
+# ==============================================================================
+CATALOG_ID=all-scripts
+CATALOG_TITLE=전체 CLI 스크립트 도구 통합 모음 (All Scripts)
+CATALOG_DESC=ai-agent, build, db, docker, es, fail2ban, git, gitlab, installer, java, maven, net, redis, sys, utils 15개 카테고리의 75개 CLI 스크립트 도구를 일괄 설치합니다.
+INCLUDES=
+
+# ==============================================================================
+# 1. Sudoers NOPASSWD Commands (콤마 구분)
+# ==============================================================================
+NO_PASSWORD_COMMANDS=
+
+# ==============================================================================
+# 2. OS Packages (apt / dnf, 콤마 구분)
+# ==============================================================================
+REMOVE_PACKAGES=
+INSTALL_PACKAGES=
+
+# ==============================================================================
+# 3. CLI Tools (<category>/<canonical-name>, 콤마 구분)
+# ==============================================================================
+TOOLS=\
+  ai-agent/asr-cli, \
+  build/clean-project, build/deploy-profile, build/remove-deploy, \
+  db/h2-db-migrate, db/mariadb-backup, db/mariadb-restore, \
+  docker/dkcontls, docker/dknetcli, docker/install-docker, docker/install-docker-dev-config, docker/pull-gitlab-images, docker/setup-compose-service, docker/setup-docker-compose, \
+  es/es-index-usage, es/es-search-index, \
+  fail2ban/fail2ban-unbanip, \
+  git/git-branch-cmd, git/git-commit, git/git-config, git/git-getpr, git/git-init, git/git-log-abbr, git/git-log-all, git/git-merge, git/git-modify, git/git-pull-all, git/git-push-after-sync, git/git-push-all, git/git-status-all, git/git-tags, \
+  gitlab/clone-gitlab-projects, gitlab/gitlab-clone, \
+  installer/install-albert-with-socket, installer/install-antigravity-ide, installer/install-antigravity-x64, \
+  java/mac-clean-java-config, java/mac-update-java-config, java/update-java-config, \
+  maven/build-deploy-all, maven/build-mvn-package, maven/mvn-deploy, maven/update-mvn-config, maven/upload-mvn-dependencies, \
+  net/add-vlan-routes, net/fwc-cli, net/fwc-docker-policy, net/mtr-netstat-conns, net/ps-port, net/scp-dir, net/ssh-proxy, net/sshctl, \
+  redis/redis-search, \
+  sys/cat-cli, sys/copy-suffix, sys/disk-size, sys/remove-service, sys/ren-files, sys/sys-info, sys/vim-cli, \
+  utils/autotail, utils/canonical-status, utils/check-number-inline, utils/csv-count-checker, utils/diff-file, utils/grep-files, utils/gz-ext-latest, utils/modify-enc-str, utils/replace-codeblock, utils/replace-files, utils/scp-con-gen, utils/scriptctl, utils/sna-files, utils/ssh-con-gen, utils/uuid-list
+
+# ==============================================================================
+# 4. Installers (env/installers/ 식별자 또는 <category>/<tool>, 콤마 구분)
+# ==============================================================================
+INSTALLERS=
+
+# ==============================================================================
+# 5. Post-Install Commands (env/commands/ 식별자, 콤마 구분)
+# ==============================================================================
+COMMANDS=
+
+# ==============================================================================
+# 6. SSH Public Keys (env/keys/ 식별자, 콤마 구분)
+# ==============================================================================
+SSH_KEYS=
