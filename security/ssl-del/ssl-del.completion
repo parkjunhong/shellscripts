@@ -113,18 +113,25 @@ _ssl_del_get_known_hosts() {
 ##
 _ssl_del_complete_comma_files() {
   local cur="$1"
-  if [[ "$cur" == *","* ]]; then
-    local prefix="${cur%,*},"
-    local subcur="${cur##*,}"
-    local -a matches=()
-    local item
-    for item in $(compgen -f -- "$subcur"); do
-      matches+=("${prefix}${item}")
-    done
-    COMPREPLY=( "${matches[@]}" )
-  else
-    COMPREPLY=( $(compgen -f -- "$cur") )
+  # 콤마로 연결 가능한 다중 파일 경로이므로 자동 공백 추가 방지 및 경로 완성 지원
+  compopt -o filenames -o nospace 2>/dev/null || true
+
+  local prefix=""
+  local subcur="$cur"
+  if [[ "$cur" == *,* ]]; then
+    prefix="${cur%,*},"
+    subcur="${cur##*,}"
   fi
+
+  local item
+  while IFS= read -r item; do
+    [[ -n "$item" ]] || continue
+    if [[ -d "$item" ]]; then
+      COMPREPLY+=("${prefix}${item%/}/")
+    else
+      COMPREPLY+=("${prefix}${item}")
+    fi
+  done < <(compgen -f -- "$subcur")
 }
 
 ##

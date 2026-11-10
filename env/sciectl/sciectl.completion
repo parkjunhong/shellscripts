@@ -26,15 +26,143 @@
 # - $3: word preceding the word being completed (현재 완성하려는 단어의 바로 이전 단어)
 # =======================================
 
+# 원격 GitHub 저장소 Raw 기본 URL
+readonly SCIECTL_REPO_RAW_URL_DEFAULT="https://raw.githubusercontent.com/parkjunhong/shellscripts/main"
+
 ##
-# 로컬 Git 저장소의 최상위 루트 디렉토리를 탐색합니다.
+# 캐시 디렉토리 경로를 반환합니다.
+# 1순위: ${XDG_CACHE_HOME:-$HOME/.cache}/sciectl
+# 2순위: /tmp/.sciectl_cache_${EUID:-0}
+#
+# @return 캐시 디렉토리 경로
+##
+_sciectl_get_cache_dir() {
+  local dir="${XDG_CACHE_HOME:-$HOME/.cache}/sciectl"
+  if mkdir -p "$dir" 2>/dev/null; then
+    printf '%s\n' "$dir"
+    return 0
+  fi
+  dir="/tmp/.sciectl_cache_${EUID:-$(id -u 2>/dev/null || echo 0)}"
+  mkdir -p "$dir" 2>/dev/null || true
+  printf '%s\n' "$dir"
+}
+
+##
+# 파일의 경과 시간(초 단위)을 계산합니다.
+# Linux(stat -c %Y) 및 macOS(stat -f %m)를 모두 지원합니다.
+#
+# @param $1 {string} 파일 경로
+#
+# @return 경과 시간(초)
+##
+_sciectl_get_file_age() {
+  local file="$1"
+  local now file_mtime
+  now="$(date +%s)"
+  file_mtime="$(stat -c %Y "$file" 2>/dev/null || stat -f %m "$file" 2>/dev/null || echo 0)"
+  echo $(( now - file_mtime ))
+}
+
+##
+# 원격 GitHub에서 catalogs.ini 파일을 다운로드하여 TTL 캐시를 관리하고
+# 카탈로그 섹션 목록을 반환합니다.
+#
+# @return 카탈로그 ID 목록 (공백 구분)
+##
+_sciectl_fetch_remote_catalogs_cached() {
+  local cache_dir
+  cache_dir="$(_sciectl_get_cache_dir)"
+  local cache_file="${cache_dir}/catalogs.ini"
+  local ttl="${SCIECTL_CACHE_TTL:-300}" # 기본값: 300초 (5분)
+  local raw_base="${SCIECTL_REPO_RAW_URL:-$SCIECTL_REPO_RAW_URL_DEFAULT}"
+
+  local need_refresh=1
+  if [[ -f "$cache_file" && -s "$cache_file" ]]; then
+    local age
+    age="$(_sciectl_get_file_age "$cache_file")"
+    if (( age < ttl )); then
+      need_refresh=0
+    fi
+  fi
+
+  if (( need_refresh == 1 )); then
+    local tmp_fetch="${cache_file}.tmp.$$"
+    if curl -sf --connect-timeout 2 --max-time 4 "${raw_base}/env/catalogs/catalogs.ini" -o "$tmp_fetch" 2>/dev/null && [[ -s "$tmp_fetch" ]]; then
+      mv -f "$tmp_fetch" "$cache_file" 2>/dev/null || true
+    else
+      rm -f "$tmp_fetch" 2>/dev/null || true
+      # 네트워크 장애 시 이전 캐시가 있다면 터치하여 재시도 간격 확보
+      [[ -f "$cache_file" ]] && touch "$cache_file" 2>/dev/null || true
+    fi
+  fi
+
+  if [[ -f "$cache_file" && -s "$cache_file" ]]; then
+    grep -E '^\[[a-zA-Z0-9_-]+\]' "$cache_file" 2>/dev/null | tr -d '[]' | tr '\n' ' '
+    return 0
+  fi
+
+  return 1
+}
+
+##
+# 원격 GitHub에서 개별 *.catalog 파일을 다운로드하여 TTL 캐시를 관리하고
+# 로컬 캐시 파일 경로를 반환합니다.
+#
+# @param $1 {string} 카탈로그 ID
+#
+# @return 캐시 파일 경로
+##
+_sciectl_fetch_remote_catalog_file_cached() {
+  local cid="$1"
+  local cache_dir
+  cache_dir="$(_sciectl_get_cache_dir)"
+  local cache_file="${cache_dir}/${cid}.catalog"
+  local ttl="${SCIECTL_CACHE_TTL:-300}"
+  local raw_base="${SCIECTL_REPO_RAW_URL:-$SCIECTL_REPO_RAW_URL_DEFAULT}"
+
+  local need_refresh=1
+  if [[ -f "$cache_file" && -s "$cache_file" ]]; then
+    local age
+    age="$(_sciectl_get_file_age "$cache_file")"
+    if (( age < ttl )); then
+      need_refresh=0
+    fi
+  fi
+
+  if (( need_refresh == 1 )); then
+    local tmp_fetch="${cache_file}.tmp.$$"
+    if curl -sf --connect-timeout 2 --max-time 4 "${raw_base}/env/catalogs/${cid}.catalog" -o "$tmp_fetch" 2>/dev/null && [[ -s "$tmp_fetch" ]]; then
+      mv -f "$tmp_fetch" "$cache_file" 2>/dev/null || true
+    else
+      rm -f "$tmp_fetch" 2>/dev/null || true
+      [[ -f "$cache_file" ]] && touch "$cache_file" 2>/dev/null || true
+    fi
+  fi
+
+  if [[ -f "$cache_file" && -s "$cache_file" ]]; then
+    printf '%s\n' "$cache_file"
+    return 0
+  fi
+  return 1
+}
+
+##
+# 로컬 Git 저장소의 최상위 루트 디렉토리를 탐색합니다 (1순위: 코드가 있는 서버 / 개발 PC).
+# 0) 환경 변수 (SCIECTL_LOCAL_REPO_ROOT)
 # 1) Git 저장소 최상위 루트 (git rev-parse --show-toplevel)
 # 2) 현재 작업 디렉토리($PWD)에서 상위로 올라가며 env/catalogs/catalogs.ini 검색
 # 3) 실행 명령어(${COMP_WORDS[0]})의 심볼릭 링크 원본 경로 상위에서 검색
+# 4) 사용자의 표준 개발 경로 후보군 검색
 #
 # @return 저장소 루트 경로 출력 (발견 시 0, 미발견 시 1)
 ##
 _sciectl_find_repo_root() {
+  # 0) 환경 변수 우선 확인
+  if [[ -n "${SCIECTL_LOCAL_REPO_ROOT:-}" && -f "${SCIECTL_LOCAL_REPO_ROOT}/env/catalogs/catalogs.ini" ]]; then
+    printf '%s\n' "$SCIECTL_LOCAL_REPO_ROOT"
+    return 0
+  fi
+
   local git_root
   git_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
   if [[ -n "$git_root" && -f "$git_root/env/catalogs/catalogs.ini" ]]; then
@@ -69,24 +197,37 @@ _sciectl_find_repo_root() {
     fi
   fi
 
+  # 4) 사용자의 표준 개발 경로 후보군 탐색
+  local known_cand
+  for known_cand in \
+    "$HOME/dev/bashshell-projects/github/shellscripts" \
+    "$HOME/dev/shellscripts" \
+    "$HOME/shellscripts"; do
+    if [[ -f "$known_cand/env/catalogs/catalogs.ini" ]]; then
+      printf '%s\n' "$known_cand"
+      return 0
+    fi
+  done
+
   return 1
 }
 
 ##
 # 카탈로그, 도구, 인스톨러, 명령어, 키 등의 자동완성 후보군을 동적으로 로드합니다.
-# 로컬 저장소가 발견되면 저장소 파일들로부터 실시간 추출하고,
-# 로컬 저장소가 없거나 추출되지 않은 항목은 내장 Fallback 기본값을 사용합니다.
+# 1순위: 코드가 있는 서버(로컬 저장소 탐색 성공 시 실시간 반영)
+# 2순위: 코드가 없는 임의 서버(TTL 캐시 기반 원격 GitHub 실시간 동기화)
+# 3순위: 네트워크 단절 및 최초 실행 비상 Fallback (11개 전체 카탈로그 내장)
 ##
 _sciectl_load_candidates() {
-  # 1. Fallback 기본값 (저장소 외부 단독 실행 시 사용)
-  catalog_candidates="default-server default-devops docker network gitlab ai-agent install-lets-encrypt-certificate installer"
+  # 1. Fallback 기본값 (비상 시 사용, 11개 전체 카탈로그)
+  catalog_candidates="setup-env default-server default-devops network docker install-lets-encrypt-certificate gitlab ai-agent installer security all-scripts"
   installer_candidates="install-temurin-25-jdk install-update-java-config install-maven-3.9.15 install-update-mvn-config install-htop docker/install-docker"
   command_candidates="firewall-cmd-set-priority"
   key_candidates="ymtech-internal letsencrypt"
   step_candidates="sudoers remove-packages install-packages default-opts installers tools commands ssh-key"
-  tool_candidates="utils/scriptctl sys/vim-cli sudo/sudoers-cli sys/disk-size maven/build-mvn-package git/git-commit git/git-merge git/git-log-abbr git/git-getpr git/git-branch-cmd git/git-init build/clean-project utils/diff-file docker/install-docker-dev-config docker/setup-compose-service docker/setup-docker-compose docker/dknetcli docker/dkcontls net/fwc-cli net/fwc-docker-policy net/add-vlan-routes net/mtr-netstat-conns gitlab/gitlab-clone gitlab/clone-gitlab-projects ai-agent/asr-cli installer/install-albert-with-socket installer/install-antigravity-ide installer/install-antigravity-x64"
+  tool_candidates="utils/scriptctl sys/vim-cli sudo/sudoers-cli sys/disk-size maven/build-mvn-package git/git-commit git/git-merge git/git-log-abbr git/git-getpr git/git-branch-cmd git/git-init build/clean-project utils/diff-file docker/install-docker-dev-config docker/setup-compose-service docker/setup-docker-compose docker/dknetcli docker/dkcontls net/fwc-cli net/fwc-docker-policy net/add-vlan-routes net/mtr-netstat-conns gitlab/gitlab-clone gitlab/clone-gitlab-projects ai-agent/asr-cli installer/install-albert-with-socket installer/install-antigravity-ide installer/install-antigravity-x64 security/authelia-crypto-hash security/ssl-del security/ssl-inst"
 
-  # 2. 로컬 저장소 탐색 및 실시간 동적 후보 추출
+  # [1순위] 로컬 저장소 탐색 (코드가 있는 서버 / 내 PC)
   local repo_root
   repo_root="$(_sciectl_find_repo_root)"
   if [[ -n "$repo_root" && -d "$repo_root/env/catalogs" ]]; then
@@ -160,6 +301,11 @@ _sciectl_load_candidates() {
       } | sort -u | tr '\n' ' '
     )"
     [[ -n "$dynamic_keys" ]] && key_candidates="$dynamic_keys"
+  else
+    # [2순위] 로컬 저장소가 없는 서버: TTL 기반 원격 GitHub 캐시 사용
+    local remote_cats
+    remote_cats="$(_sciectl_fetch_remote_catalogs_cached)"
+    [[ -n "$remote_cats" ]] && catalog_candidates="$remote_cats"
   fi
 }
 
@@ -174,7 +320,7 @@ _sciectl_load_catalog_scoped_candidates() {
   local specified_cats="$1"
   local repo_root="$2"
 
-  [[ -n "$specified_cats" && -n "$repo_root" && -d "$repo_root/env/catalogs" ]] || return 0
+  [[ -n "$specified_cats" ]] || return 0
 
   local -A visited_cats=()
   local -a cat_queue=( $specified_cats )
@@ -192,8 +338,13 @@ _sciectl_load_catalog_scoped_candidates() {
     [[ -z "${visited_cats[$cid]:-}" ]] || continue
     visited_cats["$cid"]=1
 
-    local cat_file="$repo_root/env/catalogs/${cid}.catalog"
-    [[ -f "$cat_file" ]] || continue
+    local cat_file=""
+    if [[ -n "$repo_root" && -f "$repo_root/env/catalogs/${cid}.catalog" ]]; then
+      cat_file="$repo_root/env/catalogs/${cid}.catalog"
+    else
+      cat_file="$(_sciectl_fetch_remote_catalog_file_cached "$cid")"
+    fi
+    [[ -n "$cat_file" && -f "$cat_file" ]] || continue
 
     # 1. INCLUDES 상속 처리 (재귀 큐 삽입)
     local inc_line

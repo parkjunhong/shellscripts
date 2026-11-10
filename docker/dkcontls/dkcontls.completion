@@ -52,6 +52,10 @@ _dkcontls_safe_docker() {
 _dkcontls_complete_format() {
   local cur_val="$1"
   local opt_prefix="${2:-}"
+
+  # 콤마로 연결 가능한 다중 컬럼 옵션이므로 자동 공백 추가 방지
+  compopt -o nospace 2>/dev/null || true
+
   local -a all_fields=(
     "ID"
     "Image"

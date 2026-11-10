@@ -38,6 +38,10 @@
 _grep_files_complete_exts() {
   local cur_val="$1"
   local opt_prefix="${2:-}"
+
+  # 콤마로 연결 가능한 다중 확장자 옵션이므로 자동 공백 추가 방지
+  compopt -o nospace 2>/dev/null || true
+
   local -a ext_list=(java sh completion py js ts json xml yml yaml conf md properties sql txt html css)
 
   local list_prefix=""

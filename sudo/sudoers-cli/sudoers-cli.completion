@@ -48,8 +48,19 @@ _sudoers_cli_completion() {
       return 0
       ;;
     --option)
-      # 일반 권한 배포를 위한 'NONE' 옵션 키워드 자동완성 추가
-      COMPREPLY=( $(compgen -W "NOPASSWD PASSWD NOEXEC EXEC SETENV NOSETENV LOG_INPUT NOLOG_INPUT NONE" -- "${cur}") )
+      # 일반 권한 배포를 위한 'NONE' 옵션 키워드 자동완성 추가 (콤마 다중 연결 지원 및 자동 공백 추가 방지)
+      compopt -o nospace 2>/dev/null || true
+      local available_options="NOPASSWD PASSWD NOEXEC EXEC SETENV NOSETENV LOG_INPUT NOLOG_INPUT NONE"
+      local prefix=""
+      local partial="$cur"
+      if [[ "$cur" == *,* ]]; then
+        prefix="${cur%,*},"
+        partial="${cur##*,}"
+      fi
+      local cand
+      while IFS= read -r cand; do
+        [[ -n "$cand" ]] && COMPREPLY+=("${prefix}${cand}")
+      done < <(compgen -W "$available_options" -- "$partial")
       return 0
       ;;
   esac

@@ -85,7 +85,8 @@ _send_certificate()
       return 0
       ;;
     --target-ca)
-      # pem,sslca,pkcs12,jks 자동완성 (콤마 여러 개 지원)
+      # pem,sslca,pkcs12,jks 자동완성 (콤마 여러 개 지원, 자동 공백 추가 방지)
+      compopt -o nospace 2>/dev/null || true
       local prefix last t
       prefix=""
       last="$cur"

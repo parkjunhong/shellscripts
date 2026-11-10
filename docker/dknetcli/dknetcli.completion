@@ -71,6 +71,21 @@ _dknetcli_completions() {
             fi
           done
 
+          # 콤마로 연결 가능한 다중 네트워크 이름 옵션이므로 자동 공백 추가 방지
+          compopt -o nospace 2>/dev/null || true
+
+          local list_prefix=""
+          local partial="$cur"
+          if [[ "$cur" == *,* ]]; then
+            list_prefix="${cur%,*},"
+            partial="${cur##*,}"
+            local -a inline_names=()
+            IFS=',' read -r -a inline_names <<< "${cur%,*}"
+            for item in "${inline_names[@]}"; do
+              [[ -n "$item" ]] && entered_names+=("$item")
+            done
+          fi
+
           local candidate filtered_nets=()
           for candidate in $net_list; do
             local already=0
@@ -83,7 +98,9 @@ _dknetcli_completions() {
             (( already == 0 )) && filtered_nets+=("$candidate")
           done
 
-          COMPREPLY=( $(compgen -W "${filtered_nets[*]}" -- "$cur") )
+          while IFS= read -r candidate; do
+            [[ -n "$candidate" ]] && COMPREPLY+=("${list_prefix}${candidate}")
+          done < <(compgen -W "${filtered_nets[*]}" -- "$partial")
           return 0
         fi
       fi

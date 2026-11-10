@@ -145,6 +145,10 @@ _canonical_status_complete_exclude_targets() {
   local cur_val="$1"
   local opt_prefix="${2:-}"
   local mode="${3:-exact}"
+
+  # 콤마로 연결 가능한 다중 제외 대상 옵션이므로 자동 공백 추가 방지
+  compopt -o nospace 2>/dev/null || true
+
   local base_dir
   base_dir="$(_canonical_status_get_base_dir)"
 

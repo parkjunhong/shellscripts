@@ -46,6 +46,8 @@ _install_docker_dev_config_completion() {
 
   case "$cur" in
     --resources=*)
+      # 콤마로 연결 가능한 다중 자원 옵션이므로 자동 공백 추가 방지
+      compopt -o nospace 2>/dev/null || true
       local val_part="${cur#--resources=}"
       local prefix="--resources="
       if [[ "$val_part" == *,* ]]; then
@@ -62,6 +64,8 @@ _install_docker_dev_config_completion() {
 
   case "$prev" in
     --resources)
+      # 콤마로 연결 가능한 다중 자원 옵션이므로 자동 공백 추가 방지
+      compopt -o nospace 2>/dev/null || true
       if [[ "$cur" == *,* ]]; then
         local prefix="${cur%,*},"
         local last_part="${cur##*,}"
@@ -70,7 +74,10 @@ _install_docker_dev_config_completion() {
           [[ -n "$cand" ]] && COMPREPLY+=("${prefix}${cand}")
         done < <(compgen -W "${resource_items[*]}" -- "$last_part")
       else
-        COMPREPLY=( $(compgen -W "${resource_items[*]}" -- "$cur") )
+        local cand
+        while IFS= read -r cand; do
+          [[ -n "$cand" ]] && COMPREPLY+=("${cand}")
+        done < <(compgen -W "${resource_items[*]}" -- "$cur")
       fi
       return 0
       ;;

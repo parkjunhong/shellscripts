@@ -75,6 +75,9 @@ _fwc_docker_policy_complete_zones() {
   zones="$(_fwc_docker_policy_get_zones)"
   [[ -n "$zones" ]] || return 0
 
+  # 콤마로 연결 가능한 다중 Zone 옵션이므로 자동 공백 추가 방지
+  compopt -o nospace 2>/dev/null || true
+
   local list_prefix=""
   local partial="$cur_val"
   local -a selected_zones=()

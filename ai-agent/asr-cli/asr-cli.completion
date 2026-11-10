@@ -396,6 +396,9 @@ _asr_cli_complete_csv() {
 
   [[ -n "$candidates_str" ]] || return 0
 
+  # 콤마로 연결 가능한 다중 값 옵션이므로 자동 공백 추가 방지
+  compopt -o nospace 2>/dev/null || true
+
   local candidate
   if [[ "$cur_val" == *,* ]]; then
     local already_prefix="${cur_val%,*}"
