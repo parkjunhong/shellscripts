@@ -16,7 +16,7 @@ FILENAME=$(basename "$0")
 
 OPT_REMOTE="origin"
 OPT_SOURCE="main"
-OPT_TARGET="develop"
+OPT_TARGET=""
 OPT_DRY_RUN=false
 ORIGIN_BRANCH=""
 
@@ -54,12 +54,13 @@ help(){
   echo "설명:"
   echo "  원격 소스 브랜치를 최신화(fetch)하고 대상 브랜치(switch)로 전환한 뒤,"
   echo "  Fast-Forward 병합(--ff-only)을 통해 선형 히스토리를 유지하며 원격(push)으로 동기화합니다."
-  echo "  옵션 없이 실행 시 기본값으로 'origin/main' -> 'develop' 동기화를 수행합니다."
+  echo "  옵션 없이 실행 시 기본값으로 'origin/main' -> '현재 작업 브랜치' 동기화를 수행합니다."
+  echo "  (주의: 'git-ff-sync'는 Git 저장소 내에서만 동작할 수 있습니다)"
   echo
   echo "옵션 상세:"
   echo "  --remote <remote-name>    원격 저장소 이름 (기본값: origin)"
   echo "  --source <source-branch>  병합할 원본 소스 브랜치 이름 (기본값: main)"
-  echo "  --target <target-branch>  병합 대상 타겟 브랜치 이름 (기본값: develop)"
+  echo "  --target <target-branch>  병합 대상 타겟 브랜치 이름 (기본값: 현재 작업 브랜치)"
   echo "  --dry-run                 실제 병합 및 푸시를 수행하지 않고 Fast-Forward 가능 여부만 사전 진단"
   echo "  --help                    도움말 출력"
   echo
@@ -150,34 +151,39 @@ parse_arguments() {
 # @return 점검 실패 시 help() 호출 후 종료, 성공 시 0 반환
 ##
 preflight_check() {
-  # 1. Git 저장소 여부 확인
+  # 1. Git 저장소 여부 확인 (Git 저장소가 아닌 디렉토리에서는 실행 불가)
   if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    help "현재 디렉토리(또는 상위 디렉토리)가 유효한 Git 저장소가 아닙니다." "$LINENO"
+    help "현재 디렉토리(또는 상위 디렉토리)가 유효한 Git 저장소가 아닙니다. 'git-ff-sync'는 Git 저장소 내에서만 동작할 수 있습니다." "$LINENO"
     exit 1
   fi
 
-  # 2. 현재 체크아웃 브랜치 기억
-  ORIGIN_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || git rev-parse --short HEAD 2>/dev/null || echo "")
+  # 2. 현재 체크아웃 브랜치 확인
+  ORIGIN_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
   if [[ -z "$ORIGIN_BRANCH" ]]; then
-    help "현재 저장소의 HEAD 상태를 확인할 수 없습니다." "$LINENO"
+    help "현재 저장소의 HEAD 브랜치 정보를 확인할 수 없습니다 (Detached HEAD 상태이거나 비어있는 저장소)." "$LINENO"
     exit 1
   fi
 
-  # 3. 작업 디렉토리의 커밋되지 않은 변경사항 보호 (Uncommitted changes)
+  # 3. 대상 타겟 브랜치(--target) 미지정 시 현재 작업 브랜치로 자동 할당
+  if [[ -z "$OPT_TARGET" ]]; then
+    OPT_TARGET="$ORIGIN_BRANCH"
+  fi
+
+  # 4. 작업 디렉토리의 커밋되지 않은 변경사항 보호 (Uncommitted changes)
   if ! git diff-index --quiet HEAD -- 2>/dev/null || [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
     help "커밋되지 않은 로컬 변경사항(수정/추가된 파일)이 존재합니다. 작업 손실을 방지하기 위해 'git stash' 또는 커밋 후 다시 실행하십시오." "$LINENO"
     exit 1
   fi
 
-  # 4. 원격 저장소 존재 여부 확인
+  # 5. 원격 저장소 존재 여부 확인
   if ! git remote | grep -qw "$OPT_REMOTE"; then
     help "지정한 원격 저장소('$OPT_REMOTE')가 현재 Git 저장소에 등록되어 있지 않습니다." "$LINENO"
     exit 1
   fi
 
-  # 5. 소스와 타겟 브랜치가 동일한지 검증
+  # 6. 소스와 타겟 브랜치가 동일한지 검증
   if [[ "$OPT_SOURCE" == "$OPT_TARGET" ]]; then
-    help "소스 브랜치('--source $OPT_SOURCE')와 대상 브랜치('--target $OPT_TARGET')가 동일합니다." "$LINENO"
+    help "소스 브랜치('--source $OPT_SOURCE')와 대상 브랜치('--target $OPT_TARGET')가 동일합니다. Fast-Forward 동기화 대상 브랜치를 다르게 지정하십시오." "$LINENO"
     exit 1
   fi
 }

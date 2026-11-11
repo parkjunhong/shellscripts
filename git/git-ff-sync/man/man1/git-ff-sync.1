@@ -7,7 +7,7 @@ git-ff-sync \- Fast-Forward only remote branch sync pipeline
 [\fIOPTIONS\fR]
 
 .SH DESCRIPTION
-원격 소스 브랜치(기본값: \fBorigin/main\fR)의 변경사항을 대상 브랜치(기본값: \fBdevelop\fR)로 \fB최신화(\fBgit fetch\fR) &rarr; 전환(\fBgit switch\fR) &rarr; Fast-Forward 병합(\fBgit merge --ff-only\fR) &rarr; 원격 반영(\fBgit push\fR) &rarr; 원래 브랜치 복귀\fR까지 안전하고 선형적으로 일괄 수행하는 Git 동기화 CLI 도구입니다.
+원격 소스 브랜치(기본값: \fBorigin/main\fR)의 변경사항을 대상 브랜치(기본값: \fB현재 작업 브랜치\fR)로 \fB최신화(\fBgit fetch\fR) &rarr; 전환(\fBgit switch\fR) &rarr; Fast-Forward 병합(\fBgit merge --ff-only\fR) &rarr; 원격 반영(\fBgit push\fR) &rarr; 원래 브랜치 복귀\fR까지 안전하고 선형적으로 일괄 수행하는 Git 동기화 CLI 도구입니다. 유효한 Git 저장소 디렉토리 내부에서만 동작할 수 있습니다.
 
 .SH KEY FEATURES
 .IP \(bu 2
@@ -17,11 +17,11 @@ git-ff-sync \- Fast-Forward only remote branch sync pipeline
 .IP \(bu 2
 \fB원래 작업 브랜치 자동 복귀 (Trap Handler)\fR
 .IP \(bu 2
-스크립트 실행 시작 시점의 체크아웃 브랜치를 기억하여, 동기화 완료 후(또는 실패 시에도) 원래 머물던 브랜치로 자동 복귀합니다.
+타겟 브랜치(\fB\-\-target\fR)를 현재 브랜치와 다르게 지정하여 작업한 경우, 동기화 완료 후(또는 실패 시에도) 원래 머물던 브랜치로 자동 복귀합니다.
 .IP \(bu 2
 \fB사전 무결성 점검 (Pre-flight Validation)\fR
 .IP \(bu 2
-작업 디렉토리에 커밋되지 않은 로컬 변경사항(Uncommitted changes)이 존재할 경우, 브랜치 이동 및 병합 중 데이터 유실을 방지하기 위해 작업을 사전에 차단합니다.
+Git 저장소가 아닌 디렉토리에서 실행 시 작업을 차단합니다. 작업 디렉토리에 커밋되지 않은 로컬 변경사항(Uncommitted changes)이 존재할 경우, 브랜치 이동 및 병합 중 데이터 유실을 방지하기 위해 작업을 사전에 차단합니다.
 .IP \(bu 2
 \fB시뮬레이션 모드 (\-\-dry-run) 지원\fR
 .IP \(bu 2
@@ -36,7 +36,7 @@ git-ff-sync \- Fast-Forward only remote branch sync pipeline
 [선택, 기본값: main] 병합할 원본 소스 브랜치 이름
 .TP
 .B \-\-target <branch>
-[선택, 기본값: develop] 병합 대상 타겟 브랜치 이름
+[선택, 기본값: 현재 작업 브랜치] 병합 대상 타겟 브랜치 이름
 .TP
 .B \-\-dry-run
 [선택] 실제 변경 없이 Fast-Forward 가능 여부만 시뮬레이션 진단
@@ -47,17 +47,20 @@ git-ff-sync \- Fast-Forward only remote branch sync pipeline
 .SH EXAMPLES
 .PP
 .nf
-  # 1) 기본 설정으로 실행 ('origin/main' -> 'develop' 동기화 및 push 후 복귀)
+  # 1) 기본 설정으로 실행 ('origin/main' -> 현재 작업 브랜치 동기화 및 push)
   \&./git-ff-sync
 
   # 2) 시뮬레이션 모드로 Fast-Forward 가능 여부만 사전 점검
   \&./git-ff-sync \-\-dry-run
 
-  # 3) 커스텀 브랜치 간 Fast-Forward 동기화 ('origin/release' -> 'stage')
+  # 3) 특정 대상 브랜치를 명시하여 동기화 후 원래 브랜치로 복귀
+  \&./git-ff-sync \-\-target develop
+
+  # 4) 커스텀 브랜치 간 Fast-Forward 동기화 ('origin/release' -> 'stage')
   \&./git-ff-sync \-\-source release \-\-target stage
 
-  # 4) 커스텀 원격 저장소 지정 ('upstream/main' -> 'develop')
-  \&./git-ff-sync \-\-remote upstream \-\-source main \-\-target develop
+  # 5) 커스텀 원격 저장소 지정 ('upstream/main' -> 현재 브랜치)
+  \&./git-ff-sync \-\-remote upstream \-\-source main
 .fi
 .PP
 

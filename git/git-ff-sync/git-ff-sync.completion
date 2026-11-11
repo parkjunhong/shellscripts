@@ -15,11 +15,20 @@ _git_ff_sync_completion() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
+  # 1. Git 저장소 유효성 검사 (Git 저장소 내부가 아닌 경우)
+  if ! command -v git >/dev/null 2>&1 || ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    # Git 저장소가 아니면 git 동기화 관련 옵션 및 브랜치 추천을 차단하고 --help만 지원
+    COMPREPLY=( $(compgen -W "--help" -- "${cur}") )
+    return 0
+  fi
+
+  # 2. Git 저장소 내부인 경우 사용 가능한 옵션 정의
   opts="--remote --source --target --dry-run --help"
 
   case "${prev}" in
     --remote)
-      remotes=$(git remote 2>/dev/null || echo "origin")
+      remotes=$(git remote 2>/dev/null || true)
+      [[ -z "$remotes" ]] && remotes="origin"
       COMPREPLY=( $(compgen -W "${remotes}" -- "${cur}") )
       return 0
       ;;
