@@ -14,12 +14,14 @@ shellscripts/git/
 ├── git-branch-cmd/                # 다중 저장소 브랜치 제어 및 GitHub/GitLab API 연동
 ├── git-commit/                    # 커밋+푸시, 취소, 언스테이징, 롤백 통합 관리
 ├── git-config/                    # Git 로컬 사용자 이름 및 이메일 설정
+├── git-ff-sync/                   # Fast-Forward 전용 안전 원격 브랜치 선형 동기화
 ├── git-getpr/                     # Sparse-Checkout 기반 특정 파일/폴더 부분 다운로드
 ├── git-init/                      # 로컬 저장소 초기화, 원격 연결 및 초기 푸시
 ├── git-log-abbr/                  # 커밋 히스토리 축약 해시 한 줄 요약 출력
 ├── git-log-all/                   # 다중 저장소 커밋 로그 일괄 조회
 ├── git-merge/                     # 브랜치 pull -> merge -> push -> 복귀 안전 자동화
 ├── git-modify/                    # 다중 저장소 원격 URL 및 사용자 정보 일괄 변경
+├── git-mrq/                       # 플랫폼별 CLI(gh/glab/git) 기반 Merge/Pull Request 생성 및 푸시
 ├── git-pull-all/                  # 다중 저장소 git pull 일괄 최신화
 ├── git-push-after-sync/           # 파일 동기화 후 커밋/푸시 및 실패 시 자동 롤백
 ├── git-push-all/                  # 다중 저장소 일괄 커밋/푸시 및 브랜치 머지
@@ -37,6 +39,8 @@ shellscripts/git/
 | **`git-init`** | 기존 폴더를 Git 초기화하고 원격 브랜치 연결 후 신규 또는 히스토리 병합 푸시 | [README](file:///home/parkjunhong/dev/bashshell-projects/github/shellscripts/git/git-init/README.md) |
 | **`git-branch-cmd`** | 다중 저장소 브랜치 복제·삭제·검색 및 GitHub(`gh`)/GitLab(`glab`) 보호 브랜치 설정 | [README](file:///home/parkjunhong/dev/bashshell-projects/github/shellscripts/git/git-branch-cmd/README.md) |
 | **`git-merge`** | 타겟 브랜치로 최신화(Pull) &rarr; 병합(Merge) &rarr; 반영(Push) &rarr; 복귀(Checkout) 자동화 | [README](file:///home/parkjunhong/dev/bashshell-projects/github/shellscripts/git/git-merge/README.md) |
+| **`git-ff-sync`** | 원격 소스 브랜치를 대상 브랜치로 Fast-Forward 전진 병합 및 푸시 선형 동기화 | [README](file:///home/parkjunhong/dev/bashshell-projects/github/shellscripts/git/git-ff-sync/README.md) |
+| **`git-mrq`** | 플랫폼별 CLI(gh/glab/git)를 활용한 원격 Merge/Pull Request 생성 및 푸시 | [README](file:///home/parkjunhong/dev/bashshell-projects/github/shellscripts/git/git-mrq/README.md) |
 | **`git-getpr`** | 전체 복제 없이 Sparse-Checkout을 활용하여 특정 파일/디렉토리만 고속 다운로드 | [README](file:///home/parkjunhong/dev/bashshell-projects/github/shellscripts/git/git-getpr/README.md) |
 
 ### 2. 📦 커밋, 태그 및 설정 관리 (Commit, Tag & Config)
