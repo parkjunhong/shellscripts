@@ -1,0 +1,276 @@
+#!/usr/bin/env bash
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : git-ff-sync
+# @license  : Apache License 2.0
+# @since    : 2026-11-11
+# @desc     : Fast-Forward only remote branch sync pipeline
+# @installation : 
+#   1. insert 'source <path>/git-ff-sync' into ~/.bashrc or ~/.bash_profile for personal usage.
+#   2. copy to /etc/bash_completion.d/ or insert into /etc/bashrc for all users.
+# =======================================
+
+set -Eeuo pipefail
+
+FILENAME=$(basename "$0")
+
+OPT_REMOTE="origin"
+OPT_SOURCE="main"
+OPT_TARGET="develop"
+OPT_DRY_RUN=false
+ORIGIN_BRANCH=""
+
+##
+# 스크립트의 사용법 및 진단 정보를 표준 출력으로 안내합니다.
+#
+# @param $1 {string} 실패 원인 메시지 (선택)
+# @param $2 {number} 오류 발생 라인 번호 (선택)
+#
+# @return 사용법 화면 출력
+##
+help(){
+  if [ -n "${1:-}" ]; then
+    local indent=10
+    local formatl=" - %-"$indent"s: %s\n"
+    local formatr=" - %"$indent"s: %s\n"
+    echo
+    echo "================================================================================"
+    printf "$formatl" "filename" "$FILENAME"
+    printf "$formatl" "line" "${2:-$LINENO}"
+    printf "$formatl" "callstack"
+    local idx=1
+    for func in "${FUNCNAME[@]:1}"; do
+      printf "$formatr" "[$idx]" "$func"
+      ((idx++))
+    done
+    printf "$formatl" "cause" "$1"
+    echo "================================================================================"
+  fi
+  echo
+  echo "사용법:"
+  echo "  $FILENAME [--remote <remote-name>] [--source <source-branch>] [--target <target-branch>] [--dry-run]"
+  echo "  $FILENAME --help"
+  echo
+  echo "설명:"
+  echo "  원격 소스 브랜치를 최신화(fetch)하고 대상 브랜치(switch)로 전환한 뒤,"
+  echo "  Fast-Forward 병합(--ff-only)을 통해 선형 히스토리를 유지하며 원격(push)으로 동기화합니다."
+  echo "  옵션 없이 실행 시 기본값으로 'origin/main' -> 'develop' 동기화를 수행합니다."
+  echo
+  echo "옵션 상세:"
+  echo "  --remote <remote-name>    원격 저장소 이름 (기본값: origin)"
+  echo "  --source <source-branch>  병합할 원본 소스 브랜치 이름 (기본값: main)"
+  echo "  --target <target-branch>  병합 대상 타겟 브랜치 이름 (기본값: develop)"
+  echo "  --dry-run                 실제 병합 및 푸시를 수행하지 않고 Fast-Forward 가능 여부만 사전 진단"
+  echo "  --help                    도움말 출력"
+  echo
+}
+
+##
+# 종료 시 실행 전 원래 머물던 브랜치로 안전하게 복귀합니다.
+#
+# @param 없음
+#
+# @return 원래 브랜치 체크아웃
+##
+cleanup() {
+  local exit_code=$?
+  if [[ -n "${ORIGIN_BRANCH:-}" ]]; then
+    local cur_b
+    cur_b=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
+    if [[ -n "$cur_b" && "$cur_b" != "$ORIGIN_BRANCH" ]]; then
+      echo
+      echo "↩️  [복귀] 원래 작업 브랜치('${ORIGIN_BRANCH}')로 복귀 중..."
+      git switch "$ORIGIN_BRANCH" >/dev/null 2>&1 || git checkout "$ORIGIN_BRANCH" >/dev/null 2>&1 || true
+    fi
+  fi
+  exit "$exit_code"
+}
+
+trap cleanup EXIT
+
+##
+# 커맨드라인 인자를 파싱하고 유효성을 검증합니다.
+#
+# @param $@ {array} 커맨드라인 파라미터 배열
+#
+# @return 전역 변수 설정
+##
+parse_arguments() {
+  while (( $# > 0 )); do
+    case "$1" in
+      --remote)
+        if (( $# < 2 )) || [[ "$2" =~ ^-- ]]; then
+          help "'--remote' 옵션에 유효한 원격 저장소 이름이 전달되지 않았습니다." "$LINENO"
+          exit 1
+        fi
+        OPT_REMOTE="$2"
+        shift 2
+        ;;
+      --source)
+        if (( $# < 2 )) || [[ "$2" =~ ^-- ]]; then
+          help "'--source' 옵션에 유효한 브랜치 이름이 전달되지 않았습니다." "$LINENO"
+          exit 1
+        fi
+        OPT_SOURCE="$2"
+        shift 2
+        ;;
+      --target)
+        if (( $# < 2 )) || [[ "$2" =~ ^-- ]]; then
+          help "'--target' 옵션에 유효한 브랜치 이름이 전달되지 않았습니다." "$LINENO"
+          exit 1
+        fi
+        OPT_TARGET="$2"
+        shift 2
+        ;;
+      --dry-run)
+        OPT_DRY_RUN=true
+        shift 1
+        ;;
+      --help)
+        help "" "$LINENO"
+        exit 0
+        ;;
+      -*)
+        help "단축 옵션('$1')은 지원하지 않습니다. 정규 롱 옵션(Full Option)을 사용하십시오." "$LINENO"
+        exit 1
+        ;;
+      *)
+        help "알 수 없는 인자입니다: '$1'" "$LINENO"
+        exit 1
+        ;;
+    esac
+  done
+}
+
+##
+# 현재 작업 디렉토리의 Git 저장소 유효성 및 작업 트리 무결성을 사전 점검합니다.
+#
+# @param 없음
+#
+# @return 점검 실패 시 help() 호출 후 종료, 성공 시 0 반환
+##
+preflight_check() {
+  # 1. Git 저장소 여부 확인
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    help "현재 디렉토리(또는 상위 디렉토리)가 유효한 Git 저장소가 아닙니다." "$LINENO"
+    exit 1
+  fi
+
+  # 2. 현재 체크아웃 브랜치 기억
+  ORIGIN_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || git rev-parse --short HEAD 2>/dev/null || echo "")
+  if [[ -z "$ORIGIN_BRANCH" ]]; then
+    help "현재 저장소의 HEAD 상태를 확인할 수 없습니다." "$LINENO"
+    exit 1
+  fi
+
+  # 3. 작업 디렉토리의 커밋되지 않은 변경사항 보호 (Uncommitted changes)
+  if ! git diff-index --quiet HEAD -- 2>/dev/null || [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
+    help "커밋되지 않은 로컬 변경사항(수정/추가된 파일)이 존재합니다. 작업 손실을 방지하기 위해 'git stash' 또는 커밋 후 다시 실행하십시오." "$LINENO"
+    exit 1
+  fi
+
+  # 4. 원격 저장소 존재 여부 확인
+  if ! git remote | grep -qw "$OPT_REMOTE"; then
+    help "지정한 원격 저장소('$OPT_REMOTE')가 현재 Git 저장소에 등록되어 있지 않습니다." "$LINENO"
+    exit 1
+  fi
+
+  # 5. 소스와 타겟 브랜치가 동일한지 검증
+  if [[ "$OPT_SOURCE" == "$OPT_TARGET" ]]; then
+    help "소스 브랜치('--source $OPT_SOURCE')와 대상 브랜치('--target $OPT_TARGET')가 동일합니다." "$LINENO"
+    exit 1
+  fi
+}
+
+##
+# Fast-Forward 브랜치 동기화 파이프라인을 실행합니다.
+#
+# @param 없음
+#
+# @return 0 성공, 1 실패
+##
+execute_sync() {
+  echo "================================================================================"
+  if [[ "$OPT_DRY_RUN" == "true" ]]; then
+    echo "🔍 [DRY-RUN] Fast-Forward 동기화 시뮬레이션: '${OPT_REMOTE}/${OPT_SOURCE}' ➡️  '${OPT_TARGET}'"
+  else
+    echo "🔄 [Fast-Forward Sync] 브랜치 동기화 시작: '${OPT_REMOTE}/${OPT_SOURCE}' ➡️  '${OPT_TARGET}'"
+  fi
+  echo "================================================================================"
+
+  # [1/4] git fetch <remote>
+  echo "📥 [1/4] 원격 저장소 '${OPT_REMOTE}' 최신 정보 수신 중 (git fetch ${OPT_REMOTE})..."
+  git fetch "${OPT_REMOTE}"
+
+  # 원격 소스 브랜치 존재 여부 확인
+  if ! git rev-parse --verify "${OPT_REMOTE}/${OPT_SOURCE}" >/dev/null 2>&1; then
+    help "원격 브랜치 '${OPT_REMOTE}/${OPT_SOURCE}'(이)가 존재하지 않습니다." "$LINENO"
+    exit 1
+  fi
+
+  # [2/4] git switch <target>
+  echo "🔀 [2/4] 대상 브랜치 '${OPT_TARGET}'(으)로 전환 중 (git switch ${OPT_TARGET})..."
+  if ! git switch "${OPT_TARGET}" 2>/dev/null; then
+    # 로컬에 target 브랜치가 없으면 원격 추적 브랜치로부터 생성 시도
+    if git rev-parse --verify "${OPT_REMOTE}/${OPT_TARGET}" >/dev/null 2>&1; then
+      echo "  ℹ️  로컬 '${OPT_TARGET}' 브랜치를 원격 '${OPT_REMOTE}/${OPT_TARGET}'로부터 생성합니다..."
+      git switch -c "${OPT_TARGET}" --track "${OPT_REMOTE}/${OPT_TARGET}"
+    else
+      help "대상 브랜치 '${OPT_TARGET}'(이)가 로컬 및 원격에 존재하지 않습니다." "$LINENO"
+      exit 1
+    fi
+  fi
+
+  # [3/4] Fast-Forward 가능 여부 점검 및 병합
+  echo "⚡ [3/4] Fast-Forward 병합 검증 및 실행 (git merge --ff-only ${OPT_REMOTE}/${OPT_SOURCE})..."
+
+  # 현재 target 브랜치가 원격 source 브랜치의 조상(ancestor)인지 사전 검사
+  local is_ancestor=0
+  if git merge-base --is-ancestor HEAD "${OPT_REMOTE}/${OPT_SOURCE}"; then
+    is_ancestor=1
+  fi
+
+  if [[ "$OPT_DRY_RUN" == "true" ]]; then
+    echo "--------------------------------------------------------------------------------"
+    if (( is_ancestor == 1 )); then
+      echo "✅ [DRY-RUN] 검증 통과! '${OPT_TARGET}' 브랜치는 '${OPT_REMOTE}/${OPT_SOURCE}'(으)로 안전하게 Fast-Forward 전진할 수 있습니다."
+      echo "🚀 [실행 예정 명령어]:"
+      echo "   1) git merge --ff-only \"${OPT_REMOTE}/${OPT_SOURCE}\""
+      echo "   2) git push \"${OPT_REMOTE}\" \"${OPT_TARGET}\""
+    else
+      echo "❌ [DRY-RUN 실패] Fast-Forward 불가능!"
+      echo "   원인: '${OPT_TARGET}' 브랜치에 '${OPT_REMOTE}/${OPT_SOURCE}'에 없는 독자 커밋이 존재하여 히스토리가 분기되었습니다."
+      echo "   해결: 'git rebase ${OPT_REMOTE}/${OPT_SOURCE}' 또는 일반 병합을 수동으로 수행해야 합니다."
+      echo "--------------------------------------------------------------------------------"
+      exit 1
+    fi
+    echo "--------------------------------------------------------------------------------"
+    return 0
+  fi
+
+  # 실제 Fast-Forward 머지 실행
+  if ! git merge --ff-only "${OPT_REMOTE}/${OPT_SOURCE}"; then
+    echo
+    echo "❌ [오류] Fast-Forward 병합 실패!"
+    echo "   '${OPT_TARGET}' 브랜치에 '${OPT_REMOTE}/${OPT_SOURCE}'에 없는 독자적인 커밋이 존재하여 작업이 중단되었습니다."
+    echo "   (주의: 커밋 히스토리를 보호하기 위해 아무것도 변경하지 않고 멈춥니다)"
+    echo "💡 [해결 방안]: 'git rebase ${OPT_REMOTE}/${OPT_SOURCE}'를 통해 히스토리를 재정렬하거나 일반 머지를 고려하십시오."
+    exit 1
+  fi
+
+  # [4/4] git push <remote> <target>
+  echo "🚀 [4/4] 갱신된 '${OPT_TARGET}' 브랜치를 원격에 반영 중 (git push ${OPT_REMOTE} ${OPT_TARGET})..."
+  git push "${OPT_REMOTE}" "${OPT_TARGET}"
+
+  echo "================================================================================"
+  echo "🎉 [완료] '${OPT_REMOTE}/${OPT_SOURCE}' ➡️  '${OPT_TARGET}' 동기화 및 원격 푸시가 성공적으로 완료되었습니다."
+  echo "================================================================================"
+}
+
+main() {
+  parse_arguments "$@"
+  preflight_check
+  execute_sync
+}
+
+main "$@"

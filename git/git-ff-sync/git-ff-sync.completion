@@ -1,0 +1,57 @@
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : git-ff-sync completion
+# @license  : Apache License 2.0
+# @since    : 2026-11-11
+# @desc     : Bash completion for git-ff-sync
+# @installation : 
+#   1. insert 'source <path>/git-ff-sync.completion' into ~/.bashrc or ~/.bash_profile for personal usage.
+#   2. copy to /etc/bash_completion.d/ for all users.
+# =======================================
+
+_git_ff_sync_completion() {
+  local cur prev opts remotes branches
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  opts="--remote --source --target --dry-run --help"
+
+  case "${prev}" in
+    --remote)
+      remotes=$(git remote 2>/dev/null || echo "origin")
+      COMPREPLY=( $(compgen -W "${remotes}" -- "${cur}") )
+      return 0
+      ;;
+    --source|--target)
+      branches=$(git branch --format='%(refname:short)' 2>/dev/null || true)
+      local r_branches
+      r_branches=$(git branch -r --format='%(refname:short)' 2>/dev/null | sed -e 's|^[^/]*/||' || true)
+      local all_b
+      all_b=$(echo -e "${branches}\n${r_branches}" | sort -u | grep -v '^HEAD$')
+      COMPREPLY=( $(compgen -W "${all_b}" -- "${cur}") )
+      return 0
+      ;;
+    *)
+      ;;
+  esac
+
+  local available_opts=""
+  for opt in $opts; do
+    local is_used=0
+    for word in "${COMP_WORDS[@]}"; do
+      if [[ "$word" == "$opt" ]]; then
+        is_used=1
+        break
+      fi
+    done
+    if (( is_used == 0 )); then
+      available_opts+="$opt "
+    fi
+  done
+
+  COMPREPLY=( $(compgen -W "${available_opts}" -- "${cur}") )
+  return 0
+}
+
+complete -F _git_ff_sync_completion git-ff-sync
