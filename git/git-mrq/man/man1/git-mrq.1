@@ -1,0 +1,108 @@
+.TH GIT-MRQ 1 "2026-11-11" "git-mrq 1.0.0" "User Commands"
+.SH NAME
+git-mrq \- Create Merge Request or Pull Request using gh, glab, or Git push options
+
+.SH SYNOPSIS
+.B git-mrq
+[\fIOPTIONS\fR]
+
+.SH DESCRIPTION
+원격 저장소 플랫폼(\fBGitHub\fR, \fBGitLab\fR, \fB기타 Git 서버\fR)을 자동으로 감지하여 최적의 CLI 도구(\fBgh\fR, \fBglab\fR, \fBgit push -o\fR)로 \fBMerge Request(MR)\fR 또는 \fBPull Request(PR)\fR를 생성하고 푸시하는 크로스 플랫폼 Git 자동화 CLI 도구입니다.
+
+.SH KEY FEATURES
+.IP \(bu 2
+\fB원격 저장소 플랫폼 자동 감지 및 최적 CLI 분기\fR
+.IP \(bu 2
+\fBGitHub\fR 저장소인 경우 \fBgithub cli (gh)\fR를 사용하여 Pull Request를 생성합니다.
+.IP \(bu 2
+\fBGitLab\fR 저장소인 경우 \fBgitlab cli (glab)\fR를 사용하여 Merge Request를 생성합니다.
+.IP \(bu 2
+기타 Git 서버인 경우 순수 Git CLI의 Push Options (\fBgit push -o merge_request.*\fR) 방식을 사용합니다.
+.IP \(bu 2
+\fB누락된 공식 CLI 도구 자동 설치 (Multi-OS 완벽 지원)\fR
+.IP \(bu 2
+시스템에 \fBgh\fR 또는 \fBglab\fR 도구가 설치되어 있지 않은 경우, OS 패키지 관리자를 감지하여 설치 과정을 사용자에게 상세히 출력하며 자동 설치를 수행합니다.
+(\fBapt-get\fR, \fBdnf\fR, \fByum\fR, \fBpacman\fR, \fBbrew\fR 지원)
+.IP \(bu 2
+\fB단계별 대화형 (Step\-by\-Step) 입력 가이드\fR
+.IP \(bu 2
+옵션을 생략하고 \fBgit-mrq\fR만 실행할 경우 대화형 프롬프트를 통해 필요한 정보를 단계별로 입력받아 수행합니다.
+.IP \(bu 2
+\fB시뮬레이션 모드 (\-\-dry-run) 지원\fR
+.IP \(bu 2
+실제 푸시 없이 전송될 실행 명령을 미리 확인할 수 있습니다.
+
+.SH OPTIONS
+.TP
+.B \-\-source <branch>
+[선택, 기본값: 현재 브랜치] Merge/Pull Request를 요청할 원본 소스 브랜치
+.TP
+.B \-\-target <branch>
+[선택, 기본값: develop] 병합 대상 타겟 브랜치
+.TP
+.B \-\-title <text>
+[선택, 기본값: 최근 커밋 메시지] Merge/Pull Request 제목
+.TP
+.B \-\-desc, \-\-description <text>
+[선택] 본문 설명
+.TP
+.B \-\-remote <remote-name>
+[선택, 기본값: origin] 원격 저장소 이름
+.TP
+.B \-\-remove\-source\-branch
+[선택] 머지 완료 시 소스 브랜치 자동 삭제 활성화 (GitLab)
+.TP
+.B \-\-draft
+[선택] Draft (WIP) 상태의 MR/PR 생성
+.TP
+.B \-\-squash
+[선택] 머지 시 커밋들을 단일 커밋으로 스쿼시 병합 (GitLab)
+.TP
+.B \-\-assignee <username>
+[선택] 담당자 사용자명 지정
+.TP
+.B \-\-milestone <name>
+[선택] 마일스톤 이름 지정
+.TP
+.B \-\-label <name>
+[선택] 라벨 지정 (여러 개는 콤마 구분 또는 반복 지정)
+.TP
+.B \-\-dry\-run
+[선택] 실제 푸시 없이 전송될 실행 명령 시뮬레이션
+.TP
+.B \-\-help
+[선택] 도움말 출력
+
+.SH EXAMPLES
+.PP
+.nf
+  # 1) 대화형 (Step\-by\-Step) 모드 실행
+  \&./git-mrq
+
+  # 2) GitHub 저장소 대상 PR 생성 (gh cli 연동)
+  \&./git-mrq \-\-source feature/login \-\-target main \-\-title "feat: 로그인 구현"
+
+  # 3) GitLab 저장소 대상 MR 생성 (glab cli 연동)
+  \&./git-mrq \-\-source feature/pay \-\-target develop \-\-remove\-source\-branch
+
+  # 4) 시뮬레이션 모드
+  \&./git-mrq \-\-target main \-\-dry\-run
+.fi
+.PP
+
+.SH COMPLETION
+.B git-mrq
+는 Bash 자동완성 스크립트(\fIgit-mrq.completion\fR)를 지원합니다.
+.BR scriptctl (1)
+또는
+.BR sciectl (1)
+을 통해 설치 시 시스템 표준 completion 경로에 자동으로 등록됩니다.
+
+.SH SEE ALSO
+.BR gh (1),
+.BR glab (1),
+.BR git (1),
+.BR git-ff-sync (1)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.

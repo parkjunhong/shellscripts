@@ -1,0 +1,714 @@
+#!/usr/bin/env bash
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : git-mrq
+# @license  : Apache License 2.0
+# @since    : 2026-11-11
+# @desc     : Create Merge Request or Pull Request using gh, glab, or Git push options
+# @installation : 
+#   1. insert 'source <path>/git-mrq' into ~/.bashrc or ~/.bash_profile for personal usage.
+#   2. copy to /etc/bash_completion.d/ or insert into /etc/bashrc for all users.
+# =======================================
+
+set -Eeuo pipefail
+
+FILENAME=$(basename "$0")
+
+OPT_REMOTE="origin"
+OPT_SOURCE=""
+OPT_TARGET="develop"
+OPT_TITLE=""
+OPT_DESC=""
+OPT_REMOVE_SOURCE=false
+OPT_DRAFT=false
+OPT_SQUASH=false
+OPT_ASSIGNEE=""
+OPT_MILESTONE=""
+OPT_LABELS=()
+OPT_DRY_RUN=false
+IS_INTERACTIVE=false
+
+##
+# 스크립트 사용법 및 진단 정보를 표준 출력으로 안내합니다.
+#
+# @param $1 {string} 실패 원인 메시지 (선택)
+# @param $2 {number} 오류 발생 라인 번호 (선택)
+#
+# @return 사용법 화면 출력
+##
+help(){
+  if [ -n "${1:-}" ]; then
+    local indent=10
+    local formatl=" - %-"$indent"s: %s\n"
+    local formatr=" - %"$indent"s: %s\n"
+    echo
+    echo "================================================================================"
+    printf "$formatl" "filename" "$FILENAME"
+    printf "$formatl" "line" "${2:-$LINENO}"
+    printf "$formatl" "callstack"
+    local idx=1
+    for func in "${FUNCNAME[@]:1}"; do
+      printf "$formatr" "[$idx]" "$func"
+      ((idx++))
+    done
+    printf "$formatl" "cause" "$1"
+    echo "================================================================================"
+  fi
+  echo
+  echo "사용법:"
+  echo "  $FILENAME [--source <source-branch>] [--target <target-branch>] [--title <mr-title>] [옵션...]"
+  echo "  $FILENAME --help"
+  echo
+  echo "  * 인자 없이 실행 시 대화형(Step-by-Step) 입력 모드로 자동 진입합니다."
+  echo
+  echo "설명:"
+  echo "  원격 저장소 플랫폼(GitHub, GitLab, 기타 Git 서버)을 자동 감지하여 최적의 CLI로"
+  echo "  Merge Request 또는 Pull Request를 생성하고 푸시합니다."
+  echo "  - GitHub 저장소 : 'github cli (gh)' 사용 (미설치 시 시스템 자동 설치)"
+  echo "  - GitLab 저장소 : 'gitlab cli (glab)' 사용 (미설치 시 시스템 자동 설치)"
+  echo "  - 기타 Git 서버 : Git CLI 공식 Push Options(-o merge_request.*) 사용"
+  echo "  * 도구 자동 설치는 Debian/Ubuntu(apt), RHEL/CentOS/Rocky/Fedora(dnf/yum), Arch Linux(pacman), macOS(brew)를 모두 지원합니다."
+  echo
+  echo "옵션 상세:"
+  echo "  --source <branch>          MR/PR을 생성할 원본 소스 브랜치 (기본값: 현재 브랜치)"
+  echo "  --target <branch>          병합 대상 타겟 브랜치 (기본값: develop)"
+  echo "  --title <text>             Merge/Pull Request 제목 (기본값: 소스 브랜치 최근 커밋 메시지)"
+  echo "  --desc, --description <text> 상세 설명 본문"
+  echo "  --remote <remote-name>     원격 저장소 이름 (기본값: origin)"
+  echo "  --remove-source-branch     머지 완료 후 소스 브랜치 자동 삭제 설정 (GitLab)"
+  echo "  --draft                    Draft (WIP) 상태의 MR/PR 생성"
+  echo "  --squash                   머지 시 소스 커밋들을 단일 커밋으로 스쿼시(Squash) 병합"
+  echo "  --assignee <username>      담당자(Assignee) 사용자명 지정"
+  echo "  --milestone <name>         마일스톤(Milestone) 지정"
+  echo "  --label <name>             라벨(Label) 지정 (여러 개 지정 시 콤마 또는 옵션 반복)"
+  echo "  --dry-run                  실제 푸시 및 생성을 수행하지 않고 실행 계획만 시뮬레이션 출력"
+  echo "  --help                     도움말 출력"
+  echo
+}
+
+##
+# 커맨드라인 인자를 파싱하고 전역 옵션을 설정합니다.
+#
+# @param $@ {array} 커맨드라인 파라미터 배열
+#
+# @return 0 성공, 실패 시 help() 호출 후 종료
+##
+parse_arguments() {
+  if (( $# == 0 )); then
+    IS_INTERACTIVE=true
+    return 0
+  fi
+
+  while (( $# > 0 )); do
+    case "$1" in
+      --source)
+        if (( $# < 2 )) || [[ "$2" =~ ^-- ]]; then
+          help "'--source' 옵션에 유효한 브랜치 이름이 전달되지 않았습니다." "$LINENO"
+          exit 1
+        fi
+        OPT_SOURCE="$2"
+        shift 2
+        ;;
+      --target)
+        if (( $# < 2 )) || [[ "$2" =~ ^-- ]]; then
+          help "'--target' 옵션에 유효한 브랜치 이름이 전달되지 않았습니다." "$LINENO"
+          exit 1
+        fi
+        OPT_TARGET="$2"
+        shift 2
+        ;;
+      --title)
+        if (( $# < 2 )) || [[ "$2" =~ ^-- ]]; then
+          help "'--title' 옵션에 제목이 전달되지 않았습니다." "$LINENO"
+          exit 1
+        fi
+        OPT_TITLE="$2"
+        shift 2
+        ;;
+      --desc|--description)
+        if (( $# < 2 )) || [[ "$2" =~ ^-- ]]; then
+          help "'$1' 옵션에 설명 본문이 전달되지 않았습니다." "$LINENO"
+          exit 1
+        fi
+        OPT_DESC="$2"
+        shift 2
+        ;;
+      --remote)
+        if (( $# < 2 )) || [[ "$2" =~ ^-- ]]; then
+          help "'--remote' 옵션에 유효한 원격 저장소 이름이 전달되지 않았습니다." "$LINENO"
+          exit 1
+        fi
+        OPT_REMOTE="$2"
+        shift 2
+        ;;
+      --remove-source-branch)
+        OPT_REMOVE_SOURCE=true
+        shift 1
+        ;;
+      --draft)
+        OPT_DRAFT=true
+        shift 1
+        ;;
+      --squash)
+        OPT_SQUASH=true
+        shift 1
+        ;;
+      --assignee)
+        if (( $# < 2 )) || [[ "$2" =~ ^-- ]]; then
+          help "'--assignee' 옵션에 사용자명이 전달되지 않았습니다." "$LINENO"
+          exit 1
+        fi
+        OPT_ASSIGNEE="$2"
+        shift 2
+        ;;
+      --milestone)
+        if (( $# < 2 )) || [[ "$2" =~ ^-- ]]; then
+          help "'--milestone' 옵션에 마일스톤 이름이 전달되지 않았습니다." "$LINENO"
+          exit 1
+        fi
+        OPT_MILESTONE="$2"
+        shift 2
+        ;;
+      --label)
+        if (( $# < 2 )) || [[ "$2" =~ ^-- ]]; then
+          help "'--label' 옵션에 라벨이 전달되지 않았습니다." "$LINENO"
+          exit 1
+        fi
+        local raw_labels="$2"
+        if [[ "$raw_labels" == *,* ]]; then
+          local item
+          IFS=',' read -r -a split_labels <<< "$raw_labels"
+          for item in "${split_labels[@]}"; do
+            [[ -n "$item" ]] && OPT_LABELS+=("$item")
+          done
+        else
+          OPT_LABELS+=("$raw_labels")
+        fi
+        shift 2
+        ;;
+      --dry-run)
+        OPT_DRY_RUN=true
+        shift 1
+        ;;
+      --help)
+        help "" "$LINENO"
+        exit 0
+        ;;
+      -*)
+        help "단축 옵션('$1')은 지원하지 않습니다. 정규 롱 옵션(Full Option)을 사용하십시오." "$LINENO"
+        exit 1
+        ;;
+      *)
+        help "알 수 없는 인자입니다: '$1'" "$LINENO"
+        exit 1
+        ;;
+    esac
+  done
+}
+
+##
+# 현재 저장소의 원격 저장소 URL을 분석하여 호스팅 플랫폼(GitHub, GitLab, 기타)을 판별합니다.
+#
+# @param 없음
+#
+# @return echo를 통해 'github', 'gitlab', 'other' 출력
+##
+detect_platform() {
+  local remote_url
+  remote_url=$(git remote get-url "$OPT_REMOTE" 2>/dev/null || echo "")
+  if [[ "$remote_url" =~ github\.com ]]; then
+    echo "github"
+  elif [[ "$remote_url" =~ gitlab ]]; then
+    echo "gitlab"
+  else
+    echo "other"
+  fi
+}
+
+##
+# 호스트 OS의 패키지 관리자를 감지합니다.
+#
+# @param 없음
+#
+# @return 'brew', 'pacman', 'dnf', 'yum', 'apt', 'unknown'
+##
+detect_package_manager() {
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    if command -v brew >/dev/null 2>&1; then
+      echo "brew"
+    else
+      echo "brew-missing"
+    fi
+    return 0
+  fi
+
+  if command -v pacman >/dev/null 2>&1; then
+    echo "pacman"
+  elif command -v dnf >/dev/null 2>&1; then
+    echo "dnf"
+  elif command -v yum >/dev/null 2>&1; then
+    echo "yum"
+  elif command -v apt-get >/dev/null 2>&1; then
+    echo "apt"
+  else
+    echo "unknown"
+  fi
+}
+
+##
+# 시스템에 필요한 CLI 도구(gh 또는 glab)를 자동 설치합니다.
+#
+# @param $1 {string} 설치 대상 도구 ('gh' 또는 'glab')
+#
+# @return 0 성공, 실패 시 종료
+##
+install_cli_tool() {
+  local tool="$1"
+  local tool_display="GitHub CLI (gh)"
+  [[ "$tool" == "glab" ]] && tool_display="GitLab CLI (glab)"
+
+  local pm
+  pm=$(detect_package_manager)
+
+  echo "================================================================================"
+  echo "📦 [도구 설치 필요] 시스템에 '${tool_display}' 도구가 설치되어 있지 않습니다."
+  echo "🔧 감지된 패키지 관리자: ${pm}"
+  echo "================================================================================"
+
+  if [[ "$pm" == "unknown" || "$pm" == "brew-missing" ]]; then
+    if [[ "$pm" == "brew-missing" ]]; then
+      help "macOS 환경이지만 Homebrew('brew')가 설치되어 있지 않습니다. Homebrew를 먼저 설치해 주세요." "$LINENO"
+    else
+      help "지원하는 패키지 관리자(apt, dnf, yum, pacman, brew)를 찾을 수 없습니다. '${tool_display}'를 수동으로 설치해 주세요." "$LINENO"
+    fi
+    exit 1
+  fi
+
+  echo "🚀 [설치 진행] '${tool_display}' 설치를 시작합니다..."
+
+  case "$pm" in
+    brew)
+      echo "  👉 실행: brew install ${tool}"
+      brew install "${tool}"
+      ;;
+    pacman)
+      local arch_pkg="${tool}"
+      [[ "$tool" == "gh" ]] && arch_pkg="github-cli"
+      echo "  👉 실행: sudo pacman -Sy --noconfirm ${arch_pkg}"
+      sudo pacman -Sy --noconfirm "${arch_pkg}"
+      ;;
+    apt)
+      echo "  👉 실행: sudo apt-get update && sudo apt-get install -y ${tool}"
+      if ! sudo apt-get update -y || ! sudo apt-get install -y "${tool}"; then
+        echo "  ℹ️  공식 배포판 저장소에 '${tool}' 패키지가 없어 공식 설치 스크립트/키링을 적용합니다..."
+        if [[ "$tool" == "gh" ]]; then
+          sudo mkdir -p -m 755 /etc/apt/keyrings
+          wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null
+          sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          sudo apt-get update -y
+          sudo apt-get install -y gh
+        else
+          # glab 공식 설치
+          curl -s https://gitlab.com/gitlab-org/cli/-/raw/main/scripts/install.sh | sudo bash
+        fi
+      fi
+      ;;
+    dnf|yum)
+      local pm_cmd="${pm}"
+      echo "  👉 실행: sudo ${pm_cmd} install -y ${tool}"
+      if ! sudo "${pm_cmd}" install -y "${tool}" 2>/dev/null; then
+        echo "  ℹ️  공식 배포판 저장소에 '${tool}' 패키지가 없어 공식 저장소를 구성합니다..."
+        if [[ "$tool" == "gh" ]]; then
+          sudo "${pm_cmd}" install -y "${pm_cmd}-command(config-manager)" 2>/dev/null || true
+          sudo "${pm_cmd}" config-manager --add-repo https://cli.github.com/packages/rpm/gh-cli.repo 2>/dev/null || true
+          sudo "${pm_cmd}" install -y gh
+        else
+          curl -s https://gitlab.com/gitlab-org/cli/-/raw/main/scripts/install.sh | sudo bash
+        fi
+      fi
+      ;;
+  esac
+
+  local check_bin="${tool}"
+  if [[ "$tool" == "glab" ]] && ! command -v glab >/dev/null 2>&1 && command -v gitlab >/dev/null 2>&1; then
+    check_bin="gitlab"
+  fi
+
+  if command -v "$check_bin" >/dev/null 2>&1; then
+    echo "✅ [설치 완료] '${tool_display}' 도구가 성공적으로 설치되었습니다!"
+    echo "================================================================================"
+  else
+    help "'${tool_display}' 자동 설치에 실패했습니다. 수동으로 도구를 설치한 후 다시 실행해 주십시오." "$LINENO"
+    exit 1
+  fi
+}
+
+##
+# 지정한 CLI 도구의 존재 여부를 검사하고 미설치 시 자동 설치를 수행합니다.
+#
+# @param $1 {string} 'gh' 또는 'glab'
+#
+# @return 0 성공
+##
+ensure_cli_tool() {
+  local tool="$1"
+  if [[ "$tool" == "gh" ]]; then
+    if ! command -v gh >/dev/null 2>&1; then
+      if [[ "$OPT_DRY_RUN" == "true" ]]; then
+        echo "ℹ️  [안내] 시스템에 'gh' CLI 도구가 설치되어 있지 않습니다. (실제 실행 시 자동 설치가 진행됩니다)"
+        return 0
+      fi
+      install_cli_tool "gh"
+    fi
+  elif [[ "$tool" == "glab" ]]; then
+    if ! command -v glab >/dev/null 2>&1 && ! command -v gitlab >/dev/null 2>&1; then
+      if [[ "$OPT_DRY_RUN" == "true" ]]; then
+        echo "ℹ️  [안내] 시스템에 'glab' CLI 도구가 설치되어 있지 않습니다. (실제 실행 시 자동 설치가 진행됩니다)"
+        return 0
+      fi
+      install_cli_tool "glab"
+    fi
+  fi
+}
+
+##
+# 현재 작업 디렉토리의 Git 저장소 유효성 및 브랜치 상태를 사전 점검합니다.
+#
+# @param 없음
+#
+# @return 0 성공, 실패 시 help() 호출 후 종료
+##
+preflight_check() {
+  # 1. Git 저장소 여부 확인
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    help "현재 디렉토리(또는 상위 디렉토리)가 유효한 Git 저장소가 아닙니다." "$LINENO"
+    exit 1
+  fi
+
+  # 2. 소스 브랜치 미지정 시 현재 체크아웃 브랜치 자동 할당
+  if [[ -z "$OPT_SOURCE" ]]; then
+    OPT_SOURCE=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
+    if [[ -z "$OPT_SOURCE" ]]; then
+      help "현재 저장소가 Detached HEAD 상태이거나 브랜치를 확인할 수 없습니다. '--source' 옵션으로 브랜치를 직접 지정하십시오." "$LINENO"
+      exit 1
+    fi
+  fi
+
+  # 3. 로컬에 소스 브랜치가 존재하는지 확인
+  if ! git rev-parse --verify "refs/heads/${OPT_SOURCE}" >/dev/null 2>&1; then
+    help "지정한 소스 브랜치('${OPT_SOURCE}')가 로컬에 존재하지 않습니다." "$LINENO"
+    exit 1
+  fi
+
+  # 4. 원격 저장소 존재 여부 확인
+  if ! git remote | grep -qw "$OPT_REMOTE"; then
+    help "지정한 원격 저장소('${OPT_REMOTE}')가 현재 Git 저장소에 등록되어 있지 않습니다." "$LINENO"
+    exit 1
+  fi
+
+  # 5. 소스 브랜치와 타겟 브랜치가 동일한지 검증
+  if [[ "$OPT_SOURCE" == "$OPT_TARGET" ]]; then
+    help "소스 브랜치('${OPT_SOURCE}')와 타겟 브랜치('${OPT_TARGET}')가 동일합니다. 자기 자신을 대상으로 Merge Request를 생성할 수 없습니다." "$LINENO"
+    exit 1
+  fi
+
+  # 6. 소스 브랜치의 최근 커밋 메시지 기본 제목 설정 (제목이 비어있는 경우)
+  if [[ -z "$OPT_TITLE" ]]; then
+    OPT_TITLE=$(git log -1 --pretty=%s "${OPT_SOURCE}" 2>/dev/null || echo "")
+    if [[ -z "$OPT_TITLE" ]]; then
+      OPT_TITLE="Merge '${OPT_SOURCE}' into '${OPT_TARGET}'"
+    fi
+  fi
+}
+
+##
+# 대화형(Step-by-Step) 모드로 Merge Request 정보를 순차 입력받습니다.
+#
+# @param 없음
+#
+# @return 전역 변수 설정
+##
+prompt_step_by_step() {
+  local current_b
+  current_b=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
+
+  local platform
+  platform=$(detect_platform)
+  local platform_desc="기타 Git 서버 (Git Push Options)"
+  [[ "$platform" == "github" ]] && platform_desc="GitHub (gh cli)"
+  [[ "$platform" == "gitlab" ]] && platform_desc="GitLab (glab cli)"
+
+  echo "================================================================================"
+  echo "📝 [대화형 모드] Merge/Pull Request 단계별 설정 (감지된 플랫폼: ${platform_desc})"
+  echo "================================================================================"
+
+  # 1) 소스 브랜치 확인/입력
+  local def_source="${current_b:-feature}"
+  printf "  1) 소스 브랜치를 입력하세요. (기본값: %s) : " "$def_source"
+  local input_source=""
+  read -r input_source || exit 1
+  OPT_SOURCE="${input_source:-$def_source}"
+
+  # 소스 브랜치 존재 검증
+  if ! git rev-parse --verify "refs/heads/${OPT_SOURCE}" >/dev/null 2>&1; then
+    help "지정한 소스 브랜치('${OPT_SOURCE}')가 로컬에 존재하지 않습니다." "$LINENO"
+    exit 1
+  fi
+
+  # 2) 타겟 브랜치 입력
+  local def_target="develop"
+  # 원격에 develop이 없고 main만 있는 경우 main을 기본값으로 추천
+  if ! git rev-parse --verify "refs/heads/develop" >/dev/null 2>&1 && \
+     ! git rev-parse --verify "${OPT_REMOTE}/develop" >/dev/null 2>&1; then
+    if git rev-parse --verify "refs/heads/main" >/dev/null 2>&1 || \
+       git rev-parse --verify "${OPT_REMOTE}/main" >/dev/null 2>&1; then
+      def_target="main"
+    fi
+  fi
+  printf "  2) 타겟 브랜치를 입력하세요. (기본값: %s) : " "$def_target"
+  local input_target=""
+  read -r input_target || exit 1
+  OPT_TARGET="${input_target:-$def_target}"
+
+  if [[ "$OPT_SOURCE" == "$OPT_TARGET" ]]; then
+    help "소스 브랜치와 타겟 브랜치가 동일합니다." "$LINENO"
+    exit 1
+  fi
+
+  # 3) MR/PR 제목 입력
+  local def_title
+  def_title=$(git log -1 --pretty=%s "${OPT_SOURCE}" 2>/dev/null || echo "Merge '${OPT_SOURCE}' into '${OPT_TARGET}'")
+  printf "  3) Request 제목을 입력하세요. (기본값: %s) : " "$def_title"
+  local input_title=""
+  read -r input_title || exit 1
+  OPT_TITLE="${input_title:-$def_title}"
+
+  # 4) 머지 후 소스 브랜치 삭제 여부
+  printf "  4) 머지 완료 후 원격 소스 브랜치를 자동 삭제할까요? (y/n, 기본값: n) : "
+  local input_del=""
+  read -r input_del || exit 1
+  case "$input_del" in
+    y|Y)
+      OPT_REMOVE_SOURCE=true
+      ;;
+    *)
+      OPT_REMOVE_SOURCE=false
+      ;;
+  esac
+
+  # 5) 검증 모드 여부
+  while true; do
+    printf "  5) 실행 전에 검증만 하시겠습니까? (y: 검증 / n: 생성) : "
+    local input_dry=""
+    read -r input_dry || exit 1
+    case "$input_dry" in
+      y|Y)
+        OPT_DRY_RUN=true
+        break
+        ;;
+      n|N)
+        OPT_DRY_RUN=false
+        break
+        ;;
+      *)
+        echo "  ⚠️ 'y' 또는 'n'을 입력해 주세요."
+        continue
+        ;;
+    esac
+  done
+}
+
+##
+# 대화형 검증 성공 후 실제 생성 진행 여부를 확인하고 실행합니다.
+#
+# @param 없음
+#
+# @return 0
+##
+prompt_confirm_and_execute() {
+  local proceed=""
+  echo
+  while true; do
+    printf "  Request 생성을 진행할까요? (y/n) : "
+    read -r proceed || exit 1
+    case "$proceed" in
+      y|Y)
+        OPT_DRY_RUN=false
+        echo
+        execute_mr
+        break
+        ;;
+      n|N)
+        echo "  ℹ️  작업이 취소되었습니다."
+        break
+        ;;
+      *)
+        echo "  ⚠️ 'y' 또는 'n'을 입력해 주세요."
+        continue
+        ;;
+    esac
+  done
+}
+
+##
+# 플랫폼별 CLI 또는 Push Options를 실행하여 Merge Request / Pull Request를 생성합니다.
+#
+# @param 없음
+#
+# @return 0 성공, 1 실패
+##
+execute_mr() {
+  local platform
+  platform=$(detect_platform)
+
+  echo "================================================================================"
+  if [[ "$OPT_DRY_RUN" == "true" ]]; then
+    echo "🔍 [DRY-RUN] Request 생성 시뮬레이션 (대상 플랫폼: ${platform})"
+  else
+    echo "🚀 [MR/PR] Request 생성 및 전송 시작 (대상 플랫폼: ${platform})"
+  fi
+  echo "--------------------------------------------------------------------------------"
+  echo "  - 원격 저장소       : ${OPT_REMOTE}"
+  echo "  - 소스 브랜치       : ${OPT_SOURCE}"
+  echo "  - 타겟 브랜치       : ${OPT_TARGET}"
+  echo "  - 제목 (Title)      : ${OPT_TITLE}"
+  [[ -n "$OPT_DESC" ]] && echo "  - 본문 설명 (Desc)  : ${OPT_DESC}"
+  echo "  - 소스 브랜치 삭제  : ${OPT_REMOVE_SOURCE}"
+  echo "  - Draft (WIP)       : ${OPT_DRAFT}"
+  echo "  - Squash            : ${OPT_SQUASH}"
+  [[ -n "$OPT_ASSIGNEE" ]] && echo "  - 담당자 (Assignee) : ${OPT_ASSIGNEE}"
+  [[ -n "$OPT_MILESTONE" ]] && echo "  - 마일스톤          : ${OPT_MILESTONE}"
+  (( ${#OPT_LABELS[@]} > 0 )) && echo "  - 라벨 (Labels)     : ${OPT_LABELS[*]}"
+  echo "--------------------------------------------------------------------------------"
+
+  case "$platform" in
+    github)
+      ensure_cli_tool "gh"
+      local -a gh_cmd=(gh pr create --base "$OPT_TARGET" --head "$OPT_SOURCE" --title "$OPT_TITLE")
+      [[ -n "$OPT_DESC" ]] && gh_cmd+=(--body "$OPT_DESC")
+      [[ "$OPT_DRAFT" == "true" ]] && gh_cmd+=(--draft)
+      [[ -n "$OPT_ASSIGNEE" ]] && gh_cmd+=(--assignee "$OPT_ASSIGNEE")
+      [[ -n "$OPT_MILESTONE" ]] && gh_cmd+=(--milestone "$OPT_MILESTONE")
+      local lbl
+      for lbl in "${OPT_LABELS[@]}"; do
+        gh_cmd+=(--label "$lbl")
+      done
+
+      echo "🛠️  [실행 예정 순서]:"
+      echo "   1) git push ${OPT_REMOTE} ${OPT_SOURCE}"
+      printf "   2)"
+      for c in "${gh_cmd[@]}"; do
+        printf " %q" "$c"
+      done
+      echo
+      echo "================================================================================"
+
+      if [[ "$OPT_DRY_RUN" == "true" ]]; then
+        echo "✅ [DRY-RUN] GitHub PR 생성 계획 검증 완료!"
+        return 0
+      fi
+
+      echo "📤 [1/2] 원격 저장소에 소스 브랜치 푸시 중..."
+      git push "$OPT_REMOTE" "$OPT_SOURCE"
+
+      echo "🚀 [2/2] GitHub CLI를 통해 Pull Request 생성 중..."
+      "${gh_cmd[@]}"
+      ;;
+
+    gitlab)
+      ensure_cli_tool "glab"
+      local glab_bin="glab"
+      if ! command -v glab >/dev/null 2>&1 && command -v gitlab >/dev/null 2>&1; then
+        glab_bin="gitlab"
+      fi
+
+      local -a glab_cmd=("$glab_bin" mr create --target-branch "$OPT_TARGET" --source-branch "$OPT_SOURCE" --title "$OPT_TITLE" --yes)
+      [[ -n "$OPT_DESC" ]] && glab_cmd+=(--description "$OPT_DESC")
+      [[ "$OPT_REMOVE_SOURCE" == "true" ]] && glab_cmd+=(--remove-source-branch)
+      [[ "$OPT_DRAFT" == "true" ]] && glab_cmd+=(--draft)
+      [[ "$OPT_SQUASH" == "true" ]] && glab_cmd+=(--squash-before-merge)
+      [[ -n "$OPT_ASSIGNEE" ]] && glab_cmd+=(--assignee "$OPT_ASSIGNEE")
+      [[ -n "$OPT_MILESTONE" ]] && glab_cmd+=(--milestone "$OPT_MILESTONE")
+      local lbl
+      for lbl in "${OPT_LABELS[@]}"; do
+        glab_cmd+=(--label "$lbl")
+      done
+
+      echo "🛠️  [실행 예정 순서]:"
+      echo "   1) git push ${OPT_REMOTE} ${OPT_SOURCE}"
+      printf "   2)"
+      for c in "${glab_cmd[@]}"; do
+        printf " %q" "$c"
+      done
+      echo
+      echo "================================================================================"
+
+      if [[ "$OPT_DRY_RUN" == "true" ]]; then
+        echo "✅ [DRY-RUN] GitLab MR 생성 계획 검증 완료!"
+        return 0
+      fi
+
+      echo "📤 [1/2] 원격 저장소에 소스 브랜치 푸시 중..."
+      git push "$OPT_REMOTE" "$OPT_SOURCE"
+
+      echo "🚀 [2/2] GitLab CLI를 통해 Merge Request 생성 중..."
+      "${glab_cmd[@]}"
+      ;;
+
+    other)
+      local -a push_opts=()
+      push_opts+=(-o "merge_request.create")
+      push_opts+=(-o "merge_request.target=${OPT_TARGET}")
+      push_opts+=(-o "merge_request.title=${OPT_TITLE}")
+      [[ -n "$OPT_DESC" ]] && push_opts+=(-o "merge_request.description=${OPT_DESC}")
+      [[ "$OPT_REMOVE_SOURCE" == "true" ]] && push_opts+=(-o "merge_request.remove_source_branch")
+      [[ "$OPT_DRAFT" == "true" ]] && push_opts+=(-o "merge_request.draft")
+      [[ "$OPT_SQUASH" == "true" ]] && push_opts+=(-o "merge_request.squash")
+      [[ -n "$OPT_ASSIGNEE" ]] && push_opts+=(-o "merge_request.assign=${OPT_ASSIGNEE}")
+      [[ -n "$OPT_MILESTONE" ]] && push_opts+=(-o "merge_request.milestone=${OPT_MILESTONE}")
+      local lbl
+      for lbl in "${OPT_LABELS[@]}"; do
+        push_opts+=(-o "merge_request.label=${lbl}")
+      done
+
+      echo "🛠️  [실행 명령어]:"
+      printf "   git push"
+      for opt in "${push_opts[@]}"; do
+        printf " %q" "$opt"
+      done
+      printf " %q %q\n" "$OPT_REMOTE" "$OPT_SOURCE"
+      echo "================================================================================"
+
+      if [[ "$OPT_DRY_RUN" == "true" ]]; then
+        echo "✅ [DRY-RUN] Git Push Options 생성 계획 검증 완료!"
+        return 0
+      fi
+
+      echo "📤 [푸시] Git Push Options 전송 중..."
+      git push "${push_opts[@]}" "$OPT_REMOTE" "$OPT_SOURCE"
+      ;;
+  esac
+
+  echo "================================================================================"
+  echo "🎉 [완료] Merge/Pull Request 작업이 성공적으로 완료되었습니다."
+  echo "================================================================================"
+}
+
+main() {
+  parse_arguments "$@"
+  if [[ "$IS_INTERACTIVE" == "true" ]]; then
+    preflight_check
+    prompt_step_by_step
+  else
+    preflight_check
+  fi
+
+  execute_mr
+
+  if [[ "$IS_INTERACTIVE" == "true" && "$OPT_DRY_RUN" == "true" ]]; then
+    prompt_confirm_and_execute
+  fi
+}
+
+main "$@"
