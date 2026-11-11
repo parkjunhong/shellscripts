@@ -64,16 +64,16 @@ _sciectl_get_file_age() {
 }
 
 ##
-# 원격 GitHub에서 catalogs.ini 파일을 다운로드하여 TTL 캐시를 관리하고
-# 카탈로그 섹션 목록을 반환합니다.
+# 원격 GitHub에서 catalogs.ini 파일을 다운로드하여 TTL(기본 60초) 캐시를 관리하고
+# 로컬 캐시 파일 경로를 반환합니다.
 #
-# @return 카탈로그 ID 목록 (공백 구분)
+# @return catalogs.ini 캐시 파일 경로
 ##
 _sciectl_fetch_remote_catalogs_cached() {
   local cache_dir
   cache_dir="$(_sciectl_get_cache_dir)"
   local cache_file="${cache_dir}/catalogs.ini"
-  local ttl="${SCIECTL_CACHE_TTL:-300}" # 기본값: 300초 (5분)
+  local ttl="${SCIECTL_CACHE_TTL:-60}" # 기본값: 60초 (1분)
   local raw_base="${SCIECTL_REPO_RAW_URL:-$SCIECTL_REPO_RAW_URL_DEFAULT}"
 
   local need_refresh=1
@@ -91,50 +91,6 @@ _sciectl_fetch_remote_catalogs_cached() {
       mv -f "$tmp_fetch" "$cache_file" 2>/dev/null || true
     else
       rm -f "$tmp_fetch" 2>/dev/null || true
-      # 네트워크 장애 시 이전 캐시가 있다면 터치하여 재시도 간격 확보
-      [[ -f "$cache_file" ]] && touch "$cache_file" 2>/dev/null || true
-    fi
-  fi
-
-  if [[ -f "$cache_file" && -s "$cache_file" ]]; then
-    grep -E '^\[[a-zA-Z0-9_-]+\]' "$cache_file" 2>/dev/null | tr -d '[]' | tr '\n' ' '
-    return 0
-  fi
-
-  return 1
-}
-
-##
-# 원격 GitHub에서 개별 *.catalog 파일을 다운로드하여 TTL 캐시를 관리하고
-# 로컬 캐시 파일 경로를 반환합니다.
-#
-# @param $1 {string} 카탈로그 ID
-#
-# @return 캐시 파일 경로
-##
-_sciectl_fetch_remote_catalog_file_cached() {
-  local cid="$1"
-  local cache_dir
-  cache_dir="$(_sciectl_get_cache_dir)"
-  local cache_file="${cache_dir}/${cid}.catalog"
-  local ttl="${SCIECTL_CACHE_TTL:-300}"
-  local raw_base="${SCIECTL_REPO_RAW_URL:-$SCIECTL_REPO_RAW_URL_DEFAULT}"
-
-  local need_refresh=1
-  if [[ -f "$cache_file" && -s "$cache_file" ]]; then
-    local age
-    age="$(_sciectl_get_file_age "$cache_file")"
-    if (( age < ttl )); then
-      need_refresh=0
-    fi
-  fi
-
-  if (( need_refresh == 1 )); then
-    local tmp_fetch="${cache_file}.tmp.$$"
-    if curl -sf --connect-timeout 2 --max-time 4 "${raw_base}/env/catalogs/${cid}.catalog" -o "$tmp_fetch" 2>/dev/null && [[ -s "$tmp_fetch" ]]; then
-      mv -f "$tmp_fetch" "$cache_file" 2>/dev/null || true
-    else
-      rm -f "$tmp_fetch" 2>/dev/null || true
       [[ -f "$cache_file" ]] && touch "$cache_file" 2>/dev/null || true
     fi
   fi
@@ -147,178 +103,158 @@ _sciectl_fetch_remote_catalog_file_cached() {
 }
 
 ##
-# 로컬 Git 저장소의 최상위 루트 디렉토리를 탐색합니다 (1순위: 코드가 있는 서버 / 개발 PC).
-# 0) 환경 변수 (SCIECTL_LOCAL_REPO_ROOT)
-# 1) Git 저장소 최상위 루트 (git rev-parse --show-toplevel)
-# 2) 현재 작업 디렉토리($PWD)에서 상위로 올라가며 env/catalogs/catalogs.ini 검색
-# 3) 실행 명령어(${COMP_WORDS[0]})의 심볼릭 링크 원본 경로 상위에서 검색
-# 4) 사용자의 표준 개발 경로 후보군 검색
+# 원격 GitHub에서 개별 *.catalog 파일을 다운로드하여 TTL(기본 60초) 캐시를 관리하고
+# 로컬 캐시 파일 경로를 반환합니다.
 #
-# @return 저장소 루트 경로 출력 (발견 시 0, 미발견 시 1)
+# @param $1 {string} 카탈로그 파일명 (예: setup-env.catalog) 또는 카탈로그 ID
+#
+# @return 캐시 파일 경로
 ##
-_sciectl_find_repo_root() {
-  # 0) 환경 변수 우선 확인
-  if [[ -n "${SCIECTL_LOCAL_REPO_ROOT:-}" && -f "${SCIECTL_LOCAL_REPO_ROOT}/env/catalogs/catalogs.ini" ]]; then
-    printf '%s\n' "$SCIECTL_LOCAL_REPO_ROOT"
+_sciectl_fetch_remote_catalog_file_cached() {
+  local target="$1"
+  local cat_file="${target%.catalog}.catalog"
+  local cache_dir
+  cache_dir="$(_sciectl_get_cache_dir)"
+  local local_path="${cache_dir}/${cat_file}"
+  local ttl="${SCIECTL_CACHE_TTL:-60}" # 기본값: 60초 (1분)
+  local raw_base="${SCIECTL_REPO_RAW_URL:-$SCIECTL_REPO_RAW_URL_DEFAULT}"
+
+  local need_refresh=1
+  if [[ -f "$local_path" && -s "$local_path" ]]; then
+    local age
+    age="$(_sciectl_get_file_age "$local_path")"
+    if (( age < ttl )); then
+      need_refresh=0
+    fi
+  fi
+
+  if (( need_refresh == 1 )); then
+    local tmp_fetch="${local_path}.tmp.$$"
+    if curl -sf --connect-timeout 2 --max-time 4 "${raw_base}/env/catalogs/${cat_file}" -o "$tmp_fetch" 2>/dev/null && [[ -s "$tmp_fetch" ]]; then
+      mv -f "$tmp_fetch" "$local_path" 2>/dev/null || true
+    else
+      rm -f "$tmp_fetch" 2>/dev/null || true
+      [[ -f "$local_path" ]] && touch "$local_path" 2>/dev/null || true
+    fi
+  fi
+
+  if [[ -f "$local_path" && -s "$local_path" ]]; then
+    printf '%s\n' "$local_path"
     return 0
   fi
-
-  local git_root
-  git_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
-  if [[ -n "$git_root" && -f "$git_root/env/catalogs/catalogs.ini" ]]; then
-    printf '%s\n' "$git_root"
-    return 0
-  fi
-
-  local dir="$PWD"
-  while [[ -n "$dir" && "$dir" != "/" ]]; do
-    if [[ -f "$dir/env/catalogs/catalogs.ini" ]]; then
-      printf '%s\n' "$dir"
-      return 0
-    fi
-    dir="$(dirname "$dir")"
-  done
-
-  local cmd_name="${COMP_WORDS[0]:-sciectl}"
-  local bin_path
-  bin_path="$(command -v "$cmd_name" 2>/dev/null || true)"
-  if [[ -n "$bin_path" ]]; then
-    local real_bin
-    real_bin="$(readlink -f "$bin_path" 2>/dev/null || true)"
-    if [[ -n "$real_bin" ]]; then
-      dir="$(dirname "$real_bin")"
-      while [[ -n "$dir" && "$dir" != "/" ]]; do
-        if [[ -f "$dir/env/catalogs/catalogs.ini" ]]; then
-          printf '%s\n' "$dir"
-          return 0
-        fi
-        dir="$(dirname "$dir")"
-      done
-    fi
-  fi
-
-  # 4) 사용자의 표준 개발 경로 후보군 탐색
-  local known_cand
-  for known_cand in \
-    "$HOME/dev/bashshell-projects/github/shellscripts" \
-    "$HOME/dev/shellscripts" \
-    "$HOME/shellscripts"; do
-    if [[ -f "$known_cand/env/catalogs/catalogs.ini" ]]; then
-      printf '%s\n' "$known_cand"
-      return 0
-    fi
-  done
-
   return 1
 }
 
 ##
-# 카탈로그, 도구, 인스톨러, 명령어, 키 등의 자동완성 후보군을 동적으로 로드합니다.
-# 1순위: 코드가 있는 서버(로컬 저장소 탐색 성공 시 실시간 반영)
-# 2순위: 코드가 없는 임의 서버(TTL 캐시 기반 원격 GitHub 실시간 동기화)
-# 3순위: 네트워크 단절 및 최초 실행 비상 Fallback (11개 전체 카탈로그 내장)
+# 카탈로그 파일(*.catalog)들로부터 특정 필드 키(TOOLS, INSTALLERS, COMMANDS, SSH_KEYS)의
+# 값들을 파싱하여 중복 없이 정렬된 목록으로 추출합니다 (멀티라인 \ 지원).
+#
+# @param $1 {string} 필드 키 이름 (예: TOOLS)
+# @param $@ {array} 카탈로그 파일 경로 목록
+#
+# @return 추출된 고유 항목 목록 (공백 구분)
+##
+_sciectl_parse_catalog_field() {
+  local field_key="$1"
+  shift
+  local -a files=("$@")
+  (( ${#files[@]} > 0 )) || return 0
+
+  awk -v fkey="$field_key" '
+    $0 ~ ("^" fkey "=") {
+      val = substr($0, length(fkey) + 2)
+      while (val ~ /\\$/) {
+        sub(/\\$/, "", val)
+        if ((getline next_line) > 0) {
+          val = val " " next_line
+        }
+      }
+      split(val, arr, ",")
+      for (i in arr) {
+        gsub(/^[ \t]+|[ \t]+$/, "", arr[i])
+        if (arr[i] != "") print arr[i]
+      }
+    }
+  ' "${files[@]}" 2>/dev/null | sort -u | tr '\n' ' '
+}
+
+##
+# 카탈로그, 도구, 인스톨러, 명령어, 키 등의 자동완성 후보군을 원격 카탈로그 정의 기준으로 로드합니다.
+# 작업 디렉토리 조회는 전면 금지되며, 오직 원격 GitHub의 catalogs.ini 및 *.catalog 파일의
+# 정의 내용만 TTL(60초) 캐시를 통해 수집합니다.
 ##
 _sciectl_load_candidates() {
-  # 1. Fallback 기본값 (비상 시 사용, 11개 전체 카탈로그)
-  catalog_candidates="setup-env default-server default-devops network docker install-lets-encrypt-certificate gitlab ai-agent installer security all-scripts"
-  installer_candidates="install-temurin-25-jdk install-update-java-config install-maven-3.9.15 install-update-mvn-config install-htop docker/install-docker"
+  # 1. Fallback 기본값 (네트워크 단절 및 최초 실행 비상용, 정식 등록된 12개 카탈로그 및 82개 도구)
+  catalog_candidates="setup-env default-server default-devops network docker install-lets-encrypt-certificate git gitlab ai-agent installer security all-scripts"
+  tool_candidates="ai-agent/asr-cli build/clean-project build/deploy-profile build/remove-deploy db/h2-db-migrate db/mariadb-backup db/mariadb-restore docker/dkcontls docker/dknetcli docker/install-docker docker/install-docker-dev-config docker/pull-gitlab-images docker/setup-compose-service docker/setup-docker-compose env/sciectl es/es-index-usage es/es-search-index fail2ban/fail2ban-unbanip git/git-branch-cmd git/git-commit git/git-config git/git-ff-sync git/git-getpr git/git-init git/git-log-abbr git/git-log-all git/git-merge git/git-modify git/git-mrq git/git-pull-all git/git-push-after-sync git/git-push-all git/git-status-all git/git-tags gitlab/clone-gitlab-projects gitlab/gitlab-clone installer/install-albert-with-socket installer/install-antigravity-ide installer/install-antigravity-x64 java/mac-clean-java-config java/mac-update-java-config java/update-java-config maven/build-deploy-all maven/build-mvn-package maven/mvn-deploy maven/update-mvn-config maven/upload-mvn-dependencies net/add-vlan-routes net/fwc-cli net/fwc-docker-policy net/mtr-netstat-conns net/ps-port net/scp-dir net/ssh-proxy net/sshctl redis/redis-search security/authelia-crypto-hash security/ssl-del security/ssl-inst sudo/sudoers-cli sys/cat-cli sys/copy-suffix sys/disk-size sys/remove-service sys/ren-files sys/sys-info sys/vim-cli utils/autotail utils/canonical-status utils/check-number-inline utils/csv-count-checker utils/diff-file utils/grep-files utils/gz-ext-latest utils/modify-enc-str utils/replace-codeblock utils/replace-files utils/scp-con-gen utils/scriptctl utils/sna-files utils/ssh-con-gen utils/uuid-list"
+  installer_candidates="docker/install-docker install-htop install-maven-3.9.15 install-temurin-25-jdk install-update-java-config install-update-mvn-config"
   command_candidates="firewall-cmd-set-priority"
-  key_candidates="ymtech-internal letsencrypt"
+  key_candidates="letsencrypt ymtech-internal"
   step_candidates="sudoers remove-packages install-packages default-opts installers tools commands ssh-key"
-  tool_candidates="utils/scriptctl sys/vim-cli sudo/sudoers-cli sys/disk-size maven/build-mvn-package git/git-commit git/git-merge git/git-log-abbr git/git-getpr git/git-branch-cmd git/git-init build/clean-project utils/diff-file docker/install-docker-dev-config docker/setup-compose-service docker/setup-docker-compose docker/dknetcli docker/dkcontls net/fwc-cli net/fwc-docker-policy net/add-vlan-routes net/mtr-netstat-conns gitlab/gitlab-clone gitlab/clone-gitlab-projects ai-agent/asr-cli installer/install-albert-with-socket installer/install-antigravity-ide installer/install-antigravity-x64 security/authelia-crypto-hash security/ssl-del security/ssl-inst"
 
-  # [1순위] 로컬 저장소 탐색 (코드가 있는 서버 / 내 PC)
-  local repo_root
-  repo_root="$(_sciectl_find_repo_root)"
-  if [[ -n "$repo_root" && -d "$repo_root/env/catalogs" ]]; then
-    # 카탈로그 후보 (catalogs.ini 섹션 목록)
-    local dynamic_cats
-    dynamic_cats="$(grep -E '^\[[a-zA-Z0-9_-]+\]' "$repo_root/env/catalogs/catalogs.ini" 2>/dev/null | tr -d '[]' | tr '\n' ' ')"
-    [[ -n "$dynamic_cats" ]] && catalog_candidates="$dynamic_cats"
+  # 2. 원격 GitHub catalogs.ini 다운로드 및 TTL(60초) 캐시 조회
+  local ini_file
+  ini_file="$(_sciectl_fetch_remote_catalogs_cached)" || return 0
 
-    # 도구 후보 (*.catalog의 TOOLS + 저장소 내 <category>/<name> + env/sciectl)
-    local dynamic_tools
-    dynamic_tools="$(
-      {
-        grep -h '^TOOLS=' "$repo_root"/env/catalogs/*.catalog 2>/dev/null | sed 's/^TOOLS=//' | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$'
-        echo "env/sciectl"
-        echo "sciectl"
-        local c_dir t_dir c_name t_name
-        for c_dir in "$repo_root"/*; do
-          [[ -d "$c_dir" ]] || continue
-          c_name="$(basename "$c_dir")"
-          [[ "$c_name" == .* || "$c_name" == "tmp" || "$c_name" == "docs" ]] && continue
-          for t_dir in "$c_dir"/*; do
-            [[ -d "$t_dir" ]] || continue
-            t_name="$(basename "$t_dir")"
-            if [[ "$c_name" == "env" && ("$t_name" == "installers" || "$t_name" == "commands" || "$t_name" == "keys" || "$t_name" == "catalogs") ]]; then
-              continue
-            fi
-            if [[ -f "$t_dir/$t_name" || -f "$t_dir/${t_name}.sh" ]]; then
-              echo "${c_name}/${t_name}"
-            fi
-          done
-        done
-      } | sort -u | tr '\n' ' '
-    )"
-    [[ -n "$dynamic_tools" ]] && tool_candidates="$dynamic_tools"
+  # 카탈로그 후보 (catalogs.ini 섹션 목록)
+  local dynamic_cats
+  dynamic_cats="$(grep -E '^\[[a-zA-Z0-9_-]+\]' "$ini_file" 2>/dev/null | tr -d '[]' | tr '\n' ' ')"
+  [[ -n "$dynamic_cats" ]] && catalog_candidates="$dynamic_cats"
 
-    # 인스톨러 후보 (env/installers/* 디렉토리 + *.catalog의 INSTALLERS)
-    local dynamic_insts
-    dynamic_insts="$(
-      {
-        for d in "$repo_root"/env/installers/*; do
-          [[ -d "$d" ]] || continue
-          echo "$(basename "$d")"
-        done
-        grep -h '^INSTALLERS=' "$repo_root"/env/catalogs/*.catalog 2>/dev/null | sed 's/^INSTALLERS=//' | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$'
-      } | sort -u | tr '\n' ' '
-    )"
-    [[ -n "$dynamic_insts" ]] && installer_candidates="$dynamic_insts"
+  # catalogs.ini에 명시된 catalog_file 파일명 목록 추출
+  local -a cat_files=()
+  local line
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" =~ ^catalog_file[[:space:]]*=[[:space:]]*(.*) ]]; then
+      local cf="${BASH_REMATCH[1]}"
+      cf="$(echo "$cf" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+      [[ -n "$cf" ]] && cat_files+=("$cf")
+    fi
+  done < "$ini_file"
 
-    # 명령어 후보 (env/commands/* 디렉토리 + *.catalog의 COMMANDS)
-    local dynamic_cmds
-    dynamic_cmds="$(
-      {
-        for d in "$repo_root"/env/commands/*; do
-          [[ -d "$d" ]] || continue
-          echo "$(basename "$d")"
-        done
-        grep -h '^COMMANDS=' "$repo_root"/env/catalogs/*.catalog 2>/dev/null | sed 's/^COMMANDS=//' | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$'
-      } | sort -u | tr '\n' ' '
-    )"
-    [[ -n "$dynamic_cmds" ]] && command_candidates="$dynamic_cmds"
-
-    # SSH 공개키 후보 (env/keys/* 디렉토리 + *.catalog의 SSH_KEYS)
-    local dynamic_keys
-    dynamic_keys="$(
-      {
-        for d in "$repo_root"/env/keys/*; do
-          [[ -d "$d" ]] || continue
-          echo "$(basename "$d")"
-        done
-        grep -h '^SSH_KEYS=' "$repo_root"/env/catalogs/*.catalog 2>/dev/null | sed 's/^SSH_KEYS=//' | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$'
-      } | sort -u | tr '\n' ' '
-    )"
-    [[ -n "$dynamic_keys" ]] && key_candidates="$dynamic_keys"
-  else
-    # [2순위] 로컬 저장소가 없는 서버: TTL 기반 원격 GitHub 캐시 사용
-    local remote_cats
-    remote_cats="$(_sciectl_fetch_remote_catalogs_cached)"
-    [[ -n "$remote_cats" ]] && catalog_candidates="$remote_cats"
+  if (( ${#cat_files[@]} == 0 )); then
+    local cid
+    for cid in $dynamic_cats; do
+      cat_files+=("${cid}.catalog")
+    done
   fi
+
+  # 각 *.catalog 파일 캐시 확보
+  local -a cached_cat_paths=()
+  local f cached_f
+  for f in "${cat_files[@]}"; do
+    cached_f="$(_sciectl_fetch_remote_catalog_file_cached "$f")"
+    [[ -n "$cached_f" && -f "$cached_f" ]] && cached_cat_paths+=("$cached_f")
+  done
+
+  (( ${#cached_cat_paths[@]} > 0 )) || return 0
+
+  # *.catalog 파일들의 각 필드(TOOLS, INSTALLERS, COMMANDS, SSH_KEYS) 파싱
+  local parsed_tools
+  parsed_tools="$(_sciectl_parse_catalog_field "TOOLS" "${cached_cat_paths[@]}")"
+  [[ -n "$parsed_tools" ]] && tool_candidates="$parsed_tools"
+
+  local parsed_insts
+  parsed_insts="$(_sciectl_parse_catalog_field "INSTALLERS" "${cached_cat_paths[@]}")"
+  [[ -n "$parsed_insts" ]] && installer_candidates="$parsed_insts"
+
+  local parsed_cmds
+  parsed_cmds="$(_sciectl_parse_catalog_field "COMMANDS" "${cached_cat_paths[@]}")"
+  [[ -n "$parsed_cmds" ]] && command_candidates="$parsed_cmds"
+
+  local parsed_keys
+  parsed_keys="$(_sciectl_parse_catalog_field "SSH_KEYS" "${cached_cat_paths[@]}")"
+  [[ -n "$parsed_keys" ]] && key_candidates="$parsed_keys"
 }
 
 ##
 # 지정된 카탈로그 목록(INCLUDES 상속 포함)으로부터 컴포넌트 후보군을 스코핑하여 로드합니다.
-# (방안 A: 비대칭적 계층 스코핑 지원)
+# (원격 GitHub에서 캐시된 *.catalog 파일 사용)
 #
 # @param $1 {string} 카탈로그 ID 목록 (줄바꿈 또는 공백 구분)
-# @param $2 {string} 저장소 루트 경로 ($repo_root)
 ##
 _sciectl_load_catalog_scoped_candidates() {
   local specified_cats="$1"
-  local repo_root="$2"
 
   [[ -n "$specified_cats" ]] || return 0
 
@@ -338,12 +274,8 @@ _sciectl_load_catalog_scoped_candidates() {
     [[ -z "${visited_cats[$cid]:-}" ]] || continue
     visited_cats["$cid"]=1
 
-    local cat_file=""
-    if [[ -n "$repo_root" && -f "$repo_root/env/catalogs/${cid}.catalog" ]]; then
-      cat_file="$repo_root/env/catalogs/${cid}.catalog"
-    else
-      cat_file="$(_sciectl_fetch_remote_catalog_file_cached "$cid")"
-    fi
+    local cat_file
+    cat_file="$(_sciectl_fetch_remote_catalog_file_cached "$cid")"
     [[ -n "$cat_file" && -f "$cat_file" ]] || continue
 
     # 1. INCLUDES 상속 처리 (재귀 큐 삽입)
@@ -362,56 +294,36 @@ _sciectl_load_catalog_scoped_candidates() {
     fi
 
     # 2. TOOLS
-    local tools_line
-    tools_line="$(grep -E '^TOOLS=' "$cat_file" 2>/dev/null | sed 's/^TOOLS=//' || true)"
-    if [[ -n "$tools_line" ]]; then
-      local -a t_arr=()
-      IFS=',' read -ra t_arr <<< "$tools_line"
-      local t
-      for t in "${t_arr[@]}"; do
-        t="$(echo "$t" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
-        [[ -n "$t" ]] && scoped_tools_map["$t"]=1
-      done
-    fi
+    local c_tools
+    c_tools="$(_sciectl_parse_catalog_field "TOOLS" "$cat_file")"
+    local t
+    for t in $c_tools; do
+      scoped_tools_map["$t"]=1
+    done
 
     # 3. INSTALLERS
-    local insts_line
-    insts_line="$(grep -E '^INSTALLERS=' "$cat_file" 2>/dev/null | sed 's/^INSTALLERS=//' || true)"
-    if [[ -n "$insts_line" ]]; then
-      local -a i_arr=()
-      IFS=',' read -ra i_arr <<< "$insts_line"
-      local i
-      for i in "${i_arr[@]}"; do
-        i="$(echo "$i" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
-        [[ -n "$i" ]] && scoped_insts_map["$i"]=1
-      done
-    fi
+    local c_insts
+    c_insts="$(_sciectl_parse_catalog_field "INSTALLERS" "$cat_file")"
+    local i
+    for i in $c_insts; do
+      scoped_insts_map["$i"]=1
+    done
 
     # 4. COMMANDS
-    local cmds_line
-    cmds_line="$(grep -E '^COMMANDS=' "$cat_file" 2>/dev/null | sed 's/^COMMANDS=//' || true)"
-    if [[ -n "$cmds_line" ]]; then
-      local -a c_arr=()
-      IFS=',' read -ra c_arr <<< "$cmds_line"
-      local c
-      for c in "${c_arr[@]}"; do
-        c="$(echo "$c" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
-        [[ -n "$c" ]] && scoped_cmds_map["$c"]=1
-      done
-    fi
+    local c_cmds
+    c_cmds="$(_sciectl_parse_catalog_field "COMMANDS" "$cat_file")"
+    local c
+    for c in $c_cmds; do
+      scoped_cmds_map["$c"]=1
+    done
 
     # 5. SSH_KEYS
-    local keys_line
-    keys_line="$(grep -E '^SSH_KEYS=' "$cat_file" 2>/dev/null | sed 's/^SSH_KEYS=//' || true)"
-    if [[ -n "$keys_line" ]]; then
-      local -a k_arr=()
-      IFS=',' read -ra k_arr <<< "$keys_line"
-      local k
-      for k in "${k_arr[@]}"; do
-        k="$(echo "$k" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
-        [[ -n "$k" ]] && scoped_keys_map["$k"]=1
-      done
-    fi
+    local c_keys
+    c_keys="$(_sciectl_parse_catalog_field "SSH_KEYS" "$cat_file")"
+    local k
+    for k in $c_keys; do
+      scoped_keys_map["$k"]=1
+    done
   done
 
   # 후보군을 스코핑된 목록으로 교체 (항목이 없으면 정확히 빈 문자열)
@@ -617,9 +529,7 @@ _sciectl_completion() {
       local specified_catalogs
       specified_catalogs="$(_sciectl_get_used_values "--catalog" "")"
       if [[ -n "$specified_catalogs" ]]; then
-        local repo_root
-        repo_root="$(_sciectl_find_repo_root)"
-        _sciectl_load_catalog_scoped_candidates "$specified_catalogs" "$repo_root"
+        _sciectl_load_catalog_scoped_candidates "$specified_catalogs"
       fi
 
       # 옵션 플래그 동적 구성: --catalog 지정 시 실제 정의된 컴포넌트 옵션만 선별 제안
@@ -739,9 +649,7 @@ _sciectl_completion() {
       local specified_catalogs
       specified_catalogs="$(_sciectl_get_used_values "--catalog" "")"
       if [[ -n "$specified_catalogs" ]]; then
-        local repo_root
-        repo_root="$(_sciectl_find_repo_root)"
-        _sciectl_load_catalog_scoped_candidates "$specified_catalogs" "$repo_root"
+        _sciectl_load_catalog_scoped_candidates "$specified_catalogs"
       fi
 
       local -a info_opts=("--catalog")
