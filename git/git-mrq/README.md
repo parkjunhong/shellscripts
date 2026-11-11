@@ -17,9 +17,11 @@
      * GitLab 호스트 미인증 시, 도메인 기반 고정 환경변수(예: `gitlab.ymtech.co.kr` &rarr; `PAT_GITLAB_YMTECH_CO_KR`, `gitlab.com` &rarr; `PAT_GITLAB_COM`)를 자동으로 탐색하여 `glab` 인증을 즉시 시도합니다.
      * 환경변수가 없거나 인증 실패 시, 대화형으로 1) `glab auth login` 수동 인증 진행, 또는 2) 별도 토큰 없이 즉시 MR을 생성하는 Git Push Options(`git push -o merge_request.*`) 방식으로 즉시 전환할 수 있습니다.
    * **환경변수 토큰 완벽 지원**: `GH_TOKEN` (GitHub), `GITLAB_TOKEN` 또는 도메인별 `PAT_<DOMAIN>` 환경변수가 설정되어 있으면 별도 브라우저 로그인 없이 즉시 인증됩니다.
-3. **단계별 대화형 (Step-by-Step) 입력 가이드**
+3. **GitLab 소스 브랜치 보존 및 기본 삭제 체크 자동 방지**
+   * GitLab 서버의 프로젝트 설정("Enable 'Delete source branch' option by default")이 켜져 있더라도, 사용자가 `--remove-source-branch` 옵션을 명시적으로 지정하지 않은 경우 생성 직후 REST API를 통해 **'Delete source branch' 체크를 자동으로 해제**하여 소스 브랜치가 의도치 않게 삭제되는 문제를 원천 차단합니다.
+4. **단계별 대화형 (Step-by-Step) 입력 가이드**
    * 인자 없이 `git-mrq`만 실행할 경우 대화형 프롬프트로 진입하여 소스/타겟 브랜치, MR/PR 제목, 소스 브랜치 삭제 여부, 사전 검증 여부를 단계별로 안내받아 수행할 수 있습니다.
-4. **시뮬레이션 모드 (`--dry-run`) 및 연속 실행 지원**
+5. **시뮬레이션 모드 (`--dry-run`) 및 연속 실행 지원**
    * 실제 원격 푸시 및 생성을 수행하기 전에 플랫폼별 실행 계획을 미리 확인할 수 있으며, 대화형 모드에서는 검증 통과 후 재입력 없이 즉시 실제 생성으로 이어서 진행할 수 있습니다.
 
 ---

@@ -748,6 +748,79 @@ prompt_step_by_step() {
 }
 
 ##
+# GitLab 저장소에서 MR 생성 시 서버/프로젝트 기본 설정에 의해
+# 'Delete source branch' 옵션이 자동으로 체크되는 현상을 방지(체크 해제)합니다.
+#
+# @param $1 {string} Merge Request IID (숫자)
+#
+# @return 0 성공 또는 해당 없음
+##
+disable_gitlab_remove_source_branch() {
+  local mr_iid="${1:-}"
+  if [[ -z "$mr_iid" ]]; then
+    return 0
+  fi
+
+  # 사용자가 명시적으로 --remove-source-branch 옵션을 지정한 경우에는 체크 해제하지 않음
+  if [[ "$OPT_REMOVE_SOURCE" == "true" ]]; then
+    return 0
+  fi
+
+  echo "🔒 [옵션 보정] GitLab 저장소 기본 설정 해제 중 ('Delete source branch' -> 체크 해제)..."
+
+  # 방법 1: glab CLI (또는 gitlab CLI) API 사용
+  local glab_bin="glab"
+  if ! command -v glab >/dev/null 2>&1 && command -v gitlab >/dev/null 2>&1; then
+    glab_bin="gitlab"
+  fi
+
+  if command -v "$glab_bin" >/dev/null 2>&1; then
+    if "$glab_bin" api -X PUT "projects/:id/merge_requests/${mr_iid}" -F remove_source_branch=false --silent >/dev/null 2>&1; then
+      echo "✅ [설정 완료] 'Delete source branch' 옵션이 안전하게 체크 해제되었습니다."
+      return 0
+    fi
+  fi
+
+  # 방법 2: curl 및 환경변수 토큰 (PAT_<DOMAIN> 또는 GITLAB_TOKEN) 사용
+  local gitlab_host
+  gitlab_host=$(get_remote_host)
+  local domain_clean
+  domain_clean=$(echo "$gitlab_host" | tr '[:lower:]' '[:upper:]' | tr '.-' '__' | sed -e 's/[^A-Z0-9_]/_/g')
+  local domain_env_var="PAT_${domain_clean}"
+  local env_token="${!domain_env_var:-}"
+  if [[ -z "$env_token" && -n "${GITLAB_TOKEN:-}" ]]; then
+    env_token="$GITLAB_TOKEN"
+  fi
+
+  if [[ -n "$env_token" ]] && command -v curl >/dev/null 2>&1; then
+    local repo_url
+    repo_url=$(git remote get-url "$OPT_REMOTE" 2>/dev/null || echo "")
+    local project_path=""
+    if [[ "$repo_url" =~ ://[^/]+/(.+)(\.git)?$ ]]; then
+      project_path="${BASH_REMATCH[1]}"
+    elif [[ "$repo_url" =~ :([^/].+)(\.git)?$ ]]; then
+      project_path="${BASH_REMATCH[1]}"
+    fi
+    project_path="${project_path%.git}"
+
+    if [[ -n "$project_path" ]]; then
+      local encoded_proj
+      encoded_proj=$(echo "$project_path" | sed 's|/|%2F|g')
+      local api_url="https://${gitlab_host}/api/v4/projects/${encoded_proj}/merge_requests/${mr_iid}"
+      local res
+      res=$(curl -s -X PUT -H "PRIVATE-TOKEN: ${env_token}" -H "Content-Type: application/json" -d '{"remove_source_branch": false}' "$api_url" 2>/dev/null || echo "")
+      if [[ "$res" =~ "\"force_remove_source_branch\":false" || "$res" =~ "\"should_remove_source_branch\":false" || "$res" =~ "\"iid\":${mr_iid}" ]]; then
+        echo "✅ [설정 완료] 'Delete source branch' 옵션이 안전하게 체크 해제되었습니다."
+        return 0
+      fi
+    fi
+  fi
+
+  echo "ℹ️  GitLab 기본 설정 해제 실패: 웹 브라우저에서 'Delete source branch' 옵션 체크 여부를 확인해 주십시오."
+  return 0
+}
+
+##
 # 대화형 검증 성공 후 실제 생성 진행 여부를 확인하고 실행합니다.
 #
 # @param 없음
@@ -816,7 +889,28 @@ execute_push_options_mr() {
   fi
 
   echo "📤 [푸시] Git Push Options 전송 및 Merge Request 생성 중..."
-  git push "${push_opts[@]}" "$OPT_REMOTE" "$OPT_SOURCE"
+  local push_output
+  push_output=$(git push "${push_opts[@]}" "$OPT_REMOTE" "$OPT_SOURCE" 2>&1)
+  local push_ret=$?
+  echo "$push_output"
+  if (( push_ret != 0 )); then
+    help "Git Push Options 전송 및 Merge Request 생성에 실패했습니다." "$LINENO"
+    return $push_ret
+  fi
+
+  # GitLab Push Options의 경우 remove_source_branch를 끄는 옵션이 없으므로,
+  # 생성 후 API를 통해 Delete source branch 체크 해제 보정 시도
+  if [[ "$OPT_REMOVE_SOURCE" != "true" ]]; then
+    local mr_iid=""
+    if [[ "$push_output" =~ /merge_requests/([0-9]+) ]]; then
+      mr_iid="${BASH_REMATCH[1]}"
+    fi
+
+    if [[ -n "$mr_iid" ]]; then
+      disable_gitlab_remove_source_branch "$mr_iid"
+    fi
+  fi
+
   echo "================================================================================"
   echo "🎉 [완료] Merge Request 작업이 성공적으로 완료되었습니다."
   echo "================================================================================"
@@ -923,6 +1017,9 @@ execute_mr() {
         printf " %q" "$c"
       done
       echo
+      if [[ "$OPT_REMOVE_SOURCE" != "true" ]]; then
+        echo "   3) ${glab_bin} api -X PUT projects/:id/merge_requests/<iid> -F remove_source_branch=false ('Delete source branch' 체크 해제)"
+      fi
       echo "================================================================================"
 
       if [[ "$OPT_DRY_RUN" == "true" ]]; then
@@ -934,7 +1031,31 @@ execute_mr() {
       git push "$OPT_REMOTE" "$OPT_SOURCE"
 
       echo "🚀 [2/2] GitLab CLI를 통해 Merge Request 생성 중..."
-      "${glab_cmd[@]}"
+      local glab_output
+      glab_output=$("${glab_cmd[@]}" 2>&1)
+      local glab_ret=$?
+      echo "$glab_output"
+      if (( glab_ret != 0 )); then
+        help "GitLab Merge Request 생성 중 오류가 발생했습니다." "$LINENO"
+        return $glab_ret
+      fi
+
+      # GitLab 서버의 프로젝트 기본 설정("Enable 'Delete source branch' option by default")으로 인해
+      # 소스 브랜치 자동 삭제가 체크되는 현상을 방지
+      if [[ "$OPT_REMOVE_SOURCE" != "true" ]]; then
+        local mr_iid=""
+        if [[ "$glab_output" =~ /merge_requests/([0-9]+) ]]; then
+          mr_iid="${BASH_REMATCH[1]}"
+        fi
+
+        if [[ -z "$mr_iid" ]]; then
+          mr_iid=$("$glab_bin" mr list -s "$OPT_SOURCE" -t "$OPT_TARGET" --per-page 1 2>/dev/null | grep -oE '#[0-9]+' | head -n 1 | tr -d '#' || echo "")
+        fi
+
+        if [[ -n "$mr_iid" ]]; then
+          disable_gitlab_remove_source_branch "$mr_iid"
+        fi
+      fi
       ;;
 
     other)
