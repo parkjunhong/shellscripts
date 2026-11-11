@@ -23,11 +23,12 @@
 | **`docker`** | - | Docker CE 및 컨테이너 관리 도구 | `docker/install-docker`, `setup-compose-service`, `setup-docker-compose`, `dknetcli`, `dkcontls` |
 | **`network`** | - | 방화벽 및 네트워크 관리 도구 | `fwc-cli`, `fwc-docker-policy`, `add-vlan-routes`, `mtr-netstat-conns`, `firewall-cmd-set-priority` |
 | **`gitlab`** | - | GitLab 그룹/프로젝트 일괄 Clone | `gitlab-clone`, `clone-gitlab-projects` |
+| **`git`** | - | Git 관련 도구 모음 | `git-branch-cmd`, `git-commit`, `git-config`, `git-ff-sync`, `git-getpr`, `git-init`, `git-log-abbr`, `git-log-all`, `git-merge`, `git-modify`, `git-pull-all`, `git-push-after-sync`, `git-push-all`, `git-status-all`, `git-tags` |
 | **`ai-agent`** | - | AI Agent Skill & Rule 관리 | `asr-cli` 및 기본 서버 패키지/Sudoers |
 | **`installer`** | - | 프로그램 설치 스크립트 지원 | `install-albert-with-socket`, `install-antigravity-ide`, `install-antigravity-x64` |
 | **`security`** | - | Security 관련 기능 제공 | `authelia-crypto-hash`, `ssl-del`, `ssl-inst` |
 | **`install-lets-encrypt-certificate`** | - | Let's Encrypt 인증서 배포 지원 | `letsencrypt` SSH RSA 공개키 등록 |
-| **`all-scripts`** | - | 전체 CLI 스크립트 도구 통합 설치 | 15개 카테고리(`ai-agent`, `build`, `db`, `docker`, `es`, `fail2ban`, `git`, `gitlab`, `installer`, `java`, `maven`, `net`, `redis`, `sys`, `utils`) 75개 도구 일괄 설치 |
+| **`all-scripts`** | - | 전체 CLI 스크립트 도구 통합 설치 | 15개 카테고리(`ai-agent`, `build`, `db`, `docker`, `es`, `fail2ban`, `git`, `gitlab`, `installer`, `java`, `maven`, `net`, `redis`, `sys`, `utils`) 76개 도구 일괄 설치 |
 
 ---
 
@@ -47,11 +48,12 @@ env/
 │   ├── docker.catalog                                      # Docker 엔진 및 유틸리티 매니페스트
 │   ├── network.catalog                                     # 네트워크 및 방화벽 매니페스트
 │   ├── gitlab.catalog                                      # GitLab Clone 환경 매니페스트
+│   ├── git.catalog                                         # Git 도구 모음 매니페스트
 │   ├── ai-agent.catalog                                    # AI Agent (asr-cli) 매니페스트
 │   ├── installer.catalog                                   # 프로그램 설치 스크립트 매니페스트
 │   ├── security.catalog                                    # Security 관련 매니페스트
 │   ├── install-lets-encrypt-certificate.catalog            # Let's Encrypt 인증서 배포용 공개키 매니페스트
-│   └── all-scripts.catalog                                 # 전체 15개 카테고리 75개 도구 통합 매니페스트
+│   └── all-scripts.catalog                                 # 전체 15개 카테고리 76개 도구 통합 매니페스트
 ├── installers/
 │   ├── install-htop.sh                                     # EPEL/Universe 저장소 구성 및 htop 설치 모듈
 │   ├── install-maven-3.9.15.sh                             # Apache Maven 3.9.15 바이너리(/opt) 설치 모듈
