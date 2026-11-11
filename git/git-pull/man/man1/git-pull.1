@@ -1,0 +1,75 @@
+.TH GIT-PULL 1 "2026-11-11" "git-pull 1.0.0" "User Commands"
+.SH NAME
+git-pull \- Pull current or specified branch with automatic return to origin branch
+
+.SH SYNOPSIS
+.B git-pull
+[\fIbranch\fR]
+.br
+.B git-pull
+\fB\-\-help\fR
+
+.SH DESCRIPTION
+현재 작업 중인 브랜치 또는 지정한 대상 브랜치의 최신 변경사항을 원격 저장소로부터 안전하게 가져오는(\fBgit pull\fR) Git 자동화 CLI 도구입니다. 대상 브랜치가 현재 브랜치와 다를 경우, \fB대상 브랜치로 전환(\fBgit switch\fR) &rarr; 최신화(\fBgit pull\fR) &rarr; 원래 작업 브랜치로 자동 복귀(\fBgit switch\fR)\fR 파이프라인을 일괄 수행합니다.
+
+유효한 Git 저장소 디렉토리 내부에서만 동작할 수 있으며, 비 Git 디렉토리에서는 실행 및 브랜치 자동완성이 차단됩니다.
+
+.SH KEY FEATURES
+.IP \(bu 2
+\fB현재 브랜치 자동 감지 및 스마트 분기\fR
+.IP \(bu 2
+브랜치 인자를 생략할 경우 현재 체크아웃되어 있는 브랜치를 자동으로 감지하여 \fBgit pull\fR을 수행합니다.
+.IP \(bu 2
+\fB원래 작업 브랜치 안전 자동 복귀 (Trap Handler)\fR
+.IP \(bu 2
+다른 브랜치명을 인자로 지정한 경우, 해당 브랜치로 전환하여 최신 코드를 pull한 뒤 원래 머물던 작업 브랜치로 자동 복귀합니다. pull 수행 중 오류가 발생하더라도 원래 브랜치로 안전하게 복귀합니다.
+.IP \(bu 2
+\fB사전 무결성 점검 (Pre-flight Validation)\fR
+.IP \(bu 2
+Git 작업 트리 유무 확인, 브랜치 전환 시 미커밋 변경사항(Dirty tree) 보호, 브랜치 존재 여부 검증을 사전에 수행합니다.
+.IP \(bu 2
+\fBBash 자동완성 지원\fR
+.IP \(bu 2
+\fBgit-pull <TAB>\fR 입력 시 현재 Git 저장소에 존재하는 로컬 및 원격 브랜치 목록을 실시간으로 분석하여 자동완성을 제공합니다.
+
+.SH OPTIONS
+.TP
+.B <branch>
+[선택, 기본값: 현재 작업 브랜치] 최신화(pull)를 수행할 대상 브랜치 이름
+.TP
+.B \-\-help
+[선택] 도움말 및 사용법 화면 출력
+
+.SH EXAMPLES
+.PP
+.nf
+  # 1) 현재 머물고 있는 브랜치 최신화 (인자 생략)
+  \&./git-pull
+
+  # 2) 다른 브랜치(develop)를 최신화한 후 원래 작업 브랜치로 자동 복귀
+  \&./git-pull develop
+
+  # 3) main 브랜치를 최신화한 후 현재 기능 브랜치로 복귀
+  \&./git-pull main
+
+  # 4) 사용법 및 옵션 안내 조회
+  \&./git-pull \-\-help
+.fi
+.PP
+
+.SH COMPLETION
+.B git-pull
+은 Bash 자동완성 스크립트(\fIgit-pull.completion\fR)를 지원합니다.
+.BR scriptctl (1)
+또는
+.BR sciectl (1)
+을 통해 설치 시 시스템 표준 completion 경로에 자동으로 등록됩니다.
+
+.SH SEE ALSO
+.BR git (1),
+.BR git-switch (1),
+.BR git-pull (1),
+.BR scriptctl (1)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.

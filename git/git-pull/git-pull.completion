@@ -1,0 +1,42 @@
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : git-pull completion
+# @license  : Apache License 2.0
+# @since    : 2026-11-11
+# @desc     : Bash completion for git-pull
+# @installation : 
+#   1. insert 'source <path>/git-pull.completion' into ~/.bashrc or ~/.bash_profile for personal usage.
+#   2. copy to /etc/bash_completion.d/ for all users.
+# =======================================
+
+_git_pull_completion() {
+  local cur prev
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  # 1. Git 저장소 유효성 검사 (Git 저장소 외부인 경우)
+  if ! command -v git >/dev/null 2>&1 || ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    if [[ "${cur}" == -* ]]; then
+      COMPREPLY=( $(compgen -W "--help" -- "${cur}") )
+    fi
+    return 0
+  fi
+
+  # 2. 옵션 완성 (--help)
+  if [[ "${cur}" == -* ]]; then
+    COMPREPLY=( $(compgen -W "--help" -- "${cur}") )
+    return 0
+  fi
+
+  # 3. 로컬 및 원격 브랜치 목록 동적 추출 및 추천
+  local branches r_branches all_b
+  branches=$(git branch --format='%(refname:short)' 2>/dev/null || true)
+  r_branches=$(git branch -r --format='%(refname:short)' 2>/dev/null | sed -e 's|^[^/]*/||' || true)
+  all_b=$(echo -e "${branches}\n${r_branches}" | sort -u | grep -v '^HEAD$')
+
+  COMPREPLY=( $(compgen -W "${all_b}" -- "${cur}") )
+  return 0
+}
+
+complete -F _git_pull_completion git-pull
