@@ -3,7 +3,7 @@
 # ==============================================================================
 CATALOG_ID=all-scripts
 CATALOG_TITLE=전체 CLI 스크립트 도구 통합 모음 (All Scripts)
-CATALOG_DESC=ai-agent, build, db, docker, es, fail2ban, git, gitlab, installer, java, maven, net, redis, sys, utils 15개 카테고리의 76개 CLI 스크립트 도구를 일괄 설치합니다.
+CATALOG_DESC=ai-agent, build, db, docker, es, fail2ban, git, gitlab, installer, java, maven, net, redis, sys, utils 15개 카테고리의 77개 CLI 스크립트 도구를 일괄 설치합니다.
 INCLUDES=
 
 # ==============================================================================
@@ -27,7 +27,7 @@ TOOLS=\
   docker/dkcontls, docker/dknetcli, docker/install-docker, docker/install-docker-dev-config, docker/pull-gitlab-images, docker/setup-compose-service, docker/setup-docker-compose, \
   es/es-index-usage, es/es-search-index, \
   fail2ban/fail2ban-unbanip, \
-  git/git-branch-cmd, git/git-commit, git/git-config, git/git-ff-sync, git/git-getpr, git/git-init, git/git-log-abbr, git/git-log-all, git/git-merge, git/git-modify, git/git-pull-all, git/git-push-after-sync, git/git-push-all, git/git-status-all, git/git-tags, \
+  git/git-branch-cmd, git/git-commit, git/git-config, git/git-ff-sync, git/git-getpr, git/git-init, git/git-log-abbr, git/git-log-all, git/git-merge, git/git-modify, git/git-mrq, git/git-pull-all, git/git-push-after-sync, git/git-push-all, git/git-status-all, git/git-tags, \
   gitlab/clone-gitlab-projects, gitlab/gitlab-clone, \
   installer/install-albert-with-socket, installer/install-antigravity-ide, installer/install-antigravity-x64, \
   java/mac-clean-java-config, java/mac-update-java-config, java/update-java-config, \

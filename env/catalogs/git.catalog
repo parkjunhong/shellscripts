@@ -31,6 +31,7 @@ TOOLS=\
   git/git-log-all, \
   git/git-merge, \
   git/git-modify, \
+  git/git-mrq, \
   git/git-pull-all, \
   git/git-push-after-sync, \
   git/git-push-all, \
