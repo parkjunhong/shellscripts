@@ -10,12 +10,10 @@
    * **GitHub 저장소 (`*github.com*`)**: `github cli (gh)`를 사용하여 Pull Request 자동 생성
    * **GitLab 저장소 (`*gitlab*`)**: `gitlab cli (glab)`를 사용하여 Merge Request 자동 생성
    * **기타 Git 서버**: 순수 Git CLI의 Push Options (`git push -o merge_request.*`) 방식 사용
-2. **누락된 공식 CLI 도구 자동 설치 (Multi-OS 완벽 지원)**
-   * 시스템에 `gh` 또는 `glab` 도구가 설치되어 있지 않은 경우, OS 패키지 관리자를 감지하여 설치 과정을 상세히 출력하며 자동 설치를 수행합니다:
-     * **macOS**: Homebrew (`brew`)
-     * **Arch Linux**: `pacman` (`github-cli`, `glab`)
-     * **Debian / Ubuntu**: `apt-get` (필요 시 공식 Keyring/저장소 자동 등록)
-     * **RHEL / Rocky / CentOS / Fedora**: `dnf` / `yum`
+2. **누락된 공식 CLI 도구 자동 설치 및 인증(Token) 사전 점검**
+   * 시스템에 `gh` 또는 `glab` 도구가 설치되어 있지 않은 경우, OS 패키지 관리자를 감지하여 자동 설치를 수행합니다 (Multi-OS 지원).
+   * **사전 계정 인증 검사**: 실제 원격 푸시를 진행하기 전 `gh auth status` 및 `glab auth status`를 사전 검사하여 인증 누락으로 인한 실패를 방지합니다.
+   * **환경변수 토큰 완벽 지원**: `GH_TOKEN` (GitHub) 또는 `GITLAB_TOKEN` (GitLab) 환경변수가 설정되어 있으면 별도 브라우저 로그인 없이 즉시 인증됩니다. 미인증 시 즉시 토큰 입력 또는 브라우저 로그인을 대화형으로 연계합니다.
 3. **단계별 대화형 (Step-by-Step) 입력 가이드**
    * 인자 없이 `git-mrq`만 실행할 경우 대화형 프롬프트로 진입하여 소스/타겟 브랜치, MR/PR 제목, 소스 브랜치 삭제 여부, 사전 검증 여부를 단계별로 안내받아 수행할 수 있습니다.
 4. **시뮬레이션 모드 (`--dry-run`) 및 연속 실행 지원**

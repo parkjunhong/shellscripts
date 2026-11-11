@@ -373,6 +373,176 @@ ensure_cli_tool() {
 }
 
 ##
+# 지정한 CLI 도구의 계정 인증 상태를 검사하고 미인증 시 대화형 토큰 설정 및 가이드를 제공합니다.
+#
+# @param $1 {string} 'gh' 또는 'glab'
+#
+# @return 0 인증 성공, 실패 시 help() 호출 후 종료
+##
+ensure_cli_auth() {
+  local tool="$1"
+  if [[ "$tool" == "gh" ]]; then
+    if gh auth status >/dev/null 2>&1; then
+      return 0
+    fi
+
+    if [[ "$OPT_DRY_RUN" == "true" ]]; then
+      echo "⚠️  [인증 필요] GitHub CLI('gh')가 인증되지 않았습니다."
+      echo "   실제 PR 생성 시 환경변수 'GH_TOKEN' 설정 또는 'gh auth login'이 필요합니다."
+      return 0
+    fi
+
+    echo
+    echo "================================================================================"
+    echo "🔐 [GitHub 인증 필요] GitHub CLI('gh') 로그인이 되어 있지 않습니다."
+    echo "================================================================================"
+    echo "GitHub Pull Request 생성을 위해 API 인증 토큰 또는 로그인이 필요합니다."
+    echo
+    echo "선택 가능한 인증 방식:"
+    echo "  1) GH_TOKEN 입력 (현재 실행 세션에 즉시 적용)"
+    echo "  2) 'gh auth login' 실행 (브라우저 또는 대화형 로그인)"
+    echo "  3) 작업 중단 (웹 PR 생성 URL 확인)"
+    echo "--------------------------------------------------------------------------------"
+
+    # 표준 입력이 터미널에 연결된 경우 대화형 입력 처리
+    if [[ -t 0 ]]; then
+      local auth_choice
+      read -r -p "원하시는 인증 방식을 선택하십시오 [1/2/3] (기본값: 1): " auth_choice
+      auth_choice="${auth_choice:-1}"
+      case "$auth_choice" in
+        1)
+          local input_token
+          read -r -s -p "🔑 GitHub Personal Access Token (GH_TOKEN)을 입력하십시오: " input_token
+          echo
+          if [[ -z "$input_token" ]]; then
+            help "입력된 토큰이 없습니다. 'export GH_TOKEN=...'을 설정한 후 다시 실행하십시오." "$LINENO"
+            exit 1
+          fi
+          export GH_TOKEN="$input_token"
+          if ! gh auth status >/dev/null 2>&1; then
+            help "입력한 GH_TOKEN이 유효하지 않거나 만료되었습니다. 올바른 토큰을 입력해 주십시오." "$LINENO"
+            exit 1
+          fi
+          echo "✅ [인증 성공] GitHub 토큰 인증이 완료되었습니다."
+          return 0
+          ;;
+        2)
+          echo "👉 'gh auth login'을 실행합니다..."
+          if gh auth login; then
+            echo "✅ [로그인 완료] GitHub 인증이 완료되었습니다."
+            return 0
+          else
+            help "GitHub CLI 로그인에 실패했습니다." "$LINENO"
+            exit 1
+          fi
+          ;;
+        *)
+          echo "ℹ️  인증을 취소했습니다."
+          ;;
+      esac
+    fi
+
+    # 비대화형이거나 취소된 경우 가이드 및 Fallback URL 출력
+    local repo_url compare_url=""
+    repo_url=$(git remote get-url "$OPT_REMOTE" 2>/dev/null || echo "")
+    if [[ "$repo_url" =~ github\.com[:/]([^/]+)/([^/.]+)(\.git)?$ ]]; then
+      local owner="${BASH_REMATCH[1]}"
+      local repo="${BASH_REMATCH[2]}"
+      compare_url="https://github.com/${owner}/${repo}/compare/${OPT_TARGET}...${OPT_SOURCE}?expand=1"
+    fi
+
+    echo
+    echo "💡 [해결 방안]:"
+    echo "   1) 환경변수로 GitHub 토큰 설정 (가장 간편):"
+    echo "      export GH_TOKEN=\"<your_personal_access_token>\""
+    echo "      (영구 적용 시: echo 'export GH_TOKEN=\"...\"' >> ~/.bashrc && source ~/.bashrc)"
+    echo "   2) GitHub CLI 공식 로그인:"
+    echo "      gh auth login"
+    if [[ -n "${compare_url}" ]]; then
+      echo "   3) 웹 브라우저에서 직접 PR 생성:"
+      echo "      👉 ${compare_url}"
+    fi
+    echo "================================================================================"
+    exit 1
+
+  elif [[ "$tool" == "glab" ]]; then
+    local glab_bin="glab"
+    if ! command -v glab >/dev/null 2>&1 && command -v gitlab >/dev/null 2>&1; then
+      glab_bin="gitlab"
+    fi
+
+    local auth_out
+    auth_out=$("$glab_bin" auth status 2>&1 || true)
+    if [[ ! "$auth_out" =~ "401" && ! "$auth_out" =~ "No token provided" && ! "$auth_out" =~ "not logged in" ]]; then
+      return 0
+    fi
+
+    if [[ "$OPT_DRY_RUN" == "true" ]]; then
+      echo "⚠️  [인증 필요] GitLab CLI('${glab_bin}')가 인증되지 않았습니다."
+      echo "   실제 MR 생성 시 환경변수 'GITLAB_TOKEN' 설정 또는 '${glab_bin} auth login'이 필요합니다."
+      return 0
+    fi
+
+    echo
+    echo "================================================================================"
+    echo "🔐 [GitLab 인증 필요] GitLab CLI('${glab_bin}') 로그인이 되어 있지 않습니다."
+    echo "================================================================================"
+    echo "GitLab Merge Request 생성을 위해 API 인증 토큰 또는 로그인이 필요합니다."
+    echo
+    echo "선택 가능한 인증 방식:"
+    echo "  1) GITLAB_TOKEN 입력 (현재 실행 세션에 즉시 적용)"
+    echo "  2) '${glab_bin} auth login' 실행 (대화형 로그인)"
+    echo "  3) 작업 중단"
+    echo "--------------------------------------------------------------------------------"
+
+    if [[ -t 0 ]]; then
+      local auth_choice
+      read -r -p "원하시는 인증 방식을 선택하십시오 [1/2/3] (기본값: 1): " auth_choice
+      auth_choice="${auth_choice:-1}"
+      case "$auth_choice" in
+        1)
+          local input_token
+          read -r -s -p "🔑 GitLab Personal Access Token (GITLAB_TOKEN)을 입력하십시오: " input_token
+          echo
+          if [[ -z "$input_token" ]]; then
+            help "입력된 토큰이 없습니다. 'export GITLAB_TOKEN=...'을 설정한 후 다시 실행하십시오." "$LINENO"
+            exit 1
+          fi
+          export GITLAB_TOKEN="$input_token"
+          auth_out=$("$glab_bin" auth status 2>&1 || true)
+          if [[ "$auth_out" =~ "401" || "$auth_out" =~ "No token provided" ]]; then
+            help "입력한 GITLAB_TOKEN이 유효하지 않습니다." "$LINENO"
+            exit 1
+          fi
+          echo "✅ [인증 성공] GitLab 토큰 인증이 완료되었습니다."
+          return 0
+          ;;
+        2)
+          echo "👉 '${glab_bin} auth login'을 실행합니다..."
+          if "$glab_bin" auth login; then
+            echo "✅ [로그인 완료] GitLab 인증이 완료되었습니다."
+            return 0
+          else
+            help "GitLab CLI 로그인에 실패했습니다." "$LINENO"
+            exit 1
+          fi
+          ;;
+        *)
+          echo "ℹ️  인증을 취소했습니다."
+          ;;
+      esac
+    fi
+
+    echo
+    echo "💡 [해결 방안]:"
+    echo "   1) 환경변수로 GitLab 토큰 설정: export GITLAB_TOKEN=\"<your_token>\""
+    echo "   2) GitLab CLI 로그인: ${glab_bin} auth login"
+    echo "================================================================================"
+    exit 1
+  fi
+}
+
+##
 # 현재 작업 디렉토리의 Git 저장소 유효성 및 브랜치 상태를 사전 점검합니다.
 #
 # @param 없음
@@ -585,6 +755,7 @@ execute_mr() {
   case "$platform" in
     github)
       ensure_cli_tool "gh"
+      ensure_cli_auth "gh"
       local -a gh_cmd=(gh pr create --base "$OPT_TARGET" --head "$OPT_SOURCE" --title "$OPT_TITLE")
       [[ -n "$OPT_DESC" ]] && gh_cmd+=(--body "$OPT_DESC")
       [[ "$OPT_DRAFT" == "true" ]] && gh_cmd+=(--draft)
@@ -618,6 +789,7 @@ execute_mr() {
 
     gitlab)
       ensure_cli_tool "glab"
+      ensure_cli_auth "glab"
       local glab_bin="glab"
       if ! command -v glab >/dev/null 2>&1 && command -v gitlab >/dev/null 2>&1; then
         glab_bin="gitlab"

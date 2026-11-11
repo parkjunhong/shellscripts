@@ -19,10 +19,9 @@ git-mrq \- Create Merge Request or Pull Request using gh, glab, or Git push opti
 .IP \(bu 2
 기타 Git 서버인 경우 순수 Git CLI의 Push Options (\fBgit push -o merge_request.*\fR) 방식을 사용합니다.
 .IP \(bu 2
-\fB누락된 공식 CLI 도구 자동 설치 (Multi-OS 완벽 지원)\fR
+\fB누락된 공식 CLI 도구 자동 설치 및 인증(Token) 사전 점검\fR
 .IP \(bu 2
-시스템에 \fBgh\fR 또는 \fBglab\fR 도구가 설치되어 있지 않은 경우, OS 패키지 관리자를 감지하여 설치 과정을 사용자에게 상세히 출력하며 자동 설치를 수행합니다.
-(\fBapt-get\fR, \fBdnf\fR, \fByum\fR, \fBpacman\fR, \fBbrew\fR 지원)
+시스템에 \fBgh\fR 또는 \fBglab\fR 도구가 설치되어 있지 않은 경우, OS 패키지 관리자를 감지하여 자동 설치를 수행합니다 (\fBapt-get\fR, \fBdnf\fR, \fByum\fR, \fBpacman\fR, \fBbrew\fR 지원). 또한 원격 푸시 전 계정 인증 상태를 사전 점검하여, 환경변수 \fBGH_TOKEN\fR 또는 \fBGITLAB_TOKEN\fR을 통한 인증을 완벽 지원합니다.
 .IP \(bu 2
 \fB단계별 대화형 (Step\-by\-Step) 입력 가이드\fR
 .IP \(bu 2
