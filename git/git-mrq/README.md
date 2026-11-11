@@ -12,8 +12,11 @@
    * **기타 Git 서버**: 순수 Git CLI의 Push Options (`git push -o merge_request.*`) 방식 사용
 2. **누락된 공식 CLI 도구 자동 설치 및 인증(Token) 사전 점검**
    * 시스템에 `gh` 또는 `glab` 도구가 설치되어 있지 않은 경우, OS 패키지 관리자를 감지하여 자동 설치를 수행합니다 (Multi-OS 지원).
-   * **사전 계정 인증 검사**: 실제 원격 푸시를 진행하기 전 `gh auth status` 및 `glab auth status`를 사전 검사하여 인증 누락으로 인한 실패를 방지합니다.
-   * **환경변수 토큰 완벽 지원**: `GH_TOKEN` (GitHub) 또는 `GITLAB_TOKEN` (GitLab) 환경변수가 설정되어 있으면 별도 브라우저 로그인 없이 즉시 인증됩니다. 미인증 시 즉시 토큰 입력 또는 브라우저 로그인을 대화형으로 연계합니다.
+   * **사전 계정 인증 검사 및 사내 GitLab(Self-hosted) 대응**: 실제 원격 푸시를 진행하기 전 `gh auth status` 및 `glab auth status -h <host>`를 사전 검사하여 인증 누락으로 인한 실패를 방지합니다.
+   * **GitLab 도메인 기반 고정 환경변수(`PAT_<DOMAIN>`) 자동 인증 지원**:
+     * GitLab 호스트 미인증 시, 도메인 기반 고정 환경변수(예: `gitlab.ymtech.co.kr` &rarr; `PAT_GITLAB_YMTECH_CO_KR`, `gitlab.com` &rarr; `PAT_GITLAB_COM`)를 자동으로 탐색하여 `glab` 인증을 즉시 시도합니다.
+     * 환경변수가 없거나 인증 실패 시, 대화형으로 1) `glab auth login` 수동 인증 진행, 또는 2) 별도 토큰 없이 즉시 MR을 생성하는 Git Push Options(`git push -o merge_request.*`) 방식으로 즉시 전환할 수 있습니다.
+   * **환경변수 토큰 완벽 지원**: `GH_TOKEN` (GitHub), `GITLAB_TOKEN` 또는 도메인별 `PAT_<DOMAIN>` 환경변수가 설정되어 있으면 별도 브라우저 로그인 없이 즉시 인증됩니다.
 3. **단계별 대화형 (Step-by-Step) 입력 가이드**
    * 인자 없이 `git-mrq`만 실행할 경우 대화형 프롬프트로 진입하여 소스/타겟 브랜치, MR/PR 제목, 소스 브랜치 삭제 여부, 사전 검증 여부를 단계별로 안내받아 수행할 수 있습니다.
 4. **시뮬레이션 모드 (`--dry-run`) 및 연속 실행 지원**

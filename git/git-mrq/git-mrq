@@ -226,6 +226,25 @@ detect_platform() {
 }
 
 ##
+# 현재 원격 저장소 URL에서 호스트 도메인을 추출합니다.
+#
+# @param 없음
+#
+# @return echo를 통해 호스트 도메인 출력 (예: gitlab.ymtech.co.kr, github.com, gitlab.com)
+##
+get_remote_host() {
+  local remote_url
+  remote_url=$(git remote get-url "$OPT_REMOTE" 2>/dev/null || echo "")
+  if [[ -z "$remote_url" ]]; then
+    echo "gitlab.com"
+    return 0
+  fi
+  local host
+  host=$(echo "$remote_url" | sed -E -e "s|^[a-zA-Z0-9]+://||" -e "s|^[^@]+@||" -e "s|[:/].*$||")
+  echo "${host:-gitlab.com}"
+}
+
+##
 # 호스트 OS의 패키지 관리자를 감지합니다.
 #
 # @param 없음
@@ -376,11 +395,14 @@ ensure_cli_tool() {
 # 지정한 CLI 도구의 계정 인증 상태를 검사하고 미인증 시 대화형 토큰 설정 및 가이드를 제공합니다.
 #
 # @param $1 {string} 'gh' 또는 'glab'
+# @param $2 {string} 대상 호스트 이름 (선택, 기본값: gitlab.com)
 #
 # @return 0 인증 성공, 실패 시 help() 호출 후 종료
 ##
 ensure_cli_auth() {
   local tool="$1"
+  local host="${2:-}"
+
   if [[ "$tool" == "gh" ]]; then
     if gh auth status >/dev/null 2>&1; then
       return 0
@@ -471,74 +493,110 @@ ensure_cli_auth() {
       glab_bin="gitlab"
     fi
 
+    local target_host="${host:-gitlab.com}"
     local auth_out
-    auth_out=$("$glab_bin" auth status 2>&1 || true)
-    if [[ ! "$auth_out" =~ "401" && ! "$auth_out" =~ "No token provided" && ! "$auth_out" =~ "not logged in" ]]; then
+    auth_out=$("$glab_bin" auth status -h "$target_host" 2>&1 || true)
+    local is_authed=1
+    if [[ "$auth_out" =~ "not authenticated" || "$auth_out" =~ "none of the git remotes" || "$auth_out" =~ "No token provided" || "$auth_out" =~ "401" || "$auth_out" =~ "failed to get" ]]; then
+      is_authed=0
+    fi
+
+    if (( is_authed == 1 )); then
       return 0
     fi
 
+    # 1. 도메인 기반 고정 환경변수(예: PAT_GITLAB_YMTECH_CO_KR) 확인 및 자동 인증 시도
+    local domain_clean
+    domain_clean=$(echo "$target_host" | tr '[:lower:]' '[:upper:]' | tr '.-' '__' | sed -e 's/[^A-Z0-9_]/_/g')
+    local domain_env_var="PAT_${domain_clean}"
+    local env_token="${!domain_env_var:-}"
+    if [[ -z "$env_token" && -n "${GITLAB_TOKEN:-}" ]]; then
+      env_token="$GITLAB_TOKEN"
+    fi
+
+    if [[ -n "$env_token" ]]; then
+      echo "🔍 [토큰 감지] 환경변수 '${domain_env_var}'의 토큰으로 '${target_host}' 호스트 인증을 시도합니다..."
+      echo "$env_token" | "$glab_bin" auth login --hostname "$target_host" --stdin >/dev/null 2>&1 || true
+      export GITLAB_TOKEN="$env_token"
+      export GITLAB_HOST="https://${target_host}"
+
+      local check_env_auth
+      check_env_auth=$("$glab_bin" auth status -h "$target_host" 2>&1 || true)
+      if [[ ! "$check_env_auth" =~ "not authenticated" && ! "$check_env_auth" =~ "none of the git remotes" && ! "$check_env_auth" =~ "No token provided" && ! "$check_env_auth" =~ "401" && ! "$check_env_auth" =~ "failed to get" ]]; then
+        echo "✅ [인증 성공] 환경변수 '${domain_env_var}' 토큰으로 '${target_host}' 호스트 인증이 완료되었습니다."
+        return 0
+      else
+        echo "⚠️  [인증 실패] 환경변수 '${domain_env_var}'에 설정된 토큰으로 '${target_host}' 호스트 인증에 실패했습니다."
+      fi
+    fi
+
+    # 2. 토큰이 없거나 인증 실패 시 기존의 사용자 질의 단계로 진입
     if [[ "$OPT_DRY_RUN" == "true" ]]; then
-      echo "⚠️  [인증 필요] GitLab CLI('${glab_bin}')가 인증되지 않았습니다."
-      echo "   실제 MR 생성 시 환경변수 'GITLAB_TOKEN' 설정 또는 '${glab_bin} auth login'이 필요합니다."
+      echo "⚠️  [인증 안내] GitLab 호스트('${target_host}')에 대해 glab CLI가 인증되지 않았습니다."
+      echo "   (실제 실행 시: 환경변수 '${domain_env_var}' 설정 또는 대화형 인증/Git Push Options 선택 가능)"
       return 0
     fi
 
     echo
     echo "================================================================================"
-    echo "🔐 [GitLab 인증 필요] GitLab CLI('${glab_bin}') 로그인이 되어 있지 않습니다."
+    echo "🔐 [GitLab 인증 확인] 호스트('${target_host}')에 대한 glab 인증이 완료되지 않았습니다."
     echo "================================================================================"
-    echo "GitLab Merge Request 생성을 위해 API 인증 토큰 또는 로그인이 필요합니다."
+    echo "GitLab Merge Request 생성을 위해 진행 방식을 선택해 주십시오:"
     echo
-    echo "선택 가능한 인증 방식:"
-    echo "  1) GITLAB_TOKEN 입력 (현재 실행 세션에 즉시 적용)"
-    echo "  2) '${glab_bin} auth login' 실행 (대화형 로그인)"
-    echo "  3) 작업 중단"
+    echo "  1) 호스트('${target_host}') 인증 진행 (glab auth login 실행 후 MR 생성 계속)"
+    echo "  2) Git Push Options 방식으로 즉시 진행 (별도 토큰/인증 없이 Git CLI로 즉시 MR 생성)"
+    echo "  3) 작업 취소"
+    echo "--------------------------------------------------------------------------------"
+    echo "💡 [팁] 환경변수 'export ${domain_env_var}=\"<token>\"'을 등록해 두시면 자동 인증됩니다."
     echo "--------------------------------------------------------------------------------"
 
+    local auth_choice=""
     if [[ -t 0 ]]; then
-      local auth_choice
-      read -r -p "원하시는 인증 방식을 선택하십시오 [1/2/3] (기본값: 1): " auth_choice
-      auth_choice="${auth_choice:-1}"
-      case "$auth_choice" in
-        1)
-          local input_token
-          read -r -s -p "🔑 GitLab Personal Access Token (GITLAB_TOKEN)을 입력하십시오: " input_token
-          echo
-          if [[ -z "$input_token" ]]; then
-            help "입력된 토큰이 없습니다. 'export GITLAB_TOKEN=...'을 설정한 후 다시 실행하십시오." "$LINENO"
-            exit 1
-          fi
-          export GITLAB_TOKEN="$input_token"
-          auth_out=$("$glab_bin" auth status 2>&1 || true)
-          if [[ "$auth_out" =~ "401" || "$auth_out" =~ "No token provided" ]]; then
-            help "입력한 GITLAB_TOKEN이 유효하지 않습니다." "$LINENO"
-            exit 1
-          fi
-          echo "✅ [인증 성공] GitLab 토큰 인증이 완료되었습니다."
-          return 0
-          ;;
-        2)
-          echo "👉 '${glab_bin} auth login'을 실행합니다..."
-          if "$glab_bin" auth login; then
-            echo "✅ [로그인 완료] GitLab 인증이 완료되었습니다."
-            return 0
-          else
-            help "GitLab CLI 로그인에 실패했습니다." "$LINENO"
-            exit 1
-          fi
-          ;;
-        *)
-          echo "ℹ️  인증을 취소했습니다."
-          ;;
-      esac
+      read -r -p "원하시는 방식을 선택하십시오 [1/2/3] (기본값: 1): " auth_choice
+    elif read -r -t 1 auth_choice 2>/dev/null; then
+      echo "  👉 입력받은 선택: ${auth_choice}"
+    else
+      echo "ℹ️  [자동 전환] 비대화형 환경에서 '${target_host}'의 glab 인증이 없어, Git Native Push Options 방식으로 MR 생성을 진행합니다."
+      auth_choice="2"
     fi
+    auth_choice="${auth_choice:-1}"
 
-    echo
-    echo "💡 [해결 방안]:"
-    echo "   1) 환경변수로 GitLab 토큰 설정: export GITLAB_TOKEN=\"<your_token>\""
-    echo "   2) GitLab CLI 로그인: ${glab_bin} auth login"
-    echo "================================================================================"
-    exit 1
+    case "$auth_choice" in
+      1)
+        echo "👉 '${glab_bin} auth login --hostname ${target_host}' 명령을 실행합니다..."
+        if "$glab_bin" auth login --hostname "$target_host"; then
+          local check_out
+          check_out=$("$glab_bin" auth status -h "$target_host" 2>&1 || true)
+          if [[ ! "$check_out" =~ "not authenticated" && ! "$check_out" =~ "none of the git remotes" && ! "$check_out" =~ "No token provided" && ! "$check_out" =~ "401" ]]; then
+            echo "✅ [인증 완료] '${target_host}' 호스트 인증이 완료되었습니다. Merge Request 생성을 계속 진행합니다."
+            return 0
+          fi
+        fi
+        echo "⚠️  '${target_host}' 호스트 인증이 완료되지 않았습니다."
+        local fallback_ans="y"
+        if [[ -t 0 ]]; then
+          read -r -p "Git Push Options 방식으로 전환하여 즉시 MR 생성을 진행하시겠습니까? (y/n) [기본값: y]: " fallback_ans
+        fi
+        fallback_ans="${fallback_ans:-y}"
+        if [[ "$fallback_ans" =~ ^[Yy] ]]; then
+          echo "👉 Git Push Options 방식으로 전환합니다..."
+          GLAB_FALLBACK_PUSH_OPTIONS=true
+          return 0
+        else
+          help "'${target_host}' 호스트 인증 실패로 작업이 중단되었습니다." "$LINENO"
+          exit 1
+        fi
+        ;;
+      2)
+        echo "👉 Git Push Options 방식으로 전환하여 즉시 Merge Request 생성을 진행합니다..."
+        GLAB_FALLBACK_PUSH_OPTIONS=true
+        return 0
+        ;;
+      *)
+        echo "ℹ️  작업을 취소했습니다."
+        exit 0
+        ;;
+    esac
   fi
 }
 
@@ -722,6 +780,49 @@ prompt_confirm_and_execute() {
 }
 
 ##
+# Git Push Options(-o merge_request.*)를 사용하여 Merge Request를 원격에 생성하고 푸시합니다.
+#
+# @param 없음
+#
+# @return 0 성공, 실패 시 에러 종료
+##
+execute_push_options_mr() {
+  local -a push_opts=()
+  push_opts+=(-o "merge_request.create")
+  push_opts+=(-o "merge_request.target=${OPT_TARGET}")
+  push_opts+=(-o "merge_request.title=${OPT_TITLE}")
+  [[ -n "$OPT_DESC" ]] && push_opts+=(-o "merge_request.description=${OPT_DESC}")
+  [[ "$OPT_REMOVE_SOURCE" == "true" ]] && push_opts+=(-o "merge_request.remove_source_branch")
+  [[ "$OPT_DRAFT" == "true" ]] && push_opts+=(-o "merge_request.draft")
+  [[ "$OPT_SQUASH" == "true" ]] && push_opts+=(-o "merge_request.squash")
+  [[ -n "$OPT_ASSIGNEE" ]] && push_opts+=(-o "merge_request.assign=${OPT_ASSIGNEE}")
+  [[ -n "$OPT_MILESTONE" ]] && push_opts+=(-o "merge_request.milestone=${OPT_MILESTONE}")
+  local lbl
+  for lbl in "${OPT_LABELS[@]}"; do
+    push_opts+=(-o "merge_request.label=${lbl}")
+  done
+
+  echo "🛠️  [실행 명령어]:"
+  printf "   git push"
+  for opt in "${push_opts[@]}"; do
+    printf " %q" "$opt"
+  done
+  printf " %q %q\n" "$OPT_REMOTE" "$OPT_SOURCE"
+  echo "================================================================================"
+
+  if [[ "$OPT_DRY_RUN" == "true" ]]; then
+    echo "✅ [DRY-RUN] Git Push Options 생성 계획 검증 완료!"
+    return 0
+  fi
+
+  echo "📤 [푸시] Git Push Options 전송 및 Merge Request 생성 중..."
+  git push "${push_opts[@]}" "$OPT_REMOTE" "$OPT_SOURCE"
+  echo "================================================================================"
+  echo "🎉 [완료] Merge Request 작업이 성공적으로 완료되었습니다."
+  echo "================================================================================"
+}
+
+##
 # 플랫폼별 CLI 또는 Push Options를 실행하여 Merge Request / Pull Request를 생성합니다.
 #
 # @param 없음
@@ -788,8 +889,16 @@ execute_mr() {
       ;;
 
     gitlab)
+      local gitlab_host
+      gitlab_host=$(get_remote_host)
       ensure_cli_tool "glab"
-      ensure_cli_auth "glab"
+      ensure_cli_auth "glab" "$gitlab_host"
+
+      if [[ "${GLAB_FALLBACK_PUSH_OPTIONS:-false}" == "true" ]]; then
+        execute_push_options_mr
+        return 0
+      fi
+
       local glab_bin="glab"
       if ! command -v glab >/dev/null 2>&1 && command -v gitlab >/dev/null 2>&1; then
         glab_bin="gitlab"
@@ -829,36 +938,8 @@ execute_mr() {
       ;;
 
     other)
-      local -a push_opts=()
-      push_opts+=(-o "merge_request.create")
-      push_opts+=(-o "merge_request.target=${OPT_TARGET}")
-      push_opts+=(-o "merge_request.title=${OPT_TITLE}")
-      [[ -n "$OPT_DESC" ]] && push_opts+=(-o "merge_request.description=${OPT_DESC}")
-      [[ "$OPT_REMOVE_SOURCE" == "true" ]] && push_opts+=(-o "merge_request.remove_source_branch")
-      [[ "$OPT_DRAFT" == "true" ]] && push_opts+=(-o "merge_request.draft")
-      [[ "$OPT_SQUASH" == "true" ]] && push_opts+=(-o "merge_request.squash")
-      [[ -n "$OPT_ASSIGNEE" ]] && push_opts+=(-o "merge_request.assign=${OPT_ASSIGNEE}")
-      [[ -n "$OPT_MILESTONE" ]] && push_opts+=(-o "merge_request.milestone=${OPT_MILESTONE}")
-      local lbl
-      for lbl in "${OPT_LABELS[@]}"; do
-        push_opts+=(-o "merge_request.label=${lbl}")
-      done
-
-      echo "🛠️  [실행 명령어]:"
-      printf "   git push"
-      for opt in "${push_opts[@]}"; do
-        printf " %q" "$opt"
-      done
-      printf " %q %q\n" "$OPT_REMOTE" "$OPT_SOURCE"
-      echo "================================================================================"
-
-      if [[ "$OPT_DRY_RUN" == "true" ]]; then
-        echo "✅ [DRY-RUN] Git Push Options 생성 계획 검증 완료!"
-        return 0
-      fi
-
-      echo "📤 [푸시] Git Push Options 전송 중..."
-      git push "${push_opts[@]}" "$OPT_REMOTE" "$OPT_SOURCE"
+      execute_push_options_mr
+      return 0
       ;;
   esac
 
