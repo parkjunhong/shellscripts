@@ -3,7 +3,7 @@
 # @title : Install Docker CE and plugins automatically (bash completion).
 # @license : Apache License 2.0
 # @since : 2026-10-02
-# @desc : support RHEL, Oracle Linux, Ubuntu, RockyOS
+# @desc : support RHEL, Oracle Linux, Ubuntu, RockyOS, Arch Linux
 # @installation : 
 # 1. insert 'source <path>/install-docker.completion" into ~/bin/.bashrc or ~/bin/.bash_profile for a personal usage.
 # 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/install-docker.completion' into '/etc/bashrc' or '/usr/share/bash-completion/completions/' for all users.
@@ -42,7 +42,7 @@ _install_docker_completion() {
   case "${prev}" in
     --pkg-mgr)
       # 지원 패키지 관리자 목록 추천 / Suggest supported package manager list
-      local managers="apt dnf yum"
+      local managers="apt dnf yum pacman"
       COMPREPLY=( $(compgen -W "${managers}" -- "${cur}") )
       return 0
       ;;
