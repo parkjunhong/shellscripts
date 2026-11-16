@@ -1,0 +1,50 @@
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : pdns-versions completion
+# @license  : Apache License 2.0
+# @since    : 2026-11-16
+# @desc     : Bash completion for pdns-versions
+# @installation :
+#   1. insert 'source <path>/pdns-versions.completion' into ~/.bashrc or ~/.bash_profile for personal usage.
+#   2. copy to /etc/bash_completion.d/ for all users.
+# =======================================
+
+_pdns_versions_completion() {
+  local cur prev opts containers
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  opts="--auth --recursor --dnsdist --admin --db -j --json -v --verbose -h --help"
+
+  case "${prev}" in
+    --auth|--recursor|--dnsdist|--admin|--db)
+      if command -v docker >/dev/null 2>&1; then
+        containers=$(docker ps -a --format '{{.Names}}' 2>/dev/null || true)
+        COMPREPLY=( $(compgen -W "${containers}" -- "${cur}") )
+      fi
+      return 0
+      ;;
+    *)
+      ;;
+  esac
+
+  local available_opts=""
+  for opt in $opts; do
+    local is_used=0
+    for word in "${COMP_WORDS[@]}"; do
+      if [[ "$word" == "$opt" ]]; then
+        is_used=1
+        break
+      fi
+    done
+    if (( is_used == 0 )); then
+      available_opts+="$opt "
+    fi
+  done
+
+  COMPREPLY=( $(compgen -W "${available_opts}" -- "${cur}") )
+  return 0
+}
+
+complete -F _pdns_versions_completion pdns-versions
