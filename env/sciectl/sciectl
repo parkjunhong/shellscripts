@@ -207,7 +207,7 @@ help() {
 
 📝 설명 (Description):
   카탈로그(목적별 환경 묶음) 또는 개별 컴포넌트(커스텀 도구, 인스톨러, 커맨드, SSH 키)를
-  리눅스 패키지 매니저(dnf/apt) 방식의 단일 트랜잭션 파이프라인으로 일괄 설치합니다.
+  리눅스 패키지 매니저(dnf/apt/pacman) 방식의 단일 트랜잭션 파이프라인으로 일괄 설치합니다.
   - '--catalog' 옵션을 생략하고 실행하면 대화형(Interactive) 카탈로그/옵션 선택 메뉴가 실행됩니다.
   - 여러 카탈로그를 동시에 지정하면 항목을 자동 병합 및 중복 제거하여 한 번에 실행합니다.
 
@@ -298,7 +298,7 @@ EOF
   $FILENAME --help
 
 📝 설명 (Description):
-  sciectl (Script, Command, Installer & Environment Controller)은 리눅스 패키지 매니저(dnf/apt)와
+  sciectl (Script, Command, Installer & Environment Controller)은 리눅스 패키지 매니저(dnf/apt/pacman)와
   동일한 방식으로 목적별 카탈로그(@catalog) 및 개별 도구/인스톨러를 일괄 설치·관리하는 통합 CLI 도구입니다.
   - 단축 옵션(Short Option)은 지원하지 않으며, 전체 옵션명(Long Option)만 사용 가능합니다.
   - 인자 없이 '$FILENAME'만 실행하면 대화형(Interactive) 카탈로그 선택 및 설치 모드로 진입합니다.
@@ -344,7 +344,7 @@ PKG_INSTALL_CMD=""
 PKG_REMOVE_CMD=""
 
 ##
-# OS 패키지 매니저(apt, dnf 또는 Homebrew)를 감지하여 전역 변수를 설정합니다.
+# OS 패키지 매니저(apt, dnf, pacman 또는 Homebrew)를 감지하여 전역 변수를 설정합니다.
 #
 # @param 없음
 #
@@ -379,8 +379,13 @@ _detect_pkg_manager() {
     PKG_UPDATE_CMD="sudo dnf makecache"
     PKG_INSTALL_CMD="sudo dnf install -y"
     PKG_REMOVE_CMD="sudo dnf remove -y"
+  elif command -v pacman &>/dev/null; then
+    PKG_MANAGER="pacman"
+    PKG_UPDATE_CMD="sudo pacman -Sy"
+    PKG_INSTALL_CMD="sudo pacman -S --noconfirm --needed"
+    PKG_REMOVE_CMD="sudo pacman -Rns --noconfirm"
   else
-    echo_e "[❌] 지원하지 않는 운영체제입니다. (apt 또는 dnf가 필요합니다.)"
+    echo_e "[❌] 지원하지 않는 운영체제입니다. (apt, dnf 또는 pacman이 필요합니다.)"
     exit 1
   fi
 }
@@ -399,6 +404,8 @@ _is_package_installed() {
     dpkg -s "$pkg_name" 2>/dev/null | grep -q "Status: install ok installed"
   elif [[ "$PKG_MANAGER" == "dnf" ]]; then
     rpm -q "$pkg_name" &>/dev/null
+  elif [[ "$PKG_MANAGER" == "pacman" ]]; then
+    pacman -Q "$pkg_name" &>/dev/null
   elif [[ "$PKG_MANAGER" == "brew" ]]; then
     brew list "$pkg_name" &>/dev/null
   else
@@ -1416,6 +1423,8 @@ setup_sudoers() {
     all_cmds+=("/usr/bin/apt" "/usr/bin/apt-get")
   elif [[ "$PKG_MANAGER" == "dnf" ]]; then
     all_cmds+=("/usr/bin/dnf")
+  elif [[ "$PKG_MANAGER" == "pacman" ]]; then
+    all_cmds+=("/usr/bin/pacman")
   fi
 
   if sudo test -f "$sudoers_file"; then
@@ -3034,7 +3043,7 @@ cmd_install() {
     fi
   fi
 
-  # 6. 트랜잭션 요약 출력 및 최종 1회 확인 (dnf/apt 스타일)
+  # 6. 트랜잭션 요약 출력 및 최종 1회 확인 (dnf/apt/pacman 스타일)
   _print_transaction_summary "$target_scope" "${target_user:-${USER:-$(whoami)}}" "$run_default" "$active_steps_str"
 
   if [[ "$is_dry_run" == "true" ]]; then
