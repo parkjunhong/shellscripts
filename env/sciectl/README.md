@@ -1,6 +1,6 @@
 # sciectl
 
-**`sciectl` (Script, Command, Installer & Environment Controller)**은 리눅스 패키지 매니저(`dnf`, `apt`) 및 macOS 패키지 매니저(`brew`)와 동일한 방식으로 목적별 환경 카탈로그(`@catalog`) 및 개별 컴포넌트(커스텀 CLI 도구, 인스톨러, 사후 명령어, Sudoers 권한, SSH 공개키)를 단일 트랜잭션 파이프라인으로 일괄 설치·관리하는 통합 프로비저닝 CLI 도구입니다.
+**`sciectl` (Script, Command, Installer & Environment Controller)**은 리눅스 패키지 매니저(`dnf`, `apt`, `pacman`) 및 macOS 패키지 매니저(`brew`)와 동일한 방식으로 목적별 환경 카탈로그(`@catalog`) 및 개별 컴포넌트(커스텀 CLI 도구, 인스톨러, 사후 명령어, Sudoers 권한, SSH 공개키)를 단일 트랜잭션 파이프라인으로 일괄 설치·관리하는 통합 프로비저닝 CLI 도구입니다.
 
 ---
 
@@ -9,7 +9,7 @@
 - **단일 카탈로그 기반 다중 OS 선택적 설치 (Multi-OS Selective Provisioning)**:
   - 카탈로그 매니페스트(`*.catalog`)를 OS별로 쪼개지 않고 단일 정의를 유지합니다.
   - 실행 엔진이 현재 대상 OS(Linux vs macOS)를 자동 판별하여, 해당 OS 환경에 적합한 항목만 지능적으로 선택 설치하거나 제외(Skip)합니다.
-    - **Linux**: `apt`/`dnf` 패키지 관리, Sudoers NOPASSWD 병합, `$HOME/.bashrc`에 환경 설정 적용
+    - **Linux**: `apt`/`dnf`/`pacman` 패키지 관리, Sudoers NOPASSWD 병합, `$HOME/.bashrc`에 환경 설정 적용
     - **macOS (Darwin)**: `Homebrew(brew)` 패키지 관리, Sudoers 자동 건너뜀, `$HOME/.bash_profile`에 단독 환경 설정 적용 (`.bashrc` 체이닝 일체 배제), Bash 4+ 기반
 - **패키지 매니저형 다중 카탈로그 트랜잭션 (`install`)**: 1개 이상의 카탈로그(예: `--catalog default-server,docker,network`)를 동시에 지정하면 상위 상속(`INCLUDES`)까지 자동으로 해석·병합·중복 제거한 뒤, 실행 전 **Transaction Summary(실행 계획 요약표)**를 출력하고 단 1회 확인으로 일괄 실행합니다.
 - **선언형 카탈로그 및 논리 식별자 해석**: 전체 URL을 하드코딩하지 않고 `git/git-commit`, `temurin-25-jdk`, `ymtech-internal`과 같은 논리 식별자만으로 로컬 저장소(`--local`) 또는 원격 GitHub 저장소(`--remote`)에서 자원을 자동 탐색합니다.
@@ -95,7 +95,7 @@ sciectl install --catalog default-server,docker,network --user parkjunhong --yes
 # 7. 카탈로그 내 특정 단계만 선택 실행
 sciectl install --catalog default-devops --only tools,installers
 
-# 8. 카탈로그 없이 개별 인스톨러나 커스텀 도구만 단독 설치 (dnf/apt 스타일)
+# 8. 카탈로그 없이 개별 인스톨러나 커스텀 도구만 단독 설치 (dnf/apt/pacman 스타일)
 sciectl install --installer install-temurin-25-jdk,install-htop --tool git/git-commit,net/fwc-cli
 ```
 
