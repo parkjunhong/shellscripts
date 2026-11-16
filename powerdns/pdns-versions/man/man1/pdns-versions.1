@@ -1,0 +1,84 @@
+.TH PDNS-VERSIONS 1 "2026-11-16" "pdns-versions 1.0.0" "User Commands"
+.SH NAME
+pdns-versions \- Check versions and running statuses of Docker-based PowerDNS stack components
+
+.SH SYNOPSIS
+.B pdns-versions
+[\fIOPTIONS\fR]
+
+.SH DESCRIPTION
+운영 중인 Docker 기반 PowerDNS 스택(\fBPowerDNS Auth\fR, \fBPowerDNS Recursor\fR, \fBPowerDNS dnsdist\fR, \fBPowerDNS-Admin\fR, \fBMariaDB\fR)의 각 컨테이너 실행 상태 및 내부 바이너리 버전을 일괄 점검하고, 미설치 또는 정지된 구성요소에 대해 직관적인 이모지와 상태 메시지를 제공하는 CLI 점검 도구입니다.
+
+.SH KEY FEATURES
+.IP \(bu 2
+\fB지능형 2단계 컨테이너 감지 (Discovery)\fR
+.IP \(bu 2
+기본 컨테이너 이름(\fIpdns-auth\fR, \fIpdns-recursor\fR, \fIpdns-dnsdist\fR, \fIpdns-admin\fR, \fImariadb\fR)으로 우선 탐색하며, 이름이 다를 경우 이미지 이름 키워드를 기반으로 실행 중인 컨테이너를 자동 식별합니다.
+.IP \(bu 2
+\fB컴포넌트별 최적화된 바이너리/메타데이터 버전 추출\fR
+.IP \(bu 2
+\fBpdns_server\fR, \fBpdns_recursor\fR, \fBdnsdist\fR, \fBmariadbd\fR(또는 mariadb/mysqld) 내부 바이너리의 실제 릴리즈 버전을 추출하며, 웹 애플리케이션인 PowerDNS-Admin은 내부 소스 버전 또는 이미지 릴리즈 태그를 정확히 판별합니다.
+.IP \(bu 2
+\fB직관적인 상태 표시 및 트러블슈팅 가이드\fR
+.IP \(bu 2
+실행 상태에 따라 \fB[🟢  실행 중]\fR, \fB[🔴  정지 중]\fR, \fB[❌  미설치]\fR로 구분하여 터미널에 출력하며, 정지된 컨테이너의 경우 시작 명령어(\fBdocker start <컨테이너명>\fR)를 함께 가이드합니다.
+.IP \(bu 2
+\fB표준 테이블 및 JSON 출력 지원\fR
+.IP \(bu 2
+\fBcolumn -t\fR를 활용한 깔끔한 터미널 테이블 출력뿐 아니라, CI/CD 및 모니터링 연동을 위한 \fB\-\-json\fR 출력을 기본 지원합니다.
+
+.SH OPTIONS
+.TP
+.B \-\-auth <name>
+PowerDNS Auth 컨테이너 이름을 직접 지정합니다. (기본값: pdns-auth)
+.TP
+.B \-\-recursor <name>
+PowerDNS Recursor 컨테이너 이름을 직접 지정합니다. (기본값: pdns-recursor)
+.TP
+.B \-\-dnsdist <name>
+PowerDNS dnsdist 컨테이너 이름을 직접 지정합니다. (기본값: pdns-dnsdist)
+.TP
+.B \-\-admin <name>
+PowerDNS-Admin 컨테이너 이름을 직접 지정합니다. (기본값: pdns-admin)
+.TP
+.B \-\-db <name>
+MariaDB 컨테이너 이름을 직접 지정합니다. (기본값: mariadb)
+.TP
+.B \-j, \-\-json
+점검 결과를 표준 JSON 포맷으로 출력합니다.
+.TP
+.B \-v, \-\-verbose
+내부 명령어 실행 원본 출력(Raw Output)을 함께 표시합니다.
+.TP
+.B \-h, \-\-help
+도움말 및 사용법 화면을 출력합니다.
+
+.SH EXAMPLES
+.PP
+.nf
+  # 1) 기본 설정으로 전체 컴포넌트 버전 점검
+  pdns-versions
+
+  # 2) JSON 포맷으로 출력 (모니터링 또는 파이프라인 연계)
+  pdns-versions \-\-json
+
+  # 3) 특정 컨테이너 이름 직접 지정
+  pdns-versions \-\-auth my-pdns-auth \-\-recursor my-recursor
+
+  # 4) 상세 디버그 출력
+  pdns-versions \-\-verbose
+.fi
+.PP
+
+.SH COMPLETION
+.B pdns-versions
+는 Bash 자동완성 스크립트(\fIpdns-versions.completion\fR)를 지원합니다.
+.BR scriptctl (1)
+을 통해 설치 시 시스템 표준 completion 경로에 자동으로 등록되며, \fB\-\-auth\fR 등의 옵션 뒤에서 실행 중인 Docker 컨테이너 목록을 자동완성으로 제안합니다.
+
+.SH SEE ALSO
+.BR docker (1),
+.BR scriptctl (1)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.
