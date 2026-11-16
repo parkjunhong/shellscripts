@@ -1,0 +1,498 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# @author      : parkjunhong77@gmail.com
+# @title       : pdns-versions
+# @license     : Apache License 2.0
+# @since       : 2026-11-16
+# @desc        : Docker 기반 PowerDNS 스택(Auth, Recursor, dnsdist, Admin, MariaDB) 버전 점검 CLI 도구
+# @installation:
+#   1. 개인 환경: utils/scriptctl/scriptctl install --script ./pdns-versions --target local
+#   2. 시스템 전역: utils/scriptctl/scriptctl install --script ./pdns-versions --target global
+# ==============================================================================
+
+set -Eeuo pipefail
+
+# 구분줄 표준 길이 (86자 지정 규격 준수)
+SEPARATOR_LINE="======================================================================================"
+
+# ANSI 컬러 정의 (터미널 TTY 연결 시에만 활성화)
+if [[ -t 1 ]]; then
+  CLR_RESET="\033[0m"
+  CLR_BOLD="\033[1m"
+  CLR_GREEN="\033[32m"
+  CLR_YELLOW="\033[33m"
+  CLR_RED="\033[31m"
+  CLR_CYAN="\033[36m"
+  CLR_GRAY="\033[90m"
+else
+  CLR_RESET=""
+  CLR_BOLD=""
+  CLR_GREEN=""
+  CLR_YELLOW=""
+  CLR_RED=""
+  CLR_CYAN=""
+  CLR_GRAY=""
+fi
+
+# 기본 컨테이너 이름 설정 (사용자 운영 환경 기준)
+CONTAINER_AUTH="pdns-auth"
+CONTAINER_RECURSOR="pdns-recursor"
+CONTAINER_DNSDIST="pdns-dnsdist"
+CONTAINER_ADMIN="pdns-admin"
+CONTAINER_MARIADB="mariadb"
+
+OUTPUT_JSON=false
+VERBOSE=false
+
+##
+# 사용법 안내 함수
+##
+show_help() {
+  cat << EOF
+사용법: $(basename "$0") [옵션...]
+
+설명:
+  운영 중인 Docker 기반 PowerDNS 스택의 각 구성요소(Auth, Recursor, dnsdist,
+  PowerDNS-Admin, MariaDB) 컨테이너의 상태 및 상세 버전을 확인합니다.
+  컨테이너가 설치되어 있지 않거나 정지된 경우 적절한 상태 메시지를 제공합니다.
+
+확인 대상 구성요소:
+  1. PowerDNS Auth        (기본 컨테이너: ${CONTAINER_AUTH})
+  2. PowerDNS Recursor     (기본 컨테이너: ${CONTAINER_RECURSOR})
+  3. PowerDNS dnsdist     (기본 컨테이너: ${CONTAINER_DNSDIST})
+  4. PowerDNS-Admin       (기본 컨테이너: ${CONTAINER_ADMIN})
+  5. MariaDB              (기본 컨테이너: ${CONTAINER_MARIADB})
+
+옵션:
+  -j, --json              결과를 JSON 포맷으로 출력
+  -v, --verbose           내부 바이너리 실행 원본 출력(Raw Output)도 함께 표시
+  --auth <이름>           PowerDNS Auth 컨테이너 이름 직접 지정
+  --recursor <이름>       PowerDNS Recursor 컨테이너 이름 직접 지정
+  --dnsdist <이름>        PowerDNS dnsdist 컨테이너 이름 직접 지정
+  --admin <이름>          PowerDNS-Admin 컨테이너 이름 직접 지정
+  --db <이름>             MariaDB 컨테이너 이름 직접 지정
+  -h, --help              도움말 출력
+
+EOF
+}
+
+##
+# 커맨드라인 인자 파싱
+##
+parse_arguments() {
+  while (( $# > 0 )); do
+    case "$1" in
+      -j|--json)
+        OUTPUT_JSON=true
+        shift 1
+        ;;
+      -v|--verbose)
+        VERBOSE=true
+        shift 1
+        ;;
+      --auth)
+        if (( $# < 2 )) || [[ "$2" =~ ^- ]]; then
+          echo -e "${CLR_RED}오류: '--auth' 옵션에 컨테이너 이름을 지정해야 합니다.${CLR_RESET}" >&2
+          exit 1
+        fi
+        CONTAINER_AUTH="$2"
+        shift 2
+        ;;
+      --recursor)
+        if (( $# < 2 )) || [[ "$2" =~ ^- ]]; then
+          echo -e "${CLR_RED}오류: '--recursor' 옵션에 컨테이너 이름을 지정해야 합니다.${CLR_RESET}" >&2
+          exit 1
+        fi
+        CONTAINER_RECURSOR="$2"
+        shift 2
+        ;;
+      --dnsdist)
+        if (( $# < 2 )) || [[ "$2" =~ ^- ]]; then
+          echo -e "${CLR_RED}오류: '--dnsdist' 옵션에 컨테이너 이름을 지정해야 합니다.${CLR_RESET}" >&2
+          exit 1
+        fi
+        CONTAINER_DNSDIST="$2"
+        shift 2
+        ;;
+      --admin)
+        if (( $# < 2 )) || [[ "$2" =~ ^- ]]; then
+          echo -e "${CLR_RED}오류: '--admin' 옵션에 컨테이너 이름을 지정해야 합니다.${CLR_RESET}" >&2
+          exit 1
+        fi
+        CONTAINER_ADMIN="$2"
+        shift 2
+        ;;
+      --db)
+        if (( $# < 2 )) || [[ "$2" =~ ^- ]]; then
+          echo -e "${CLR_RED}오류: '--db' 옵션에 컨테이너 이름을 지정해야 합니다.${CLR_RESET}" >&2
+          exit 1
+        fi
+        CONTAINER_MARIADB="$2"
+        shift 2
+        ;;
+      -h|--help)
+        show_help
+        exit 0
+        ;;
+      *)
+        echo -e "${CLR_RED}오류: 알 수 없는 옵션입니다: $1${CLR_RESET}" >&2
+        show_help
+        exit 1
+        ;;
+    esac
+  done
+}
+
+##
+# Docker 환경 유효성 점검
+##
+check_docker() {
+  if ! command -v docker >/dev/null 2>&1; then
+    echo -e "${CLR_RED}❌ [오류] 시스템에 'docker' 명령어가 설치되어 있지 않습니다.${CLR_RESET}" >&2
+    echo -e "   Docker 엔진이 설치된 호스트에서 실행해 주십시오." >&2
+    exit 1
+  fi
+
+  if ! docker ps >/dev/null 2>&1; then
+    echo -e "${CLR_RED}❌ [오류] Docker 데몬에 접근할 수 없습니다.${CLR_RESET}" >&2
+    echo -e "   - Docker 서비스 실행 여부를 확인하십시오. (systemctl status docker)" >&2
+    echo -e "   - 현재 사용자에게 docker 실행 권한이 있는지 확인하십시오. (sudo 권한 또는 docker 그룹)" >&2
+    exit 1
+  fi
+}
+
+##
+# 컨테이너 탐색 및 상태 조회
+#
+# @param $1 {string} 기본 컨테이너 이름
+# @param $2 {string} 이미지 이름 검색 키워드
+#
+# @return 상태|컨테이너명|이미지명
+##
+inspect_container() {
+  local target_name="$1"
+  local image_keyword="$2"
+
+  local c_name=""
+  local c_status=""
+  local c_image=""
+
+  # 1순위: 지정된 컨테이너 이름으로 탐색
+  if docker inspect "$target_name" >/dev/null 2>&1; then
+    c_name="$target_name"
+  else
+    # 2순위: 이미지 이름 키워드로 탐색
+    c_name=$(docker ps -a --filter "ancestor=${image_keyword}" --format '{{.Names}}' 2>/dev/null | head -n 1 || echo "")
+    if [[ -z "$c_name" ]]; then
+      # 전체 컨테이너 중 이미지명 매칭 탐색
+      c_name=$(docker ps -a --format '{{.Names}}\t{{.Image}}' 2>/dev/null | grep -iE "$image_keyword" | head -n 1 | awk '{print $1}' || echo "")
+    fi
+  fi
+
+  # 컨테이너가 아예 존재하지 않는 경우 (미설치)
+  if [[ -z "$c_name" ]]; then
+    echo "NOT_INSTALLED|-|-"
+    return 0
+  fi
+
+  c_status=$(docker inspect --format '{{.State.Status}}' "$c_name" 2>/dev/null || echo "unknown")
+  c_image=$(docker inspect --format '{{.Config.Image}}' "$c_name" 2>/dev/null || echo "unknown")
+
+  if [[ "$c_status" == "running" ]]; then
+    echo "RUNNING|${c_name}|${c_image}"
+  else
+    echo "STOPPED|${c_name}|${c_image} (${c_status})"
+  fi
+}
+
+##
+# PowerDNS Auth 버전 추출
+##
+get_auth_version() {
+  local c_name="$1"
+  local raw_out=""
+  raw_out=$(docker exec "$c_name" pdns_server --version 2>&1 || true)
+  [[ "$VERBOSE" == "true" ]] && echo "DEBUG [pdns_server]: $raw_out" >&2
+
+  local regex1='PowerDNS[[:space:]]+Authoritative[[:space:]]+Server[[:space:]]+([0-9]+\.[0-9]+[^[:space:],\)]*)'
+  local regex2='pdns_server[[:space:]]+([0-9]+\.[0-9]+[^[:space:],\)]*)'
+
+  if [[ "$raw_out" =~ $regex1 ]]; then
+    echo "${BASH_REMATCH[1]}"
+  elif [[ "$raw_out" =~ $regex2 ]]; then
+    echo "${BASH_REMATCH[1]}"
+  else
+    local first_line
+    first_line=$(echo "$raw_out" | grep -i "PowerDNS" | head -n 1 || echo "")
+    if [[ -n "$first_line" ]]; then
+      echo "$first_line"
+    else
+      echo "확인 불가 (실행 오류)"
+    fi
+  fi
+}
+
+##
+# PowerDNS Recursor 버전 추출
+##
+get_recursor_version() {
+  local c_name="$1"
+  local raw_out=""
+  raw_out=$(docker exec "$c_name" pdns_recursor --version 2>&1 || true)
+  [[ "$VERBOSE" == "true" ]] && echo "DEBUG [pdns_recursor]: $raw_out" >&2
+
+  local regex1='PowerDNS[[:space:]]+Recursor[[:space:]]+([0-9]+\.[0-9]+[^[:space:],\)]*)'
+  local regex2='pdns_recursor[[:space:]]+([0-9]+\.[0-9]+[^[:space:],\)]*)'
+
+  if [[ "$raw_out" =~ $regex1 ]]; then
+    echo "${BASH_REMATCH[1]}"
+  elif [[ "$raw_out" =~ $regex2 ]]; then
+    echo "${BASH_REMATCH[1]}"
+  else
+    local first_line
+    first_line=$(echo "$raw_out" | grep -i "PowerDNS" | head -n 1 || echo "")
+    if [[ -n "$first_line" ]]; then
+      echo "$first_line"
+    else
+      echo "확인 불가 (실행 오류)"
+    fi
+  fi
+}
+
+##
+# PowerDNS dnsdist 버전 추출
+##
+get_dnsdist_version() {
+  local c_name="$1"
+  local raw_out=""
+  raw_out=$(docker exec "$c_name" dnsdist --version 2>&1 || true)
+  [[ "$VERBOSE" == "true" ]] && echo "DEBUG [dnsdist]: $raw_out" >&2
+
+  local regex1='dnsdist[[:space:]]+([0-9]+\.[0-9]+[^[:space:],\)]*)'
+
+  if [[ "$raw_out" =~ $regex1 ]]; then
+    echo "${BASH_REMATCH[1]}"
+  else
+    local first_line
+    first_line=$(echo "$raw_out" | grep -i "dnsdist" | head -n 1 || echo "")
+    if [[ -n "$first_line" ]]; then
+      echo "$first_line"
+    else
+      echo "확인 불가 (실행 오류)"
+    fi
+  fi
+}
+
+##
+# PowerDNS-Admin 버전 추출
+##
+get_admin_version() {
+  local c_name="$1"
+  local c_image="$2"
+
+  # 1. 컨테이너 내부 환경변수 확인
+  local env_ver
+  env_ver=$(docker exec "$c_name" env 2>/dev/null | grep -iE '^(PDA_VERSION|POWERDNS_ADMIN_VERSION|VERSION)=' | head -n 1 | cut -d= -f2- || true)
+  if [[ -n "$env_ver" ]]; then
+    echo "$env_ver"
+    return 0
+  fi
+
+  # 2. 컨테이너 내부 파일에서 버전 문자열 검색 (안전한 변수 기반 정규식 매칭)
+  local file_ver
+  file_ver=$(docker exec "$c_name" sh -c 'grep -rnE "__version__|VERSION" /app/powerdnsadmin/ 2>/dev/null | head -n 1' 2>/dev/null || true)
+  local ver_regex='([vV]?[0-9]+\.[0-9]+[0-9a-zA-Z._-]*)'
+  if [[ -n "$file_ver" && "$file_ver" =~ $ver_regex ]]; then
+    echo "${BASH_REMATCH[1]}"
+    return 0
+  fi
+
+  # 3. 이미지 태그 파싱 (예: powerdnsadmin/pda-legacy:v2026.08.1 -> v2026.08.1)
+  local tag_regex=':([^:]+)$'
+  if [[ "$c_image" =~ $tag_regex ]]; then
+    local tag="${BASH_REMATCH[1]}"
+    if [[ "$tag" != "latest" ]]; then
+      echo "$tag (Image Tag)"
+      return 0
+    fi
+  fi
+
+  echo "버전 정보 없음 (latest)"
+}
+
+##
+# MariaDB 버전 추출
+##
+get_mariadb_version() {
+  local c_name="$1"
+  local raw_out=""
+
+  # mariadbd -> mariadb -> mysqld 순차 시도
+  if docker exec "$c_name" command -v mariadbd >/dev/null 2>&1; then
+    raw_out=$(docker exec "$c_name" mariadbd --version 2>&1 || true)
+  elif docker exec "$c_name" command -v mariadb >/dev/null 2>&1; then
+    raw_out=$(docker exec "$c_name" mariadb --version 2>&1 || true)
+  elif docker exec "$c_name" command -v mysqld >/dev/null 2>&1; then
+    raw_out=$(docker exec "$c_name" mysqld --version 2>&1 || true)
+  fi
+  [[ "$VERBOSE" == "true" ]] && echo "DEBUG [mariadb]: $raw_out" >&2
+
+  local regex1='(mariadbd|mariadb|mysqld)[[:space:]]+Ver[[:space:]]+([0-9]+\.[0-9]+[^[:space:],]*)'
+  local regex2='Distrib[[:space:]]+([0-9]+\.[0-9]+[^[:space:],]*)'
+
+  if [[ "$raw_out" =~ $regex1 ]]; then
+    echo "${BASH_REMATCH[2]}"
+  elif [[ "$raw_out" =~ $regex2 ]]; then
+    echo "${BASH_REMATCH[1]}"
+  else
+    local first_line
+    first_line=$(echo "$raw_out" | head -n 1 || echo "")
+    if [[ -n "$first_line" ]]; then
+      echo "$first_line"
+    else
+      echo "확인 불가 (실행 오류)"
+    fi
+  fi
+}
+
+main() {
+  parse_arguments "$@"
+  check_docker
+
+  # 검사 대상 구성요소 정의: 컴포넌트 표시명 | 기본 컨테이너명 | 이미지 키워드 | 버전 추출 함수
+  local -a targets=(
+    "PowerDNS Auth|${CONTAINER_AUTH}|pdns-auth|get_auth_version"
+    "PowerDNS Recursor|${CONTAINER_RECURSOR}|pdns-recursor|get_recursor_version"
+    "PowerDNS dnsdist|${CONTAINER_DNSDIST}|dnsdist|get_dnsdist_version"
+    "PowerDNS-Admin|${CONTAINER_ADMIN}|pda-legacy|get_admin_version"
+    "MariaDB|${CONTAINER_MARIADB}|mariadb|get_mariadb_version"
+  )
+
+  local -a res_components=()
+  local -a res_statuses=()
+  local -a res_cnames=()
+  local -a res_versions=()
+  local -a res_images=()
+
+  for item in "${targets[@]}"; do
+    IFS='|' read -r comp_name def_name img_keyword ver_func <<< "$item"
+
+    local c_info
+    c_info=$(inspect_container "$def_name" "$img_keyword")
+    IFS='|' read -r status c_name c_image <<< "$c_info"
+
+    local ver_str="-"
+    local status_display=""
+
+    case "$status" in
+      RUNNING)
+        status_display="실행 중"
+        if [[ "$ver_func" == "get_admin_version" ]]; then
+          ver_str=$($ver_func "$c_name" "$c_image")
+        else
+          ver_str=$($ver_func "$c_name")
+        fi
+        ;;
+      STOPPED)
+        status_display="정지 중"
+        ver_str="(컨테이너 정지 - 버전 확인 불가)"
+        ;;
+      NOT_INSTALLED)
+        status_display="미설치"
+        c_name="-"
+        c_image="-"
+        ver_str="컨테이너를 찾을 수 없음 (미설치)"
+        ;;
+      *)
+        status_display="상태 불명"
+        ver_str="확인 불가"
+        ;;
+    esac
+
+    res_components+=("$comp_name")
+    res_statuses+=("$status_display")
+    res_cnames+=("$c_name")
+    res_versions+=("$ver_str")
+    res_images+=("$c_image")
+  done
+
+  # JSON 출력 모드 (-j, --json)
+  if [[ "$OUTPUT_JSON" == "true" ]]; then
+    echo "{"
+    echo "  \"timestamp\": \"$(date -Iseconds)\","
+    echo '  "components": ['
+    local count=${#res_components[@]}
+    for (( i=0; i<count; i++ )); do
+      local comma=","
+      (( i == count - 1 )) && comma=""
+      echo "    {"
+      echo "      \"name\": \"${res_components[i]}\","
+      echo "      \"status\": \"${res_statuses[i]}\","
+      echo "      \"container\": \"${res_cnames[i]}\","
+      echo "      \"version\": \"${res_versions[i]}\","
+      echo "      \"image\": \"${res_images[i]}\""
+      echo "    }${comma}"
+    done
+    echo "  ]"
+    echo "}"
+    return 0
+  fi
+
+  # 일반 터미널 테이블 출력 모드 (column -t 활용)
+  echo "$SEPARATOR_LINE"
+  echo -e "${CLR_BOLD}🚀 PowerDNS 스택 컴포넌트 버전 점검 결과${CLR_RESET}"
+  echo "$SEPARATOR_LINE"
+
+  (
+    echo "컴포넌트|상태|컨테이너명|실행 버전|이미지 정보"
+    local count=${#res_components[@]}
+    for (( i=0; i<count; i++ )); do
+      local comp="${res_components[i]}"
+      local st="${res_statuses[i]}"
+      local cname="${res_cnames[i]}"
+      local ver="${res_versions[i]}"
+      local img="${res_images[i]}"
+
+      # 이모지와 텍스트 사이에 명확한 빈칸(공백 2칸) 추가 및 상태별 어울리는 이모지 적용
+      local st_tag="[${st}]"
+      case "$st" in
+        "실행 중")
+          st_tag="[🟢  실행 중]"
+          ;;
+        "정지 중")
+          st_tag="[🔴  정지 중]"
+          ;;
+        "미설치")
+          st_tag="[❌  미설치]"
+          ;;
+      esac
+
+      echo "${comp}|${st_tag}|${cname}|${ver}|${img}"
+    done
+  ) | column -t -s "|"
+
+  echo "$SEPARATOR_LINE"
+
+  # 미설치 또는 정지된 컴포넌트가 있을 경우 경고/안내 출력
+  local has_warning=false
+  for (( i=0; i<${#res_statuses[@]}; i++ )); do
+    if [[ "${res_statuses[i]}" != "실행 중" ]]; then
+      has_warning=true
+      break
+    fi
+  done
+
+  if [[ "$has_warning" == "true" ]]; then
+    echo -e "${CLR_YELLOW}💡 [상태 알림]:${CLR_RESET}"
+    for (( i=0; i<${#res_statuses[@]}; i++ )); do
+      if [[ "${res_statuses[i]}" == "정지 중" ]]; then
+        echo -e "   - ${CLR_YELLOW}[🔴  정지 중]${CLR_RESET} '${res_components[i]}' 컨테이너가 정지 상태입니다. (시작 명령: ${CLR_CYAN}docker start ${res_cnames[i]}${CLR_RESET})"
+      elif [[ "${res_statuses[i]}" == "미설치" ]]; then
+        echo -e "   - ${CLR_RED}[❌  미설치]${CLR_RESET} '${res_components[i]}' 관련 컨테이너를 찾을 수 없습니다. (배포 필요 또는 컨테이너 이름 확인 필요)"
+      fi
+    done
+    echo "$SEPARATOR_LINE"
+  fi
+}
+
+main "$@"
