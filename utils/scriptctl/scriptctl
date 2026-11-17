@@ -655,6 +655,7 @@ find_installed_manpages() {
     local)
       base_dirs+=(
         "${XDG_DATA_HOME:-$HOME/.local/share}/man"
+        "$HOME/share/man"
         "$HOME/man"
       )
       ;;
@@ -672,6 +673,7 @@ find_installed_manpages() {
     all|*)
       base_dirs+=(
         "${XDG_DATA_HOME:-$HOME/.local/share}/man"
+        "$HOME/share/man"
         "$HOME/man"
         "/usr/local/share/man"
         "/usr/share/man"
@@ -1104,6 +1106,21 @@ cmd_install() {
         echo "  ✅ Man Page 설치 완료 (일반 권한): $m_dest"
       fi
     done
+
+    # local 설치 시 macOS 등 $HOME/bin 기반 환경에서 man 명령어가 매뉴얼을 탐색할 수 있도록
+    # $HOME/share/man -> $man_base_dir 심볼릭 링크 브리지를 구성합니다.
+    if [[ "$target_scope" == "local" && -d "$man_base_dir" ]]; then
+      local user_share_man="$HOME/share/man"
+      if [[ ! -e "$user_share_man" && ! -L "$user_share_man" ]]; then
+        mkdir -p "$HOME/share" 2>/dev/null || true
+        if ln -s "$man_base_dir" "$user_share_man" 2>/dev/null; then
+          echo "  🔗 Man Page 호환 경로 링크 연결 완료: $user_share_man -> $man_base_dir"
+        fi
+      elif [[ -L "$user_share_man" ]]; then
+        ln -sfn "$man_base_dir" "$user_share_man" 2>/dev/null || true
+      fi
+    fi
+
     if command -v mandb >/dev/null 2>&1; then
       if [[ "$need_sudo_for_man" == true ]]; then
         sudo mandb -q >/dev/null 2>&1 || true

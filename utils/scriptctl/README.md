@@ -12,7 +12,7 @@
    * `scriptctl list ...` : 개인/전역 실행 공간에 설치된 커스텀 스크립트 및 `.completion` / `man` 매핑 현황 조회
 2. **개인(`local`) 및 전역(`global`) 실행 공간 및 매뉴얼 경로 완벽 지원**
    * **설치 (`install`)**:
-     * `--target local` (기본값): 스크립트는 `$HOME/bin`, 매뉴얼은 `${XDG_DATA_HOME:-$HOME/.local/share}/man/man<N>/`에 설치 (미존재 시 자동 생성)
+     * `--target local` (기본값): 스크립트는 `$HOME/bin`, 매뉴얼은 `${XDG_DATA_HOME:-$HOME/.local/share}/man/man<N>/`에 설치 (미존재 시 자동 생성, macOS manpath 호환을 위한 `$HOME/share/man` 링크 자동 구성)
      * `--target global`: 스크립트는 `/usr/local/bin`, 매뉴얼은 `/usr/local/share/man/man<N>/` (macOS Homebrew 환경은 `$(brew --prefix)/share/man/man<N>/`)에 설치
    * **삭제 (`remove`) 및 조회 (`list`)**:
      * `--target local`: 개인 실행 공간(`$HOME/bin`, `$HOME/.local/bin`) 탐색
