@@ -1153,6 +1153,17 @@ _setup_home_bin() {
     echo_w " - $BASH_ENV_FILE 파일에 이미 PATH 설정이 존재합니다."
   fi
 
+  local local_man_dir="${XDG_DATA_HOME:-$HOME/.local/share}/man"
+  local user_share_man="$HOME/share/man"
+  if [[ -d "$local_man_dir" ]]; then
+    if [[ ! -e "$user_share_man" && ! -L "$user_share_man" ]]; then
+      mkdir -p "$HOME/share" 2>/dev/null || true
+      ln -s "$local_man_dir" "$user_share_man" 2>/dev/null || true
+    elif [[ -L "$user_share_man" ]]; then
+      ln -sfn "$local_man_dir" "$user_share_man" 2>/dev/null || true
+    fi
+  fi
+
   EXECUTED_JOB_FLAGS["$func_name"]=1
 }
 
@@ -1765,6 +1776,20 @@ _install_manpages() {
       any_installed=1
     fi
   done
+
+  # local 설치 시 macOS 등 $HOME/bin 기반 환경에서 man 명령어가 매뉴얼을 탐색할 수 있도록
+  # $HOME/share/man -> $man_base_dir 심볼릭 링크 브리지를 구성합니다.
+  if [[ "$target_scope" == "local" && -d "$man_base_dir" ]]; then
+    local user_share_man="$HOME/share/man"
+    if [[ ! -e "$user_share_man" && ! -L "$user_share_man" ]]; then
+      mkdir -p "$HOME/share" 2>/dev/null || true
+      if ln -s "$man_base_dir" "$user_share_man" 2>/dev/null; then
+        echo_i " - Man Page 호환 경로 링크를 생성했습니다. ($user_share_man -> $man_base_dir)"
+      fi
+    elif [[ -L "$user_share_man" ]]; then
+      ln -sfn "$man_base_dir" "$user_share_man" 2>/dev/null || true
+    fi
+  fi
 
   if (( any_installed == 1 )) && command -v mandb &>/dev/null; then
     if [[ "$need_sudo_man" == true ]]; then
