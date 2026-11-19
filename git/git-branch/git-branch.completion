@@ -1,0 +1,89 @@
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : git-branch completion
+# @license  : Apache License 2.0
+# @since    : 2026-11-19
+# @desc     : Bash completion for git-branch
+# @installation :
+#   1. insert 'source <path>/git-branch.completion' into ~/.bashrc or ~/.bash_profile for personal usage.
+#   2. copy to /etc/bash_completion.d/ for all users.
+# =======================================
+
+_git_branch_completion() {
+  local cur prev words cword
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  local subcommands="delete add"
+  local delete_opts="--branch --pattern --merged --target --scope --remote --force --dry-run --help"
+  local add_opts="--branch --from --push --no-push --remote --dry-run --help"
+
+  # 옵션 인자 값 제안
+  case "${prev}" in
+    --scope)
+      COMPREPLY=( $(compgen -W "both local remote" -- "${cur}") )
+      return 0
+      ;;
+    --target|--from)
+      if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        local branches
+        branches="$(git for-each-ref --format='%(refname:short)' refs/heads/ 2>/dev/null)"
+        COMPREPLY=( $(compgen -W "${branches}" -- "${cur}") )
+      fi
+      return 0
+      ;;
+    --branch)
+      if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        local branches
+        branches="$(git for-each-ref --format='%(refname:short)' refs/heads/ 2>/dev/null)"
+        COMPREPLY=( $(compgen -W "${branches}" -- "${cur}") )
+      fi
+      return 0
+      ;;
+    --remote)
+      if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        local remotes
+        remotes="$(git remote 2>/dev/null)"
+        COMPREPLY=( $(compgen -W "${remotes}" -- "${cur}") )
+      fi
+      return 0
+      ;;
+    *)
+      ;;
+  esac
+
+  # 서브커맨드 확인
+  local has_subcommand=""
+  for word in "${COMP_WORDS[@]:1:COMP_CWORD-1}"; do
+    if [[ "$word" == "delete" || "$word" == "add" ]]; then
+      has_subcommand="$word"
+      break
+    fi
+  done
+
+  # 서브커맨드가 아직 없으면 서브커맨드 및 --help 제안
+  if [[ -z "$has_subcommand" ]]; then
+    if [[ "${cur}" == -* ]]; then
+      COMPREPLY=( $(compgen -W "--help" -- "${cur}") )
+    else
+      COMPREPLY=( $(compgen -W "${subcommands}" -- "${cur}") )
+    fi
+    return 0
+  fi
+
+  # 서브커맨드가 있는 경우 해당 서브커맨드의 옵션 제안
+  if [[ "${cur}" == -* ]]; then
+    case "$has_subcommand" in
+      delete)
+        COMPREPLY=( $(compgen -W "${delete_opts}" -- "${cur}") )
+        ;;
+      add)
+        COMPREPLY=( $(compgen -W "${add_opts}" -- "${cur}") )
+        ;;
+    esac
+    return 0
+  fi
+}
+
+complete -F _git_branch_completion git-branch

@@ -21,6 +21,7 @@ INSTALL_PACKAGES=git
 # 3. CLI Tools (<category>/<canonical-name>, 콤마 구분)
 # ==============================================================================
 TOOLS=\
+  git/git-branch, \
   git/git-branch-cmd, \
   git/git-commit, \
   git/git-config, \
