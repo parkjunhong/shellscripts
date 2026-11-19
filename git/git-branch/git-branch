@@ -72,6 +72,25 @@ check_git_repository() {
 }
 
 ##
+# 저장소의 기본 브랜치 결정 (develop 우선, 없을 시 main -> master)
+##
+get_default_branch() {
+  if git rev-parse --verify "refs/heads/develop" >/dev/null 2>&1; then
+    echo "develop"
+  elif git rev-parse --verify "refs/remotes/${OPT_REMOTE}/develop" >/dev/null 2>&1; then
+    echo "develop"
+  elif git rev-parse --verify "refs/heads/main" >/dev/null 2>&1; then
+    echo "main"
+  elif git rev-parse --verify "refs/remotes/${OPT_REMOTE}/main" >/dev/null 2>&1; then
+    echo "main"
+  elif git rev-parse --verify "refs/heads/master" >/dev/null 2>&1; then
+    echo "master"
+  else
+    echo "develop"
+  fi
+}
+
+##
 # 보호 브랜치 여부 검사
 #
 # @param $1 {string} 브랜치명
@@ -94,7 +113,7 @@ show_help() {
   cat << EOF
 사용법:
   git-branch <서브커맨드> [옵션...]
-  git-branch delete [--branch <브랜치명,...>] [--pattern <패턴>] [옵션...]
+  git-branch delete [<브랜치명,...>] [--branch <브랜치명,...>] [--pattern <패턴>] [옵션...]
   git-branch add --branch <브랜치명> [--from <기준브랜치>] [옵션...]
   git-branch --help
 
@@ -104,6 +123,7 @@ show_help() {
 
 서브커맨드:
   delete                 로컬 및 원격 브랜치 일괄 삭제 (보호 브랜치 자동 보호)
+                         현재 체크아웃된 브랜치 삭제 시 기본 브랜치로 자동 전환 후 삭제
   add                    신규 브랜치 단일 생성 및 원격 자동 푸시
 
 [delete 서브커맨드 옵션]
@@ -128,16 +148,19 @@ show_help() {
   --help                 도움말 출력
 
 사용 예시:
-  # 1) 특정 작업 브랜치를 로컬과 원격에서 동시 삭제
+  # 1) 특정 작업 브랜치를 로컬과 원격에서 동시 삭제 (현재 브랜치일 경우 develop으로 자동 전환 후 삭제)
   git-branch delete --branch develop-20261119-c7NGVhK3
 
-  # 2) 날짜 패턴에 일치하는 브랜치 일괄 삭제 사전 시뮬레이션
+  # 2) delete 뒤에 직접 브랜치명을 전달하여 삭제
+  git-branch delete develop-20261119-c7NGVhK3
+
+  # 3) 날짜 패턴에 일치하는 브랜치 일괄 삭제 사전 시뮬레이션
   git-branch delete --pattern "develop-20261119-*" --dry-run
 
-  # 3) develop 브랜치에 머지 완료된 브랜치만 일괄 정리
+  # 4) develop 브랜치에 머지 완료된 브랜치만 일괄 정리
   git-branch delete --pattern "feature/*" --merged --target develop
 
-  # 4) 신규 브랜치 단일 생성 및 원격 자동 푸시
+  # 5) 신규 브랜치 단일 생성 및 원격 자동 푸시
   git-branch add --branch feature/user-profile --from develop
 
 EOF
@@ -157,93 +180,155 @@ parse_arguments() {
       delete)
         SUBCOMMAND="delete"
         shift 1
+        # delete 서브커맨드 하위 인자 파싱 (positional argument 브랜치명 지원)
+        while (( $# > 0 )); do
+          case "$1" in
+            --branch)
+              if (( $# < 2 )) || [[ "$2" =~ ^- ]]; then
+                echo -e "${CLR_RED}오류: '--branch' 옵션에 유효한 브랜치명을 지정해야 합니다.${CLR_RESET}" >&2
+                exit 1
+              fi
+              if [[ -z "$OPT_BRANCH" ]]; then
+                OPT_BRANCH="$2"
+              else
+                OPT_BRANCH="${OPT_BRANCH},$2"
+              fi
+              shift 2
+              ;;
+            --pattern)
+              if (( $# < 2 )) || [[ "$2" =~ ^- ]]; then
+                echo -e "${CLR_RED}오류: '--pattern' 옵션에 유효한 패턴을 지정해야 합니다.${CLR_RESET}" >&2
+                exit 1
+              fi
+              OPT_PATTERN="$2"
+              shift 2
+              ;;
+            --merged)
+              OPT_MERGED=true
+              shift 1
+              ;;
+            --target)
+              if (( $# < 2 )) || [[ "$2" =~ ^- ]]; then
+                echo -e "${CLR_RED}오류: '--target' 옵션에 기준 브랜치명을 지정해야 합니다.${CLR_RESET}" >&2
+                exit 1
+              fi
+              OPT_TARGET="$2"
+              shift 2
+              ;;
+            --scope)
+              if (( $# < 2 )) || [[ "$2" =~ ^- ]]; then
+                echo -e "${CLR_RED}오류: '--scope' 옵션에 'both', 'local', 'remote' 중 하나를 지정해야 합니다.${CLR_RESET}" >&2
+                exit 1
+              fi
+              case "$2" in
+                both|local|remote)
+                  OPT_SCOPE="$2"
+                  ;;
+                *)
+                  echo -e "${CLR_RED}오류: 지원하지 않는 scope 값입니다: '$2' (both, local, remote 중 선택)${CLR_RESET}" >&2
+                  exit 1
+                  ;;
+              esac
+              shift 2
+              ;;
+            --remote)
+              if (( $# < 2 )) || [[ "$2" =~ ^- ]]; then
+                echo -e "${CLR_RED}오류: '--remote' 옵션에 원격 저장소 이름을 지정해야 합니다.${CLR_RESET}" >&2
+                exit 1
+              fi
+              OPT_REMOTE="$2"
+              shift 2
+              ;;
+            --force)
+              OPT_FORCE=true
+              shift 1
+              ;;
+            --dry-run)
+              OPT_DRY_RUN=true
+              shift 1
+              ;;
+            --help)
+              show_help
+              exit 0
+              ;;
+            --*)
+              echo -e "${CLR_RED}오류: 'delete' 서브커맨드에서 알 수 없는 옵션입니다: '$1'${CLR_RESET}" >&2
+              show_help
+              exit 1
+              ;;
+            *)
+              # 플래그 없이 바로 입력된 브랜치명 처리
+              if [[ -z "$OPT_BRANCH" ]]; then
+                OPT_BRANCH="$1"
+              else
+                OPT_BRANCH="${OPT_BRANCH},$1"
+              fi
+              shift 1
+              ;;
+          esac
+        done
+        break
         ;;
       add)
         SUBCOMMAND="add"
         shift 1
-        ;;
-      --branch)
-        if (( $# < 2 )) || [[ "$2" =~ ^- ]]; then
-          echo -e "${CLR_RED}오류: '--branch' 옵션에 유효한 브랜치명을 지정해야 합니다.${CLR_RESET}" >&2
-          exit 1
-        fi
-        OPT_BRANCH="$2"
-        shift 2
-        ;;
-      --pattern)
-        if (( $# < 2 )) || [[ "$2" =~ ^- ]]; then
-          echo -e "${CLR_RED}오류: '--pattern' 옵션에 유효한 패턴을 지정해야 합니다.${CLR_RESET}" >&2
-          exit 1
-        fi
-        OPT_PATTERN="$2"
-        shift 2
-        ;;
-      --merged)
-        OPT_MERGED=true
-        shift 1
-        ;;
-      --target)
-        if (( $# < 2 )) || [[ "$2" =~ ^- ]]; then
-          echo -e "${CLR_RED}오류: '--target' 옵션에 기준 브랜치명을 지정해야 합니다.${CLR_RESET}" >&2
-          exit 1
-        fi
-        OPT_TARGET="$2"
-        shift 2
-        ;;
-      --scope)
-        if (( $# < 2 )) || [[ "$2" =~ ^- ]]; then
-          echo -e "${CLR_RED}오류: '--scope' 옵션에 'both', 'local', 'remote' 중 하나를 지정해야 합니다.${CLR_RESET}" >&2
-          exit 1
-        fi
-        case "$2" in
-          both|local|remote)
-            OPT_SCOPE="$2"
-            ;;
-          *)
-            echo -e "${CLR_RED}오류: 지원하지 않는 scope 값입니다: '$2' (both, local, remote 중 선택)${CLR_RESET}" >&2
-            exit 1
-            ;;
-        esac
-        shift 2
-        ;;
-      --remote)
-        if (( $# < 2 )) || [[ "$2" =~ ^- ]]; then
-          echo -e "${CLR_RED}오류: '--remote' 옵션에 원격 저장소 이름을 지정해야 합니다.${CLR_RESET}" >&2
-          exit 1
-        fi
-        OPT_REMOTE="$2"
-        shift 2
-        ;;
-      --force)
-        OPT_FORCE=true
-        shift 1
-        ;;
-      --dry-run)
-        OPT_DRY_RUN=true
-        shift 1
-        ;;
-      --from)
-        if (( $# < 2 )) || [[ "$2" =~ ^- ]]; then
-          echo -e "${CLR_RED}오류: '--from' 옵션에 기준 브랜치명을 지정해야 합니다.${CLR_RESET}" >&2
-          exit 1
-        fi
-        OPT_FROM="$2"
-        shift 2
-        ;;
-      --push)
-        OPT_PUSH=true
-        shift 1
-        ;;
-      --no-push)
-        OPT_PUSH=false
-        shift 1
+        while (( $# > 0 )); do
+          case "$1" in
+            --branch)
+              if (( $# < 2 )) || [[ "$2" =~ ^- ]]; then
+                echo -e "${CLR_RED}오류: '--branch' 옵션에 생성할 브랜치명을 지정해야 합니다.${CLR_RESET}" >&2
+                exit 1
+              fi
+              OPT_BRANCH="$2"
+              shift 2
+              ;;
+            --from)
+              if (( $# < 2 )) || [[ "$2" =~ ^- ]]; then
+                echo -e "${CLR_RED}오류: '--from' 옵션에 기준 브랜치명을 지정해야 합니다.${CLR_RESET}" >&2
+                exit 1
+              fi
+              OPT_FROM="$2"
+              shift 2
+              ;;
+            --push)
+              OPT_PUSH=true
+              shift 1
+              ;;
+            --no-push)
+              OPT_PUSH=false
+              shift 1
+              ;;
+            --remote)
+              if (( $# < 2 )) || [[ "$2" =~ ^- ]]; then
+                echo -e "${CLR_RED}오류: '--remote' 옵션에 원격 저장소 이름을 지정해야 합니다.${CLR_RESET}" >&2
+                exit 1
+              fi
+              OPT_REMOTE="$2"
+              shift 2
+              ;;
+            --dry-run)
+              OPT_DRY_RUN=true
+              shift 1
+              ;;
+            --help)
+              show_help
+              exit 0
+              ;;
+            *)
+              echo -e "${CLR_RED}오류: 'add' 서브커맨드에서 알 수 없는 인자입니다: '$1'${CLR_RESET}" >&2
+              show_help
+              exit 1
+              ;;
+          esac
+        done
+        break
         ;;
       --help)
         show_help
         exit 0
         ;;
       *)
-        echo -e "${CLR_RED}오류: 알 수 없는 옵션 또는 인자입니다: '$1'${CLR_RESET}" >&2
+        echo -e "${CLR_RED}오류: 알 수 없는 서브커맨드 또는 옵션입니다: '$1'${CLR_RESET}" >&2
         show_help
         exit 1
         ;;
@@ -263,6 +348,8 @@ parse_arguments() {
 run_delete_command() {
   local current_branch
   current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
+  local default_branch
+  default_branch="$(get_default_branch)"
 
   # 삭제 기준 타겟 브랜치 유효성 확인
   if [[ "$OPT_MERGED" == "true" ]]; then
@@ -280,6 +367,8 @@ run_delete_command() {
   echo "$SEPARATOR_LINE"
   echo -e "  - 삭제 대상 범위   : ${CLR_CYAN}${OPT_SCOPE^^}${CLR_RESET} (local: 로컬, remote: 원격, both: 로컬+원격)"
   echo -e "  - 원격 저장소 명   : ${CLR_BOLD}${OPT_REMOTE}${CLR_RESET}"
+  echo -e "  - 현재 작업 브랜치 : ${CLR_BOLD}${current_branch}${CLR_RESET}"
+  echo -e "  - 기본 전환 브랜치 : ${CLR_GREEN}${default_branch}${CLR_RESET}"
   if [[ -n "$OPT_BRANCH" ]]; then
     echo -e "  - 지정 브랜치 목록 : ${CLR_BOLD}${OPT_BRANCH}${CLR_RESET}"
   fi
@@ -355,6 +444,7 @@ run_delete_command() {
   local -a local_del_list=()
   local -a remote_del_list=()
   local -a skipped_list=()
+  local need_switch_branch=false
 
   # 머지된 로컬/원격 브랜치 목록 조회
   local merged_local_branches=""
@@ -405,14 +495,12 @@ run_delete_command() {
       fi
     fi
 
-    # 로컬 삭제 대상 판별
+    # 로컬 삭제 대상 판별 (현재 브랜치인 경우 기본 브랜치로 자동 전환 후 삭제 예정으로 등록)
     if [[ "$OPT_SCOPE" == "both" || "$OPT_SCOPE" == "local" ]] && [[ "$has_local" == "true" ]]; then
       if [[ "$b" == "$current_branch" ]]; then
-        echo -e "   ${CLR_YELLOW}⚠️  [현재 브랜치] '${b}' 은(는) 현재 체크아웃된 브랜치이므로 로컬 삭제를 건너뜁니다.${CLR_RESET}"
-        skipped_list+=("${b} (현재 체크아웃됨)")
-      else
-        local_del_list+=("$b")
+        need_switch_branch=true
       fi
+      local_del_list+=("$b")
     fi
 
     # 원격 삭제 대상 판별
@@ -438,6 +526,9 @@ run_delete_command() {
   else
     echo -e "  - 원격 브랜치: 없음"
   fi
+  if [[ "$need_switch_branch" == "true" ]]; then
+    echo -e "  - 브랜치 자동 전환: ${CLR_YELLOW}현재 브랜치('${current_branch}') 삭제를 위해 '${default_branch}'(으)로 이동 후 삭제 및 잔류${CLR_RESET}"
+  fi
 
   # Dry-run 분기
   if [[ "$OPT_DRY_RUN" == "true" ]]; then
@@ -456,7 +547,17 @@ run_delete_command() {
     fi
   fi
 
-  # 4. 실제 삭제 수행
+  # 4. 현재 브랜치 삭제가 포함된 경우 기본 브랜치로 자동 이동
+  if [[ "$need_switch_branch" == "true" ]]; then
+    echo -e "\n🔄 [브랜치 전환] 현재 브랜치('${current_branch}') 삭제를 위해 기본 브랜치('${default_branch}')(으)로 이동합니다..."
+    if ! git switch "$default_branch"; then
+      echo -e "${CLR_RED}❌ 기본 브랜치 '${default_branch}'(으)로 전환에 실패하여 작업을 중단합니다.${CLR_RESET}" >&2
+      exit 1
+    fi
+    echo -e "${CLR_GREEN}✅ '${default_branch}' 브랜치로 안전하게 전환되었습니다.${CLR_RESET}"
+  fi
+
+  # 5. 실제 삭제 수행
   local local_success_count=0
   local local_fail_count=0
   local remote_success_count=0
@@ -499,7 +600,7 @@ run_delete_command() {
     done
   fi
 
-  # 5. 결과 요약 보고
+  # 6. 결과 요약 보고
   echo "$SEPARATOR_LINE"
   echo -e "${CLR_BOLD}📊 [작업 요약 보고]${CLR_RESET}"
   echo "$SEPARATOR_LINE"
@@ -507,6 +608,9 @@ run_delete_command() {
   echo -e "  - 원격 브랜치 삭제  : ${CLR_GREEN}성공 ${remote_success_count}개${CLR_RESET} / ${CLR_RED}실패 ${remote_fail_count}개${CLR_RESET}"
   if (( ${#skipped_list[@]} > 0 )); then
     echo -e "  - 스킵/보호 브랜치 : ${CLR_YELLOW}${#skipped_list[@]}개${CLR_RESET} (${skipped_list[*]})"
+  fi
+  if [[ "$need_switch_branch" == "true" ]]; then
+    echo -e "  - 현재 위치 브랜치 : ${CLR_CYAN}$(git rev-parse --abbrev-ref HEAD)${CLR_RESET} (기본 브랜치로 유지됨)"
   fi
   echo "$SEPARATOR_LINE"
 }

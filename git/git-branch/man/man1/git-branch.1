@@ -9,11 +9,13 @@ git-branch \- Manage Git branch lifecycles (batch deletion and single addition)
 .br
 .B git-branch
 \fIdelete\fR
+[\fInames\fR]
 [\fB\-\-branch\fR \fInames\fR]
 [\fB\-\-pattern\fR \fIglob\fR]
 [\fB\-\-merged\fR]
 [\fB\-\-target\fR \fIbranch\fR]
 [\fB\-\-scope\fR \fIboth|local|remote\fR]
+[\fB\-\-remote\fR \fIremote\fR]
 [\fB\-\-force\fR]
 [\fB\-\-dry-run\fR]
 .br
@@ -31,7 +33,7 @@ git-branch \- Manage Git branch lifecycles (batch deletion and single addition)
 .SH DESCRIPTION
 Git 저장소에서 로컬 및 원격(\fIorigin\fR) 브랜치를 일괄 삭제(\fBdelete\fR)하거나 안전하게 신규 브랜치를 단일 추가(\fBadd\fR)하는 브랜치 라이프사이클 관리 CLI 도구입니다.
 
-보안 원칙에 따라 스크립트 자체는 일반 사용자 권한으로 실행되어야 하며(외부 \fBsudo\fR 직접 실행 차단), 핵심 보호 브랜치(\fImain\fR, \fImaster\fR, \fIdevelop\fR, \fIrelease\fR, \fIstaging\fR, \fIproduction\fR)는 삭제 대상에서 원천 차단됩니다. 또한 현재 체크아웃된 브랜치(\fIHEAD\fR)는 로컬 삭제에서 자동으로 보호됩니다.
+보안 원칙에 따라 스크립트 자체는 일반 사용자 권한으로 실행되어야 하며(외부 \fBsudo\fR 직접 실행 차단), 핵심 보호 브랜치(\fImain\fR, \fImaster\fR, \fIdevelop\fR, \fIrelease\fR, \fIstaging\fR, \fIproduction\fR)는 삭제 대상에서 원천 차단됩니다. 또한 현재 체크아웃된 브랜치(\fIHEAD\fR)가 삭제 대상에 포함된 경우, 저장소의 기본 브랜치(\fIdevelop\fR 또는 \fImain\fR)로 자동 전환한 후 안전하게 삭제합니다.
 
 .SH SUBCOMMANDS
 .TP
@@ -124,7 +126,7 @@ Git 저장소에서 로컬 및 원격(\fIorigin\fR) 브랜치를 일괄 삭제(\
 .B git-branch
 는 Bash 자동완성 스크립트(\fIgit-branch.completion\fR)를 지원합니다.
 .BR scriptctl (1)
-을 통해 설치 시 시스템 표준 completion 경로에 자동으로 등록되며, 서브커맨드(\fBdelete\fR, \fBadd\fR), 옵션 목록, 그리고 현재 Git 저장소의 브랜치 이름을 지능적으로 자동완성합니다.
+을 통해 설치 시 시스템 표준 completion 경로에 자동으로 등록되며, 서브커맨드(\fBdelete\fR, \fBadd\fR), 옵션 목록, 그리고 현재 Git 저장소의 로컬 및 원격 머지 브랜치 목록을 지능적으로 자동완성합니다. \fBdelete <TAB>\fR 입력 시 옵션과 함께 원격 접두사(\fIremotes/<remote>/\fR)가 제거된 브랜치들을 추천하며, \fB\-\-branch\fR 옵션 뒤에서는 콤마(\fI,\fR) 다중 입력 완성을 지원합니다.
 
 .SH SEE ALSO
 .BR git (1),
