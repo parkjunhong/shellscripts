@@ -1,0 +1,86 @@
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : ngxconf-ctl completion
+# @license  : Apache License 2.0
+# @since    : 2026-11-19
+# @desc     : Bash completion for ngxconf-ctl
+# @installation :
+#   1. insert 'source <path>/ngxconf-ctl.completion' into ~/.bashrc or ~/.bash_profile for personal usage.
+#   2. copy to /etc/bash_completion.d/ for all users.
+# =======================================
+
+_ngxconf_ctl_completion() {
+  local cur prev words cword
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  local subcommands="http2"
+  local http2_actions="enable disable"
+  local global_opts="--conf-dir --dry-run --no-backup --nginx-version -h --help"
+
+  # --conf-dir 옵션 뒤에서는 디렉토리 경로 자동완성
+  case "${prev}" in
+    --conf-dir)
+      COMPREPLY=( $(compgen -d -- "${cur}") )
+      return 0
+      ;;
+    --nginx-version)
+      return 0
+      ;;
+    http2)
+      COMPREPLY=( $(compgen -W "${http2_actions}" -- "${cur}") )
+      return 0
+      ;;
+    *)
+      ;;
+  esac
+
+  # 이미 서브커맨드가 입력되었는지 확인
+  local has_subcommand=0
+  local has_action=0
+  for word in "${COMP_WORDS[@]:1:COMP_CWORD-1}"; do
+    if [[ "$word" == "http2" ]]; then
+      has_subcommand=1
+    elif [[ "$word" == "enable" || "$word" == "disable" ]]; then
+      has_action=1
+    fi
+  done
+
+  # 옵션 형태(-)로 시작하는 경우
+  if [[ "${cur}" == -* ]]; then
+    local available_opts=""
+    for opt in $global_opts; do
+      local is_used=0
+      for word in "${COMP_WORDS[@]:1:COMP_CWORD-1}"; do
+        if [[ "$word" == "$opt" ]]; then
+          is_used=1
+          break
+        fi
+      done
+      if (( is_used == 0 )); then
+        available_opts+="$opt "
+      fi
+    done
+    COMPREPLY=( $(compgen -W "${available_opts}" -- "${cur}") )
+    return 0
+  fi
+
+  # 아직 서브커맨드가 없으면 서브커맨드 및 옵션 추천
+  if (( has_subcommand == 0 )); then
+    COMPREPLY=( $(compgen -W "${subcommands} ${global_opts}" -- "${cur}") )
+    return 0
+  fi
+
+  # 서브커맨드는 있고 액션이 없으면 액션 추천
+  if (( has_action == 0 )); then
+    COMPREPLY=( $(compgen -W "${http2_actions} ${global_opts}" -- "${cur}") )
+    return 0
+  fi
+
+  # 둘 다 있으면 옵션 추천
+  COMPREPLY=( $(compgen -W "${global_opts}" -- "${cur}") )
+  return 0
+}
+
+complete -F _ngxconf_ctl_completion ngxconf-ctl
