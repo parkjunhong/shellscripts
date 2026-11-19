@@ -17,7 +17,7 @@ _ngxconf_ctl_completion() {
 
   local subcommands="http2"
   local http2_actions="enable disable"
-  local global_opts="--conf-dir --dry-run --no-backup --nginx-version -h --help"
+  local global_opts="--conf-dir --dry-run --no-backup --nginx-version --help"
 
   # --conf-dir 옵션 뒤에서는 디렉토리 경로 자동완성
   case "${prev}" in
