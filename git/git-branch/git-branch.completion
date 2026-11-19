@@ -9,6 +9,38 @@
 #   2. copy to /etc/bash_completion.d/ for all users.
 # =======================================
 
+##
+# 로컬 및 원격 저장소의 브랜치 목록을 수집하여 중복 제거 후 출력
+#
+# @param $1 {string} 원격 저장소 이름 (기본값: origin)
+##
+_git_branch_get_merged_branches() {
+  local remote="${1:-origin}"
+  local -A seen=()
+  local -a branch_list=()
+
+  # 1. 로컬 브랜치 수집 (refs/heads/)
+  while IFS= read -r lb; do
+    [[ -n "$lb" ]] || continue
+    if [[ -z "${seen[$lb]:-}" ]]; then
+      seen["$lb"]=1
+      branch_list+=("$lb")
+    fi
+  done < <(git for-each-ref --format='%(refname:short)' refs/heads/ 2>/dev/null || true)
+
+  # 2. 원격 브랜치 수집 (refs/remotes/<remote>/) - 접두사 제거
+  while IFS= read -r rb; do
+    [[ -n "$rb" && "$rb" != "${remote}/HEAD" ]] || continue
+    local short_b="${rb#${remote}/}"
+    if [[ -n "$short_b" && -z "${seen[$short_b]:-}" ]]; then
+      seen["$short_b"]=1
+      branch_list+=("$short_b")
+    fi
+  done < <(git for-each-ref --format='%(refname:short)' "refs/remotes/${remote}/" 2>/dev/null || true)
+
+  echo "${branch_list[*]}"
+}
+
 _git_branch_completion() {
   local cur prev words cword
   COMPREPLY=()
@@ -19,16 +51,33 @@ _git_branch_completion() {
   local delete_opts="--branch --pattern --merged --target --scope --remote --force --dry-run --help"
   local add_opts="--branch --from --push --no-push --remote --dry-run --help"
 
-  # 옵션 인자 값 제안
+  # 명령줄에서 --remote 값 추출 (기본값: origin)
+  local remote_val="origin"
+  local idx=0
+  for (( idx=1; idx < COMP_CWORD; idx++ )); do
+    if [[ "${COMP_WORDS[idx]}" == "--remote" && $((idx + 1)) -lt ${#COMP_WORDS[@]} ]]; then
+      remote_val="${COMP_WORDS[idx+1]}"
+    fi
+  done
+
+  # 1. 특정 옵션 뒤에서의 완성
   case "${prev}" in
     --scope)
       COMPREPLY=( $(compgen -W "both local remote" -- "${cur}") )
       return 0
       ;;
+    --remote)
+      if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        local remotes
+        remotes="$(git remote 2>/dev/null || echo 'origin')"
+        COMPREPLY=( $(compgen -W "${remotes}" -- "${cur}") )
+      fi
+      return 0
+      ;;
     --target|--from)
       if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
         local branches
-        branches="$(git for-each-ref --format='%(refname:short)' refs/heads/ 2>/dev/null)"
+        branches="$(_git_branch_get_merged_branches "$remote_val")"
         COMPREPLY=( $(compgen -W "${branches}" -- "${cur}") )
       fi
       return 0
@@ -36,16 +85,16 @@ _git_branch_completion() {
     --branch)
       if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
         local branches
-        branches="$(git for-each-ref --format='%(refname:short)' refs/heads/ 2>/dev/null)"
-        COMPREPLY=( $(compgen -W "${branches}" -- "${cur}") )
-      fi
-      return 0
-      ;;
-    --remote)
-      if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        local remotes
-        remotes="$(git remote 2>/dev/null)"
-        COMPREPLY=( $(compgen -W "${remotes}" -- "${cur}") )
+        branches="$(_git_branch_get_merged_branches "$remote_val")"
+        # 콤마로 구분된 다중 입력 지원 (예: branch1,branch2,...)
+        if [[ "$cur" == *,* ]]; then
+          local prefix="${cur%,*},"
+          local sub_cur="${cur##*,}"
+          local matches=( $(compgen -W "${branches}" -- "${sub_cur}") )
+          COMPREPLY=( "${matches[@]/#/${prefix}}" )
+        else
+          COMPREPLY=( $(compgen -W "${branches}" -- "${cur}") )
+        fi
       fi
       return 0
       ;;
@@ -53,7 +102,7 @@ _git_branch_completion() {
       ;;
   esac
 
-  # 서브커맨드 확인
+  # 2. 서브커맨드 확인
   local has_subcommand=""
   for word in "${COMP_WORDS[@]:1:COMP_CWORD-1}"; do
     if [[ "$word" == "delete" || "$word" == "add" ]]; then
@@ -62,7 +111,7 @@ _git_branch_completion() {
     fi
   done
 
-  # 서브커맨드가 아직 없으면 서브커맨드 및 --help 제안
+  # 3. 서브커맨드가 아직 없으면: 서브커맨드 및 --help 제안
   if [[ -z "$has_subcommand" ]]; then
     if [[ "${cur}" == -* ]]; then
       COMPREPLY=( $(compgen -W "--help" -- "${cur}") )
@@ -72,18 +121,40 @@ _git_branch_completion() {
     return 0
   fi
 
-  # 서브커맨드가 있는 경우 해당 서브커맨드의 옵션 제안
-  if [[ "${cur}" == -* ]]; then
-    case "$has_subcommand" in
-      delete)
-        COMPREPLY=( $(compgen -W "${delete_opts}" -- "${cur}") )
-        ;;
-      add)
-        COMPREPLY=( $(compgen -W "${add_opts}" -- "${cur}") )
-        ;;
-    esac
-    return 0
+  # 4. 서브커맨드가 있는 경우:
+  # Git 저장소 브랜치 목록 확보 (로컬 + 원격 접두사 제거 머지 목록)
+  local all_branches=""
+  if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    all_branches="$(_git_branch_get_merged_branches "$remote_val")"
   fi
+
+  case "$has_subcommand" in
+    delete)
+      if [[ "${cur}" == -* ]]; then
+        COMPREPLY=( $(compgen -W "${delete_opts}" -- "${cur}") )
+      else
+        # 콤마 구분 지원
+        if [[ "$cur" == *,* ]]; then
+          local prefix="${cur%,*},"
+          local sub_cur="${cur##*,}"
+          local matches=( $(compgen -W "${all_branches}" -- "${sub_cur}") )
+          COMPREPLY=( "${matches[@]/#/${prefix}}" )
+        else
+          # cur이 빈 문자열이거나 브랜치명 검색 시 옵션들과 머지된 브랜치 목록을 모두 제안
+          COMPREPLY=( $(compgen -W "${delete_opts} ${all_branches}" -- "${cur}") )
+        fi
+      fi
+      return 0
+      ;;
+    add)
+      if [[ "${cur}" == -* ]]; then
+        COMPREPLY=( $(compgen -W "${add_opts}" -- "${cur}") )
+      else
+        COMPREPLY=( $(compgen -W "${add_opts}" -- "${cur}") )
+      fi
+      return 0
+      ;;
+  esac
 }
 
 complete -F _git_branch_completion git-branch

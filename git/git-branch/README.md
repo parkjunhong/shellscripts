@@ -13,7 +13,7 @@ Git 저장소에서 로컬 및 원격(`origin`) 브랜치를 안전하고 간편
    * `--scope` 옵션을 통해 로컬만(`local`), 원격만(`remote`), 또는 둘 다(`both`, 기본값) 삭제하도록 범위를 유연하게 지정할 수 있습니다.
 2. **다중 안전 가드레일 (Safety Guardrails)**
    * **보호 브랜치 차단**: `main`, `master`, `develop`, `release`, `staging`, `production` 등 핵심 보호 브랜치는 `--force` 지정 여부와 무관하게 삭제가 원천 차단됩니다.
-   * **현재 브랜치 보호**: 현재 체크아웃 중인 브랜치(`HEAD`)는 로컬 삭제 대상에서 자동으로 제외하여 안전성을 보장합니다.
+   * **현재 브랜치 자동 이동**: 현재 체크아웃 중인 브랜치(`HEAD`)가 삭제 대상에 포함된 경우, 저장소의 기본 브랜치(`develop` → `main` → `master` 우선순위)로 안전하게 자동 전환(`git switch`)한 후 로컬/원격 삭제를 완수하고 기본 브랜치에 머무릅니다.
    * **머지 상태 검증**: `--merged` 옵션을 통해 기준 타겟 브랜치(`develop`/`main`)에 머지 완료된 브랜치만 선별하여 안전하게 삭제(`git branch -d`)합니다. 미머지 브랜치 삭제는 `--force`(`git branch -D`) 명시 시에만 허용됩니다.
 3. **단일 브랜치 안전 추가 및 원격 자동 푸시 (`add`)**
    * 의도치 않은 다중 생성을 방지하기 위해 단일 브랜치 1개만 생성을 허용합니다.
@@ -30,6 +30,8 @@ Git 저장소에서 로컬 및 원격(`origin`) 브랜치를 안전하고 간편
 ### 기본 문법
 ```bash
 git-branch <서브커맨드> [옵션...]
+git-branch delete [<브랜치명,...>] [--branch <브랜치명,...>] [--pattern <패턴>] [옵션...]
+git-branch add --branch <브랜치명> [--from <기준브랜치>] [옵션...]
 ```
 
 ### 서브커맨드
@@ -43,17 +45,17 @@ git-branch <서브커맨드> [옵션...]
 ### `delete` 서브커맨드 옵션
 | 옵션 | 필수 여부 | 기본값 | 설명 |
 | :--- | :---: | :---: | :--- |
-| `--branch <names>` | 조건부 필수 | - | 삭제할 브랜치명 직접 지정 (콤마로 구분하여 다중 지정 가능) |
+| `--branch <names>` | 조건부 필수 | - | 삭제할 브랜치명 직접 지정 (서브커맨드 뒤에 직접 브랜치명을 전달하거나 `--branch`로 전달 가능하며 콤마로 다중 지정 가능) |
 | `--pattern <glob>` | 조건부 필수 | - | 글롭 와일드카드 패턴 매칭 삭제 (예: `develop-2026*`, `feature/*`) |
 | `--merged` | 선택 | `false` | 기준 타겟 브랜치에 머지 완료된 브랜치만 필터링하여 삭제 |
 | `--target <branch>` | 선택 | `develop` | 머지 여부 판정 기준 브랜치 (기본값: `develop`, 없을 시 `main`) |
 | `--scope <scope>` | 선택 | `both` | 삭제 범위 지정 (`both`: 로컬+원격 동시, `local`: 로컬만, `remote`: 원격만) |
-| `--remote <name>` | 선택 | `origin` | 원격 저장소 이름 |
+| `--remote <name>` | 선택 | `origin` | 원격 저장소 이름 (미지정 시 기본값 `origin`) |
 | `--force` | 선택 | `false` | 머지되지 않은 브랜치 강제 삭제(`-D`) 및 확인 프롬프트 생략 |
 | `--dry-run` | 선택 | `false` | 실제 삭제를 수행하지 않고 삭제 대상 브랜치 목록 및 실행 계획 시뮬레이션 |
 | `--help` | 선택 | - | 도움말 및 옵션 안내 출력 |
 
-> **참고**: `--branch` 또는 `--pattern` 중 적어도 하나를 지정해야 합니다.
+> **참고**: 위치 인자(Positional argument), `--branch` 또는 `--pattern` 중 적어도 하나를 지정해야 합니다.
 
 ---
 
@@ -74,26 +76,35 @@ git-branch <서브커맨드> [옵션...]
 
 ```bash
 # 1) 머지 완료된 특정 작업 브랜치를 로컬과 원격에서 동시 삭제
+#    (현재 체크아웃된 브랜치일 경우 develop 또는 main으로 자동 전환 후 삭제)
 git-branch delete --branch develop-20261119-c7NGVhK3
 
-# 2) 날짜 패턴에 일치하는 브랜치 일괄 삭제 사전 시뮬레이션 (Dry-run)
+# 2) 서브커맨드 뒤에 직접 브랜치명을 전달하여 간편 삭제
+git-branch delete develop-20261119-c7NGVhK3
+
+# 3) 날짜 패턴에 일치하는 브랜치 일괄 삭제 사전 시뮬레이션 (Dry-run)
 git-branch delete --pattern "develop-20261119-*" --dry-run
 
-# 3) develop 브랜치에 머지 완료된 feature/* 브랜치만 일괄 정리
+# 4) develop 브랜치에 머지 완료된 feature/* 브랜치만 일괄 정리
 git-branch delete --pattern "feature/*" --merged --target develop
 
-# 4) 미머지 브랜치를 포함하여 확인 프롬프트 없이 강제 삭제
+# 5) 미머지 브랜치를 포함하여 확인 프롬프트 없이 강제 삭제
 git-branch delete --branch hotfix/temp-fix --force
 
-# 5) develop 브랜치로부터 신규 feature 브랜치 생성 및 원격 자동 푸시
+# 6) develop 브랜치로부터 신규 feature 브랜치 생성 및 원격 자동 푸시
 git-branch add --branch feature/user-profile --from develop
 ```
 
 ---
 
-## 💻 설치 안내
+## 💻 설치 및 자동완성 안내
 
 저장소의 `utils/scriptctl` 도구를 사용하여 개인 실행 경로(`~/bin`) 또는 시스템 전역 경로에 간편하게 설치할 수 있습니다. 설치 시 Bash 자동완성 스크립트와 `man` 매뉴얼 페이지도 시스템 표준 경로에 자동으로 등록됩니다.
+
+### Bash Completion 주요 기능
+- `git-branch delete <TAB>` 입력 시 사용 가능한 옵션 및 **로컬과 원격(`remotes/<remote>/` 제거) 브랜치의 고유 머지 목록**을 즉시 제안합니다.
+- 명령줄에 `--remote <원격명>` 지정 시 해당 원격 저장소 기준 브랜치를 파싱합니다 (기본값: `origin`).
+- `--branch` 뒤에서 콤마(`,`) 다중 입력 시 연속 브랜치 자동완성을 지원합니다.
 
 ```bash
 # 개인 환경 설치 (~/bin, 사용자 자동완성 및 매뉴얼 등록)
