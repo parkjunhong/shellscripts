@@ -1,0 +1,495 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# @author      : parkjunhong77@gmail.com
+# @title       : ngxconf-ctl
+# @license     : Apache License 2.0
+# @since       : 2026-11-19
+# @desc        : Nginx 버전 기반 설정 파일(conf) 옵션(HTTP/2 등) 제어 CLI 도구
+# @installation:
+#   1. 개인 환경: utils/scriptctl/scriptctl install --script ./ngxconf-ctl --target local
+#   2. 시스템 전역: utils/scriptctl/scriptctl install --script ./ngxconf-ctl --target global
+# ==============================================================================
+
+set -Eeuo pipefail
+
+# 구분줄 표준 길이 (86자 지정 규격 준수)
+SEPARATOR_LINE="======================================================================================"
+
+# ANSI 컬러 정의 (터미널 TTY 연결 시에만 활성화)
+if [[ -t 1 ]]; then
+  CLR_RESET="\033[0m"
+  CLR_BOLD="\033[1m"
+  CLR_GREEN="\033[32m"
+  CLR_YELLOW="\033[33m"
+  CLR_RED="\033[31m"
+  CLR_CYAN="\033[36m"
+  CLR_GRAY="\033[90m"
+else
+  CLR_RESET=""
+  CLR_BOLD=""
+  CLR_GREEN=""
+  CLR_YELLOW=""
+  CLR_RED=""
+  CLR_CYAN=""
+  CLR_GRAY=""
+fi
+
+# 기본 설정값
+OPT_CONF_DIR="/etc/nginx/conf.d"
+OPT_DRY_RUN=false
+OPT_BACKUP=true
+OPT_NGINX_VERSION=""
+
+SUBCOMMAND=""
+ACTION=""
+
+##
+# 도움말 출력
+##
+show_help() {
+  cat << EOF
+사용법:
+  ngxconf-ctl [전역 옵션...] <서브커맨드> <액션> [옵션...]
+  ngxconf-ctl http2 <enable|disable> [--conf-dir <경로>] [--dry-run]
+  ngxconf-ctl --help
+
+설명:
+  서버에 설치된 Nginx 버전을 자동 감지하여 Nginx 가상호스트 설정 파일(*.conf)의
+  옵션을 안전하게 활성화하거나 비활성화합니다.
+  - Nginx 1.25.1 이상 : 최신 표준 독립 지시어 ('http2 on;') 방식으로 제어
+  - Nginx 1.25.1 미만 : 레거시 'listen ... http2;' 파라미터 방식으로 호환 제어
+
+서브커맨드:
+  http2                  HTTP/2 프로토콜 활성화/비활성화 제어
+    - enable             HTTP/2 설정 활성화
+                         (주석 '# http2 on;' 해제, 없을 시 'listen' 아래에 신규 추가)
+    - disable            HTTP/2 설정 비활성화
+                         ('http2 on;' 주석 처리, 없을 시 '설정 없음' 안내)
+
+옵션 상세:
+  --conf-dir <경로>      작업 대상 (*.conf) 디렉토리 경로 (기본값: /etc/nginx/conf.d)
+                         여러 경로 지정 시 콤마(,)로 구분 (예: /etc/nginx/conf.d,/etc/nginx/sites-available)
+  --dry-run              실제 파일을 수정하지 않고 변경 예정 내역(diff) 및 실행 과정 시뮬레이션
+  --no-backup            파일 변경 시 백업본(.bak) 생성을 생략
+  --nginx-version <버전> Nginx 버전을 수동 지정 (미지정 시 'nginx -v' 자동 감지)
+  -h, --help             도움말 출력
+
+사용 예시:
+  # 1) 기본 설정 디렉토리(/etc/nginx/conf.d)의 모든 *.conf 에 대해 HTTP/2 활성화
+  ngxconf-ctl http2 enable
+
+  # 2) 특정 디렉토리 지정 및 변경 내역 사전 시뮬레이션 (--dry-run)
+  ngxconf-ctl http2 enable --conf-dir /etc/nginx/sites-available --dry-run
+
+  # 3) 여러 디렉토리의 설정 파일에 대해 HTTP/2 비활성화
+  ngxconf-ctl http2 disable --conf-dir /etc/nginx/conf.d,/etc/nginx/vhosts
+
+EOF
+}
+
+##
+# 버전 비교 함수 (v1 >= v2 검사)
+#
+# @param $1 {string} 버전 1 (예: 1.26.2)
+# @param $2 {string} 버전 2 (예: 1.25.1)
+#
+# @return 0 참 (v1 >= v2), 1 거짓 (v1 < v2)
+##
+version_ge() {
+  local v1="$1"
+  local v2="$2"
+  printf '%s\n%s\n' "$v2" "$v1" | sort -V -C
+}
+
+##
+# Nginx 버전 감지 및 구문 모드 결정
+##
+detect_nginx_info() {
+  DETECTED_VERSION=""
+  NGINX_MODE="directive" # 기본값: directive (1.25.1+)
+
+  if [[ -n "$OPT_NGINX_VERSION" ]]; then
+    DETECTED_VERSION="$OPT_NGINX_VERSION"
+  elif command -v nginx >/dev/null 2>&1; then
+    local raw_v
+    raw_v=$(nginx -v 2>&1 || true)
+    local ver_regex='nginx/([0-9]+\.[0-9]+(\.[0-9]+)?)'
+    if [[ "$raw_v" =~ $ver_regex ]]; then
+      DETECTED_VERSION="${BASH_REMATCH[1]}"
+    fi
+  fi
+
+  if [[ -n "$DETECTED_VERSION" ]]; then
+    if version_ge "$DETECTED_VERSION" "1.25.1"; then
+      NGINX_MODE="directive"
+    else
+      NGINX_MODE="listen"
+    fi
+  else
+    DETECTED_VERSION="미감지 (최신 1.25.1+ 표준 문법 적용)"
+    NGINX_MODE="directive"
+  fi
+}
+
+##
+# 커맨드라인 인자 파싱
+##
+parse_arguments() {
+  if (( $# == 0 )); then
+    show_help
+    exit 1
+  fi
+
+  while (( $# > 0 )); do
+    case "$1" in
+      http2)
+        SUBCOMMAND="http2"
+        if (( $# < 2 )) || [[ "$2" =~ ^- ]]; then
+          echo -e "${CLR_RED}오류: 'http2' 서브커맨드 뒤에 'enable' 또는 'disable' 액션을 지정해야 합니다.${CLR_RESET}" >&2
+          echo "예시: ngxconf-ctl http2 enable" >&2
+          exit 1
+        fi
+        case "$2" in
+          enable|disable)
+            ACTION="$2"
+            shift 2
+            ;;
+          *)
+            echo -e "${CLR_RED}오류: 지원하지 않는 액션입니다: '$2' (enable 또는 disable 지정 필요)${CLR_RESET}" >&2
+            exit 1
+            ;;
+        esac
+        ;;
+      --conf-dir)
+        if (( $# < 2 )) || [[ "$2" =~ ^- ]]; then
+          echo -e "${CLR_RED}오류: '--conf-dir' 옵션에 유효한 디렉토리 경로를 지정해야 합니다.${CLR_RESET}" >&2
+          exit 1
+        fi
+        OPT_CONF_DIR="$2"
+        shift 2
+        ;;
+      --dry-run)
+        OPT_DRY_RUN=true
+        shift 1
+        ;;
+      --no-backup)
+        OPT_BACKUP=false
+        shift 1
+        ;;
+      --nginx-version)
+        if (( $# < 2 )) || [[ "$2" =~ ^- ]]; then
+          echo -e "${CLR_RED}오류: '--nginx-version' 옵션에 버전 번호를 입력해야 합니다.${CLR_RESET}" >&2
+          exit 1
+        fi
+        OPT_NGINX_VERSION="$2"
+        shift 2
+        ;;
+      -h|--help)
+        show_help
+        exit 0
+        ;;
+      *)
+        echo -e "${CLR_RED}오류: 알 수 없는 옵션 또는 인자입니다: '$1'${CLR_RESET}" >&2
+        show_help
+        exit 1
+        ;;
+    esac
+  done
+
+  if [[ -z "$SUBCOMMAND" ]]; then
+    echo -e "${CLR_RED}오류: 실행할 서브커맨드를 지정해야 합니다. (현재 'http2' 지원)${CLR_RESET}" >&2
+    show_help
+    exit 1
+  fi
+}
+
+##
+# 단일 conf 파일 내에서 directive 모드 (Nginx 1.25.1+) http2 활성화
+##
+enable_http2_directive() {
+  local file="$1"
+
+  # 1. 주석 형태의 '# http2 on;' 이 존재하는지 검사
+  local comment_regex='^[[:space:]]*#[[:space:]]*http2[[:space:]]+on[[:space:]]*;'
+  if grep -qE "$comment_regex" "$file"; then
+    echo -e "   ${CLR_CYAN}ℹ️  [주석 감지] 주석 처리된 'http2 on;' 설정을 주석 해제(활성화)합니다.${CLR_RESET}"
+    if [[ "$OPT_DRY_RUN" == "true" ]]; then
+      grep -nE "$comment_regex" "$file" | sed 's/^/   [현재] /'
+      echo -e "   ${CLR_GREEN}[변경] 주석(#) 기호 해제 -> http2 on;${CLR_RESET}"
+      return 0
+    fi
+
+    sed -i -E 's/^([[:space:]]*)#[[:space:]]*http2[[:space:]]+on[[:space:]]*;/\1http2 on;/' "$file"
+    echo -e "   ${CLR_GREEN}✅ [성공] 주석 해제 완료!${CLR_RESET}"
+    return 0
+  fi
+
+  # 2. 이미 활성화된 'http2 on;' 이 존재하는지 검사
+  local active_regex='^[[:space:]]*http2[[:space:]]+on[[:space:]]*;'
+  if grep -qE "$active_regex" "$file"; then
+    echo -e "   ${CLR_YELLOW}ℹ️  [이미 설정됨] 'http2 on;' 설정이 이미 활성화되어 있습니다. (변경 없음)${CLR_RESET}"
+    return 2
+  fi
+
+  # 3. 주석도 없고 활성화도 안 된 경우 -> listen 지시어 아래에 추가
+  local listen_regex='^[[:space:]]*listen[[:space:]]+'
+  if grep -qE "$listen_regex" "$file"; then
+    echo -e "   ${CLR_CYAN}ℹ️  [신규 추가] 'listen' 지시어 아래에 'http2 on;' 설정을 추가합니다.${CLR_RESET}"
+
+    # SSL이 포함된 listen 라인이 있으면 우선 선택, 없으면 첫 번째 listen 라인 선택
+    local target_line_no=""
+    target_line_no=$(grep -nE '^[[:space:]]*listen[[:space:]]+[^;]*ssl' "$file" | head -n 1 | cut -d: -f1 || true)
+    if [[ -z "$target_line_no" ]]; then
+      target_line_no=$(grep -nE '^[[:space:]]*listen[[:space:]]+' "$file" | head -n 1 | cut -d: -f1 || true)
+    fi
+
+    if [[ -z "$target_line_no" ]]; then
+      echo -e "   ${CLR_YELLOW}⚠️  [경고] 유효한 'listen' 지시어 라인을 찾지 못했습니다.${CLR_RESET}" >&2
+      return 1
+    fi
+
+    # 대상 listen 라인의 들여쓰기 추출
+    local target_line
+    target_line=$(sed -n "${target_line_no}p" "$file")
+    local indent=""
+    local indent_regex='^([[:space:]]+)'
+    if [[ "$target_line" =~ $indent_regex ]]; then
+      indent="${BASH_REMATCH[1]}"
+    fi
+
+    if [[ "$OPT_DRY_RUN" == "true" ]]; then
+      echo "   [현재 라인 ${target_line_no}] $target_line"
+      echo -e "   ${CLR_GREEN}[추가 라인 ${target_line_no}+1] ${indent}http2 on;${CLR_RESET}"
+      return 0
+    fi
+
+    awk -v target="$target_line_no" -v newline="${indent}http2 on;" '
+      NR == target { print $0; print newline; next }
+      { print $0 }
+    ' "$file" > "${file}.tmp" && mv "${file}.tmp" "$file"
+
+    echo -e "   ${CLR_GREEN}✅ [성공] 'listen' 설정 아래에 'http2 on;' 추가 완료!${CLR_RESET}"
+    return 0
+  else
+    echo -e "   ${CLR_YELLOW}⚠️  [건너뜀] 파일 내에 'listen' 지시어가 존재하지 않아 http2를 추가할 수 없습니다.${CLR_RESET}"
+    return 1
+  fi
+}
+
+##
+# 단일 conf 파일 내에서 directive 모드 (Nginx 1.25.1+) http2 비활성화
+##
+disable_http2_directive() {
+  local file="$1"
+
+  # 1. 활성화된 'http2 on;' 지시어가 존재하는지 검사
+  local active_regex='^[[:space:]]*http2[[:space:]]+on[[:space:]]*;'
+  if grep -qE "$active_regex" "$file"; then
+    echo -e "   ${CLR_CYAN}ℹ️  [설정 감지] 활성화된 'http2 on;' 설정을 주석 처리합니다.${CLR_RESET}"
+
+    if [[ "$OPT_DRY_RUN" == "true" ]]; then
+      grep -nE "$active_regex" "$file" | sed 's/^/   [현재] /'
+      echo -e "   ${CLR_YELLOW}[변경] 주석(#) 처리 -> # http2 on;${CLR_RESET}"
+      return 0
+    fi
+
+    sed -i -E 's/^([[:space:]]*)http2[[:space:]]+on[[:space:]]*;/\1# http2 on;/' "$file"
+    echo -e "   ${CLR_GREEN}✅ [성공] 주석 처리 완료!${CLR_RESET}"
+    return 0
+  fi
+
+  # 2. 이미 주석 처리되어 있거나 설정이 없는 경우
+  local comment_regex='^[[:space:]]*#[[:space:]]*http2[[:space:]]+on[[:space:]]*;'
+  if grep -qE "$comment_regex" "$file"; then
+    echo -e "   ${CLR_GRAY}ℹ️  [설정 없음] 이미 '# http2 on;'으로 주석 처리되어 있습니다. (변경 없음)${CLR_RESET}"
+    return 2
+  fi
+
+  echo -e "   ${CLR_YELLOW}ℹ️  [설정 없음] 파일 내에 'http2 on' 설정이 없습니다.${CLR_RESET}"
+  return 2
+}
+
+##
+# 단일 conf 파일 내에서 listen 모드 (Nginx 1.25.1 미만) http2 활성화
+##
+enable_http2_listen() {
+  local file="$1"
+
+  # 1. 이미 listen 뒤에 http2 파라미터가 있는지 검사
+  local listen_h2_regex='^[[:space:]]*listen[[:space:]]+[^;]*http2'
+  if grep -qE "$listen_h2_regex" "$file"; then
+    echo -e "   ${CLR_YELLOW}ℹ️  [이미 설정됨] 'listen' 지시어에 이미 'http2' 파라미터가 활성화되어 있습니다.${CLR_RESET}"
+    return 2
+  fi
+
+  # 2. ssl listen 지시어 탐색
+  local listen_ssl_regex='^[[:space:]]*listen[[:space:]]+[^;]*ssl'
+  if grep -qE "$listen_ssl_regex" "$file"; then
+    echo -e "   ${CLR_CYAN}ℹ️  [구버전 호환] 'listen ... ssl' 라인에 'http2' 파라미터를 추가합니다.${CLR_RESET}"
+
+    if [[ "$OPT_DRY_RUN" == "true" ]]; then
+      grep -nE "$listen_ssl_regex" "$file" | sed 's/^/   [현재] /'
+      echo -e "   ${CLR_GREEN}[변경] listen ... ssl -> listen ... ssl http2;${CLR_RESET}"
+      return 0
+    fi
+
+    sed -i -E 's/(listen[[:space:]]+[^;]*ssl[^;]*);/\1 http2;/' "$file"
+    echo -e "   ${CLR_GREEN}✅ [성공] 'listen ... ssl http2;' 추가 완료!${CLR_RESET}"
+    return 0
+  else
+    echo -e "   ${CLR_YELLOW}⚠️  [건너뜀] 'listen ... ssl' 라인을 찾을 수 없어 http2 파라미터를 추가할 수 없습니다.${CLR_RESET}"
+    return 1
+  fi
+}
+
+##
+# 단일 conf 파일 내에서 listen 모드 (Nginx 1.25.1 미만) http2 비활성화
+##
+disable_http2_listen() {
+  local file="$1"
+
+  # 1. listen 뒤에 http2 파라미터가 있는지 검사
+  local listen_h2_regex='^[[:space:]]*listen[[:space:]]+[^;]*http2'
+  if grep -qE "$listen_h2_regex" "$file"; then
+    echo -e "   ${CLR_CYAN}ℹ️  [구버전 호환] 'listen' 지시어에서 'http2' 파라미터를 제거합니다.${CLR_RESET}"
+
+    if [[ "$OPT_DRY_RUN" == "true" ]]; then
+      grep -nE "$listen_h2_regex" "$file" | sed 's/^/   [현재] /'
+      echo -e "   ${CLR_YELLOW}[변경] http2 파라미터 제거${CLR_RESET}"
+      return 0
+    fi
+
+    sed -i -E 's/(listen[[:space:]]+[^;]*)http2[[:space:]]*/\1/' "$file"
+    sed -i -E 's/[[:space:]]+;/;/' "$file"
+    echo -e "   ${CLR_GREEN}✅ [성공] 'http2' 파라미터 제거 완료!${CLR_RESET}"
+    return 0
+  fi
+
+  echo -e "   ${CLR_YELLOW}ℹ️  [설정 없음] 'listen' 지시어에 'http2' 파라미터 설정이 없습니다.${CLR_RESET}"
+  return 2
+}
+
+##
+# 메인 제어 루틴
+##
+main() {
+  parse_arguments "$@"
+  detect_nginx_info
+
+  # 대상 디렉토리 배열화
+  local -a target_dirs=()
+  local raw_dirs="$OPT_CONF_DIR"
+  IFS=',' read -r -a target_dirs <<< "$raw_dirs"
+
+  echo "$SEPARATOR_LINE"
+  echo -e "${CLR_BOLD}🚀 [ngxconf-ctl] Nginx 설정 파일 옵션 제어 도구${CLR_RESET}"
+  echo "$SEPARATOR_LINE"
+  echo -e "  - 제어 대상 기능   : ${CLR_CYAN}${SUBCOMMAND^^}${CLR_RESET} (${ACTION})"
+  echo -e "  - 감지된 Nginx 버전: ${CLR_BOLD}${DETECTED_VERSION}${CLR_RESET}"
+  if [[ "$NGINX_MODE" == "directive" ]]; then
+    echo -e "  - 적용 문법 모드   : ${CLR_GREEN}최신 독립 지시어 모드 ('http2 on;' Nginx 1.25.1+)${CLR_RESET}"
+  else
+    echo -e "  - 적용 문법 모드   : ${CLR_YELLOW}레거시 Listen 파라미터 모드 ('listen ... http2;' Nginx < 1.25.1)${CLR_RESET}"
+  fi
+  echo -e "  - 시뮬레이션 모드  : $([[ "$OPT_DRY_RUN" == "true" ]] && echo -e "${CLR_YELLOW}활성화 (Dry-Run: 실제 파일 수정 안 함)${CLR_RESET}" || echo "비활성화 (실제 파일 수정)")"
+  echo "--------------------------------------------------------------------------------------"
+
+  local total_files=0
+  local modified_files=0
+  local skipped_files=0
+  local error_files=0
+
+  for dir in "${target_dirs[@]}"; do
+    dir=$(echo "$dir" | xargs)
+    echo -e "📂 [디렉토리 검사]: ${CLR_BOLD}${dir}${CLR_RESET}"
+
+    if [[ ! -d "$dir" ]]; then
+      echo -e "   ${CLR_RED}⚠️  존재하지 않는 디렉토리입니다: '${dir}'${CLR_RESET}"
+      error_files=$((error_files + 1))
+      continue
+    fi
+
+    local -a conf_files=()
+    while IFS= read -r -d '' f; do
+      conf_files+=("$f")
+    done < <(find "$dir" -maxdepth 1 -name "*.conf" -type f -print0 | sort -z)
+
+    if (( ${#conf_files[@]} == 0 )); then
+      echo -e "   ${CLR_GRAY}ℹ️  디렉토리 내에 '*.conf' 파일이 없습니다.${CLR_RESET}"
+      continue
+    fi
+
+    for conf in "${conf_files[@]}"; do
+      total_files=$((total_files + 1))
+      echo -e "\n📄 [파일 검사]: ${CLR_BOLD}${conf}${CLR_RESET}"
+
+      if [[ "$OPT_DRY_RUN" != "true" && ! -w "$conf" ]]; then
+        echo -e "   ${CLR_RED}❌ [오류] 파일에 쓰기 권한이 없습니다. root 권한(sudo)으로 다시 실행하십시오.${CLR_RESET}" >&2
+        error_files=$((error_files + 1))
+        continue
+      fi
+
+      if [[ "$OPT_DRY_RUN" != "true" && "$OPT_BACKUP" == "true" ]]; then
+        cp -a "$conf" "${conf}.bak"
+      fi
+
+      local ret=0
+      if [[ "$SUBCOMMAND" == "http2" ]]; then
+        if [[ "$ACTION" == "enable" ]]; then
+          if [[ "$NGINX_MODE" == "directive" ]]; then
+            enable_http2_directive "$conf" || ret=$?
+          else
+            enable_http2_listen "$conf" || ret=$?
+          fi
+        elif [[ "$ACTION" == "disable" ]]; then
+          if [[ "$NGINX_MODE" == "directive" ]]; then
+            disable_http2_directive "$conf" || ret=$?
+          else
+            disable_http2_listen "$conf" || ret=$?
+          fi
+        fi
+      fi
+
+      case "$ret" in
+        0)
+          modified_files=$((modified_files + 1))
+          ;;
+        2)
+          skipped_files=$((skipped_files + 1))
+          ;;
+        *)
+          error_files=$((error_files + 1))
+          ;;
+      esac
+    done
+    echo
+  done
+
+  echo "$SEPARATOR_LINE"
+  echo -e "${CLR_BOLD}📊 [작업 요약 보고]${CLR_RESET}"
+  echo "$SEPARATOR_LINE"
+  echo -e "  - 총 점검 대상 파일 수  : ${total_files}개"
+  echo -e "  - 변경 완료(예정) 파일 수: ${CLR_GREEN}${modified_files}개${CLR_RESET}"
+  echo -e "  - 변경 없음(스킵) 파일 수: ${CLR_GRAY}${skipped_files}개${CLR_RESET}"
+  if (( error_files > 0 )); then
+    echo -e "  - 오류/경고 파일 수     : ${CLR_RED}${error_files}개${CLR_RESET}"
+  fi
+  echo "$SEPARATOR_LINE"
+
+  # Nginx 문법 검사 (Dry-run이 아니고 수정된 파일이 있으며 nginx 명령어가 있을 때)
+  if [[ "$OPT_DRY_RUN" != "true" && $modified_files -gt 0 ]] && command -v nginx >/dev/null 2>&1; then
+    echo -e "🔍 [Nginx 문법 검사]: 'nginx -t' 실행 중..."
+    if nginx -t >/dev/null 2>&1; then
+      echo -e "${CLR_GREEN}✅ Nginx 설정 파일 문법 검사 통과 (Syntax OK)${CLR_RESET}"
+      echo -e "💡 Nginx 서비스 재적용 명령: ${CLR_CYAN}systemctl reload nginx${CLR_RESET} 또는 ${CLR_CYAN}nginx -s reload${CLR_RESET}"
+    else
+      echo -e "${CLR_RED}⚠️  [주의] Nginx 설정 파일 문법 검사에 실패했습니다. 'nginx -t'로 상세 오류를 확인하십시오.${CLR_RESET}" >&2
+      if [[ "$OPT_BACKUP" == "true" ]]; then
+        echo -e "   백업 파일(*.bak)을 통해 설정을 복원할 수 있습니다." >&2
+      fi
+    fi
+    echo "$SEPARATOR_LINE"
+  fi
+}
+
+main "$@"
