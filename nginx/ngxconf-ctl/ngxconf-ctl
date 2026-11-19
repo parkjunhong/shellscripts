@@ -44,7 +44,52 @@ SUBCOMMAND=""
 ACTION=""
 
 ##
-# 도움말 출력
+# 보안 정책 검증: 스크립트 자체의 sudo 또는 root 직접 실행 차단
+##
+reject_external_sudo() {
+  if [[ "${EUID:-$(id -u)}" -eq 0 || -n "${SUDO_USER:-}" || -n "${SUDO_UID:-}" ]]; then
+    echo -e "${CLR_RED}🚫 보안 정책 위반: 'ngxconf-ctl' 스크립트 자체를 sudo 또는 root 권한으로 직접 실행할 수 없습니다.${CLR_RESET}" >&2
+    echo -e "${CLR_RED}   보안 원칙에 따라 대상 설정 파일 수정 시점에 내부적으로 필요한 최소 권한(sudo)을 요청합니다.${CLR_RESET}" >&2
+    exit 1
+  fi
+}
+
+##
+# 대상 파일 또는 부모 디렉토리에 sudo 권한이 필요한지 판별
+#
+# @param $1 {string} 파일 경로
+# @return 0 (sudo 필요), 1 (일반 권한으로 가능)
+##
+is_sudo_required_for_file() {
+  local target_file="$1"
+  local parent_dir
+  parent_dir="$(dirname "$target_file")"
+
+  if [[ ! -w "$parent_dir" || ( -e "$target_file" && ! -w "$target_file" ) ]]; then
+    return 0
+  fi
+  return 1
+}
+
+##
+# 파일 수정 시점에 필요에 따라 선택적 sudo로 명령 실행
+#
+# @param $1 {string} 대상 파일 경로
+# @param $@ {string} 실행할 명령어 및 인자들
+##
+run_priv_cmd() {
+  local target_file="$1"
+  shift
+
+  if is_sudo_required_for_file "$target_file"; then
+    sudo "$@"
+  else
+    "$@"
+  fi
+}
+
+##
+# 도움말 출력 (단축 옵션 없이 정규 Long Option만 안내)
 ##
 show_help() {
   cat << EOF
@@ -58,6 +103,7 @@ show_help() {
   옵션을 안전하게 활성화하거나 비활성화합니다.
   - Nginx 1.25.1 이상 : 최신 표준 독립 지시어 ('http2 on;') 방식으로 제어
   - Nginx 1.25.1 미만 : 레거시 'listen ... http2;' 파라미터 방식으로 호환 제어
+  - 보안 원칙 : 스크립트 자체는 일반 사용자로 실행되며, 파일 수정 시점에만 필요한 최소 sudo 권한을 요청합니다.
 
 서브커맨드:
   http2                  HTTP/2 프로토콜 활성화/비활성화 제어
@@ -72,7 +118,7 @@ show_help() {
   --dry-run              실제 파일을 수정하지 않고 변경 예정 내역(diff) 및 실행 과정 시뮬레이션
   --no-backup            파일 변경 시 백업본(.bak) 생성을 생략
   --nginx-version <버전> Nginx 버전을 수동 지정 (미지정 시 'nginx -v' 자동 감지)
-  -h, --help             도움말 출력
+  --help                 도움말 출력
 
 사용 예시:
   # 1) 기본 설정 디렉토리(/etc/nginx/conf.d)의 모든 *.conf 에 대해 HTTP/2 활성화
@@ -132,7 +178,7 @@ detect_nginx_info() {
 }
 
 ##
-# 커맨드라인 인자 파싱
+# 커맨드라인 인자 파싱 (단축 옵션 금지, Long Option 전용)
 ##
 parse_arguments() {
   if (( $# == 0 )); then
@@ -184,7 +230,7 @@ parse_arguments() {
         OPT_NGINX_VERSION="$2"
         shift 2
         ;;
-      -h|--help)
+      --help)
         show_help
         exit 0
         ;;
@@ -219,7 +265,7 @@ enable_http2_directive() {
       return 0
     fi
 
-    sed -i -E 's/^([[:space:]]*)#[[:space:]]*http2[[:space:]]+on[[:space:]]*;/\1http2 on;/' "$file"
+    run_priv_cmd "$file" sed -i -E 's/^([[:space:]]*)#[[:space:]]*http2[[:space:]]+on[[:space:]]*;/\1http2 on;/' "$file"
     echo -e "   ${CLR_GREEN}✅ [성공] 주석 해제 완료!${CLR_RESET}"
     return 0
   fi
@@ -263,10 +309,16 @@ enable_http2_directive() {
       return 0
     fi
 
+    # 안전한 임시 파일 생성 후 치환 (부모 디렉토리 권한 제약 대응)
+    local tmp_file
+    tmp_file=$(mktemp /tmp/ngxconf_ctl_XXXXXX.tmp)
     awk -v target="$target_line_no" -v newline="${indent}http2 on;" '
       NR == target { print $0; print newline; next }
       { print $0 }
-    ' "$file" > "${file}.tmp" && mv "${file}.tmp" "$file"
+    ' "$file" > "$tmp_file"
+
+    run_priv_cmd "$file" cp "$tmp_file" "$file"
+    rm -f "$tmp_file"
 
     echo -e "   ${CLR_GREEN}✅ [성공] 'listen' 설정 아래에 'http2 on;' 추가 완료!${CLR_RESET}"
     return 0
@@ -293,7 +345,7 @@ disable_http2_directive() {
       return 0
     fi
 
-    sed -i -E 's/^([[:space:]]*)http2[[:space:]]+on[[:space:]]*;/\1# http2 on;/' "$file"
+    run_priv_cmd "$file" sed -i -E 's/^([[:space:]]*)http2[[:space:]]+on[[:space:]]*;/\1# http2 on;/' "$file"
     echo -e "   ${CLR_GREEN}✅ [성공] 주석 처리 완료!${CLR_RESET}"
     return 0
   fi
@@ -333,7 +385,7 @@ enable_http2_listen() {
       return 0
     fi
 
-    sed -i -E 's/(listen[[:space:]]+[^;]*ssl[^;]*);/\1 http2;/' "$file"
+    run_priv_cmd "$file" sed -i -E 's/(listen[[:space:]]+[^;]*ssl[^;]*);/\1 http2;/' "$file"
     echo -e "   ${CLR_GREEN}✅ [성공] 'listen ... ssl http2;' 추가 완료!${CLR_RESET}"
     return 0
   else
@@ -359,8 +411,8 @@ disable_http2_listen() {
       return 0
     fi
 
-    sed -i -E 's/(listen[[:space:]]+[^;]*)http2[[:space:]]*/\1/' "$file"
-    sed -i -E 's/[[:space:]]+;/;/' "$file"
+    run_priv_cmd "$file" sed -i -E 's/(listen[[:space:]]+[^;]*)http2[[:space:]]*/\1/' "$file"
+    run_priv_cmd "$file" sed -i -E 's/[[:space:]]+;/;/' "$file"
     echo -e "   ${CLR_GREEN}✅ [성공] 'http2' 파라미터 제거 완료!${CLR_RESET}"
     return 0
   fi
@@ -373,10 +425,14 @@ disable_http2_listen() {
 # 메인 제어 루틴
 ##
 main() {
+  # 1. 보안 정책 검증: 외부 sudo 실행 차단
+  reject_external_sudo
+
+  # 2. 인자 파싱 및 Nginx 정보 감지
   parse_arguments "$@"
   detect_nginx_info
 
-  # 대상 디렉토리 배열화
+  # 3. 대상 디렉토리 배열화
   local -a target_dirs=()
   local raw_dirs="$OPT_CONF_DIR"
   IFS=',' read -r -a target_dirs <<< "$raw_dirs"
@@ -393,6 +449,30 @@ main() {
   fi
   echo -e "  - 시뮬레이션 모드  : $([[ "$OPT_DRY_RUN" == "true" ]] && echo -e "${CLR_YELLOW}활성화 (Dry-Run: 실제 파일 수정 안 함)${CLR_RESET}" || echo "비활성화 (실제 파일 수정)")"
   echo "--------------------------------------------------------------------------------------"
+
+  # 4. 실제 수정 작업 시 root 권한 필요 여부 사전 검사 및 1회 인증 캐싱
+  if [[ "$OPT_DRY_RUN" != "true" ]]; then
+    local need_sudo=false
+    for d in "${target_dirs[@]}"; do
+      d=$(echo "$d" | xargs)
+      [[ -d "$d" ]] || continue
+      while IFS= read -r -d '' cf; do
+        if is_sudo_required_for_file "$cf"; then
+          need_sudo=true
+          break 2
+        fi
+      done < <(find "$d" -maxdepth 1 -name "*.conf" -type f -print0 2>/dev/null || true)
+    done
+
+    if [[ "$need_sudo" == "true" ]]; then
+      echo -e "${CLR_CYAN}🔐 관리자(root) 권한이 필요한 설정 파일이 포함되어 있습니다. sudo 인증을 확인합니다...${CLR_RESET}"
+      if ! sudo -v; then
+        echo -e "${CLR_RED}❌ [오류] sudo 인증에 실패하였거나 권한이 없어 작업을 중단합니다.${CLR_RESET}" >&2
+        exit 1
+      fi
+      echo -e "${CLR_GREEN}✅ sudo 권한 확인 완료.${CLR_RESET}\n"
+    fi
+  fi
 
   local total_files=0
   local modified_files=0
@@ -423,14 +503,12 @@ main() {
       total_files=$((total_files + 1))
       echo -e "\n📄 [파일 검사]: ${CLR_BOLD}${conf}${CLR_RESET}"
 
-      if [[ "$OPT_DRY_RUN" != "true" && ! -w "$conf" ]]; then
-        echo -e "   ${CLR_RED}❌ [오류] 파일에 쓰기 권한이 없습니다. root 권한(sudo)으로 다시 실행하십시오.${CLR_RESET}" >&2
-        error_files=$((error_files + 1))
-        continue
+      if [[ "$OPT_DRY_RUN" != "true" ]] && is_sudo_required_for_file "$conf"; then
+        echo -e "   ${CLR_CYAN}🔐 [권한 상승] 대상 파일 수정 시 root(sudo) 권한을 적용합니다.${CLR_RESET}"
       fi
 
       if [[ "$OPT_DRY_RUN" != "true" && "$OPT_BACKUP" == "true" ]]; then
-        cp -a "$conf" "${conf}.bak"
+        run_priv_cmd "$conf" cp -a "$conf" "${conf}.bak"
       fi
 
       local ret=0
@@ -479,13 +557,20 @@ main() {
   # Nginx 문법 검사 (Dry-run이 아니고 수정된 파일이 있으며 nginx 명령어가 있을 때)
   if [[ "$OPT_DRY_RUN" != "true" && $modified_files -gt 0 ]] && command -v nginx >/dev/null 2>&1; then
     echo -e "🔍 [Nginx 문법 검사]: 'nginx -t' 실행 중..."
+    local nginx_test_ok=false
     if nginx -t >/dev/null 2>&1; then
+      nginx_test_ok=true
+    elif sudo -n nginx -t >/dev/null 2>&1; then
+      nginx_test_ok=true
+    fi
+
+    if [[ "$nginx_test_ok" == "true" ]]; then
       echo -e "${CLR_GREEN}✅ Nginx 설정 파일 문법 검사 통과 (Syntax OK)${CLR_RESET}"
-      echo -e "💡 Nginx 서비스 재적용 명령: ${CLR_CYAN}systemctl reload nginx${CLR_RESET} 또는 ${CLR_CYAN}nginx -s reload${CLR_RESET}"
+      echo -e "💡 Nginx 서비스 재적용 명령: ${CLR_CYAN}sudo systemctl reload nginx${CLR_RESET} 또는 ${CLR_CYAN}sudo nginx -s reload${CLR_RESET}"
     else
-      echo -e "${CLR_RED}⚠️  [주의] Nginx 설정 파일 문법 검사에 실패했습니다. 'nginx -t'로 상세 오류를 확인하십시오.${CLR_RESET}" >&2
+      echo -e "${CLR_YELLOW}ℹ️  [안내] Nginx 문법 검사는 시스템 권한 필요 시 'sudo nginx -t'로 확인하실 수 있습니다.${CLR_RESET}"
       if [[ "$OPT_BACKUP" == "true" ]]; then
-        echo -e "   백업 파일(*.bak)을 통해 설정을 복원할 수 있습니다." >&2
+        echo -e "   백업 파일(*.bak)을 통해 언제든지 설정을 복원할 수 있습니다."
       fi
     fi
     echo "$SEPARATOR_LINE"

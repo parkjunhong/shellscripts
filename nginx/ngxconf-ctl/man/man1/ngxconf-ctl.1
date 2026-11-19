@@ -11,6 +11,8 @@ ngxconf-ctl \- Manage Nginx configuration options (HTTP/2 enable/disable)
 .SH DESCRIPTION
 서버에 설치된 Nginx 버전에 맞추어 가상 호스트 및 설정 파일(\fI*.conf\fR)의 \fBHTTP/2\fR 프로토콜 설정을 지능적으로 활성화(\fBenable\fR)하거나 비활성화(\fBdisable\fR)하는 Nginx 설정 제어 CLI 도구입니다.
 
+보안 원칙에 따라 스크립트 자체는 일반 사용자 권한으로 실행되며(외부 \fBsudo\fR 직접 실행 차단), 대상 설정 파일 수정 및 백업 시점에만 필요한 최소 권한(\fBsudo\fR)을 내부적으로 요청합니다.
+
 Nginx 버전을 자동으로 판별하여 최신 버전(\fB1.25.1 이상\fR)의 독립 지시어 방식(\fBhttp2 on;\fR)과 이전 버전(\fB1.25.1 미만\fR)의 레거시 리슨 파라미터 방식(\fBlisten ... http2;\fR)을 분기 처리합니다. 작업 전 자동 백업(\fI.bak\fR), Nginx 설정 문법 검증(\fBnginx \-t\fR), 그리고 실제 파일 변경 없이 적용 예정 내역을 미리 확인할 수 있는 \fB\-\-dry-run\fR 시뮬레이션을 지원합니다.
 
 .SH COMMANDS
@@ -40,7 +42,7 @@ HTTP/2 프로토콜 지원을 활성화하거나 비활성화합니다.
 .B \-\-nginx-version <version>
 Nginx 바이너리 실행 대신 지정한 임의의 Nginx 버전 문자열(예: \fI1.26.0\fR, \fI1.24.0\fR)을 강제로 적용하여 동작 모드를 결정합니다.
 .TP
-.B \-h, \-\-help
+.B \-\-help
 도움말 및 옵션 안내를 출력하고 종료합니다.
 
 .SH EXAMPLES
