@@ -1,0 +1,135 @@
+.TH GIT-BRANCH 1 "2026-11-19" "git-branch 1.0.0" "User Commands"
+.SH NAME
+git-branch \- Manage Git branch lifecycles (batch deletion and single addition)
+
+.SH SYNOPSIS
+.B git-branch
+<\fIdelete\fR|\fIadd\fR>
+[\fIOPTIONS\fR]
+.br
+.B git-branch
+\fIdelete\fR
+[\fB\-\-branch\fR \fInames\fR]
+[\fB\-\-pattern\fR \fIglob\fR]
+[\fB\-\-merged\fR]
+[\fB\-\-target\fR \fIbranch\fR]
+[\fB\-\-scope\fR \fIboth|local|remote\fR]
+[\fB\-\-force\fR]
+[\fB\-\-dry-run\fR]
+.br
+.B git-branch
+\fIadd\fR
+\fB\-\-branch\fR \fIname\fR
+[\fB\-\-from\fR \fIbase-branch\fR]
+[\fB\-\-push\fR|\fB\-\-no-push\fR]
+[\fB\-\-remote\fR \fIremote\fR]
+[\fB\-\-dry-run\fR]
+.br
+.B git-branch
+\fB\-\-help\fR
+
+.SH DESCRIPTION
+Git 저장소에서 로컬 및 원격(\fIorigin\fR) 브랜치를 일괄 삭제(\fBdelete\fR)하거나 안전하게 신규 브랜치를 단일 추가(\fBadd\fR)하는 브랜치 라이프사이클 관리 CLI 도구입니다.
+
+보안 원칙에 따라 스크립트 자체는 일반 사용자 권한으로 실행되어야 하며(외부 \fBsudo\fR 직접 실행 차단), 핵심 보호 브랜치(\fImain\fR, \fImaster\fR, \fIdevelop\fR, \fIrelease\fR, \fIstaging\fR, \fIproduction\fR)는 삭제 대상에서 원천 차단됩니다. 또한 현재 체크아웃된 브랜치(\fIHEAD\fR)는 로컬 삭제에서 자동으로 보호됩니다.
+
+.SH SUBCOMMANDS
+.TP
+.B delete
+로컬 및 원격에 존재하는 브랜치를 직접 지정하거나 패턴/머지 조건에 따라 일괄 삭제합니다.
+.TP
+.B add
+단일 신규 브랜치를 안전하게 생성하고 원격 저장소에 자동으로 푸시 및 업스트림 트래킹을 구성합니다. (동시 다중 생성 불가, 1개 브랜치 전용)
+
+.SH OPTIONS FOR DELETE
+.TP
+.B \-\-branch <names>
+삭제할 브랜치 이름을 직접 지정합니다. 콤마(\fI,\fR)로 구분하여 다중 브랜치를 지정할 수 있습니다.
+.TP
+.B \-\-pattern <glob>
+글롭 와일드카드 패턴을 매칭하여 일치하는 브랜치들을 수집합니다. (예: \fIdevelop-2026*\fR, \fIfeature/*\fR)
+.TP
+.B \-\-merged
+타겟 기준 브랜치에 머지 완료된 브랜치만 필터링하여 안전하게 삭제합니다.
+.TP
+.B \-\-target <branch>
+머지 여부를 판단할 기준 브랜치를 지정합니다. (기본값: \fIdevelop\fR, 미존재 시 \fImain\fR)
+.TP
+.B \-\-scope <both|local|remote>
+삭제 범위를 지정합니다.
+.RS
+.IP \(bu 2
+\fBboth\fR: 로컬 브랜치와 원격 브랜치를 모두 삭제합니다 (기본값).
+.IP \(bu 2
+\fBlocal\fR: 로컬 브랜치만 삭제합니다.
+.IP \(bu 2
+\fBremote\fR: 원격 저장소의 브랜치만 삭제합니다.
+.RE
+.TP
+.B \-\-remote <name>
+원격 저장소 이름을 지정합니다. (기본값: \fIorigin\fR)
+.TP
+.B \-\-force
+머지되지 않은 브랜치에 대해 강제 삭제(\fIgit branch \-D\fR)를 수행하며, 대화형 삭제 확인 프롬프트를 건너뜁니다.
+.TP
+.B \-\-dry-run
+실제 삭제 명령을 수행하지 않고, 삭제 대상 브랜치 목록과 실행 계획만 시뮬레이션 출력합니다.
+
+.SH OPTIONS FOR ADD
+.TP
+.B \-\-branch <name>
+신규 생성할 브랜치 이름을 지정합니다. (반드시 단일 브랜치 1개만 허용)
+.TP
+.B \-\-from <branch>
+분기할 기준 브랜치를 지정합니다. (기본값: 현재 체크아웃된 브랜치)
+.TP
+.B \-\-push
+브랜치 생성 후 원격 저장소로 즉시 푸시하고 업스트림 트래킹을 설정합니다. (기본값: 활성화)
+.TP
+.B \-\-no-push
+원격 저장소 푸시를 생략하고 로컬에만 브랜치를 생성합니다.
+.TP
+.B \-\-remote <name>
+푸시할 원격 저장소 이름을 지정합니다. (기본값: \fIorigin\fR)
+.TP
+.B \-\-dry-run
+실제 생성이나 푸시를 수행하지 않고 실행 계획만 시뮬레이션 출력합니다.
+
+.SH GENERAL OPTIONS
+.TP
+.B \-\-help
+도움말 및 옵션 안내를 출력하고 종료합니다.
+
+.SH EXAMPLES
+.PP
+.nf
+  # 1) 머지 완료된 특정 작업 브랜치를 로컬과 원격에서 동시 삭제
+  git-branch delete \-\-branch develop-20261119-c7NGVhK3
+
+  # 2) 날짜 패턴에 일치하는 브랜치 일괄 삭제 사전 시뮬레이션 (Dry-run)
+  git-branch delete \-\-pattern "develop-20261119-*" \-\-dry-run
+
+  # 3) develop 브랜치에 머지 완료된 feature/* 브랜치만 일괄 정리
+  git-branch delete \-\-pattern "feature/*" \-\-merged \-\-target develop
+
+  # 4) 미머지 브랜치를 포함하여 확인 없이 강제 삭제
+  git-branch delete \-\-branch hotfix/temp-fix \-\-force
+
+  # 5) develop 브랜치로부터 신규 feature 브랜치 생성 및 원격 자동 푸시
+  git-branch add \-\-branch feature/user-profile \-\-from develop
+.fi
+.PP
+
+.SH COMPLETION
+.B git-branch
+는 Bash 자동완성 스크립트(\fIgit-branch.completion\fR)를 지원합니다.
+.BR scriptctl (1)
+을 통해 설치 시 시스템 표준 completion 경로에 자동으로 등록되며, 서브커맨드(\fBdelete\fR, \fBadd\fR), 옵션 목록, 그리고 현재 Git 저장소의 브랜치 이름을 지능적으로 자동완성합니다.
+
+.SH SEE ALSO
+.BR git (1),
+.BR git-branch (1),
+.BR scriptctl (1)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.

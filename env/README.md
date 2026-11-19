@@ -30,7 +30,7 @@
 | **`powerdns`** | - | PowerDNS 관리 도구 설치 | `powerdns/pdns-versions` |
 | **`nginx`** | - | Nginx 관리 도구 설치 | `nginx/ngxconf-ctl` |
 | **`install-lets-encrypt-certificate`** | - | Let's Encrypt 인증서 배포 지원 | `letsencrypt` SSH RSA 공개키 등록 |
-| **`all-scripts`** | - | 전체 CLI 스크립트 도구 통합 설치 | 17개 카테고리(`ai-agent`, `build`, `db`, `docker`, `es`, `fail2ban`, `git`, `gitlab`, `installer`, `java`, `maven`, `net`, `nginx`, `powerdns`, `redis`, `sys`, `utils`) 80개 도구 일괄 설치 |
+| **`all-scripts`** | - | 전체 CLI 스크립트 도구 통합 설치 | 17개 카테고리(`ai-agent`, `build`, `db`, `docker`, `es`, `fail2ban`, `git`, `gitlab`, `installer`, `java`, `maven`, `net`, `nginx`, `powerdns`, `redis`, `sys`, `utils`) 81개 도구 일괄 설치 |
 
 ---
 
@@ -57,7 +57,7 @@ env/
 │   ├── powerdns.catalog                                    # PowerDNS 관리 도구 매니페스트
 │   ├── nginx.catalog                                       # Nginx 관리 도구 매니페스트
 │   ├── install-lets-encrypt-certificate.catalog            # Let's Encrypt 인증서 배포용 공개키 매니페스트
-│   └── all-scripts.catalog                                 # 전체 17개 카테고리 80개 도구 통합 매니페스트
+│   └── all-scripts.catalog                                 # 전체 17개 카테고리 81개 도구 통합 매니페스트
 ├── installers/
 │   ├── install-htop.sh                                     # EPEL/Universe 저장소 구성 및 htop 설치 모듈
 │   ├── install-maven-3.9.15.sh                             # Apache Maven 3.9.15 바이너리(/opt) 설치 모듈
