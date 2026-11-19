@@ -11,6 +11,7 @@ Git 저장소 초기화, 브랜치 제어(GitHub/GitLab API 연동), 커밋 및 
 ```
 shellscripts/git/
 ├── README.md                      # [현재 문서] Git 도구 모음 통합 색인 및 안내
+├── git-branch/                    # 로컬 및 원격 브랜치 일괄 삭제 및 안전 추가
 ├── git-branch-cmd/                # 다중 저장소 브랜치 제어 및 GitHub/GitLab API 연동
 ├── git-commit/                    # 커밋+푸시, 취소, 언스테이징, 롤백 통합 관리
 ├── git-config/                    # Git 로컬 사용자 이름 및 이메일 설정
@@ -38,6 +39,7 @@ shellscripts/git/
 | 도구 이름 (Canonical Name) | 주요 역할 및 설명 | 바로가기 |
 | :--- | :--- | :---: |
 | **`git-init`** | 기존 폴더를 Git 초기화하고 원격 브랜치 연결 후 신규 또는 히스토리 병합 푸시 | [README](file:///home/parkjunhong/dev/bashshell-projects/github/shellscripts/git/git-init/README.md) |
+| **`git-branch`** | 로컬 및 원격 브랜치 일괄 삭제(delete) 및 신규 단일 브랜치 안전 추가(add) | [README](file:///home/parkjunhong/dev/bashshell-projects/github/shellscripts/git/git-branch/README.md) |
 | **`git-branch-cmd`** | 다중 저장소 브랜치 복제·삭제·검색 및 GitHub(`gh`)/GitLab(`glab`) 보호 브랜치 설정 | [README](file:///home/parkjunhong/dev/bashshell-projects/github/shellscripts/git/git-branch-cmd/README.md) |
 | **`git-merge`** | 타겟 브랜치로 최신화(Pull) &rarr; 병합(Merge) &rarr; 반영(Push) &rarr; 복귀(Checkout) 자동화 | [README](file:///home/parkjunhong/dev/bashshell-projects/github/shellscripts/git/git-merge/README.md) |
 | **`git-ff-sync`** | 원격 소스 브랜치를 대상 브랜치로 Fast-Forward 전진 병합 및 푸시 선형 동기화 | [README](file:///home/parkjunhong/dev/bashshell-projects/github/shellscripts/git/git-ff-sync/README.md) |
