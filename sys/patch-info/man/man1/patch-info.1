@@ -34,7 +34,7 @@ Ubuntu의 경우 \fBpro fix \-\-dry-run\fR 시뮬레이션 모드를 강제하�
 [선택] 설치 여부 및 버전 정보를 점검할 패키지명을 지정합니다. 공백으로 구분하여 여러 패키지를 연속 나열하거나 옵션을 반복 입력할 수 있습니다. (단독 사용 가능)
 .TP
 .B \-\-oss-number \fIADVISORY_OR_CVE\fR...
-[선택] 감사할 OS 보안 권고사항 번호(Ubuntu \fIUSN-xxxx-x\fR, Red Hat \fIRHSA-yyyy:nnnn\fR, Rocky \fIRLSA-yyyy:nnnn\fR 등) 또는 표준 \fICVE-yyyy-nnnn\fR 번호입니다. 도구가 연관된 CVE 목록을 자동 추출합니다. (단독 사용 가능)
+[선택] 감사할 OS 보안 권고사항 번호 또는 CVE 번호입니다. 도구가 각 OS 벤더의 권고 정보를 분석하여 연관된 CVE 목록을 자동 추출합니다. (단독 사용 가능)
 .TP
 .B \-\-show-changelog
 [선택] 검색 필터링 없이 지정된 패키지의 전체 체인지로그 텍스트를 출력합니다. (\fB\-\-package\fR 필수)
@@ -47,6 +47,36 @@ Ubuntu의 경우 \fBpro fix \-\-dry-run\fR 시뮬레이션 모드를 강제하�
 .TP
 .B \-\-help
 [선택] 도움말 메시지를 출력하고 종료합니다.
+
+.SH OS SECURITY ADVISORIES
+주요 운영체제별 공식 보안 권고사항 식별자 규격은 다음과 같습니다:
+.TP
+.B Ubuntu
+\fBUSN-xxxx-x\fR (Ubuntu Security Notice, 예: USN-9159-1)
+.TP
+.B Debian
+\fBDSA-xxxx-x\fR / \fBDLA-xxxx-x\fR (Debian Security / LTS Advisory, 예: DSA-5480-1)
+.TP
+.B RHEL (Red Hat)
+\fBRHSA-YYYY:xxxx\fR (Red Hat Security Advisory, 예: RHSA-2024:1234)
+.TP
+.B Rocky Linux
+\fBRLSA-YYYY:xxxx\fR (Rocky Linux Security Advisory, 예: RLSA-2024:1234)
+.TP
+.B AlmaLinux
+\fBALSA-YYYY:xxxx\fR (AlmaLinux Security Advisory, 예: ALSA-2024:1234)
+.TP
+.B openSUSE / SLES
+\fBopenSUSE-SU-YYYY:xxxx-x\fR / \fBSUSE-SU-YYYY:xxxx-x\fR (SUSE Security Update)
+.TP
+.B Arch Linux
+\fBASA-YYYYMM-xx\fR (Arch Security Advisory, 예: ASA-202403-1)
+.TP
+.B Alpine Linux
+\fBCVE-YYYY-xxxx\fR (Alpine Secfixes 기반 CVE 직접 관리)
+.TP
+.B macOS (Apple)
+\fBHTxxxxxx\fR (Apple Security Update Support Document ID, 예: HT214106) 또는 \fBCVE-YYYY-xxxx\fR
 
 .SH EXAMPLES
 .nf
