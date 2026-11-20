@@ -1,0 +1,94 @@
+.TH PATCH-INFO 1 "2026-11-20" "patch-info 1.0.0" "User Commands"
+.SH NAME
+patch-info \- 패키지 버전 확인 및 보안 패치(CVE/USN/RHSA) 체인지로그 검색 도구
+
+.SH SYNOPSIS
+.B patch-info
+\-\-package \fIPACKAGE_NAME\fR... [\fIOPTIONS\fR]
+
+.SH DESCRIPTION
+.B patch-info
+은(는) 다양한 Linux 배포판(Ubuntu, Debian, RHEL, Rocky Linux, AlmaLinux, CentOS, Fedora, openSUSE, SLES, Arch Linux, Alpine Linux) 및 macOS 환경에서 설치된 패키지/모듈의 버전 정보를 조회하고, 로컬 및 온라인 체인지로그(Changelog)에서 보안 패치(CVE 번호, USN, RHSA, ALSA 등) 내역을 정규식 기반으로 고속 검색·감사하는 통합 CLI 도구입니다.
+
+.SH KEY FEATURES
+.IP \(bu 2
+\fB크로스 플랫폼 패키지 매니저 지원\fR
+.IP \(bu 2
+Debian 계열(\fBdpkg\fR/\fBapt\fR), Red Hat 계열(\fBrpm\fR/\fBdnf\fR), SUSE 계열(\fBzypper\fR), Arch Linux(\fBpacman\fR), Alpine Linux(\fBapk\fR), macOS(\fBbrew\fR) 환경을 자동 감지하여 적합한 쿼리 엔진을 실행합니다.
+.IP \(bu 2
+\fB가변 인자 및 연속 패키지 완성 지원\fR
+.IP \(bu 2
+\fB\-\-package\fR 옵션 뒤에 공백으로 여러 패키지를 연속 지정할 수 있으며, Bash 자동완성을 통해 시스템에 설치된 패키지 목록을 실시간으로 제안받을 수 있습니다.
+.IP \(bu 2
+\fB온라인 및 로컬 체인지로그 하이브리드 탐색\fR
+.IP \(bu 2
+원격 저장소의 최신 체인지로그를 기본으로 조회하여 아직 시스템에 반영되지 않은 최신 보안 패치까지 식별하며, 네트워크 격리 환경에서는 \fB\-\-offline\fR 플래그를 통해 로컬 파일시스템에 저장된 패치 내역만을 안전하게 검색합니다.
+.IP \(bu 2
+\fBPOSIX 확장 정규식(ERE) 검색 엔진\fR
+.IP \(bu 2
+단일 CVE 번호뿐만 아니라 파이프(\fB|\fR)를 사용한 복합 검색, 연도별 와일드카드 정규식, 일반 보안 키워드 검색을 대소문자 구분 없이 신속하게 수행합니다.
+
+.SH OPTIONS
+.TP
+.B \-\-package \fIPACKAGE_NAME\fR...
+[필수] 조회할 패키지명을 지정합니다. 공백으로 구분하여 여러 패키지를 한 번에 나열하거나, 옵션을 여러 번 반복하여 지정할 수 있습니다.
+.TP
+.B \-\-search \fIPATTERN\fR
+[선택] 체인지로그 내에서 검색할 보안 식별자 또는 POSIX 확장 정규식(ERE) 패턴입니다. 대소문자를 구분하지 않고 검색합니다.
+.RS
+.IP \(bu 2
+\fBCVE 식별자\fR: \fICVE-YYYY-NNNN+\fR (예: CVE-2021-23017, CVE-2026-123007)
+.IP \(bu 2
+\fB보안 권고 번호\fR: Ubuntu \fIUSN-NNNN-N\fR, Red Hat \fIRHSA-YYYY:NNNN\fR, Rocky \fIRLSA-YYYY:NNNN\fR
+.IP \(bu 2
+\fB복합 검색\fR: 파이프(\fB|\fR)로 여러 취약점 동시 검색 (예: "USN-4966-1|CVE-2021-23017")
+.IP \(bu 2
+\fB정규식 패턴\fR: 연도별 검색 (예: "CVE-2026-[0-9]+") 또는 키워드 검색 (예: "buffer overflow")
+.RE
+.TP
+.B \-\-show-changelog
+[선택] 검색 필터링 없이 패키지의 전체 체인지로그 텍스트를 출력합니다.
+.TP
+.B \-\-offline
+[선택] 기본 활성화된 온라인 원격 조회를 비활성화하고, 로컬 파일시스템 및 로컬 패키지 DB에 저장된 내역만 검색합니다. (폐쇄망 환경 지원)
+.TP
+.B \-\-verbose
+[선택] 감지된 OS 정보, 탐색된 체인지로그 파일 경로, 온라인 쿼리 상태 등 상세 디버깅 정보를 표준 에러로 출력합니다.
+.TP
+.B \-\-help
+[선택] 도움말 메시지를 출력하고 종료합니다.
+
+.SH EXAMPLES
+.nf
+  # 1) 단일 패키지 버전 확인 및 특정 CVE 패치 내역 검색
+  patch-info \-\-package nginx \-\-search "CVE-2026-123007"
+
+  # 2) 여러 패키지를 공백으로 나열하고 복수 CVE/USN 동시 검색
+  patch-info \-\-package nginx nginx-core \-\-search "USN-9159-1|CVE-2026-123007"
+
+  # 3) 패키지 옵션 반복 지정 및 상세 디버그 로그 활성화
+  patch-info \-\-package openssl \-\-package bash \-\-search "CVE-2023-[0-9]+" \-\-verbose
+
+  # 4) 오프라인 모드로 로컬 체인지로그에서만 패치 내역 검색
+  patch-info \-\-package sudo \-\-search "privilege escalation" \-\-offline
+
+  # 5) 패키지의 전체 체인지로그 열람
+  patch-info \-\-package bash \-\-show-changelog
+.fi
+.PP
+
+.SH COMPLETION
+.B patch-info
+은(는) Bash 자동완성 스크립트(\fIpatch-info.completion\fR)를 지원합니다.
+.BR scriptctl (1)
+을 통해 설치 시 시스템 표준 completion 경로에 자동으로 등록되며, \fB\-\-package\fR 입력 시 현재 시스템에 설치된 패키지 목록을 동적으로 자동완성합니다.
+
+.SH SEE ALSO
+.BR dpkg (1),
+.BR rpm (8),
+.BR pacman (8),
+.BR brew (1),
+.BR scriptctl (1)
+
+.SH AUTHOR
+Written by parkjunhong77 <parkjunhong77@gmail.com>.

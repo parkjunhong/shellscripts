@@ -1,8 +1,8 @@
 # System Engineering & Administration Shell Scripts
 
-리눅스 시스템 종합 정보 수집, 디스크 사용량 초고속 분석(`disk-size`), 파일 복사/접미사 백업(`copy-suffix`), 정규식 기반 파일명 일괄 변경(`ren-files`), 명령어 소스 조회 및 지능형 편집(`cat-cli`, `vim-cli`), 그리고 서비스 라이프사이클 완전 삭제(`remove-service`)를 지원하는 표준 CLI 시스템 관리 도구 모음입니다.
+리눅스 시스템 종합 정보 수집(`sys-info`), 패키지 버전 및 보안 패치 체인지로그 감사(`patch-info`), 디스크 사용량 초고속 분석(`disk-size`), 파일 복사/접미사 백업(`copy-suffix`), 정규식 기반 파일명 일괄 변경(`ren-files`), 명령어 소스 조회 및 지능형 편집(`cat-cli`, `vim-cli`), 그리고 서비스 라이프사이클 완전 삭제(`remove-service`)를 지원하는 표준 CLI 시스템 관리 도구 모음입니다.
 
-모든 도구는 독립 실행형 Canonical 디렉토리 구조(`sys/<tool>/<tool>`), 최신 표준 Bash 자동완성(`.completion`), 그리고 상세한 개별 `README.md`를 갖추고 있습니다.
+모든 도구는 독립 실행형 Canonical 디렉토리 구조(`sys/<tool>/<tool>`), 최신 표준 Bash 자동완성(`.completion`), 표준 Unix 매뉴얼(`man/man1/`), 그리고 상세한 개별 `README.md`를 갖추고 있습니다.
 
 ---
 
@@ -13,6 +13,7 @@
 | **cat-cli** | [`cat-cli/`](cat-cli/cat-cli) | PATH에 등록된 명령어의 실제 실행 파일 소스를 찾아 `cat`으로 내용 출력 | ✅ 지원 | [상세보기](cat-cli/README.md) |
 | **copy-suffix** | [`copy-suffix/`](copy-suffix/copy-suffix) | 날짜(`--date`), 시각(`--time`) 또는 사용자 접미사를 파일명 앞/뒤에 결합하여 스냅샷 백업 | ✅ 지원 | [상세보기](copy-suffix/README.md) |
 | **disk-size** | [`disk-size/`](disk-size/disk-size) | 디렉토리 및 파일 점유 용량 고속 배치 측정, 용량별 정렬(`--sort-asc`, `--sort-desc`), 재귀 탐색 | ✅ 지원 (성능 최적화) | [상세보기](disk-size/README.md) |
+| **patch-info** | [`patch-info/`](patch-info/patch-info) | 다중 OS 지원 패키지 버전 확인 및 보안 패치(CVE/USN/RHSA) 체인지로그 검색 | ✅ 지원 | [상세보기](patch-info/README.md) |
 | **remove-service** | [`remove-service/`](remove-service/remove-service) | systemd/sysvinit 서비스 중지, 비활성화, 유닛 파일 삭제 및 데몬 상태 완전 초기화 | ✅ 지원 | [상세보기](remove-service/README.md) |
 | **ren-files** | [`ren-files/`](ren-files/ren-files) | `sed` 확장 정규표현식(ERE) 그룹 캡처 및 후방 참조를 통한 파일명 일괄 변경 | ✅ 지원 | [상세보기](ren-files/README.md) |
 | **sys-info** | [`sys-info/`](sys-info/sys-info) | 호스트, CPU, 메모리 요약 및 디스크 사용량 필터링·정렬 표 대시보드 출력 | ✅ 지원 | [상세보기](sys-info/README.md) |
@@ -36,6 +37,13 @@ sys/
 ├── disk-size/
 │   ├── disk-size                      # 고성능 디스크 점유 용량 분석 도구
 │   ├── disk-size.completion           # Bash 자동완성 스크립트
+│   └── README.md                      # 개별 도구 상세 설명서
+├── patch-info/
+│   ├── patch-info                     # 다중 OS 패키지 정보 및 패치 검색 도구
+│   ├── patch-info.completion          # Bash 자동완성 스크립트
+│   ├── man/
+│   │   └── man1/
+│   │       └── patch-info.1           # 표준 Unix 매뉴얼 페이지
 │   └── README.md                      # 개별 도구 상세 설명서
 ├── remove-service/
 │   ├── remove-service                 # 시스템 서비스 완전 삭제 도구
@@ -65,11 +73,12 @@ sys/
 
 ```bash
 # 개인 환경 설치 예시 (~/bin, 사용자 자동완성 등록)
+../utils/scriptctl/scriptctl install --script ./patch-info/patch-info --target local
 ../utils/scriptctl/scriptctl install --script ./disk-size/disk-size --target local
 ../utils/scriptctl/scriptctl install --script ./sys-info/sys-info --target local
 ../utils/scriptctl/scriptctl install --script ./remove-service/remove-service --target local
 
 # 시스템 전역 설치 예시 (/usr/local/bin, /usr/share/bash-completion/completions/ 등록)
 # ※ 주의: scriptctl 자체의 권한 상승 차단을 위해 명령어 앞에 sudo를 붙이지 않습니다.
-../utils/scriptctl/scriptctl install --script ./disk-size/disk-size --target global
+../utils/scriptctl/scriptctl install --script ./patch-info/patch-info --target global
 ```

@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# =======================================
+# @author : parkjunhong77@gmail.com
+# @title : Bash completion for patch-info
+# @license : Apache License 2.0
+# @since : 2026-11-20
+# @desc : support macOS 11.2.3, Ubuntu 18.04 or higher, RockyOS 8 or higher, Arch Linux, Alpine Linux
+# =======================================
+
+# =======================================
+# Bash Completion Parameter Description
+#
+# - $1: Name of the command being completed.
+# - $2: Word being completed.
+# - $3: Word preceding the word being completed.
+# - COMP_WORDS: Array containing all words on the current command line.
+# - COMP_CWORD: Index of $COMP_WORDS containing the current cursor position.
+# - COMP_LINE: Current command line.
+# - COMPREPLY: Array variable into which Bash stores possible completions.
+# =======================================
+
+##
+# 현재 시스템에 설치된 패키지 목록 추출
+##
+_patch_info_installed_packages() {
+  if command -v dpkg-query >/dev/null 2>&1; then
+    dpkg-query -W -f='${Package}\n' 2>/dev/null
+  elif command -v rpm >/dev/null 2>&1; then
+    rpm -qa --qf '%{NAME}\n' 2>/dev/null
+  elif command -v pacman >/dev/null 2>&1; then
+    pacman -Qq 2>/dev/null
+  elif command -v apk >/dev/null 2>&1; then
+    apk info 2>/dev/null
+  elif command -v brew >/dev/null 2>&1; then
+    brew list --formula 2>/dev/null
+  fi
+}
+
+_patch_info_completion() {
+  local cur prev
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  local opts="--package --search --show-changelog --offline --verbose --help"
+
+  # --search 옵션 다음에는 특정 completion을 제공하지 않음
+  if [[ "$prev" == "--search" ]]; then
+    return 0
+  fi
+
+  # 직전 옵션이 무엇이었는지 또는 최근 옵션 추적
+  local last_option=""
+  local i
+  for ((i = COMP_CWORD - 1; i >= 1; i--)); do
+    if [[ "${COMP_WORDS[i]}" =~ ^-- ]]; then
+      last_option="${COMP_WORDS[i]}"
+      break
+    fi
+  done
+
+  # 1) 현재 입력 중인 단어가 '--'로 시작하는 경우 옵션 목록 추천
+  if [[ "$cur" =~ ^-- ]]; then
+    COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+    return 0
+  fi
+
+  # 2) 최근 옵션이 --package인 경우:
+  #    다른 옵션이 나오기 전까지 패키지 이름을 연속해서 추천
+  if [[ "$last_option" == "--package" ]]; then
+    local pkgs
+    pkgs="$(_patch_info_installed_packages)"
+    COMPREPLY=( $(compgen -W "$pkgs" -- "$cur") )
+    return 0
+  fi
+
+  # 3) 기본 옵션 목록 완성
+  COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
+  return 0
+}
+
+complete -F _patch_info_completion patch-info
