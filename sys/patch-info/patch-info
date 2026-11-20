@@ -24,13 +24,13 @@ help() {
 
 [옵션]
   --package <이름...>          설치 여부를 확인할 패키지명을 지정합니다. (단독 사용 가능)
-                               공백으로 여러 패키지를 연속 지정하거나 옵션을 반복 입력할 수 있습니다.
-                               (예: --package nginx nginx-core nginx-common)
+                               공백, 파이프(|), 콤마(,)로 여러 패키지를 연속 지정하거나 옵션을 반복 입력할 수 있습니다.
+                               (예: --package nginx nginx-core 또는 --package "nginx|nginx-common")
 
   --oss-number <번호...>       감사할 OS 보안 권고사항 번호(USN, RHSA, DSA 등) 또는 CVE 번호입니다.
                                도구가 각 OS 벤더의 권고 정보를 분석하여 연관된 CVE 목록을 자동 추출합니다.
-                               공백으로 여러 번호를 연속 지정하거나 옵션을 반복 입력할 수 있습니다.
-                               (예: --oss-number USN-9159-1 또는 --oss-number RHSA-2021:4356 CVE-2026-123633)
+                               공백, 파이프(|), 콤마(,)로 여러 번호를 연속 지정하거나 옵션을 반복 입력할 수 있습니다.
+                               (예: --oss-number USN-9159-1 또는 --oss-number "USN-9159-1|USN-9173-1")
 
   --show-changelog             패키지의 전체 체인지로그 텍스트를 출력합니다. (--package 필수)
 
@@ -47,11 +47,11 @@ help() {
   # 2) OS 보안 권고 번호(USN)만 입력하여 연관 CVE 자동 추출 및 감사 수행
   patch-info --oss-number USN-9159-1
 
-  # 3) 패키지 설치 검사 및 보안 권고사항 종합 감사 (복합 실행)
-  patch-info --package nginx nginx-core --oss-number USN-9159-1
+  # 3) 파이프(|)로 묶인 복수 OS 보안 권고 번호 감사
+  patch-info --package nginx --oss-number "USN-9159-1|USN-9173-1|USN-9175-1"
 
   # 4) 복수 권고 번호 및 CVE 번호 직접 지정 감사
-  patch-info --oss-number USN-9159-1 USN-9173-1 CVE-2026-123633 --verbose
+  patch-info --oss-number USN-9159-1 RHSA-2021:4356 CVE-2026-123633 --verbose
 
   # 5) 오프라인 모드로 로컬 캐시/파일에서만 검사
   patch-info --package sudo --oss-number USN-4966-1 --offline
@@ -96,14 +96,24 @@ while [[ $# -gt 0 ]]; do
     --package)
       shift 1
       while [[ $# -gt 0 && ! "$1" =~ ^-- ]]; do
-        TARGET_PACKAGES+=("$1")
+        # 공백, 파이프(|), 콤마(,)를 기준으로 안전하게 개별 토큰 분리
+        IFS=',| ' read -r -a raw_pkgs <<< "$1"
+        for p in "${raw_pkgs[@]}"; do
+          p="$(echo "$p" | xargs)"
+          [[ -n "$p" ]] && TARGET_PACKAGES+=("$p")
+        done
         shift 1
       done
       ;;
     --oss-number)
       shift 1
       while [[ $# -gt 0 && ! "$1" =~ ^-- ]]; do
-        OSS_NUMBERS+=("$1")
+        # 공백, 파이프(|), 콤마(,)를 기준으로 안전하게 개별 토큰 분리
+        IFS=',| ' read -r -a raw_osss <<< "$1"
+        for o in "${raw_osss[@]}"; do
+          o="$(echo "$o" | xargs)"
+          [[ -n "$o" ]] && OSS_NUMBERS+=("$o")
+        done
         shift 1
       done
       ;;
@@ -366,25 +376,29 @@ fetch_changelog() {
   return 1
 }
 
+# 권고 분석 결과 변수군 (구분자 충돌 방지를 위한 전역 변수 전달)
+ADV_TITLE=""
+ADV_STATUS=""
+ADV_PKG=""
+declare -a ADV_CVES=()
+
 ##
 # OS 보안 권고사항 번호로부터 연관 CVE 목록 및 권고 요약 정보 추출
 #
 # @param $1 {String} 권고 번호 (USN, RHSA, DSA 등 또는 CVE)
-# @output "TITLE|STATUS|AFFECTED_PKG|CVE1 CVE2 CVE3..."
 ##
 resolve_advisory_info() {
   local advisory="$1"
-  local title="Security Advisory: $advisory"
-  local status="확인 필요"
-  local affected_pkg=""
-  local cve_list=()
+  ADV_TITLE="Security Advisory: $advisory"
+  ADV_STATUS="확인 필요"
+  ADV_PKG=""
+  ADV_CVES=()
 
   # 1) 입력값이 이미 CVE 형식인 경우
   if [[ "$advisory" =~ ^CVE-[0-9]{4}-[0-9]+$ ]]; then
-    title="CVE 단독 취약점"
-    status="체인지로그 점검 필요"
-    cve_list=("$advisory")
-    echo "${title}|${status}|${affected_pkg}|${cve_list[*]}"
+    ADV_TITLE="CVE 단독 취약점"
+    ADV_STATUS="체인지로그 점검 필요"
+    ADV_CVES=("$advisory")
     return 0
   fi
 
@@ -399,25 +413,26 @@ resolve_advisory_info() {
       # 제목 파싱
       local parsed_title
       parsed_title="$(echo "$pro_out" | grep -E "^${advisory}:" | head -n 1 | sed "s/^${advisory}:[[:space:]]*//")"
-      [[ -n "$parsed_title" ]] && title="$parsed_title"
+      [[ -n "$parsed_title" ]] && ADV_TITLE="$parsed_title"
 
       # 해결 상태 파싱
       if echo "$pro_out" | grep -q "is resolved"; then
-        status="해결됨 (Resolved - 이미 패치 적용됨)"
+        ADV_STATUS="해결됨 (Resolved - 이미 패치 적용됨)"
       elif echo "$pro_out" | grep -q "A fix is available"; then
-        status="업데이트 가능 (Available - 패치 미적용)"
+        ADV_STATUS="업데이트 가능 (Available - 패치 미적용)"
       elif echo "$pro_out" | grep -q "is not affected"; then
-        status="해당 없음 (Not Affected)"
+        ADV_STATUS="해당 없음 (Not Affected)"
       fi
 
       # 영향받는 패키지 파싱
-      affected_pkg="$(echo "$pro_out" | grep -A 2 "affected source package is installed:" | grep -E "^\([0-9]+/[0-9]+\)" | awk '{print $2}' | tr -d ":" | head -n 1)"
+      ADV_PKG="$(echo "$pro_out" | grep -A 2 "affected source package is installed:" | grep -E "^\([0-9]+/[0-9]+\)" | awk '{print $2}' | tr -d ":" | head -n 1)"
 
       # 연관 CVE 목록 파싱
       while IFS= read -r cve; do
-        [[ -n "$cve" ]] && cve_list+=("$cve")
+        [[ -n "$cve" ]] && ADV_CVES+=("$cve")
       done < <(echo "$pro_out" | grep -o -E "CVE-[0-9]{4}-[0-9]+" | sort -u || true)
     fi
+    return 0
   fi
 
   # 3) RHEL/Rocky 환경에서 RHSA/RLSA/ALSA 형식인 경우
@@ -427,9 +442,10 @@ resolve_advisory_info() {
       local dnf_out
       dnf_out="$(dnf updateinfo info --advisory "$advisory" 2>/dev/null || true)"
       while IFS= read -r cve; do
-        [[ -n "$cve" ]] && cve_list+=("$cve")
+        [[ -n "$cve" ]] && ADV_CVES+=("$cve")
       done < <(echo "$dnf_out" | grep -E "^[[:space:]]*CVEs[[:space:]]*:" -A 10 | grep -o -E "CVE-[0-9]{4}-[0-9]+" | sort -u || true)
     fi
+    return 0
   fi
 
   # 4) openSUSE / SLES 환경
@@ -439,12 +455,13 @@ resolve_advisory_info() {
       local zyp_out
       zyp_out="$(zypper patch-info "$advisory" 2>/dev/null || true)"
       while IFS= read -r cve; do
-        [[ -n "$cve" ]] && cve_list+=("$cve")
+        [[ -n "$cve" ]] && ADV_CVES+=("$cve")
       done < <(echo "$zyp_out" | grep -o -E "CVE-[0-9]{4}-[0-9]+" | sort -u || true)
     fi
+    return 0
   fi
 
-  echo "${title}|${status}|${affected_pkg}|${cve_list[*]}"
+  return 0
 }
 
 ##
@@ -565,32 +582,27 @@ if [[ ${#OSS_NUMBERS[@]} -gt 0 ]]; then
   echo "--------------------------------------------------------------------------------"
 
   for oss in "${OSS_NUMBERS[@]}"; do
-    raw_adv_info="$(resolve_advisory_info "$oss")"
-    adv_title="$(echo "$raw_adv_info" | cut -d'|' -f1)"
-    adv_status="$(echo "$raw_adv_info" | cut -d'|' -f2)"
-    adv_pkg="$(echo "$raw_adv_info" | cut -d'|' -f3)"
-    adv_cves_str="$(echo "$raw_adv_info" | cut -d'|' -f4)"
+    # 함수 호출 (ADV_* 변수로 안전하게 수신)
+    resolve_advisory_info "$oss"
 
-    read -r -a adv_cves <<< "$adv_cves_str"
-
-    printf "  * \033[1;36m[%s]\033[0m %s\n" "$oss" "$adv_title"
-    if [[ "$adv_status" =~ "해결됨" ]]; then
-      printf "    - 시스템 상태: \033[1;32m%s\033[0m\n" "$adv_status"
-    elif [[ "$adv_status" =~ "업데이트 가능" ]]; then
-      printf "    - 시스템 상태: \033[1;31m%s\033[0m\n" "$adv_status"
+    printf "  * \033[1;36m[%s]\033[0m %s\n" "$oss" "$ADV_TITLE"
+    if [[ "$ADV_STATUS" =~ "해결됨" ]]; then
+      printf "    - 시스템 상태: \033[1;32m%s\033[0m\n" "$ADV_STATUS"
+    elif [[ "$ADV_STATUS" =~ "업데이트 가능" ]]; then
+      printf "    - 시스템 상태: \033[1;31m%s\033[0m\n" "$ADV_STATUS"
     else
-      printf "    - 시스템 상태: %s\n" "$adv_status"
+      printf "    - 시스템 상태: %s\n" "$ADV_STATUS"
     fi
 
-    if [[ -n "$adv_pkg" ]]; then
-      printf "    - 영향 패키지: %s\n" "$adv_pkg"
-      SUGGESTED_PKGS+=("$adv_pkg")
+    if [[ -n "$ADV_PKG" ]]; then
+      printf "    - 영향 패키지: %s\n" "$ADV_PKG"
+      SUGGESTED_PKGS+=("$ADV_PKG")
     fi
 
-    if [[ ${#adv_cves[@]} -gt 0 ]]; then
-      printf "    - 연관 CVE 목록 (%d개 추출됨):\n" "${#adv_cves[@]}"
-      printf "      %s\n" "${adv_cves[*]}"
-      for c in "${adv_cves[@]}"; do
+    if [[ ${#ADV_CVES[@]} -gt 0 ]]; then
+      printf "    - 연관 CVE 목록 (%d개 추출됨):\n" "${#ADV_CVES[@]}"
+      printf "      %s\n" "${ADV_CVES[*]}"
+      for c in "${ADV_CVES[@]}"; do
         ALL_RESOLVED_CVES+=("$c")
       done
     else
@@ -613,7 +625,7 @@ if [[ ${#ALL_RESOLVED_CVES[@]} -gt 0 ]]; then
   # 정규식 패턴 생성
   cve_regex_pattern="$(IFS="|"; echo "${UNIQUE_CVES[*]}")"
 
-  # 감사 대상 패키지 결정: 사용자가 지정한 패키지 우선, 없으면 권고에서 추출된 패키지 사용
+  # 감사 대상 패키지 결정: 사용자가 지정한 설치된 패키지 우선, 없으면 권고에서 추출된 패키지 사용
   declare -a AUDIT_PKGS=()
   if [[ ${#INSTALLED_PKGS[@]} -gt 0 ]]; then
     AUDIT_PKGS=("${INSTALLED_PKGS[@]}")
