@@ -2,8 +2,8 @@
 
 # ==============================================================================
 # @author       : parkjunhong77@gmail.com
-# @title        : 패키지 정보 및 보안 패치(CVE/USN/RHSA) 체인지로그 검색 도구
-# @description  : 다양한 Linux 배포판 및 macOS에서 설치된 패키지 정보 조회 및 체인지로그 내 보안 패치(CVE, USN 등) 검색
+# @title        : 패키지 정보 조회 및 OS 보안 권고(USN/RHSA 등) 기반 패치 감사 도구
+# @description  : 다양한 Linux 배포판 및 macOS에서 패키지 설치 상태 검사 및 OS 보안 권고 번호 기반 CVE 자동 추출·패치 감사 수행
 # @license      : Apache License 2.0
 # @since        : 2026-11-20
 # @desc         : support macOS 11.2.3, Ubuntu 18.04 or higher, RockyOS 8 or higher, Arch Linux, Alpine Linux
@@ -14,49 +14,50 @@
 help() {
   cat <<'EOF'
 [사용법]
-  patch-info --package <패키지명...> [옵션]
+  patch-info [옵션]
 
 [설명]
-  현재 시스템(Ubuntu, Debian, RHEL, Rocky, openSUSE, Arch, Alpine, macOS 등)에
-  설치된 패키지의 버전 정보를 확인하고, 로컬 및 온라인 체인지로그(Changelog)에서
-  보안 패치 내역(CVE, USN, RHSA, ALSA 등)을 정규식 기반으로 검색합니다.
+  현재 시스템(Ubuntu, Debian, RHEL, Rocky, openSUSE, Arch, Alpine, macOS 등)에서
+  1) 패키지 설치 여부 및 버전 정보를 독립적으로 검사하거나,
+  2) OS 보안 권고사항 번호(USN, RHSA, DSA 등)를 입력받아 연관된 CVE 목록을 자동으로 추출하고
+     체인지로그 내 보안 패치 적용 여부를 완전한 블록 단위로 정밀 감사합니다.
 
 [옵션]
-  --package <이름...>       조회할 패키지명을 지정합니다.
-                            공백으로 여러 패키지를 연속 지정하거나, 옵션을 반복 사용할 수 있습니다.
-                            (예: --package nginx nginx-core 또는 --package nginx --package bash)
+  --package <이름...>          설치 여부를 확인할 패키지명을 지정합니다. (단독 사용 가능)
+                               공백으로 여러 패키지를 연속 지정하거나 옵션을 반복 입력할 수 있습니다.
+                               (예: --package nginx nginx-core nginx-common)
 
-  --search <패턴>           체인지로그에서 검색할 보안 식별자 또는 POSIX 확장 정규식(ERE) 패턴입니다.
-                            대소문자를 구분하지 않고 검색합니다.
-                            (예: "CVE-2021-23017", "USN-4966-1", "CVE-2023-[0-9]+", "buffer overflow")
-                            여러 취약점을 동시에 검색할 경우 파이프(|)로 연결합니다.
-                            (예: "CVE-2021-23017|CVE-2021-3618|USN-4966-1")
+  --oss-number <번호...>       감사할 OS 보안 권고사항 번호(USN, RHSA, DSA 등) 또는 CVE 번호입니다.
+                               도구가 각 OS 벤더의 권고 정보를 분석하여 연관된 CVE 목록을 자동 추출합니다.
+                               공백으로 여러 번호를 연속 지정하거나 옵션을 반복 입력할 수 있습니다.
+                               (예: --oss-number USN-9159-1 또는 --oss-number RHSA-2021:4356 CVE-2026-123633)
 
-  --show-changelog          검색 패턴 필터링 없이 패키지의 전체 체인지로그를 출력합니다.
+  --show-changelog             패키지의 전체 체인지로그 텍스트를 출력합니다. (--package 필수)
 
-  --offline                 기본으로 활성화되는 원격/온라인 조회를 차단하고,
-                            로컬 파일시스템 및 로컬 패키지 데이터베이스에 저장된 내역만 검색합니다.
+  --offline                    원격 보안 API 및 온라인 조회를 차단하고 로컬 파일/캐시만 사용합니다.
 
-  --verbose                 OS 감지 결과, 탐색 파일 경로, 온라인 쿼리 상태 등
-                            상세 디버깅 정보를 표준 에러로 출력합니다.
+  --verbose                    상세 디버깅 정보(OS 감지, 실행 명령어, 파싱 통계)를 표준 에러로 출력합니다.
 
-  --help                    도움말 메시지를 출력하고 종료합니다.
+  --help                       도움말 메시지를 출력하고 종료합니다.
 
 [사용 예시]
-  # 1) 단일 패키지 버전 및 특정 CVE 보안 패치 여부 확인
-  patch-info --package nginx --search "CVE-2021-23017"
+  # 1) 패키지 설치 여부 및 버전만 독립적으로 검사
+  patch-info --package nginx nginx-core nginx-common
 
-  # 2) 여러 패키지를 공백으로 나열하고 복수 CVE/USN 동시 검색
-  patch-info --package nginx nginx-core nginx-common --search "USN-4966-1|CVE-2021-23017"
+  # 2) OS 보안 권고 번호(USN)만 입력하여 연관 CVE 자동 추출 및 감사 수행
+  patch-info --oss-number USN-9159-1
 
-  # 3) 패키지 옵션 반복 지정 및 상세 디버그 로그 활성화
-  patch-info --package openssl --package bash --search "CVE-2023-[0-9]+" --verbose
+  # 3) 패키지 설치 검사 및 보안 권고사항 종합 감사 (복합 실행)
+  patch-info --package nginx nginx-core --oss-number USN-9159-1
 
-  # 4) 오프라인 모드로 로컬 체인지로그에서만 패치 내역 검색
-  patch-info --package linux-image-generic --search "privilege escalation" --offline
+  # 4) 복수 권고 번호 및 CVE 번호 직접 지정 감사
+  patch-info --oss-number USN-9159-1 USN-9173-1 CVE-2026-123633 --verbose
 
-  # 5) 패키지의 전체 체인지로그 열람
-  patch-info --package sudo --show-changelog
+  # 5) 오프라인 모드로 로컬 캐시/파일에서만 검사
+  patch-info --package sudo --oss-number USN-4966-1 --offline
+
+  # 6) 특정 패키지의 전체 체인지로그 열람
+  patch-info --package nginx --show-changelog
 EOF
 }
 
@@ -84,7 +85,7 @@ log_warn() {
 
 # 변수 초기화
 declare -a TARGET_PACKAGES=()
-SEARCH_PATTERN=""
+declare -a OSS_NUMBERS=()
 SHOW_CHANGELOG=false
 ONLINE_MODE=true
 VERBOSE=false
@@ -94,20 +95,17 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --package)
       shift 1
-      # 다음 옵션(--)이 나오기 전까지의 모든 인자를 패키지명으로 수집
       while [[ $# -gt 0 && ! "$1" =~ ^-- ]]; do
         TARGET_PACKAGES+=("$1")
         shift 1
       done
       ;;
-    --search)
-      if [[ -z "$2" || "$2" =~ ^-- ]]; then
-        log_error "--search 옵션에 검색 패턴 문자열이 필요합니다."
-        help
-        exit 1
-      fi
-      SEARCH_PATTERN="$2"
-      shift 2
+    --oss-number)
+      shift 1
+      while [[ $# -gt 0 && ! "$1" =~ ^-- ]]; do
+        OSS_NUMBERS+=("$1")
+        shift 1
+      done
       ;;
     --show-changelog)
       SHOW_CHANGELOG=true
@@ -127,17 +125,23 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       log_error "알 수 없는 옵션입니다: $1"
+      echo ""
       help
       exit 1
       ;;
   esac
 done
 
-# 필수 인자 검증
-if [[ ${#TARGET_PACKAGES[@]} -eq 0 ]]; then
-  log_error "조회할 패키지가 지정되지 않았습니다. --package 옵션으로 1개 이상의 패키지를 지정하십시오."
+# 인자 유효성 검증
+if [[ ${#TARGET_PACKAGES[@]} -eq 0 && ${#OSS_NUMBERS[@]} -eq 0 ]]; then
+  log_error "실행할 작업이 지정되지 않았습니다. --package 또는 --oss-number 옵션을 1개 이상 지정하십시오."
   echo ""
   help
+  exit 1
+fi
+
+if [[ "$SHOW_CHANGELOG" == "true" && ${#TARGET_PACKAGES[@]} -eq 0 ]]; then
+  log_error "--show-changelog 옵션은 --package 옵션과 함께 사용해야 합니다."
   exit 1
 fi
 
@@ -156,7 +160,6 @@ detect_environment() {
       pkg_mgr="port"
     fi
   elif [[ -f /etc/os-release ]]; then
-    # shellcheck disable=SC1091
     local id="" id_like="" pretty_name=""
     id="$(grep -E '^ID=' /etc/os-release | cut -d'=' -f2 | tr -d '"')"
     id_like="$(grep -E '^ID_LIKE=' /etc/os-release | cut -d'=' -f2 | tr -d '"')"
@@ -191,7 +194,6 @@ detect_environment() {
     fi
   fi
 
-  # 폴백: 바이너리 확인
   if [[ "$pkg_mgr" == "unknown" ]]; then
     if command -v dpkg-query >/dev/null 2>&1; then
       os_type="debian"; pkg_mgr="dpkg"
@@ -217,18 +219,12 @@ OS_DESC="$(echo "$ENV_INFO" | cut -d'|' -f3)"
 log_debug "OS 환경: ${OS_DESC} (OS 유형: ${OS_TYPE})"
 log_debug "패키지 매니저: ${PKG_MGR}"
 log_debug "온라인 모드: ${ONLINE_MODE}"
-log_debug "검색 대상 패키지 수: ${#TARGET_PACKAGES[@]}개 (${TARGET_PACKAGES[*]})"
-
-if [[ "$PKG_MGR" == "unknown" ]]; then
-  log_error "지원되는 패키지 관리 도구(dpkg, rpm, pacman, apk, brew)를 감지할 수 없습니다."
-  exit 1
-fi
 
 ##
 # 패키지 설치 여부 및 기본 버전 정보 조회
 #
 # @param $1 {String} 패키지명
-# @return 0: 설치됨, 1: 미설치 또는 오류
+# @return 0: 설치됨, 1: 미설치
 ##
 get_package_info() {
   local pkg="$1"
@@ -242,7 +238,7 @@ get_package_info() {
         p_name="$(echo "$info_out" | awk '{print $1}')"
         p_ver="$(echo "$info_out" | awk '{print $2}')"
         p_arch="$(echo "$info_out" | awk '{print $3}')"
-        printf "패키지: %s | 버전: %s | 아키텍처: %s | 상태: 설치됨\n" "$p_name" "$p_ver" "$p_arch"
+        printf "%-22s : 버전 %-20s (%-6s) | \033[1;32m[설치됨]\033[0m\n" "$p_name" "$p_ver" "$p_arch"
         return 0
       fi
       ;;
@@ -253,7 +249,7 @@ get_package_info() {
         p_name="$(echo "$info_out" | awk '{print $1}')"
         p_ver="$(echo "$info_out" | awk '{print $2}')"
         p_arch="$(echo "$info_out" | awk '{print $3}')"
-        printf "패키지: %s | 버전: %s | 아키텍처: %s | 상태: 설치됨\n" "$p_name" "$p_ver" "$p_arch"
+        printf "%-22s : 버전 %-20s (%-6s) | \033[1;32m[설치됨]\033[0m\n" "$p_name" "$p_ver" "$p_arch"
         return 0
       fi
       ;;
@@ -263,35 +259,35 @@ get_package_info() {
         local p_name p_ver
         p_name="$(echo "$info_out" | awk '{print $1}')"
         p_ver="$(echo "$info_out" | awk '{print $2}')"
-        printf "패키지: %s | 버전: %s | 상태: 설치됨\n" "$p_name" "$p_ver"
+        printf "%-22s : 버전 %-20s | \033[1;32m[설치됨]\033[0m\n" "$p_name" "$p_ver"
         return 0
       fi
       ;;
     apk)
       info_out="$(apk info -v "$pkg" 2>/dev/null || true)"
       if [[ -n "$info_out" ]]; then
-        printf "패키지: %s | 상태: 설치됨\n" "$info_out"
+        printf "%-22s : %-20s | \033[1;32m[설치됨]\033[0m\n" "$pkg" "$info_out"
         return 0
       fi
       ;;
     brew)
       info_out="$(brew list --versions "$pkg" 2>/dev/null || true)"
       if [[ -n "$info_out" ]]; then
-        printf "Formula: %s | 상태: 설치됨\n" "$info_out"
+        printf "%-22s : %-20s | \033[1;32m[설치됨]\033[0m\n" "$pkg" "$info_out"
         return 0
       fi
       ;;
   esac
 
-  printf "패키지: %s | 상태: \033[1;31m미설치(Not Installed)\033[0m\n" "$pkg"
+  printf "%-22s : \033[1;33m[미설치 (Not Installed)]\033[0m\n" "$pkg"
   return 1
 }
 
 ##
-# 패키지의 체인지로그 내용 추출 (온라인 또는 로컬)
+# 패키지의 체인지로그 내용 추출
 #
 # @param $1 {String} 패키지명
-# @return 0: 추출 성공, 1: 실패
+# @return 0: 성공, 1: 실패
 ##
 fetch_changelog() {
   local pkg="$1"
@@ -300,19 +296,15 @@ fetch_changelog() {
 
   case "$PKG_MGR" in
     dpkg)
-      # 1. 온라인 모드일 경우 apt-get changelog 시도 (PAGER=cat 및 타임아웃 설정으로 블로킹 방지)
       if [[ "$ONLINE_MODE" == "true" ]] && command -v apt-get >/dev/null 2>&1; then
         log_debug "'$pkg' 온라인 체인지로그 조회 시도 (PAGER=cat timeout 10 apt-get changelog)..."
         content="$(PAGER=cat timeout 10 apt-get changelog "$pkg" 2>/dev/null || true)"
         if [[ -n "$content" ]]; then
-          log_debug "'$pkg' 온라인 체인지로그 획득 완료"
           printf "%s\n" "$content"
           return 0
         fi
-        log_debug "'$pkg' 온라인 조회 실패 또는 타임아웃, 로컬 파일 탐색으로 전환"
       fi
 
-      # 2. 로컬 /usr/share/doc 탐색
       local candidates=(
         "/usr/share/doc/${pkg}/changelog.Debian.gz"
         "/usr/share/doc/${pkg}/changelog.gz"
@@ -320,7 +312,6 @@ fetch_changelog() {
         "/usr/share/doc/${pkg}/changelog"
       )
 
-      # 와일드카드 매칭 후보 추가 (예: nginx-core -> /usr/share/doc/nginx*)
       while IFS= read -r f; do
         [[ -n "$f" ]] && candidates+=("$f")
       done < <(find /usr/share/doc -maxdepth 2 -type f \( -name "changelog.Debian.gz" -o -name "changelog.gz" \) -path "/usr/share/doc/${pkg}*/*" 2>/dev/null || true)
@@ -338,38 +329,15 @@ fetch_changelog() {
       ;;
 
     rpm|zypper)
-      # 1. RPM 내부 체인지로그 조회
-      log_debug "'$pkg' RPM 내장 체인지로그 조회 (rpm -q --changelog)..."
+      log_debug "'$pkg' RPM 체인지로그 조회..."
       content="$(rpm -q --changelog "$pkg" 2>/dev/null || true)"
       if [[ -n "$content" ]]; then
         printf "%s\n" "$content"
         fetched=true
       fi
-
-      # 2. 온라인 모드 및 dnf/zypper 지원 시 보안 정보 병합
-      if [[ "$ONLINE_MODE" == "true" ]]; then
-        if command -v dnf >/dev/null 2>&1; then
-          log_debug "'$pkg' DNF updateinfo 조회 시도..."
-          local sec_info
-          sec_info="$(dnf updateinfo info "$pkg" 2>/dev/null || true)"
-          if [[ -n "$sec_info" ]]; then
-            printf "\n--- [DNF Updateinfo Advisory Data] ---\n%s\n" "$sec_info"
-            fetched=true
-          fi
-        elif command -v zypper >/dev/null 2>&1; then
-          log_debug "'$pkg' Zypper patch-info 조회 시도..."
-          local sec_info
-          sec_info="$(zypper patch-info "$pkg" 2>/dev/null || true)"
-          if [[ -n "$sec_info" ]]; then
-            printf "\n--- [Zypper Patch-Info Data] ---\n%s\n" "$sec_info"
-            fetched=true
-          fi
-        fi
-      fi
       ;;
 
     pacman)
-      log_debug "'$pkg' Pacman 체인지로그 조회 (pacman -Qc)..."
       content="$(pacman -Qc "$pkg" 2>/dev/null || true)"
       if [[ -n "$content" ]]; then
         printf "%s\n" "$content"
@@ -378,7 +346,6 @@ fetch_changelog() {
       ;;
 
     apk)
-      log_debug "'$pkg' Alpine audit/info 조회..."
       content="$(apk info -w "$pkg" 2>/dev/null || true)"
       if [[ -n "$content" ]]; then
         printf "%s\n" "$content"
@@ -387,7 +354,6 @@ fetch_changelog() {
       ;;
 
     brew)
-      log_debug "'$pkg' Homebrew git 커밋 로그 조회..."
       content="$(brew log "$pkg" -n 50 2>/dev/null || true)"
       if [[ -n "$content" ]]; then
         printf "%s\n" "$content"
@@ -396,89 +362,301 @@ fetch_changelog() {
       ;;
   esac
 
-  if [[ "$fetched" == "true" ]]; then
-    return 0
-  fi
-
+  [[ "$fetched" == "true" ]] && return 0
   return 1
 }
 
-# 검색 및 출력 메인 루틴
-total_matched_pkgs=0
+##
+# OS 보안 권고사항 번호로부터 연관 CVE 목록 및 권고 요약 정보 추출
+#
+# @param $1 {String} 권고 번호 (USN, RHSA, DSA 등 또는 CVE)
+# @output "TITLE|STATUS|AFFECTED_PKG|CVE1 CVE2 CVE3..."
+##
+resolve_advisory_info() {
+  local advisory="$1"
+  local title="Security Advisory: $advisory"
+  local status="확인 필요"
+  local affected_pkg=""
+  local cve_list=()
+
+  # 1) 입력값이 이미 CVE 형식인 경우
+  if [[ "$advisory" =~ ^CVE-[0-9]{4}-[0-9]+$ ]]; then
+    title="CVE 단독 취약점"
+    status="체인지로그 점검 필요"
+    cve_list=("$advisory")
+    echo "${title}|${status}|${affected_pkg}|${cve_list[*]}"
+    return 0
+  fi
+
+  # 2) Ubuntu 환경에서 USN- 형식인 경우
+  if [[ "$advisory" =~ ^USN-[0-9]+-[0-9]+$ ]]; then
+    if command -v pro >/dev/null 2>&1; then
+      log_debug "Ubuntu Pro 도구를 통해 '$advisory' 분석 (pro fix --dry-run)..."
+      # [안전 가드레일]: 시스템 설치를 방지하기 위해 --dry-run을 반드시 고정 실행
+      local pro_out
+      pro_out="$(timeout 10 pro fix --dry-run "$advisory" 2>&1 || true)"
+
+      # 제목 파싱
+      local parsed_title
+      parsed_title="$(echo "$pro_out" | grep -E "^${advisory}:" | head -n 1 | sed "s/^${advisory}:[[:space:]]*//")"
+      [[ -n "$parsed_title" ]] && title="$parsed_title"
+
+      # 해결 상태 파싱
+      if echo "$pro_out" | grep -q "is resolved"; then
+        status="해결됨 (Resolved - 이미 패치 적용됨)"
+      elif echo "$pro_out" | grep -q "A fix is available"; then
+        status="업데이트 가능 (Available - 패치 미적용)"
+      elif echo "$pro_out" | grep -q "is not affected"; then
+        status="해당 없음 (Not Affected)"
+      fi
+
+      # 영향받는 패키지 파싱
+      affected_pkg="$(echo "$pro_out" | grep -A 2 "affected source package is installed:" | grep -E "^\([0-9]+/[0-9]+\)" | awk '{print $2}' | tr -d ":" | head -n 1)"
+
+      # 연관 CVE 목록 파싱
+      while IFS= read -r cve; do
+        [[ -n "$cve" ]] && cve_list+=("$cve")
+      done < <(echo "$pro_out" | grep -o -E "CVE-[0-9]{4}-[0-9]+" | sort -u || true)
+    fi
+  fi
+
+  # 3) RHEL/Rocky 환경에서 RHSA/RLSA/ALSA 형식인 경우
+  if [[ "$advisory" =~ ^(RHSA|RLSA|ALSA|FEDORA)-[0-9]{4}:?[0-9]+$ ]]; then
+    if command -v dnf >/dev/null 2>&1; then
+      log_debug "DNF updateinfo를 통해 '$advisory' 분석..."
+      local dnf_out
+      dnf_out="$(dnf updateinfo info --advisory "$advisory" 2>/dev/null || true)"
+      while IFS= read -r cve; do
+        [[ -n "$cve" ]] && cve_list+=("$cve")
+      done < <(echo "$dnf_out" | grep -E "^[[:space:]]*CVEs[[:space:]]*:" -A 10 | grep -o -E "CVE-[0-9]{4}-[0-9]+" | sort -u || true)
+    fi
+  fi
+
+  # 4) openSUSE / SLES 환경
+  if [[ "$advisory" =~ (SUSE-SU|openSUSE-SU) ]]; then
+    if command -v zypper >/dev/null 2>&1; then
+      log_debug "Zypper patch-info를 통해 '$advisory' 분석..."
+      local zyp_out
+      zyp_out="$(zypper patch-info "$advisory" 2>/dev/null || true)"
+      while IFS= read -r cve; do
+        [[ -n "$cve" ]] && cve_list+=("$cve")
+      done < <(echo "$zyp_out" | grep -o -E "CVE-[0-9]{4}-[0-9]+" | sort -u || true)
+    fi
+  fi
+
+  echo "${title}|${status}|${affected_pkg}|${cve_list[*]}"
+}
+
+##
+# 체인지로그에서 특정 CVE 정규식에 일치하는 완전한 블록 전체 추출 (블록 파서)
+#
+# @param $1 {String} 체인지로그 원문 텍스트
+# @param $2 {String} CVE 정규식 패턴 (예: "CVE-2026-123633|CVE-2026-113425")
+##
+extract_changelog_blocks() {
+  local changelog_text="$1"
+  local cve_regex="$2"
+
+  echo "$changelog_text" | awk -v pattern="$cve_regex" '
+    BEGIN {
+      IGNORECASE = 1
+      in_block = 0
+      cur_block = ""
+      matched_count = 0
+    }
+    # 새 항목 시작 (* 헤더)
+    /^[[:space:]]*\*[[:space:]]/ {
+      if (in_block && cur_block ~ pattern) {
+        print cur_block
+        print ""
+        matched_count++
+      }
+      in_block = 1
+      cur_block = $0
+      next
+    }
+    # 패키지 헤더 또는 서명 라인 도달 시 현재 블록 종결
+    /^[a-zA-Z0-9]/ || /^[[:space:]]*--[[:space:]]/ {
+      if (in_block && cur_block ~ pattern) {
+        print cur_block
+        print ""
+        matched_count++
+      }
+      in_block = 0
+      cur_block = ""
+      next
+    }
+    # 블록 내부 행 누적
+    {
+      if (in_block) {
+        cur_block = cur_block "\n" $0
+      }
+    }
+    END {
+      if (in_block && cur_block ~ pattern) {
+        print cur_block
+        print ""
+        matched_count++
+      }
+    }
+  '
+}
+
+# ==============================================================================
+# 메인 실행 화면
+# ==============================================================================
 
 echo "================================================================================"
-printf " 🛡️  보안 패치 및 패키지 체인지로그 감사 보고서\n"
-printf "    - 시스템: %s\n" "$OS_DESC"
-printf "    - 패키지 매니저: %s\n" "$PKG_MGR"
-if [[ -n "$SEARCH_PATTERN" ]]; then
-  printf "    - 검색 패턴: '%s' (POSIX 확장 정규식, 대소문자 무시)\n" "$SEARCH_PATTERN"
+printf " 🛡️  시스템 패키지 및 OS 보안 권고 감사 보고서\n"
+printf "    - 시스템: %s (패키지 백엔드: %s)\n" "$OS_DESC" "$PKG_MGR"
+if [[ ${#OSS_NUMBERS[@]} -gt 0 ]]; then
+  printf "    - OS 보안 권고사항(OSS): %s\n" "${OSS_NUMBERS[*]}"
 fi
-printf "    - 조회 모드: %s\n" "$([ "$ONLINE_MODE" == "true" ] && echo '온라인 (원격 저장소 우선 및 로컬 폴백)' || echo '오프라인 (로컬 전용)')"
+printf "    - 조회 모드: %s\n" "$([ "$ONLINE_MODE" == "true" ] && echo '온라인 (공식 보안 API 및 원격 저장소 우선)' || echo '오프라인 (로컬 전용)')"
 echo "================================================================================"
 echo ""
 
-for pkg in "${TARGET_PACKAGES[@]}"; do
+# ------------------------------------------------------------------------------
+# [1단계] 패키지 설치 상태 검사
+# ------------------------------------------------------------------------------
+declare -a INSTALLED_PKGS=()
+
+if [[ ${#TARGET_PACKAGES[@]} -gt 0 ]]; then
   echo "--------------------------------------------------------------------------------"
-  printf "[패키지 검사] %s\n" "$pkg"
+  printf " [1단계] 시스템 패키지 설치 상태 검사\n"
   echo "--------------------------------------------------------------------------------"
 
-  # 1. 패키지 버전 및 상태 출력
-  if ! get_package_info "$pkg"; then
-    log_warn "'$pkg' 패키지가 시스템에 설치되어 있지 않아 패치 검색을 건너뜁니다."
-    echo ""
-    continue
-  fi
-
-  # 2. 체인지로그 조회
-  raw_changelog="$(fetch_changelog "$pkg")"
-
-  if [[ -z "$raw_changelog" ]]; then
-    log_warn "'$pkg'에 대한 체인지로그(패치 내역)를 찾을 수 없습니다."
-    echo ""
-    continue
-  fi
-
-  # 3. 전체 체인지로그 출력 모드
-  if [[ "$SHOW_CHANGELOG" == "true" ]]; then
-    printf "\n--- [%s 전체 체인지로그] ---\n" "$pkg"
-    echo "$raw_changelog"
-    echo ""
-    continue
-  fi
-
-  # 4. 정규식 패턴 검색 모드
-  if [[ -n "$SEARCH_PATTERN" ]]; then
-    log_debug "'$pkg' 체인지로그에서 패턴 검색 수행: $SEARCH_PATTERN"
-    
-    # ERE 패턴으로 일치하는 행 및 전후 문맥(Context) 추출
-    matched_lines="$(echo "$raw_changelog" | grep -E -i -C 2 "$SEARCH_PATTERN" || true)"
-
-    if [[ -n "$matched_lines" ]]; then
-      total_matched_pkgs=$((total_matched_pkgs + 1))
-      match_count="$(echo "$raw_changelog" | grep -E -i -c "$SEARCH_PATTERN" || true)"
-      printf "\n\033[1;32m[검색 성공]\033[0m 총 %d건의 패치 내역이 검색되었습니다:\n\n" "$match_count"
-      
-      # 매칭 라인 하이라이트 출력
-      if [[ -t 1 ]]; then
-        echo "$matched_lines" | grep --color=always -E -i "$SEARCH_PATTERN|$"
-      else
-        echo "$matched_lines"
-      fi
-      echo ""
-    else
-      printf "\n\033[1;33m[검색 결과 없음]\033[0m 체인지로그 내에서 '%s' 패턴과 일치하는 패치 내역이 없습니다.\n\n" "$SEARCH_PATTERN"
+  installed_cnt=0
+  for pkg in "${TARGET_PACKAGES[@]}"; do
+    if get_package_info "$pkg"; then
+      INSTALLED_PKGS+=("$pkg")
+      installed_cnt=$((installed_cnt + 1))
     fi
-  else
-    printf "\n[안내] --search <패턴> 또는 --show-changelog 옵션을 지정하면 상세 패치 내역을 확인할 수 있습니다.\n\n"
+  done
+
+  printf "  * 검사 결과: 총 %d개 요청 패키지 중 %d개 설치됨, %d개 미설치\n" \
+    "${#TARGET_PACKAGES[@]}" "$installed_cnt" $(( ${#TARGET_PACKAGES[@]} - installed_cnt ))
+  echo ""
+fi
+
+# ------------------------------------------------------------------------------
+# 전체 체인지로그 출력 모드 처리
+# ------------------------------------------------------------------------------
+if [[ "$SHOW_CHANGELOG" == "true" ]]; then
+  echo "--------------------------------------------------------------------------------"
+  printf " [체인지로그 전체 열람]\n"
+  echo "--------------------------------------------------------------------------------"
+  for pkg in "${INSTALLED_PKGS[@]}"; do
+    printf "\n--- [%s 전체 체인지로그] ---\n" "$pkg"
+    fetch_changelog "$pkg"
+  done
+  exit 0
+fi
+
+# ------------------------------------------------------------------------------
+# [2단계] OS 보안 권고사항 분석 및 연관 CVE 추출
+# ------------------------------------------------------------------------------
+declare -a ALL_RESOLVED_CVES=()
+declare -a SUGGESTED_PKGS=()
+
+if [[ ${#OSS_NUMBERS[@]} -gt 0 ]]; then
+  echo "--------------------------------------------------------------------------------"
+  printf " [2단계] OS 보안 권고사항(OSS Number) 분석 및 연관 CVE 자동 추출\n"
+  echo "--------------------------------------------------------------------------------"
+
+  for oss in "${OSS_NUMBERS[@]}"; do
+    raw_adv_info="$(resolve_advisory_info "$oss")"
+    adv_title="$(echo "$raw_adv_info" | cut -d'|' -f1)"
+    adv_status="$(echo "$raw_adv_info" | cut -d'|' -f2)"
+    adv_pkg="$(echo "$raw_adv_info" | cut -d'|' -f3)"
+    adv_cves_str="$(echo "$raw_adv_info" | cut -d'|' -f4)"
+
+    read -r -a adv_cves <<< "$adv_cves_str"
+
+    printf "  * \033[1;36m[%s]\033[0m %s\n" "$oss" "$adv_title"
+    if [[ "$adv_status" =~ "해결됨" ]]; then
+      printf "    - 시스템 상태: \033[1;32m%s\033[0m\n" "$adv_status"
+    elif [[ "$adv_status" =~ "업데이트 가능" ]]; then
+      printf "    - 시스템 상태: \033[1;31m%s\033[0m\n" "$adv_status"
+    else
+      printf "    - 시스템 상태: %s\n" "$adv_status"
+    fi
+
+    if [[ -n "$adv_pkg" ]]; then
+      printf "    - 영향 패키지: %s\n" "$adv_pkg"
+      SUGGESTED_PKGS+=("$adv_pkg")
+    fi
+
+    if [[ ${#adv_cves[@]} -gt 0 ]]; then
+      printf "    - 연관 CVE 목록 (%d개 추출됨):\n" "${#adv_cves[@]}"
+      printf "      %s\n" "${adv_cves[*]}"
+      for c in "${adv_cves[@]}"; do
+        ALL_RESOLVED_CVES+=("$c")
+      done
+    else
+      printf "    - 연관 CVE: (직접 매핑 정보 없음)\n"
+    fi
+    echo ""
+  done
+fi
+
+# ------------------------------------------------------------------------------
+# [3단계] 체인지로그 보안 패치 상세 내역 (완전한 블록 단위 출력)
+# ------------------------------------------------------------------------------
+if [[ ${#ALL_RESOLVED_CVES[@]} -gt 0 ]]; then
+  # 중복 CVE 제거
+  declare -a UNIQUE_CVES=()
+  while IFS= read -r c; do
+    [[ -n "$c" ]] && UNIQUE_CVES+=("$c")
+  done < <(printf "%s\n" "${ALL_RESOLVED_CVES[@]}" | sort -u)
+
+  # 정규식 패턴 생성
+  cve_regex_pattern="$(IFS="|"; echo "${UNIQUE_CVES[*]}")"
+
+  # 감사 대상 패키지 결정: 사용자가 지정한 패키지 우선, 없으면 권고에서 추출된 패키지 사용
+  declare -a AUDIT_PKGS=()
+  if [[ ${#INSTALLED_PKGS[@]} -gt 0 ]]; then
+    AUDIT_PKGS=("${INSTALLED_PKGS[@]}")
+  elif [[ ${#SUGGESTED_PKGS[@]} -gt 0 ]]; then
+    while IFS= read -r p; do
+      [[ -n "$p" ]] && AUDIT_PKGS+=("$p")
+    done < <(printf "%s\n" "${SUGGESTED_PKGS[@]}" | sort -u)
   fi
-done
+
+  if [[ ${#AUDIT_PKGS[@]} -gt 0 ]]; then
+    echo "--------------------------------------------------------------------------------"
+    printf " [3단계] 설치된 패키지 체인지로그 보안 패치 적용 내역 (블록 정밀 추출)\n"
+    echo "--------------------------------------------------------------------------------"
+
+    for pkg in "${AUDIT_PKGS[@]}"; do
+      printf "\n🔍 \033[1;34m[패키지]\033[0m \033[1m%s\033[0m\n" "$pkg"
+      raw_cl="$(fetch_changelog "$pkg")"
+
+      if [[ -z "$raw_cl" ]]; then
+        log_warn "'$pkg' 패키지의 체인지로그를 찾을 수 없습니다."
+        continue
+      fi
+
+      # 완전한 보안 업데이트 블록만 추출
+      matched_blocks="$(extract_changelog_blocks "$raw_cl" "$cve_regex_pattern")"
+
+      if [[ -n "$matched_blocks" ]]; then
+        printf "\033[1;32m[패치 확인됨]\033[0m 관련 CVE가 반영된 보안 패치 블록 목록:\n\n"
+        if [[ -t 1 ]]; then
+          echo "$matched_blocks" | grep --color=always -E "$cve_regex_pattern|$"
+        else
+          echo "$matched_blocks"
+        fi
+      else
+        printf "\033[1;33m[미검출]\033[0m 체인지로그에서 추출된 연관 CVE와 일치하는 패치 블록을 찾지 못했습니다.\n"
+      fi
+    done
+    echo ""
+  fi
+fi
 
 echo "================================================================================"
-if [[ -n "$SEARCH_PATTERN" ]]; then
-  printf " [감사 요약] 검사 완료: %d개 패키지 중 %d개 패키지에서 관련 보안 패치 확인됨\n" "${#TARGET_PACKAGES[@]}" "$total_matched_pkgs"
-else
-  printf " [감사 요약] 총 %d개 패키지 정보 조회 완료\n" "${#TARGET_PACKAGES[@]}"
-fi
+printf " [감사 완료] 모든 점검 및 감사가 안전하게 종료되었습니다.\n"
 echo "================================================================================"
 
 exit 0

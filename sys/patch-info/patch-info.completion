@@ -42,14 +42,9 @@ _patch_info_completion() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  local opts="--package --search --show-changelog --offline --verbose --help"
+  local opts="--package --oss-number --show-changelog --offline --verbose --help"
 
-  # --search 옵션 다음에는 특정 completion을 제공하지 않음
-  if [[ "$prev" == "--search" ]]; then
-    return 0
-  fi
-
-  # 직전 옵션이 무엇이었는지 또는 최근 옵션 추적
+  # 최근에 등장한 옵션 추적
   local last_option=""
   local i
   for ((i = COMP_CWORD - 1; i >= 1; i--)); do
@@ -65,8 +60,7 @@ _patch_info_completion() {
     return 0
   fi
 
-  # 2) 최근 옵션이 --package인 경우:
-  #    다른 옵션이 나오기 전까지 패키지 이름을 연속해서 추천
+  # 2) 최근 옵션이 --package인 경우 설치된 패키지 이름 연속 추천
   if [[ "$last_option" == "--package" ]]; then
     local pkgs
     pkgs="$(_patch_info_installed_packages)"
@@ -74,7 +68,14 @@ _patch_info_completion() {
     return 0
   fi
 
-  # 3) 기본 옵션 목록 완성
+  # 3) 최근 옵션이 --oss-number인 경우 기본 접두사 제안 (USN-, RHSA-, CVE-)
+  if [[ "$last_option" == "--oss-number" ]]; then
+    local prefixes="USN- RHSA- RLSA- ALSA- DSA- CVE-"
+    COMPREPLY=( $(compgen -W "$prefixes" -- "$cur") )
+    return 0
+  fi
+
+  # 4) 기본 옵션 목록 완성
   COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
   return 0
 }
