@@ -40,6 +40,17 @@ help() {
 
   --help                       도움말 메시지를 출력하고 종료합니다.
 
+[OS별 공식 보안 권고사항(Security Advisory) 명칭 및 식별자 규격]
+  * Ubuntu       : USN-xxx-x             (Ubuntu Security Notice, 예: USN-9159-1)
+  * Debian       : DSA-xxx-x / DLA-xxx-x (Debian Security / LTS Advisory, 예: DSA-5480-1)
+  * RHEL         : RHSA-YYYY:xxxx        (Red Hat Security Advisory, 예: RHSA-2024:1234)
+  * Rocky Linux  : RLSA-YYYY:xxxx        (Rocky Linux Security Advisory, 예: RLSA-2024:1234)
+  * AlmaLinux    : ALSA-YYYY:xxxx        (AlmaLinux Security Advisory, 예: ALSA-2024:1234)
+  * openSUSE/SUSE: openSUSE-SU-YYYY:xxxx / SUSE-SU-YYYY:xxxx (SUSE Security Update)
+  * Arch Linux   : ASA-YYYYMM-xx         (Arch Security Advisory, 예: ASA-202403-1)
+  * Alpine Linux : CVE-YYYY-xxxx         (Alpine Secfixes 기반 패키지별 CVE 관리)
+  * macOS (Apple): HTxxxxxx / CVE-YYYY-xxxx (Apple Security Document ID, 예: HT214106)
+
 [사용 예시]
   # 1) 패키지 설치 여부 및 버전만 독립적으로 검사
   patch-info --package nginx nginx-core nginx-common
@@ -404,11 +415,87 @@ resolve_advisory_info() {
 
   # 2) Ubuntu 환경에서 USN- 형식인 경우
   if [[ "$advisory" =~ ^USN-[0-9]+-[0-9]+$ ]]; then
-    if command -v pro >/dev/null 2>&1; then
+    local resolved=false
+
+    # [1순위 고속 조회]: Canonical 공식 보안 REST API 직접 조회 (0.3초 내 초고속 파싱)
+    if [[ "$ONLINE_MODE" == "true" ]] && command -v curl >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+      log_debug "Canonical 공식 보안 REST API를 통해 '$advisory' 초고속 조회..."
+      local codename=""
+      codename="$(grep -E '^VERSION_CODENAME=' /etc/os-release 2>/dev/null | cut -d'=' -f2 | tr -d '"' || true)"
+
+      local api_output
+      api_output="$(curl -s --connect-timeout 3 --max-time 8 "https://ubuntu.com/security/notices/${advisory}.json" 2>/dev/null | python3 -c '
+import json, sys
+
+try:
+    data = json.load(sys.stdin)
+    title = data.get("title", "").strip()
+    cves = " ".join(data.get("cves_ids", []))
+    codename = sys.argv[1] if len(sys.argv) > 1 else ""
+    rp = data.get("release_packages", {}).get(codename, [])
+    pkgs = []
+    for p in rp:
+        if p.get("is_source"):
+            pkgs.append(p.get("name", "") + ":" + p.get("version", ""))
+    print("TITLE=" + title)
+    print("CVES=" + cves)
+    print("PKGS=" + " ".join(pkgs))
+except Exception:
+    sys.exit(1)
+' "$codename" 2>/dev/null || true)"
+
+      if [[ -n "$api_output" ]]; then
+        local p_title="" p_cves="" p_pkgs=""
+        p_title="$(echo "$api_output" | grep -E '^TITLE=' | sed 's/^TITLE=//')"
+        p_cves="$(echo "$api_output" | grep -E '^CVES=' | sed 's/^CVES=//')"
+        p_pkgs="$(echo "$api_output" | grep -E '^PKGS=' | sed 's/^PKGS=//')"
+
+        [[ -n "$p_title" ]] && ADV_TITLE="$p_title"
+
+        if [[ -n "$p_cves" ]]; then
+          IFS=' ' read -r -a ADV_CVES <<< "$p_cves"
+        fi
+
+        # 시스템 상태 판정: 설치된 패키지와 API 픽스 버전 정밀 비교
+        if [[ -n "$p_pkgs" ]]; then
+          local has_installed=false
+          for item in $p_pkgs; do
+            local s_pkg="${item%%:*}"
+            local s_fix_ver="${item#*:}"
+            local inst_status
+            inst_status="$(dpkg-query -W -f='${Status}' "$s_pkg" 2>/dev/null || true)"
+            if [[ "$inst_status" =~ install[[:space:]]+ok[[:space:]]+installed ]]; then
+              has_installed=true
+              ADV_PKG="$s_pkg"
+              local inst_ver
+              inst_ver="$(dpkg-query -W -f='${Version}' "$s_pkg" 2>/dev/null || true)"
+              if dpkg --compare-versions "$inst_ver" ge "$s_fix_ver" 2>/dev/null; then
+                ADV_STATUS="해결됨 (Resolved - 이미 패치 적용됨)"
+              else
+                ADV_STATUS="업데이트 가능 (Available - 패치 미적용)"
+              fi
+              break
+            fi
+          done
+
+          if [[ "$has_installed" == "false" ]]; then
+            ADV_PKG="$(echo "$p_pkgs" | awk '{print $1}' | cut -d':' -f1)"
+            ADV_STATUS="해당 없음 (Not Affected - 패키지 미설치)"
+          fi
+        else
+          ADV_STATUS="해당 없음 (Not Affected - 본 릴리즈 미영향)"
+        fi
+
+        resolved=true
+      fi
+    fi
+
+    # [2순위 로컬 폴백]: REST API 접근 불가 시 Ubuntu Pro CLI 활용
+    if [[ "$resolved" == "false" ]] && command -v pro >/dev/null 2>&1; then
       log_debug "Ubuntu Pro 도구를 통해 '$advisory' 분석 (pro fix --dry-run)..."
       # [안전 가드레일]: 시스템 설치를 방지하기 위해 --dry-run을 반드시 고정 실행
       local pro_out
-      pro_out="$(timeout 10 pro fix --dry-run "$advisory" 2>&1 || true)"
+      pro_out="$(timeout 15 pro fix --dry-run "$advisory" 2>&1 || true)"
 
       # 제목 파싱
       local parsed_title

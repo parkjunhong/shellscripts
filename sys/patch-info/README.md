@@ -36,6 +36,25 @@
 
 ---
 
+## 📋 주요 OS별 공식 보안 권고사항(Security Advisory) 규격
+
+`--oss-number` 옵션은 각 운영체제 벤더의 공식 보안 권고 식별자를 입력받아 연관된 CVE 목록을 자동으로 추출합니다.
+
+| 운영체제 (OS / 배포판) | 공식 보안 권고 명칭 (Official Advisory Name) | 식별자 포맷 규격 | 예시 | 비고 |
+| :--- | :--- | :--- | :--- | :--- |
+| **Ubuntu** | Ubuntu Security Notice (**USN**) | `USN-<seq>-<rev>` | `USN-9159-1`, `USN-9173-1` | 공식 REST API 및 `pro fix` 연동 |
+| **Debian** | Debian Security Advisory (**DSA**)<br>Debian LTS Advisory (**DLA**) | `DSA-<seq>-<rev>`<br>`DLA-<seq>-<rev>` | `DSA-5480-1`<br>`DLA-3600-1` | Debian Security Tracker 연동 |
+| **RHEL** (Red Hat) | Red Hat Security Advisory (**RHSA**) | `RHSA-YYYY:####` | `RHSA-2024:1234` | DNF `updateinfo` 연동 |
+| **Rocky Linux** | Rocky Linux Security Advisory (**RLSA**) | `RLSA-YYYY:####` | `RLSA-2024:1234` | DNF `updateinfo` 연동 |
+| **AlmaLinux** | AlmaLinux Security Advisory (**ALSA**) | `ALSA-YYYY:####` | `ALSA-2024:1234` | DNF `updateinfo` 연동 |
+| **openSUSE / SLES** | SUSE / openSUSE Security Update (**SU**) | `openSUSE-SU-YYYY:####-1`<br>`SUSE-SU-YYYY:####-1` | `openSUSE-SU-2024:0123-1` | Zypper `patch-info` 연동 |
+| **Arch Linux** | Arch Security Advisory (**ASA**) | `ASA-YYYYMM-##` | `ASA-202403-1` | `arch-audit` 연계 |
+| **Alpine Linux** | Alpine Secfixes (CVE 기반 직접 관리) | `CVE-YYYY-#####` | `CVE-2024-1234` | `secfixes.json` CVE 직접 추적 |
+| **macOS** (Apple) | Apple Security Update Article (**HT**) | `HT######` 또는 `CVE-YYYY-#####` | `HT214106` | 공식 보안 릴리즈 문서 연계 |
+| **공통 (전체)** | Common Vulnerabilities and Exposures (**CVE**) | `CVE-YYYY-#####` | `CVE-2026-123633` | 모든 OS에서 단독 CVE 지정 가능 |
+
+---
+
 ## 🚀 사용 예시
 
 ### 1) 패키지 설치 여부 및 버전만 독립적으로 검사
