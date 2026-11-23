@@ -566,6 +566,34 @@ _is_newer_version() {
 }
 
 ##
+# 스크립트 파일에서 선언된 버전 문자열(SCRIPT_FILE_VERSION 또는 SCIECTL_VERSION)을 추출합니다.
+#
+# @param $1 {string} 스크립트 파일 경로
+#
+# @return 추출된 버전 문자열 (stdout), 미선언 시 빈 문자열
+##
+_extract_script_version() {
+  local file_path="$1"
+  [[ -f "$file_path" ]] || return 0
+
+  local line=""
+  line="$(grep -m 1 -E '^[[:space:]]*(readonly[[:space:]]+)?(SCRIPT_FILE_VERSION|SCIECTL_VERSION)=' "$file_path" 2>/dev/null || true)"
+  if [[ -z "$line" ]]; then
+    return 0
+  fi
+
+  local ver="${line#*=}"
+  ver="${ver%%#*}"
+  ver="${ver#"${ver%%[![:space:]]*}"}"
+  ver="${ver%"${ver##*[![:space:]]}"}"
+  ver="${ver#\"}"
+  ver="${ver%\"}"
+  ver="${ver#\'}"
+  ver="${ver%\'}"
+  printf '%s\n' "$ver"
+}
+
+##
 # 현재 스크립트 파일이 Git 저장소의 작업 디렉토리(로컬 소스 코드) 내에 위치하는지 검사합니다.
 # 로컬 개발 중인 소스 코드가 원격 코드로 덮어쓰여 유실되는 것을 방지합니다.
 #
@@ -697,7 +725,7 @@ _check_and_self_update() {
 
   # 원격 버전 정보 추출 및 선후 비교 (강제 업데이트가 아닌 경우)
   local remote_version=""
-  remote_version="$(grep -m 1 -E '^readonly (SCRIPT_FILE_VERSION|SCIECTL_VERSION)=' "$tmp_script" 2>/dev/null | cut -d'"' -f2 || true)"
+  remote_version="$(_extract_script_version "$tmp_script")"
 
   if [[ "$force_update" != "true" ]]; then
     # 1. 로컬에 버전이 명시되어 있으나 원격에는 버전이 없는 경우 (원격이 레거시 구버전)
@@ -2060,6 +2088,7 @@ _install_manpages() {
 # @param $1 {string} 커스텀 도구 식별자 또는 URL
 # @param $2 {string} 설치 범위 (local | global)
 # @param $3 {string} 강제 덮어쓰기 여부 (true | false)
+# @param $4 {string} 무인 자동 승인 여부 (true | false)
 #
 # @return 0
 ##
@@ -2068,6 +2097,7 @@ _install_tool() {
   local raw_id="$1"
   local target_scope="${2:-local}"
   local force_overwrite="${3:-false}"
+  local auto_yes="${4:-false}"
 
   local resolved_ref
   resolved_ref="$(_resolve_tool_path "$raw_id")"
@@ -2102,22 +2132,74 @@ _install_tool() {
   fi
 
   local dest_bin="${bin_dir}/${target_cmd}"
+  local sync_companions=true
+
   if [[ -f "$dest_bin" ]]; then
     if ! cmp -s "$temp_bin" "$dest_bin"; then
-      local ch="y"
-      if [[ "$force_overwrite" != "true" && -t 0 ]]; then
-        read -r -p "> '$target_cmd' 실행 파일 내용이 다릅니다. 업데이트하시겠습니까? (y/Enter: 취소): " ch
-      fi
-      if [[ "$ch" =~ ^[Yy]$ ]]; then
-        if [[ "$use_sudo" == true ]]; then
-          sudo mv "$temp_bin" "$dest_bin" && sudo chmod 755 "$dest_bin"
+      local local_ver=""
+      local remote_ver=""
+      local_ver="$(_extract_script_version "$dest_bin")"
+      remote_ver="$(_extract_script_version "$temp_bin")"
+
+      local should_update=false
+      local ask_confirm=false
+      local prompt_msg="> '$target_cmd' 실행 파일 내용이 다릅니다. 업데이트하시겠습니까? (y/Enter: 취소): "
+
+      if [[ "$force_overwrite" == "true" ]]; then
+        should_update=true
+      elif [[ -n "$local_ver" && -n "$remote_ver" ]]; then
+        if _is_newer_version "$local_ver" "$remote_ver"; then
+          should_update=true
+          prompt_msg="> '$target_cmd' 새 버전이 있습니다 (v${local_ver} -> v${remote_ver}). 업데이트하시겠습니까? (y/Enter: 취소): "
+        elif [[ "$local_ver" == "$remote_ver" ]]; then
+          if [[ "$auto_yes" != "true" && -t 0 ]]; then
+            should_update=true
+            ask_confirm=true
+            prompt_msg="> '$target_cmd' 버전은 동일(v${local_ver})하지만 파일 내용이 다릅니다. 업데이트하시겠습니까? (y/Enter: 취소): "
+          else
+            echo_w " - '$target_cmd' 동일 버전(v${local_ver})이나 파일 내용이 다릅니다. '--force' 미지정으로 기존 파일을 유지합니다."
+            sync_companions=false
+            rm -f -- "$temp_bin"
+          fi
         else
-          mv "$temp_bin" "$dest_bin" && chmod 755 "$dest_bin"
+          echo_w " - '$target_cmd' 로컬 버전(v${local_ver})이 설치 대상(v${remote_ver})보다 최신이므로 유지합니다."
+          sync_companions=false
+          rm -f -- "$temp_bin"
         fi
-        echo_i " - '$target_cmd' 실행 파일이 업데이트되었습니다. ($dest_bin)"
-      else
-        echo_w " - '$target_cmd' 기존 실행 파일을 유지합니다 (업데이트 취소)."
+      elif [[ -z "$local_ver" && -n "$remote_ver" ]]; then
+        should_update=true
+        prompt_msg="> '$target_cmd' 버전 정보가 포함된 최신 버전(v${remote_ver})으로 업데이트하시겠습니까? (y/Enter: 취소): "
+      elif [[ -n "$local_ver" && -z "$remote_ver" ]]; then
+        echo_w " - '$target_cmd' 로컬 버전(v${local_ver})을 유지합니다 (설치 대상에 버전 정보 없음)."
+        sync_companions=false
         rm -f -- "$temp_bin"
+      else
+        should_update=true
+      fi
+
+      if [[ "$should_update" == true ]]; then
+        local ch="y"
+        if [[ "$force_overwrite" != "true" ]] && [[ "$ask_confirm" == true || ( "$auto_yes" != "true" && -t 0 ) ]]; then
+          read -r -p "$prompt_msg" ch
+        fi
+        if [[ "$ch" =~ ^[Yy]$ ]]; then
+          if [[ "$use_sudo" == true ]]; then
+            sudo mv "$temp_bin" "$dest_bin" && sudo chmod 755 "$dest_bin"
+          else
+            mv "$temp_bin" "$dest_bin" && chmod 755 "$dest_bin"
+          fi
+          if [[ -n "$local_ver" && -n "$remote_ver" ]]; then
+            echo_i " - '$target_cmd' 실행 파일이 업데이트되었습니다 (v${local_ver} -> v${remote_ver}). ($dest_bin)"
+          elif [[ -n "$remote_ver" ]]; then
+            echo_i " - '$target_cmd' 실행 파일이 업데이트되었습니다 (v${remote_ver}). ($dest_bin)"
+          else
+            echo_i " - '$target_cmd' 실행 파일이 업데이트되었습니다. ($dest_bin)"
+          fi
+        else
+          echo_w " - '$target_cmd' 기존 실행 파일을 유지합니다 (업데이트 취소)."
+          sync_companions=false
+          rm -f -- "$temp_bin"
+        fi
       fi
     else
       echo_w " - '$target_cmd' 실행 파일이 이미 최신입니다."
@@ -2132,8 +2214,12 @@ _install_tool() {
     echo_i " - '$target_cmd' 실행 파일을 설치했습니다. ($dest_bin)"
   fi
 
-  _install_completion "${resolved_ref}.completion" "$target_cmd" "$force_overwrite"
-  _install_manpages "$resolved_ref" "$target_cmd" "$target_scope" "$force_overwrite"
+  if [[ "$sync_companions" == true ]]; then
+    local companion_force="$force_overwrite"
+    [[ "$auto_yes" == "true" ]] && companion_force="true"
+    _install_completion "${resolved_ref}.completion" "$target_cmd" "$companion_force"
+    _install_manpages "$resolved_ref" "$target_cmd" "$target_scope" "$companion_force"
+  fi
 
   if [[ "$target_cmd" != *.sh ]]; then
     _remove_legacy_sh_tool "${target_cmd}.sh" "$bin_dir"
@@ -2145,12 +2231,14 @@ _install_tool() {
 #
 # @param $1 {string} 설치 범위 (local | global)
 # @param $2 {string} 강제 덮어쓰기 여부 (true | false)
+# @param $3 {string} 무인 자동 승인 여부 (true | false)
 #
 # @return 0
 ##
 setup_tools() {
   local target_scope="${1:-local}"
   local force_overwrite="${2:-false}"
+  local auto_yes="${3:-false}"
 
   if (( ${#TX_TOOLS[@]} == 0 )); then
     return 0
@@ -2161,7 +2249,7 @@ setup_tools() {
 
   local tool_id
   for tool_id in "${TX_TOOLS[@]}"; do
-    [[ -n "$tool_id" ]] && _install_tool "$tool_id" "$target_scope" "$force_overwrite"
+    [[ -n "$tool_id" ]] && _install_tool "$tool_id" "$target_scope" "$force_overwrite" "$auto_yes"
   done
 
   EXECUTED_JOB_FLAGS["$func_name"]=1
@@ -3371,11 +3459,6 @@ cmd_install() {
     fi
   fi
 
-  local effective_force="$force_overwrite"
-  if [[ "$auto_yes" == "true" ]]; then
-    effective_force="true"
-  fi
-
   # ==============================================================================
   # 7. 트랜잭션 일괄 실행 (엄격한 의존성 순서 보장)
   #    Step 1: sudoers
@@ -3410,7 +3493,7 @@ cmd_install() {
   fi
 
   if [[ "$active_steps_str" == *" tools "* ]]; then
-    setup_tools "$target_scope" "$effective_force"
+    setup_tools "$target_scope" "$force_overwrite" "$auto_yes"
   fi
 
   if [[ "$active_steps_str" == *" commands "* ]]; then
