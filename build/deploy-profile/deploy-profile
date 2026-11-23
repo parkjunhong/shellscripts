@@ -12,6 +12,8 @@
 #      scriptctl install build/deploy-profile
 # =======================================
 
+readonly SCRIPT_FILE_VERSION="2026.10.27.1"
+
 FILENAME=$(basename "$0")
 
 ##

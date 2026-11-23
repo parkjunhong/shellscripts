@@ -9,6 +9,8 @@
 # @installation : scriptctl install --script gz-ext-latest
 # ==============================================================================
 
+readonly SCRIPT_FILE_VERSION="2026.10.28.1"
+
 help(){
         if [ ! -z "$1" ];
         then

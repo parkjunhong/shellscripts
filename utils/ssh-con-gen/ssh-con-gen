@@ -9,6 +9,8 @@
 # @installation : scriptctl install --script ssh-con-gen
 # ==============================================================================
 
+readonly SCRIPT_FILE_VERSION="2026.10.28.1"
+
 FILENAME=$(basename $0)
 help(){
 	if [ $# -gt 0 ];

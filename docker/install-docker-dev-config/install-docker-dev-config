@@ -13,6 +13,7 @@
 set -Eeuo pipefail
 
 readonly FILENAME="$(basename "$0")"
+readonly SCRIPT_FILE_VERSION="2026.10.30.1"
 
 ##
 # 스크립트 사용 방법 및 오류 원인을 출력합니다.

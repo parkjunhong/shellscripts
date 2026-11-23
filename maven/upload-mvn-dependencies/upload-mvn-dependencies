@@ -13,6 +13,8 @@
 #      scriptctl install maven/upload-mvn-dependencies
 # =======================================
 
+readonly SCRIPT_FILE_VERSION="2026.10.28.1"
+
 FILENAME="$(basename $0)"
 
 help(){
