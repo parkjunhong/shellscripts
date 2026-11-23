@@ -159,7 +159,7 @@ _scriptctl_completion() {
   # 2. 서브커맨드별 자동 완성 분기
   case "$subcmd" in
     install)
-      local -a install_opts=("--script" "--target" "--force" "--dry-run" "--help")
+      local -a install_opts=("--script" "--target" "--force" "--dry-run" "--no-update" "--force-update" "--help")
 
       case "$cur" in
         --script=*)
@@ -207,7 +207,7 @@ _scriptctl_completion() {
       ;;
 
     remove)
-      local -a remove_opts=("--name" "--target" "--force" "--dry-run" "--help")
+      local -a remove_opts=("--name" "--target" "--force" "--dry-run" "--no-update" "--force-update" "--help")
 
       case "$cur" in
         --name=*)
@@ -273,7 +273,7 @@ _scriptctl_completion() {
       ;;
 
     list)
-      local -a list_opts=("--target" "--help")
+      local -a list_opts=("--target" "--no-update" "--force-update" "--help")
 
       case "$cur" in
         --target=*)

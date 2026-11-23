@@ -13,7 +13,8 @@
 set -Eeuo pipefail
 
 readonly FILENAME="$(basename "$0")"
-readonly SCRIPT_FILE_VERSION="2026.11.17.1"
+readonly SCRIPT_FILE_VERSION="2026.11.24.1"
+readonly REPO_BASE_URL="${SCRIPTCTL_REPO_URL:-https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main}"
 
 # OS 핵심 유틸리티 보호 블랙리스트 (설치 덮어쓰기 및 삭제 양방향 차단)
 readonly -a PROTECTED_TOOLS=(
@@ -96,6 +97,8 @@ help() {
                             - global : 전체 사용자 공용 (/usr/local/bin, /usr/local/share/man)
   --force                   동일 이름의 파일이 이미 설치되어 있을 때 확인 없이 덮어쓰기
   --dry-run                 실제 설치를 수행하지 않고 예정된 작업 과정과 필요 권한만 출력
+  --no-update               자가 업데이트(Self-Update) 건너뛰기
+  --force-update            원격 저장소 최신 버전으로 강제 자가 업데이트
   --help                    install 서브커맨드 도움말 출력
 
 📂 Bash Completion 및 Man Page 설치 경로:
@@ -129,6 +132,8 @@ EOF
                                 - all    : 개인/전역 실행 공간 및 전체 \$PATH 탐색
   --force                       사용자 확인 대화창(y/N)을 건너뛰고 즉시 삭제
   --dry-run                     실제 삭제 없이 탐색된 파일 목록과 필요 권한만 출력
+  --no-update                   자가 업데이트(Self-Update) 건너뛰기
+  --force-update                원격 저장소 최신 버전으로 강제 자가 업데이트
   --help                        remove 서브커맨드 도움말 출력
 
 💡 예시 (Examples):
@@ -151,6 +156,8 @@ EOF
 
 ⚙️  옵션 (Options):
   --target <local|global|all>   조회할 대상 범위 (기본값: all)
+  --no-update                   자가 업데이트(Self-Update) 건너뛰기
+  --force-update                원격 저장소 최신 버전으로 강제 자가 업데이트
   --help                        list 서브커맨드 도움말 출력
 EOF
       ;;
@@ -188,6 +195,10 @@ EOF
   [list]
     --target <local|global|all>   조회 범위 (기본값: all)
 
+  [공통 옵션]
+    --no-update                   자가 업데이트(Self-Update) 건너뛰기
+    --force-update                원격 저장소 최신 버전으로 강제 자가 업데이트
+
 💡 예시 (Examples):
   $FILENAME install --script ./ps-port
   $FILENAME install --script ./ps-port --target global --dry-run
@@ -208,6 +219,257 @@ reject_external_sudo() {
     help "🚫 보안 정책 위반: '$FILENAME' 스크립트 자체를 sudo 또는 root 권한으로 직접 실행할 수 없습니다. 필요한 시점에 내부적으로 sudo 권한을 요청합니다." "${BASH_LINENO[0]:-$LINENO}"
     exit 1
   fi
+}
+
+##
+# 두 버전 문자열의 선후 관계를 비교합니다 (Semantic / Date-based Versioning).
+#
+# @param $1 {string} 로컬 버전 (예: 2026.11.17.1)
+# @param $2 {string} 원격 버전 (예: 2026.11.24.1)
+#
+# @return 0: 원격 버전이 더 최신 (local < remote), 1: 로컬이 최신이거나 동일 (local >= remote)
+##
+_is_newer_version() {
+  local v1="$1"
+  local v2="$2"
+
+  [[ -n "$v1" && -n "$v2" ]] || return 1
+  [[ "$v1" == "$v2" ]] && return 1
+
+  if printf '1\n2\n' | sort -V &>/dev/null; then
+    local highest
+    highest="$(printf '%s\n%s\n' "$v1" "$v2" | sort -V | tail -n 1)"
+    if [[ "$highest" == "$v2" && "$v1" != "$v2" ]]; then
+      return 0
+    fi
+    return 1
+  fi
+
+  local -a a1=()
+  local -a a2=()
+  IFS='.' read -ra a1 <<< "$v1"
+  IFS='.' read -ra a2 <<< "$v2"
+
+  local len=${#a1[@]}
+  (( ${#a2[@]} > len )) && len=${#a2[@]}
+
+  local i
+  for (( i=0; i<len; i++ )); do
+    local num1="${a1[i]:-0}"
+    local num2="${a2[i]:-0}"
+    if (( 10#$num2 > 10#$num1 )); then
+      return 0
+    elif (( 10#$num2 < 10#$num1 )); then
+      return 1
+    fi
+  done
+
+  return 1
+}
+
+##
+# 스크립트 파일에서 선언된 버전 문자열(SCRIPT_FILE_VERSION)을 추출합니다.
+#
+# @param $1 {string} 스크립트 파일 경로
+#
+# @return 추출된 버전 문자열 (stdout), 미선언 시 빈 문자열
+##
+_extract_script_version() {
+  local file_path="$1"
+  [[ -f "$file_path" ]] || return 0
+
+  local line=""
+  line="$(grep -m 1 -E '^[[:space:]]*(readonly[[:space:]]+)?SCRIPT_FILE_VERSION=' "$file_path" 2>/dev/null || true)"
+  if [[ -z "$line" ]]; then
+    return 0
+  fi
+
+  local ver="${line#*=}"
+  ver="${ver%%#*}"
+  ver="${ver#"${ver%%[![:space:]]*}"}"
+  ver="${ver%"${ver##*[![:space:]]}"}"
+  ver="${ver#\"}"
+  ver="${ver%\"}"
+  ver="${ver#\'}"
+  ver="${ver%\'}"
+  printf '%s\n' "$ver"
+}
+
+##
+# 현재 스크립트 파일이 Git 저장소의 작업 디렉토리(로컬 소스 코드) 내에 위치하는지 검사합니다.
+# 로컬 개발 중인 소스 코드가 원격 코드로 덮어쓰여 유실되는 것을 방지합니다.
+#
+# @param $1 {string} 스크립트 파일의 절대 경로
+#
+# @return 0: Git 로컬 저장소 내부, 1: 독립 배포 경로
+##
+_is_local_git_repo() {
+  local target_file="${1:-}"
+  [[ -n "$target_file" && -f "$target_file" ]] || return 1
+
+  local target_dir
+  target_dir="$(dirname "$target_file")"
+
+  if command -v git &>/dev/null && git -C "$target_dir" rev-parse --is-inside-work-tree &>/dev/null; then
+    return 0
+  fi
+
+  return 1
+}
+
+##
+# 실행 중인 scriptctl 스크립트 및 completion 파일을 원격 GitHub 최신 코드와 비교하여
+# 최신 버전인 경우 원자적으로 다운로드·검증 후 프로세스를 재실행(Re-exec)합니다.
+#
+# @param $@ {array} 실행 시 전달받은 전체 명령행 인자
+#
+# @return 0 (업데이트 없거나 건너뛴 경우), 성공 시 프로세스 치환(exec)으로 미반환
+##
+_check_and_self_update() {
+  # 1. 재실행(Re-exec) 루프 방지
+  if [[ "${_SCRIPTCTL_SELF_UPDATED:-0}" == "1" ]]; then
+    unset _SCRIPTCTL_SELF_UPDATED
+    return 0
+  fi
+
+  # 2. 전역 환경변수 비활성화 설정 확인
+  if [[ "${SCRIPTCTL_AUTO_UPDATE:-true}" == "false" || "${SCRIPTCTL_NO_UPDATE:-false}" == "true" ]]; then
+    return 0
+  fi
+
+  # 3. CLI 인자 사전 스캔 (--no-update, --force-update)
+  local arg
+  local force_update="false"
+  for arg in "$@"; do
+    case "$arg" in
+      --no-update)
+        return 0
+        ;;
+      --force-update)
+        force_update="true"
+        ;;
+    esac
+  done
+
+  # 4. 현재 실행 스크립트의 절대 경로 해석
+  local current_script=""
+  if command -v readlink &>/dev/null; then
+    current_script="$(readlink -f "${BASH_SOURCE[0]:-$0}" 2>/dev/null || true)"
+  fi
+  if [[ -z "$current_script" ]] && command -v realpath &>/dev/null; then
+    current_script="$(realpath "${BASH_SOURCE[0]:-$0}" 2>/dev/null || true)"
+  fi
+  if [[ -z "$current_script" ]]; then
+    current_script="${BASH_SOURCE[0]:-$0}"
+  fi
+
+  if [[ ! -f "$current_script" ]]; then
+    return 0
+  fi
+
+  local script_dir
+  script_dir="$(dirname "$current_script")"
+
+  # 5. 로컬 Git 개발 저장소 보호
+  if _is_local_git_repo "$current_script"; then
+    if [[ "$force_update" != "true" ]]; then
+      return 0
+    else
+      printf "⚠️  [%s] 로컬 Git 작업 트리 내에서 실행 중이지만, '--force-update' 옵션에 의해 원격 동기화를 시도합니다.\n" "$FILENAME" >&2
+    fi
+  fi
+
+  # 6. 대상 파일 및 디렉토리 쓰기 권한 확인
+  if [[ ! -w "$current_script" || ! -w "$script_dir" ]]; then
+    if [[ "$force_update" == "true" ]]; then
+      printf "⚠️  [%s] 현재 스크립트 파일('%s') 또는 디렉토리에 쓰기 권한이 없어 업데이트를 건너뜁니다.\n" "$FILENAME" "$current_script" >&2
+    fi
+    return 0
+  fi
+
+  # 7. curl 유틸리티 확인
+  if ! command -v curl &>/dev/null; then
+    return 0
+  fi
+
+  # 8. 원격 파일 다운로드 및 무결성 검증
+  local tmp_dir=""
+  tmp_dir="$(mktemp -d /tmp/scriptctl_update.XXXXXX 2>/dev/null || mktemp -d -t 'scriptctl_update')"
+  if [[ ! -d "$tmp_dir" ]]; then
+    return 0
+  fi
+
+  local remote_script_url="${REPO_BASE_URL}/utils/scriptctl/scriptctl"
+  local tmp_script="${tmp_dir}/scriptctl"
+
+  if ! curl -sfLo "$tmp_script" --connect-timeout 2 --max-time 5 "$remote_script_url" 2>/dev/null; then
+    rm -rf -- "$tmp_dir"
+    return 0
+  fi
+
+  if cmp -s "$current_script" "$tmp_script" 2>/dev/null; then
+    rm -rf -- "$tmp_dir"
+    return 0
+  fi
+
+  if ! bash -n "$tmp_script" &>/dev/null; then
+    printf "⚠️  [%s] 원격 최신 코드의 구문 검증(bash -n)에 실패하여 업데이트를 건너뜁니다.\n" "$FILENAME" >&2
+    rm -rf -- "$tmp_dir"
+    return 0
+  fi
+
+  # 9. 원격 버전 정보 추출 및 선후 비교
+  local remote_version=""
+  remote_version="$(_extract_script_version "$tmp_script")"
+
+  if [[ "$force_update" != "true" ]]; then
+    if [[ -n "${SCRIPT_FILE_VERSION:-}" && -z "$remote_version" ]]; then
+      rm -rf -- "$tmp_dir"
+      return 0
+    fi
+
+    if [[ -n "$remote_version" && -n "${SCRIPT_FILE_VERSION:-}" ]]; then
+      if ! _is_newer_version "$SCRIPT_FILE_VERSION" "$remote_version"; then
+        rm -rf -- "$tmp_dir"
+        return 0
+      fi
+    fi
+  fi
+
+  if [[ -n "$remote_version" && -n "${SCRIPT_FILE_VERSION:-}" ]]; then
+    printf "🔄 [%s] 원격 저장소에 최신 버전(v%s)이 감지되었습니다 (현재: v%s). 자가 업데이트(Self-Update)를 진행합니다...\n" "$FILENAME" "$remote_version" "$SCRIPT_FILE_VERSION"
+  else
+    printf "🔄 [%s] 원격 저장소에 새로운 버전이 감지되었습니다. 자가 업데이트(Self-Update)를 진행합니다...\n" "$FILENAME"
+  fi
+
+  # 동반 파일: scriptctl.completion 동기화 시도 (동일 디렉토리 내 존재 및 쓰기 가능한 경우)
+  local current_completion="${script_dir}/scriptctl.completion"
+  local tmp_completion="${tmp_dir}/scriptctl.completion"
+  local remote_completion_url="${REPO_BASE_URL}/utils/scriptctl/scriptctl.completion"
+
+  if [[ -f "$current_completion" && -w "$current_completion" ]]; then
+    if curl -sfLo "$tmp_completion" --connect-timeout 2 --max-time 5 "$remote_completion_url" 2>/dev/null; then
+      if bash -n "$tmp_completion" &>/dev/null; then
+        chmod 644 "$tmp_completion" 2>/dev/null || true
+        mv -f "$tmp_completion" "$current_completion" 2>/dev/null || true
+      fi
+    fi
+  fi
+
+  # 원자적 실행 스크립트 교체
+  chmod +x "$tmp_script" 2>/dev/null || true
+  if ! mv -f "$tmp_script" "$current_script" 2>/dev/null; then
+    printf "⚠️  [%s] 스크립트 파일 갱신(mv)에 실패했습니다. 기존 버전으로 계속 실행합니다.\n" "$FILENAME" >&2
+    rm -rf -- "$tmp_dir"
+    return 0
+  fi
+
+  rm -rf -- "$tmp_dir"
+  printf "✅ [%s] 최신 버전으로 갱신 완료되었습니다. 프로세스를 재시작합니다.\n\n" "$FILENAME"
+
+  # 10. 원자적 재실행 (Re-exec)
+  export _SCRIPTCTL_SELF_UPDATED=1
+  exec "$current_script" "$@"
 }
 
 ##
@@ -1502,6 +1764,23 @@ cmd_list() {
 ##
 main() {
   reject_external_sudo
+
+  # 실행 전 원격 저장소(GitHub) 최신 버전과 비교하여 자가 업데이트(Self-Update) 수행
+  _check_and_self_update "$@"
+
+  # 공통 플래그(--no-update, --force-update)를 추출하여 서브커맨드 인자에서 제외
+  local -a normalized_args=()
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --no-update|--force-update)
+        ;;
+      *)
+        normalized_args+=("$arg")
+        ;;
+    esac
+  done
+  set -- "${normalized_args[@]}"
 
   if [[ $# -eq 0 ]]; then
     help "❌ 실행할 서브커맨드('install', 'remove', 'list')를 지정해야 합니다." "$LINENO"
