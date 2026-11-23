@@ -11,6 +11,7 @@
 # =======================================
 
 readonly FILENAME="$(basename "$0")"
+readonly SCIECTL_VERSION="2026.11.23.1"
 readonly REPO_BASE_URL="${SCIECTL_REPO_URL:-https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main}"
 readonly REPO_WEB_BASE_URL="${SCIECTL_REPO_WEB_URL:-https://github.com/parkjunhong/shellscripts/blob/main}"
 
@@ -225,11 +226,14 @@ help() {
   --target <local|global>       CLI 도구 설치 경로 (local: ~/bin, global: /usr/local/bin, 기본값: local)
   --local                       로컬 저장소 파일 우선 사용 (기본값: 원격 GitHub 최신 정보 사용)
   --remote                      원격 GitHub 저장소(Raw URL) 사용 (기본 동작)
+  --no-update                   자가 업데이트(Self-Update) 건너뛰기
+  --force-update                원격 저장소 최신 버전으로 강제 자가 업데이트
   --yes                         모든 확인 프롬프트(y/n) 자동 승인 (무인 자동화 설치)
   --force                       기존 설치된 CLI 도구/자동완성 파일 확인 없이 강제 업데이트
   --dry-run                     실제 설치 없이 병합된 트랜잭션 실행 계획(Transaction Summary)만 출력
   --all                         선택한 카탈로그의 모든 단계 및 기본 환경 3종 설정 적용
   --no-default-opts             기본 환경 3종(~/bin PATH, git 프롬프트, vimrc) 설정 생략
+  --version                     sciectl 버전 정보 출력
   --help                        install 서브커맨드 도움말 출력
 
 💡 단계 제어 안내:
@@ -259,6 +263,9 @@ EOF
   --type <TYPE>     조회할 대상 유형 (기본값: catalogs / 허용값: all, catalogs, tools, installers, commands, keys)
   --local           로컬 저장소 기준으로 목록 조회
   --remote          원격 GitHub 저장소 기준으로 목록 조회
+  --no-update       자가 업데이트(Self-Update) 건너뛰기
+  --force-update    원격 저장소 최신 버전으로 강제 자가 업데이트
+  --version         sciectl 버전 정보 출력
   --help            list 서브커맨드 도움말 출력
 EOF
       ;;
@@ -281,6 +288,9 @@ EOF
   --ssh-key <NAME>      특정 SSH 공개키 상세 정보 및 설명 조회 (예: ymtech-internal)
   --local               로컬 저장소 기준으로 조회
   --remote              원격 GitHub 저장소 기준으로 조회
+  --no-update           자가 업데이트(Self-Update) 건너뛰기
+  --force-update        원격 저장소 최신 버전으로 강제 자가 업데이트
+  --version             sciectl 버전 정보 출력
   --help                info 서브커맨드 도움말 출력
 
 💡 예시 (Examples):
@@ -307,6 +317,12 @@ EOF
   install     카탈로그 또는 개별 도구/인스톨러/커맨드/SSH키 설치 (기본 명령어)
   list        제공되는 카탈로그, 도구, 인스톨러, 커맨드, SSH키 목록 조회
   info        특정 카탈로그 또는 개별 컴포넌트(도구/인스톨러/커맨드/SSH키) 상세 조회
+
+⚙️  공통 옵션 (Common Options):
+  --no-update                   자가 업데이트(Self-Update) 건너뛰기
+  --force-update                원격 저장소 최신 버전으로 강제 자가 업데이트
+  --version                     버전 정보 출력
+  --help                        도움말 출력
 
 💡 빠른 시작 예시 (Quick Examples):
   $FILENAME                                                       # 대화형 카탈로그/옵션 선택 설치
@@ -497,6 +513,242 @@ _fetch_resource() {
 
   _ensure_curl
   curl -sfLo "$dest_file" "${REPO_BASE_URL}/${rel_or_url}"
+}
+
+##
+# 두 버전 문자열의 선후 관계를 비교합니다 (Semantic / Date-based Versioning).
+#
+# @param $1 {string} 로컬 버전 (예: 2026.11.23.1)
+# @param $2 {string} 원격 버전 (예: 2026.11.23.2)
+#
+# @return 0: 원격 버전이 더 최신 (local < remote), 1: 로컬이 최신이거나 동일 (local >= remote)
+##
+_is_newer_version() {
+  local v1="$1" # local
+  local v2="$2" # remote
+
+  [[ -n "$v1" && -n "$v2" ]] || return 1
+  [[ "$v1" == "$v2" ]] && return 1
+
+  # 1. sort -V 지원 시 우선 활용
+  if printf '1\n2\n' | sort -V &>/dev/null; then
+    local highest
+    highest="$(printf '%s\n%s\n' "$v1" "$v2" | sort -V | tail -n 1)"
+    if [[ "$highest" == "$v2" && "$v1" != "$v2" ]]; then
+      return 0
+    fi
+    return 1
+  fi
+
+  # 2. 순수 Bash Fallback (. 구분자 10진수 배열 비교)
+  local -a a1=()
+  local -a a2=()
+  IFS='.' read -ra a1 <<< "$v1"
+  IFS='.' read -ra a2 <<< "$v2"
+
+  local len=${#a1[@]}
+  (( ${#a2[@]} > len )) && len=${#a2[@]}
+
+  local i
+  for (( i=0; i<len; i++ )); do
+    local num1="${a1[i]:-0}"
+    local num2="${a2[i]:-0}"
+    if (( 10#$num2 > 10#$num1 )); then
+      return 0
+    elif (( 10#$num2 < 10#$num1 )); then
+      return 1
+    fi
+  done
+
+  return 1
+}
+
+##
+# 현재 스크립트 파일이 Git 저장소의 작업 디렉토리(로컬 소스 코드) 내에 위치하는지 검사합니다.
+# 로컬 개발 중인 소스 코드가 원격 코드로 덮어쓰여 유실되는 것을 방지합니다.
+#
+# @param $1 {string} 스크립트 파일의 절대 경로
+#
+# @return 0: Git 로컬 저장소 내부, 1: 독립 배포 경로
+##
+_is_local_git_repo() {
+  local target_file="${1:-}"
+  [[ -n "$target_file" && -f "$target_file" ]] || return 1
+
+  local target_dir
+  target_dir="$(dirname "$target_file")"
+
+  if command -v git &>/dev/null && git -C "$target_dir" rev-parse --is-inside-work-tree &>/dev/null; then
+    return 0
+  fi
+
+  return 1
+}
+
+##
+# 실행 중인 sciectl 스크립트 및 completion 파일을 원격 GitHub 최신 코드와 비교하여
+# 다른 경우 원자적으로 다운로드·검증 후 프로세스를 재실행(Re-exec)합니다.
+#
+# @param $@ {array} 실행 시 전달받은 전체 명령행 인자
+#
+# @return 0 (업데이트 없거나 건너뛴 경우), 성공 시 프로세스 치환(exec)으로 미반환
+##
+_check_and_self_update() {
+  # 1. 재실행(Re-exec) 루프 방지: 방금 업데이트되어 재실행된 프로세스인 경우 통과
+  if [[ "${_SCIECTL_SELF_UPDATED:-0}" == "1" ]]; then
+    unset _SCIECTL_SELF_UPDATED
+    return 0
+  fi
+
+  # 2. 전역 환경변수 비활성화 설정 확인
+  if [[ "${SCIECTL_AUTO_UPDATE:-true}" == "false" || "${SCIECTL_NO_UPDATE:-false}" == "true" ]]; then
+    return 0
+  fi
+
+  # 3. CLI 인자 사전 스캔 (--no-update, --force-update, --local 확인)
+  local arg
+  local force_update="false"
+  for arg in "$@"; do
+    case "$arg" in
+      --no-update)
+        return 0
+        ;;
+      --local)
+        return 0
+        ;;
+      --force-update)
+        force_update="true"
+        ;;
+    esac
+  done
+
+  # 4. 현재 실행 스크립트의 절대 경로 해석
+  local current_script=""
+  if command -v readlink &>/dev/null; then
+    current_script="$(readlink -f "${BASH_SOURCE[0]:-$0}" 2>/dev/null || true)"
+  fi
+  if [[ -z "$current_script" ]] && command -v realpath &>/dev/null; then
+    current_script="$(realpath "${BASH_SOURCE[0]:-$0}" 2>/dev/null || true)"
+  fi
+  if [[ -z "$current_script" ]]; then
+    current_script="${BASH_SOURCE[0]:-$0}"
+  fi
+
+  if [[ ! -f "$current_script" ]]; then
+    return 0
+  fi
+
+  local script_dir
+  script_dir="$(dirname "$current_script")"
+
+  # 5. 로컬 Git 개발 저장소 보호 (로컬 작업 복사본인 경우 덮어쓰기 방지)
+  if _is_local_git_repo "$current_script"; then
+    if [[ "$force_update" != "true" ]]; then
+      # 로컬 개발 복사본이므로 안전하게 건너뜀
+      return 0
+    else
+      echo_w "⚠️ [sciectl] 로컬 Git 작업 트리 내에서 실행 중이지만, '--force-update' 옵션에 의해 원격 동기화를 시도합니다."
+    fi
+  fi
+
+  # 6. 대상 파일 및 디렉토리 쓰기 권한 확인
+  if [[ ! -w "$current_script" || ! -w "$script_dir" ]]; then
+    if [[ "$force_update" == "true" ]]; then
+      echo_w "⚠️ [sciectl] 현재 스크립트 파일('$current_script') 또는 디렉토리에 쓰기 권한이 없어 업데이트를 건너뜁니다."
+    fi
+    return 0
+  fi
+
+  # 7. curl 유틸리티 확인
+  if ! command -v curl &>/dev/null; then
+    return 0
+  fi
+
+  # 8. 원격 파일 다운로드 및 무결성 검증용 임시 디렉토리 생성
+  local tmp_dir=""
+  tmp_dir="$(mktemp -d /tmp/sciectl_update.XXXXXX 2>/dev/null || mktemp -d -t 'sciectl_update')"
+  if [[ ! -d "$tmp_dir" ]]; then
+    return 0
+  fi
+
+  local remote_script_url="${REPO_BASE_URL}/env/sciectl/sciectl"
+  local tmp_script="${tmp_dir}/sciectl"
+
+  # 타임아웃(연결 2초, 전송 최대 5초)으로 원격 최신 스크립트 다운로드
+  if ! curl -sfLo "$tmp_script" --connect-timeout 2 --max-time 5 "$remote_script_url" 2>/dev/null; then
+    rm -rf -- "$tmp_dir"
+    return 0
+  fi
+
+  # 내용 변경 여부 검사 (동일하면 정리 후 정상 진행)
+  if cmp -s "$current_script" "$tmp_script" 2>/dev/null; then
+    rm -rf -- "$tmp_dir"
+    return 0
+  fi
+
+  # 다운로드된 원격 스크립트의 구문 무결성(Syntax check) 검증
+  if ! bash -n "$tmp_script" &>/dev/null; then
+    echo_w "⚠️ [sciectl] 원격 최신 코드의 구문 검증(bash -n)에 실패하여 업데이트를 건너뜁니다." >&2
+    rm -rf -- "$tmp_dir"
+    return 0
+  fi
+
+  # 원격 버전 정보 추출 및 선후 비교 (강제 업데이트가 아닌 경우)
+  local remote_version=""
+  remote_version="$(grep -m 1 '^readonly SCIECTL_VERSION=' "$tmp_script" 2>/dev/null | cut -d'"' -f2 || true)"
+
+  if [[ "$force_update" != "true" ]]; then
+    # 1. 로컬에 버전이 명시되어 있으나 원격에는 버전이 없는 경우 (원격이 레거시 구버전)
+    if [[ -n "${SCIECTL_VERSION:-}" && -z "$remote_version" ]]; then
+      rm -rf -- "$tmp_dir"
+      return 0
+    fi
+
+    # 2. 로컬과 원격 모두 버전이 있는 경우: 원격 버전이 엄격하게 높을 때만 진행
+    if [[ -n "$remote_version" && -n "${SCIECTL_VERSION:-}" ]]; then
+      if ! _is_newer_version "$SCIECTL_VERSION" "$remote_version"; then
+        # 원격 버전이 로컬 버전보다 높지 않음 (로컬이 최신이거나 동일한 개발 버전)
+        rm -rf -- "$tmp_dir"
+        return 0
+      fi
+    fi
+  fi
+
+  if [[ -n "$remote_version" && -n "${SCIECTL_VERSION:-}" ]]; then
+    echo_i "🔄 [sciectl] 원격 저장소에 최신 버전(v${remote_version})이 감지되었습니다 (현재: v${SCIECTL_VERSION}). 자가 업데이트(Self-Update)를 진행합니다..."
+  else
+    echo_i "🔄 [sciectl] 원격 저장소에 새로운 버전이 감지되었습니다. 자가 업데이트(Self-Update)를 진행합니다..."
+  fi
+
+  # 동반 파일: sciectl.completion 동기화 시도
+  local current_completion="${script_dir}/sciectl.completion"
+  local tmp_completion="${tmp_dir}/sciectl.completion"
+  local remote_completion_url="${REPO_BASE_URL}/env/sciectl/sciectl.completion"
+
+  if [[ -f "$current_completion" && -w "$current_completion" ]]; then
+    if curl -sfLo "$tmp_completion" --connect-timeout 2 --max-time 5 "$remote_completion_url" 2>/dev/null; then
+      if bash -n "$tmp_completion" &>/dev/null; then
+        chmod 644 "$tmp_completion" 2>/dev/null || true
+        mv -f "$tmp_completion" "$current_completion" 2>/dev/null || true
+      fi
+    fi
+  fi
+
+  # 원자적 실행 스크립트 교체 (Atomic replacement via mv)
+  chmod +x "$tmp_script" 2>/dev/null || true
+  if ! mv -f "$tmp_script" "$current_script" 2>/dev/null; then
+    echo_w "⚠️ [sciectl] 스크립트 파일 갱신(mv)에 실패했습니다. 기존 버전으로 계속 실행합니다." >&2
+    rm -rf -- "$tmp_dir"
+    return 0
+  fi
+
+  rm -rf -- "$tmp_dir"
+  echo_i "✅ [sciectl] 최신 버전으로 갱신 완료되었습니다. 프로세스를 재시작합니다."
+  echo
+
+  # 9. 원자적 재실행 (Re-exec)
+  export _SCIECTL_SELF_UPDATED=1
+  exec "$current_script" "$@"
 }
 
 ##
@@ -2287,6 +2539,16 @@ cmd_list() {
         SOURCE_MODE="remote"
         shift
         ;;
+      --no-update)
+        shift
+        ;;
+      --force-update)
+        shift
+        ;;
+      --version)
+        printf '%s version %s\n' "$FILENAME" "$SCIECTL_VERSION"
+        exit 0
+        ;;
       --help)
         help "" "" "list"
         exit 0
@@ -2487,6 +2749,16 @@ cmd_info() {
       --remote)
         SOURCE_MODE="remote"
         shift
+        ;;
+      --no-update)
+        shift
+        ;;
+      --force-update)
+        shift
+        ;;
+      --version)
+        printf '%s version %s\n' "$FILENAME" "$SCIECTL_VERSION"
+        exit 0
         ;;
       --help)
         help "" "" "info"
@@ -2833,6 +3105,16 @@ cmd_install() {
         SOURCE_MODE="remote"
         shift
         ;;
+      --no-update)
+        shift
+        ;;
+      --force-update)
+        shift
+        ;;
+      --version)
+        printf '%s version %s\n' "$FILENAME" "$SCIECTL_VERSION"
+        exit 0
+        ;;
       --yes)
         auto_yes="true"
         shift
@@ -3146,6 +3428,24 @@ cmd_install() {
 # 메인 엔트리포인트 (Main Dispatcher)
 # ==============================================================================
 main() {
+  _check_and_self_update "$@"
+
+  # 공통 플래그(--no-update, --force-update)를 추출하여 서브커맨드 디스패치에 영향이 없도록 정규화
+  local -a normalized_args=()
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --no-update|--force-update)
+        # 이미 _check_and_self_update에서 처리되었으므로 디스패치 인자에서 제외
+        ;;
+      *)
+        normalized_args+=("$arg")
+        ;;
+    esac
+  done
+
+  set -- "${normalized_args[@]}"
+
   if [[ $# -eq 0 ]]; then
     cmd_install
     exit 0
@@ -3166,6 +3466,10 @@ main() {
       ;;
     --help)
       help "" "" ""
+      exit 0
+      ;;
+    --version)
+      printf '%s version %s\n' "$FILENAME" "$SCIECTL_VERSION"
       exit 0
       ;;
     --*)

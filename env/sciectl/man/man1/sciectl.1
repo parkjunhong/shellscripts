@@ -126,6 +126,20 @@ CLI 도구 및 매뉴얼 설치 범위를 지정한다 (\fBlocal\fR: \fI~/bin\fR
 .BR \-\-ssh\-key " " \fINAME\fR[,...]
 개별 SSH 공개키의 개요 설명 및 문서 링크를 조회한다.
 
+.SH COMMON OPTIONS
+.TP
+.B \-\-no\-update
+스크립트 실행 시 원격 GitHub 저장소와의 비교 및 자가 업데이트(Self-Update)를 건너뛴다.
+.TP
+.B \-\-force\-update
+원격 GitHub 저장소 최신 버전으로 강제 자가 업데이트를 수행한다.
+.TP
+.B \-\-version
+버전 정보를 출력한다.
+.TP
+.B \-\-help
+도움말을 출력한다.
+
 .SH COMPLETION
 .B sciectl.completion
 은 서브커맨드별 옵션 자동완성 및 콤마(,) 구분 다중 값 입력 시 중복 후보 자동 제외 기능을 제공한다.
