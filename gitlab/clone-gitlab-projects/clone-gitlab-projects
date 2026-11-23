@@ -11,6 +11,8 @@
 # 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/clone-gitlab-projects.completion' into /etc/bashrc for all users.
 # =======================================
 
+readonly SCRIPT_FILE_VERSION="2026.11.04.1"
+
 set -Eeuo pipefail
 
 FILENAME=$(basename "$0")

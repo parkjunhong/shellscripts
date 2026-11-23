@@ -9,6 +9,8 @@
 # @installation : scriptctl install --script uuid-list
 # ==============================================================================
 
+readonly SCRIPT_FILE_VERSION="2026.10.28.1"
+
 help(){
   echo 
   echo "Usage:"

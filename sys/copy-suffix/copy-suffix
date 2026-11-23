@@ -12,6 +12,9 @@
 #
 # Show help message.
 # $1 {string}: error message
+
+readonly SCRIPT_FILE_VERSION="2026.10.28.1"
+
 help(){
 	echo 
 	echo "$1"

@@ -12,6 +12,8 @@
 #      scriptctl install build/remove-deploy
 # =======================================
 
+readonly SCRIPT_FILE_VERSION="2026.10.28.1"
+
 set -Eeuo pipefail
 
 FILENAME=$(basename "$0")

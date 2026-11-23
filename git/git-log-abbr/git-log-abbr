@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+readonly SCRIPT_FILE_VERSION="2026.10.26.1"
+
 echo
 echo "git log --abbrev-commit --pretty=oneline"
 echo

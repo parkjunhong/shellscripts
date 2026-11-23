@@ -10,6 +10,8 @@
 # 2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/install-docker' into '/etc/bashrc' or '/usr/share/bash-completion/completions/' for all users.
 # =======================================
 
+readonly SCRIPT_FILE_VERSION="2026.11.16.1"
+
 set -Eeuo pipefail
 
 FILENAME=$(basename "$0")

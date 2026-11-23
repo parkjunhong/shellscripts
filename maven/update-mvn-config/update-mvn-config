@@ -20,6 +20,8 @@
 #    }
 # =======================================
 
+readonly SCRIPT_FILE_VERSION="2026.10.27.1"
+
 help(){
     if [ ! -z "$1" ]; then
         local indent=10

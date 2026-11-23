@@ -11,6 +11,8 @@
 #   2. copy the above file to /etc/bash_completion.d/ or insert 'source <path>/git-merge.completion' into /etc/bashrc for all users.
 # =======================================
 
+readonly SCRIPT_FILE_VERSION="2026.10.28.1"
+
 FILENAME=$(basename "$0")
 
 ##
