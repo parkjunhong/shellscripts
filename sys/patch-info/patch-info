@@ -410,6 +410,81 @@ ADV_PKG=""
 declare -a ADV_CVES=()
 
 ##
+# DNF updateinfo 명령을 안전하게 실행 (타임아웃, 영문 로케일, 캐시 폴백 지원)
+#
+# @param $@ {String...} dnf updateinfo 서브인자 (예: info --all --cve CVE-...)
+# @return 0: 실행 완료
+##
+run_dnf_updateinfo() {
+  local out=""
+  local rc=0
+
+  if [[ "$ONLINE_MODE" == "false" ]]; then
+    out="$(LC_ALL=C timeout 20 dnf -C updateinfo "$@" < /dev/null 2>/dev/null)" || rc=$?
+    [[ "$rc" -eq 124 ]] && log_warn "DNF 로컬 캐시 조회 시간 초과(20초)"
+    printf "%s\n" "$out"
+    return 0
+  fi
+
+  out="$(LC_ALL=C timeout 20 dnf --setopt=timeout=5 --setopt=retries=1 updateinfo "$@" < /dev/null 2>/dev/null)" || rc=$?
+  if [[ "$rc" -eq 124 || ( "$rc" -ne 0 && -z "$out" ) ]]; then
+    if [[ "$rc" -eq 124 ]]; then
+      log_warn "DNF 온라인 조회 시간 초과(20초) - 로컬 캐시(-C)로 폴백 조회합니다."
+    else
+      log_debug "DNF 온라인 조회 실패(rc=$rc) - 로컬 캐시(-C)로 폴백 조회합니다."
+    fi
+    rc=0
+    out="$(LC_ALL=C timeout 20 dnf -C updateinfo "$@" < /dev/null 2>/dev/null)" || rc=$?
+  fi
+
+  printf "%s\n" "$out"
+  return 0
+}
+
+##
+# DNF updateinfo info 출력 결과에서 제목, 패치 상태, 영향 패키지 추출
+#
+# @param $1 {String} dnf updateinfo info 출력 원문
+# @param $2 {String} 대상 권고 ID 또는 CVE 번호
+# @return 0: 매칭 성공, 1: 매칭 실패
+##
+parse_dnf_updateinfo_result() {
+  local dnf_out="$1"
+  local target_id="$2"
+
+  if ! echo "$dnf_out" | grep -q "$target_id"; then
+    return 1
+  fi
+
+  local update_id banner_title title_field resolved_title
+  update_id="$(echo "$dnf_out" | grep -E "^[[:space:]]*Update ID[[:space:]]*:" | head -n 1 | sed -e 's/^[[:space:]]*Update ID[[:space:]]*:[[:space:]]*//')"
+  banner_title="$(echo "$dnf_out" | awk '/^===+$/{getline; if ($0 !~ /^===+$/) {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $0); print; exit}}')"
+  title_field="$(echo "$dnf_out" | grep -E "^[[:space:]]*Title[[:space:]]*:" | head -n 1 | sed -e 's/^[[:space:]]*Title[[:space:]]*:[[:space:]]*//')"
+  resolved_title="${title_field:-$banner_title}"
+
+  if [[ -n "$resolved_title" && -n "$update_id" ]]; then
+    ADV_TITLE="${resolved_title} (${update_id})"
+  elif [[ -n "$resolved_title" ]]; then
+    ADV_TITLE="$resolved_title"
+  fi
+
+  if echo "$dnf_out" | grep -qiE "^[[:space:]]*Installed[[:space:]]*:[[:space:]]*false"; then
+    ADV_STATUS="업데이트 가능 (Available - 패치 미적용)"
+  elif echo "$dnf_out" | grep -qiE "^[[:space:]]*Installed[[:space:]]*:[[:space:]]*true"; then
+    ADV_STATUS="해결됨 (Resolved - 이미 패치 적용됨)"
+  else
+    ADV_STATUS="업데이트 가능 (Available - 패치 미적용)"
+  fi
+
+  ADV_PKG="$(echo "$dnf_out" | grep -E "^[[:space:]]*Packages[[:space:]]*:" -A 5 | grep -E "^[[:space:]]+[a-zA-Z0-9]" | head -n 1 | awk '{print $1}')"
+  if [[ -z "$ADV_PKG" && -n "$banner_title" ]]; then
+    ADV_PKG="$(echo "$banner_title" | sed -nE 's/^[A-Za-z]+:[[:space:]]*([a-zA-Z0-9._+-]+)[[:space:]]+security.*/\1/p' | head -n 1)"
+  fi
+
+  return 0
+}
+
+##
 # OS 보안 권고사항 번호로부터 연관 CVE 목록 및 권고 요약 정보 추출
 #
 # @param $1 {String} 권고 번호 (USN, RHSA, DSA 등 또는 CVE)
@@ -556,11 +631,11 @@ except Exception:
     if [[ "$resolved" == "false" && "$OS_TYPE" == "rhel" ]] && command -v dnf >/dev/null 2>&1; then
       log_debug "DNF updateinfo를 통해 '$advisory' 분석..."
       local dnf_out
-      dnf_out="$(dnf updateinfo info --cve "$advisory" 2>/dev/null || true)"
-      if echo "$dnf_out" | grep -q "$advisory"; then
-        ADV_TITLE="$(echo "$dnf_out" | grep -E "^[[:space:]]*Title[[:space:]]*:" | head -n 1 | sed -e 's/^[[:space:]]*Title[[:space:]]*:[[:space:]]*//')"
-        ADV_STATUS="업데이트 가능 (Available - 패치 미적용)"
-        ADV_PKG="$(echo "$dnf_out" | grep -E "^[[:space:]]*Packages[[:space:]]*:" -A 5 | grep -E "^[[:space:]]+[a-zA-Z0-9]" | head -n 1 | awk '{print $1}')"
+      dnf_out="$(run_dnf_updateinfo info --all --cve "$advisory")"
+      if parse_dnf_updateinfo_result "$dnf_out" "$advisory"; then
+        resolved=true
+      else
+        ADV_STATUS="해당 없음 (Not Affected - 관련 권고 없음)"
       fi
     fi
 
@@ -681,10 +756,11 @@ except Exception:
     if command -v dnf >/dev/null 2>&1; then
       log_debug "DNF updateinfo를 통해 '$advisory' 분석..."
       local dnf_out
-      dnf_out="$(dnf updateinfo info --advisory "$advisory" 2>/dev/null || true)"
+      dnf_out="$(run_dnf_updateinfo info --all --advisory "$advisory")"
+      parse_dnf_updateinfo_result "$dnf_out" "$advisory" || true
       while IFS= read -r cve; do
         [[ -n "$cve" ]] && ADV_CVES+=("$cve")
-      done < <(echo "$dnf_out" | grep -E "^[[:space:]]*CVEs[[:space:]]*:" -A 10 | grep -o -E "CVE-[0-9]{4}-[0-9]+" | sort -u || true)
+      done < <(echo "$dnf_out" | grep -E "^[[:space:]]*CVEs?[[:space:]]*:" -A 20 | grep -o -E "CVE-[0-9]{4}-[0-9]+" | sort -u || true)
     fi
     return 0
   fi
@@ -694,7 +770,7 @@ except Exception:
     if command -v zypper >/dev/null 2>&1; then
       log_debug "Zypper patch-info를 통해 '$advisory' 분석..."
       local zyp_out
-      zyp_out="$(zypper patch-info "$advisory" 2>/dev/null || true)"
+      zyp_out="$(LC_ALL=C timeout 20 zypper patch-info "$advisory" < /dev/null 2>/dev/null || true)"
       while IFS= read -r cve; do
         [[ -n "$cve" ]] && ADV_CVES+=("$cve")
       done < <(echo "$zyp_out" | grep -o -E "CVE-[0-9]{4}-[0-9]+" | sort -u || true)
