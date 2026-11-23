@@ -12,7 +12,7 @@
 
 # 도움말 출력 함수
 
-readonly SCRIPT_FILE_VERSION="2026.11.24.1"
+readonly SCRIPT_FILE_VERSION="2026.11.24.2"
 
 help() {
   cat <<'EOF'
@@ -423,21 +423,25 @@ run_dnf_updateinfo() {
   local rc=0
 
   if [[ "$ONLINE_MODE" == "false" ]]; then
-    out="$(LC_ALL=C timeout 20 dnf -C updateinfo "$@" < /dev/null 2>/dev/null)" || rc=$?
+    out="$(LC_ALL=C timeout 20 dnf -C --setopt=skip_if_unavailable=True updateinfo "$@" < /dev/null 2>/dev/null)" || rc=$?
     [[ "$rc" -eq 124 ]] && log_warn "DNF 로컬 캐시 조회 시간 초과(20초)"
     printf "%s\n" "$out"
     return 0
   fi
 
-  out="$(LC_ALL=C timeout 20 dnf --setopt=timeout=5 --setopt=retries=1 updateinfo "$@" < /dev/null 2>/dev/null)" || rc=$?
-  if [[ "$rc" -eq 124 || ( "$rc" -ne 0 && -z "$out" ) ]]; then
+  out="$(LC_ALL=C timeout 20 dnf --setopt=timeout=5 --setopt=retries=1 --setopt=skip_if_unavailable=True updateinfo "$@" < /dev/null 2>/dev/null)" || rc=$?
+  if [[ "$rc" -eq 124 || "$rc" -ne 0 ]] || ! echo "$out" | grep -qE "Update ID:|Title:|===+"; then
     if [[ "$rc" -eq 124 ]]; then
       log_warn "DNF 온라인 조회 시간 초과(20초) - 로컬 캐시(-C)로 폴백 조회합니다."
-    else
+    elif [[ "$rc" -ne 0 ]]; then
       log_debug "DNF 온라인 조회 실패(rc=$rc) - 로컬 캐시(-C)로 폴백 조회합니다."
     fi
-    rc=0
-    out="$(LC_ALL=C timeout 20 dnf -C updateinfo "$@" < /dev/null 2>/dev/null)" || rc=$?
+    local cache_out=""
+    local cache_rc=0
+    cache_out="$(LC_ALL=C timeout 20 dnf -C --setopt=skip_if_unavailable=True updateinfo "$@" < /dev/null 2>/dev/null)" || cache_rc=$?
+    if [[ -n "$cache_out" ]] && echo "$cache_out" | grep -qE "Update ID:|Title:|===+"; then
+      out="$cache_out"
+    fi
   fi
 
   printf "%s\n" "$out"
