@@ -889,9 +889,9 @@ execute_push_options_mr() {
   fi
 
   echo "📤 [푸시] Git Push Options 전송 및 Merge Request 생성 중..."
-  local push_output
-  push_output=$(git push "${push_opts[@]}" "$OPT_REMOTE" "$OPT_SOURCE" 2>&1)
-  local push_ret=$?
+  local push_output=""
+  local push_ret=0
+  push_output=$(git push "${push_opts[@]}" "$OPT_REMOTE" "$OPT_SOURCE" 2>&1) || push_ret=$?
   echo "$push_output"
   if (( push_ret != 0 )); then
     help "Git Push Options 전송 및 Merge Request 생성에 실패했습니다." "$LINENO"
@@ -951,8 +951,7 @@ execute_mr() {
     github)
       ensure_cli_tool "gh"
       ensure_cli_auth "gh"
-      local -a gh_cmd=(gh pr create --base "$OPT_TARGET" --head "$OPT_SOURCE" --title "$OPT_TITLE")
-      [[ -n "$OPT_DESC" ]] && gh_cmd+=(--body "$OPT_DESC")
+      local -a gh_cmd=(gh pr create --base "$OPT_TARGET" --head "$OPT_SOURCE" --title "$OPT_TITLE" --body "${OPT_DESC:-}")
       [[ "$OPT_DRAFT" == "true" ]] && gh_cmd+=(--draft)
       [[ -n "$OPT_ASSIGNEE" ]] && gh_cmd+=(--assignee "$OPT_ASSIGNEE")
       [[ -n "$OPT_MILESTONE" ]] && gh_cmd+=(--milestone "$OPT_MILESTONE")
@@ -976,10 +975,20 @@ execute_mr() {
       fi
 
       echo "📤 [1/2] 원격 저장소에 소스 브랜치 푸시 중..."
-      git push "$OPT_REMOTE" "$OPT_SOURCE"
+      if ! git push "$OPT_REMOTE" "$OPT_SOURCE"; then
+        help "원격 저장소('${OPT_REMOTE}')로 소스 브랜치('${OPT_SOURCE}') 푸시에 실패했습니다." "$LINENO"
+        return 1
+      fi
 
       echo "🚀 [2/2] GitHub CLI를 통해 Pull Request 생성 중..."
-      "${gh_cmd[@]}"
+      local gh_output=""
+      local gh_ret=0
+      gh_output=$("${gh_cmd[@]}" 2>&1) || gh_ret=$?
+      echo "$gh_output"
+      if (( gh_ret != 0 )); then
+        help "GitHub Pull Request 생성 중 오류가 발생했습니다." "$LINENO"
+        return $gh_ret
+      fi
       ;;
 
     gitlab)
@@ -998,8 +1007,7 @@ execute_mr() {
         glab_bin="gitlab"
       fi
 
-      local -a glab_cmd=("$glab_bin" mr create --target-branch "$OPT_TARGET" --source-branch "$OPT_SOURCE" --title "$OPT_TITLE" --yes)
-      [[ -n "$OPT_DESC" ]] && glab_cmd+=(--description "$OPT_DESC")
+      local -a glab_cmd=("$glab_bin" mr create --target-branch "$OPT_TARGET" --source-branch "$OPT_SOURCE" --title "$OPT_TITLE" --description "${OPT_DESC:-}" --yes)
       [[ "$OPT_REMOVE_SOURCE" == "true" ]] && glab_cmd+=(--remove-source-branch)
       [[ "$OPT_DRAFT" == "true" ]] && glab_cmd+=(--draft)
       [[ "$OPT_SQUASH" == "true" ]] && glab_cmd+=(--squash-before-merge)
@@ -1028,12 +1036,15 @@ execute_mr() {
       fi
 
       echo "📤 [1/2] 원격 저장소에 소스 브랜치 푸시 중..."
-      git push "$OPT_REMOTE" "$OPT_SOURCE"
+      if ! git push "$OPT_REMOTE" "$OPT_SOURCE"; then
+        help "원격 저장소('${OPT_REMOTE}')로 소스 브랜치('${OPT_SOURCE}') 푸시에 실패했습니다." "$LINENO"
+        return 1
+      fi
 
       echo "🚀 [2/2] GitLab CLI를 통해 Merge Request 생성 중..."
-      local glab_output
-      glab_output=$("${glab_cmd[@]}" 2>&1)
-      local glab_ret=$?
+      local glab_output=""
+      local glab_ret=0
+      glab_output=$("${glab_cmd[@]}" 2>&1) || glab_ret=$?
       echo "$glab_output"
       if (( glab_ret != 0 )); then
         help "GitLab Merge Request 생성 중 오류가 발생했습니다." "$LINENO"
