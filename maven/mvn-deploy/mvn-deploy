@@ -12,6 +12,8 @@
 #      scriptctl install maven/mvn-deploy
 # =======================================
 
+readonly SCRIPT_FILE_VERSION="2026.10.28.1"
+
 set -euo pipefail
 
 SCRIPT_NAME="$(basename "$0")"

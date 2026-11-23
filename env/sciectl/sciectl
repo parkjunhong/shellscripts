@@ -11,7 +11,7 @@
 # =======================================
 
 readonly FILENAME="$(basename "$0")"
-readonly SCIECTL_VERSION="2026.11.23.1"
+readonly SCRIPT_FILE_VERSION="2026.11.23.1"
 readonly REPO_BASE_URL="${SCIECTL_REPO_URL:-https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main}"
 readonly REPO_WEB_BASE_URL="${SCIECTL_REPO_WEB_URL:-https://github.com/parkjunhong/shellscripts/blob/main}"
 
@@ -695,18 +695,18 @@ _check_and_self_update() {
 
   # 원격 버전 정보 추출 및 선후 비교 (강제 업데이트가 아닌 경우)
   local remote_version=""
-  remote_version="$(grep -m 1 '^readonly SCIECTL_VERSION=' "$tmp_script" 2>/dev/null | cut -d'"' -f2 || true)"
+  remote_version="$(grep -m 1 '^readonly SCRIPT_FILE_VERSION=' "$tmp_script" 2>/dev/null | cut -d'"' -f2 || true)"
 
   if [[ "$force_update" != "true" ]]; then
     # 1. 로컬에 버전이 명시되어 있으나 원격에는 버전이 없는 경우 (원격이 레거시 구버전)
-    if [[ -n "${SCIECTL_VERSION:-}" && -z "$remote_version" ]]; then
+    if [[ -n "${SCRIPT_FILE_VERSION:-}" && -z "$remote_version" ]]; then
       rm -rf -- "$tmp_dir"
       return 0
     fi
 
     # 2. 로컬과 원격 모두 버전이 있는 경우: 원격 버전이 엄격하게 높을 때만 진행
-    if [[ -n "$remote_version" && -n "${SCIECTL_VERSION:-}" ]]; then
-      if ! _is_newer_version "$SCIECTL_VERSION" "$remote_version"; then
+    if [[ -n "$remote_version" && -n "${SCRIPT_FILE_VERSION:-}" ]]; then
+      if ! _is_newer_version "$SCRIPT_FILE_VERSION" "$remote_version"; then
         # 원격 버전이 로컬 버전보다 높지 않음 (로컬이 최신이거나 동일한 개발 버전)
         rm -rf -- "$tmp_dir"
         return 0
@@ -714,8 +714,8 @@ _check_and_self_update() {
     fi
   fi
 
-  if [[ -n "$remote_version" && -n "${SCIECTL_VERSION:-}" ]]; then
-    echo_i "🔄 [sciectl] 원격 저장소에 최신 버전(v${remote_version})이 감지되었습니다 (현재: v${SCIECTL_VERSION}). 자가 업데이트(Self-Update)를 진행합니다..."
+  if [[ -n "$remote_version" && -n "${SCRIPT_FILE_VERSION:-}" ]]; then
+    echo_i "🔄 [sciectl] 원격 저장소에 최신 버전(v${remote_version})이 감지되었습니다 (현재: v${SCRIPT_FILE_VERSION}). 자가 업데이트(Self-Update)를 진행합니다..."
   else
     echo_i "🔄 [sciectl] 원격 저장소에 새로운 버전이 감지되었습니다. 자가 업데이트(Self-Update)를 진행합니다..."
   fi
@@ -2546,7 +2546,7 @@ cmd_list() {
         shift
         ;;
       --version)
-        printf '%s version %s\n' "$FILENAME" "$SCIECTL_VERSION"
+        printf '%s version %s\n' "$FILENAME" "$SCRIPT_FILE_VERSION"
         exit 0
         ;;
       --help)
@@ -2757,7 +2757,7 @@ cmd_info() {
         shift
         ;;
       --version)
-        printf '%s version %s\n' "$FILENAME" "$SCIECTL_VERSION"
+        printf '%s version %s\n' "$FILENAME" "$SCRIPT_FILE_VERSION"
         exit 0
         ;;
       --help)
@@ -3112,7 +3112,7 @@ cmd_install() {
         shift
         ;;
       --version)
-        printf '%s version %s\n' "$FILENAME" "$SCIECTL_VERSION"
+        printf '%s version %s\n' "$FILENAME" "$SCRIPT_FILE_VERSION"
         exit 0
         ;;
       --yes)
@@ -3469,7 +3469,7 @@ main() {
       exit 0
       ;;
     --version)
-      printf '%s version %s\n' "$FILENAME" "$SCIECTL_VERSION"
+      printf '%s version %s\n' "$FILENAME" "$SCRIPT_FILE_VERSION"
       exit 0
       ;;
     --*)

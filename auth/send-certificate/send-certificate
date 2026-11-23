@@ -8,6 +8,8 @@
 # @installation : scriptctl install --script send-certificate
 # ==============================================================================
 
+readonly SCRIPT_FILE_VERSION="2026.10.30.1"
+
 set -Eeuo pipefail
 
 FILENAME=$(basename "$0")

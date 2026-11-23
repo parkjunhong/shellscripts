@@ -10,6 +10,8 @@
 #   2. copy to /etc/bash_completion.d/ or insert into /etc/bashrc for all users.
 # =======================================
 
+readonly SCRIPT_FILE_VERSION="2026.11.11.1"
+
 set -Eeuo pipefail
 
 FILENAME=$(basename "$0")

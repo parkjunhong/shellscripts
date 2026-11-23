@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+readonly SCRIPT_FILE_VERSION="2026.10.28.1"
+
 help(){
 	if [ $# -gt 0 ];
 	then

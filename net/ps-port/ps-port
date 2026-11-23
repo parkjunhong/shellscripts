@@ -11,6 +11,8 @@
 #   2. copy this file to /usr/local/bin/ or any directory in $PATH for all users.
 # =======================================
 
+readonly SCRIPT_FILE_VERSION="2026.10.26.1"
+
 set -Euo pipefail
 
 help() {

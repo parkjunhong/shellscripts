@@ -8,6 +8,8 @@
 # @desc   : support RHEL 8/9, Oracle Linux 8/9, Ubuntu 20.04/22.04/24.04, RockyOS 8/9, CentOS 7/8
 # =======================================
 
+readonly SCRIPT_FILE_VERSION="2026.10.30.1"
+
 set -Eeuo pipefail
 
 # -----------------------------------------------------------------------------

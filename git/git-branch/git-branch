@@ -10,6 +10,8 @@
 #   2. 시스템 전역: utils/scriptctl/scriptctl install --script ./git-branch --target global
 # ==============================================================================
 
+readonly SCRIPT_FILE_VERSION="2026.11.19.1"
+
 set -Eeuo pipefail
 
 # 구분줄 표준 길이 (86자 지정 규격 준수)

@@ -10,6 +10,8 @@
 # 2. copy the completion file to /usr/share/bash-completion/completions/ssl-del (1st) or /etc/bash_completion.d/ssl-del.completion (2nd) for all users.
 # =======================================
 
+readonly SCRIPT_FILE_VERSION="2026.10.28.1"
+
 help() {
     
   if [ $# -gt 0 ];then

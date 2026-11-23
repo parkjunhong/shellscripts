@@ -14,6 +14,9 @@
 # =======================================
 
 # 도움말 함수 정의
+
+readonly SCRIPT_FILE_VERSION="2026.10.28.1"
+
 help() {
   echo "사용법: $(basename $0) --input-dir <디렉토리> --file-ext <확장자> --target-str <문자열> [--content-position <위치>] (--content-str <추가_문자열> | --content-file <추가_파일>) [--excluded-dir <제외_디렉토리>]"
   echo ""

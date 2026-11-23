@@ -9,6 +9,8 @@
 # @installation : scriptctl install --script disk-size
 # ==============================================================================
 
+readonly SCRIPT_FILE_VERSION="2026.11.05.1"
+
 set -Eeuo pipefail
 
 FILENAME=$(basename "$0")

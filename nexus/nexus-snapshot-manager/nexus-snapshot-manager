@@ -9,6 +9,7 @@
 # =======================================
 
 readonly FILENAME=$(basename "$0")
+readonly SCRIPT_FILE_VERSION="2026.10.30.1"
 
 ##
 # 스크립트의 사용법을 출력하거나 오류 발생 시 콜스택을 출력합니다.

@@ -13,6 +13,8 @@
 #      scriptctl install utils/replace-codeblock
 # =======================================
 
+readonly SCRIPT_FILE_VERSION="2026.10.28.1"
+
 help() {
   local FILENAME=$(basename "$0")
   if [ ! -z "$1" ]; then
