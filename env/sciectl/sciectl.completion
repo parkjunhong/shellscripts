@@ -509,6 +509,7 @@ _sciectl_completion() {
       local -a top_opts=(
         "--catalog" "--tool" "--installer" "--command" "--ssh-key"
         "--only" "--skip" "--user" "--target" "--local" "--remote"
+        "--no-update" "--force-update" "--version"
         "--yes" "--force" "--dry-run" "--all" "--no-default-opts" "--help"
       )
       COMPREPLY=( $(compgen -W "${top_opts[*]}" -- "$cur") )
@@ -545,6 +546,7 @@ _sciectl_completion() {
 
       install_opts+=(
         "--only" "--skip" "--user" "--target" "--local" "--remote"
+        "--no-update" "--force-update" "--version"
         "--yes" "--force" "--dry-run" "--all" "--no-default-opts" "--help"
       )
 
@@ -627,7 +629,7 @@ _sciectl_completion() {
       ;;
 
     list)
-      local -a list_opts=("--type" "--local" "--remote" "--help")
+      local -a list_opts=("--type" "--local" "--remote" "--no-update" "--force-update" "--version" "--help")
       case "$cur" in
         --type=*)
           COMPREPLY=( $(compgen -W "all catalogs tools installers commands keys" -- "${cur#--type=}") )
@@ -661,7 +663,7 @@ _sciectl_completion() {
       else
         info_opts+=("--tool" "--installer" "--command" "--ssh-key")
       fi
-      info_opts+=("--local" "--remote" "--help")
+      info_opts+=("--local" "--remote" "--no-update" "--force-update" "--version" "--help")
 
       case "$cur" in
         --catalog=*)
