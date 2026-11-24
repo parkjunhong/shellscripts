@@ -20,7 +20,7 @@ INSTALL_PACKAGES=curl, net-tools, vim, jq, firewalld, file
 # ==============================================================================
 # 3. CLI Tools (<category>/<canonical-name>, 콤마 구분)
 # ==============================================================================
-TOOLS=utils/scriptctl, sys/vim-cli, sudo/sudoers-cli, sys/disk-size
+TOOLS=utils/scriptctl, sys/vim-cli, sudo/sudoers-cli, sys/disk-size, sys/patch-info
 
 # ==============================================================================
 # 4. Installers (env/installers/ 식별자 또는 <category>/<tool>, 콤마 구분)
