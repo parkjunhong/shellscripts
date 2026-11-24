@@ -11,9 +11,9 @@
 # =======================================
 
 readonly FILENAME="$(basename "$0")"
-readonly SCRIPT_FILE_VERSION="2026.11.24.3"
+readonly SCRIPT_FILE_VERSION="2026.11.24.4"
 # 구버전 sciectl(<=2026.11.23.1) 자가 업데이트 하위 호환성 유지용 (추후 제거 예정)
-readonly SCIECTL_VERSION="2026.11.24.3"
+readonly SCIECTL_VERSION="2026.11.24.4"
 readonly REPO_BASE_URL="${SCIECTL_REPO_URL:-https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main}"
 readonly REPO_WEB_BASE_URL="${SCIECTL_REPO_WEB_URL:-https://github.com/parkjunhong/shellscripts/blob/main}"
 
@@ -255,17 +255,21 @@ EOF
       cat <<EOF
 
 📋 사용법 (Usage - list):
-  $FILENAME list [--type <all|catalogs|tools|installers|commands|keys>] [--installed] [--target <local|global>] [--local|--remote]
+  $FILENAME list [--type <all|catalogs|tools|installers|commands|keys>] [--installed] [--target <local|global>] [--orderby <ORDER>] [--local|--remote]
   $FILENAME list --help
 
 📝 설명 (Description):
   설치 가능한 카탈로그(그룹) 목록 및 커스텀 CLI 도구, 인스톨러, 사후 명령어, SSH 공개키 목록을 조회합니다.
-  '--installed' 옵션을 지정하면 현재 시스템에 설치된 CLI 도구 및 등록된 SSH 공개키 현황을 조회합니다.
+  '--installed' 옵션을 지정하면 현재 시스템에 설치된 CLI 도구 및 등록된 SSH 공개키 현황을 조회하며,
+  업데이트 가능한 항목은 버전 끝에 '(*)'가 표시됩니다.
 
 ⚙️  옵션 (Options):
   --type <TYPE>             조회할 대상 유형 (기본값: catalogs, --installed 시 all / 허용값: all, catalogs, tools, installers, commands, keys)
   --installed               현재 시스템에 설치된 도구 및 등록된 SSH 공개키 목록만 조회
   --target <local|global>   --installed 조회 시 범위 필터 (local | global)
+  --orderby <ORDER>         --installed 조회 시 정렬 기준 (기본값: id)
+                            - Identifier 정렬: id, id/asc (오름차순), id/desc (내림차순)
+                            - Updated At 정렬: time, time/asc (오름차순), time/desc (내림차순)
   --local                   로컬 저장소 기준으로 목록 조회
   --remote                  원격 GitHub 저장소 기준으로 목록 조회
   --no-update               자가 업데이트(Self-Update) 건너뛰기
@@ -275,7 +279,8 @@ EOF
 
 💡 예시 (Examples):
   $FILENAME list --installed
-  $FILENAME list --type tools --installed --target local
+  $FILENAME list --installed --orderby time/desc
+  $FILENAME list --type tools --installed --target local --orderby id/desc
   $FILENAME list --type keys --installed
 EOF
       ;;
@@ -582,7 +587,7 @@ _fetch_resource() {
 
   if [[ "$rel_or_url" == https://* || "$rel_or_url" == http://* ]]; then
     _ensure_curl
-    curl -sfLo "$dest_file" "$rel_or_url"
+    curl -sfLo "$dest_file" --connect-timeout 3 --max-time 8 "$rel_or_url"
     return $?
   fi
 
@@ -596,7 +601,29 @@ _fetch_resource() {
   fi
 
   _ensure_curl
-  curl -sfLo "$dest_file" "${REPO_BASE_URL}/${rel_or_url}"
+  curl -sfLo "$dest_file" --connect-timeout 3 --max-time 8 "${REPO_BASE_URL}/${rel_or_url}"
+}
+
+##
+# 현재 소스 모드(--local / --remote)에서 저장소 리소스에 접근 가능한지 사전 확인합니다.
+#
+# @param 없음
+#
+# @return 0: 접근 가능, 1: 원격 저장소 연결 불가
+##
+_check_remote_reachable() {
+  if [[ "$SOURCE_MODE" == "local" ]] && _detect_local_repo 2>/dev/null; then
+    return 0
+  fi
+  if _detect_local_repo 2>/dev/null; then
+    return 0
+  fi
+  if [[ "$SOURCE_MODE" == "local" ]]; then
+    return 1
+  fi
+
+  _ensure_curl
+  curl -sfI --connect-timeout 3 --max-time 5 "${REPO_BASE_URL}/env/catalogs/catalogs.ini" >/dev/null 2>&1
 }
 
 ##
@@ -3247,9 +3274,235 @@ _print_component_info() {
 #
 # @return 0
 ##
+declare -A REC_UPDATE_STATUS=()
+declare -A REC_REMOTE_VER=()
+REMOTE_AVAILABLE=1
+
+##
+# 설치된 레코드 배열의 각 항목에 대해 저장소 최신 버전과 비교하여 업데이트 가능 여부를 판별합니다.
+# (네트워크 단절 시 REMOTE_AVAILABLE=0으로 설정하고 즉시 오프라인 폴백합니다.)
+#
+# @param $@ {array} 파이프 구분 레코드 목록
+#
+# @return 전역 변수 REMOTE_AVAILABLE, REC_UPDATE_STATUS, REC_REMOTE_VER 설정
+##
+_check_records_update_status() {
+  REC_UPDATE_STATUS=()
+  REC_REMOTE_VER=()
+  REMOTE_AVAILABLE=1
+
+  local -a recs=("$@")
+  (( ${#recs[@]} > 0 )) || return 0
+
+  if ! _check_remote_reachable; then
+    REMOTE_AVAILABLE=0
+    local r r_type r_id r_name r_scope r_ver r_path r_meta
+    for r in "${recs[@]}"; do
+      IFS='|' read -r r_type r_id r_name r_scope r_ver r_path r_meta <<< "$r"
+      REC_UPDATE_STATUS["$r_meta"]="unknown"
+      REC_REMOTE_VER["$r_meta"]=""
+    done
+    return 1
+  fi
+
+  local tmp_dir
+  tmp_dir="$(mktemp -d "/tmp/sciectl_chk.XXXXXX")"
+
+  # 병렬 리소스 조회 (최대 8개 동시 실행)
+  local idx=0
+  local max_jobs=8
+  local r r_type r_id r_name r_scope r_ver r_path r_meta
+  for r in "${recs[@]}"; do
+    IFS='|' read -r r_type r_id r_name r_scope r_ver r_path r_meta <<< "$r"
+    if [[ "$r_type" == "tool" ]]; then
+      local resolved_ref
+      resolved_ref="$(_resolve_tool_path "$r_id")"
+      ( _fetch_resource "$resolved_ref" "${tmp_dir}/${idx}.res" 2>/dev/null || rm -f -- "${tmp_dir}/${idx}.res" ) &
+    elif [[ "$r_type" == "ssh-key" ]]; then
+      ( _resolve_ssh_key_content "$r_id" > "${tmp_dir}/${idx}.key" 2>/dev/null || rm -f -- "${tmp_dir}/${idx}.key" ) &
+    fi
+    ((idx++))
+    if (( idx % max_jobs == 0 )); then
+      wait
+    fi
+  done
+  wait
+
+  idx=0
+  for r in "${recs[@]}"; do
+    IFS='|' read -r r_type r_id r_name r_scope r_ver r_path r_meta <<< "$r"
+    if [[ "$r_type" == "tool" ]]; then
+      local res_file="${tmp_dir}/${idx}.res"
+      if [[ ! -s "$res_file" ]]; then
+        REC_UPDATE_STATUS["$r_meta"]="unknown"
+        REC_REMOTE_VER["$r_meta"]=""
+      else
+        local local_ver="$r_ver"
+        [[ "$local_ver" == "unknown" ]] && local_ver=""
+        local remote_ver
+        remote_ver="$(_extract_script_version "$res_file")"
+        REC_REMOTE_VER["$r_meta"]="$remote_ver"
+
+        if [[ -z "$local_ver" ]]; then
+          # 버전 확인이 안 되는 legacy 설치 도구는 동일 파일이 아닌 이상 업데이트 가능으로 분류
+          if [[ -n "$remote_ver" ]] || ! cmp -s "$res_file" "$r_path" 2>/dev/null; then
+            REC_UPDATE_STATUS["$r_meta"]="updatable"
+          else
+            REC_UPDATE_STATUS["$r_meta"]="up-to-date"
+          fi
+        elif [[ -n "$remote_ver" ]]; then
+          if _is_newer_version "$local_ver" "$remote_ver"; then
+            REC_UPDATE_STATUS["$r_meta"]="updatable"
+          elif [[ "$local_ver" == "$remote_ver" ]] && ! cmp -s "$res_file" "$r_path" 2>/dev/null; then
+            REC_UPDATE_STATUS["$r_meta"]="updatable"
+          else
+            REC_UPDATE_STATUS["$r_meta"]="up-to-date"
+          fi
+        else
+          REC_UPDATE_STATUS["$r_meta"]="up-to-date"
+        fi
+      fi
+    elif [[ "$r_type" == "ssh-key" ]]; then
+      local key_file="${tmp_dir}/${idx}.key"
+      if [[ ! -s "$key_file" ]]; then
+        REC_UPDATE_STATUS["$r_meta"]="unknown"
+        REC_REMOTE_VER["$r_meta"]=""
+      else
+        local new_pub new_body new_comment old_body
+        new_pub="$(cat "$key_file")"
+        new_body="$(echo "$new_pub" | awk '{print $2}')"
+        new_comment="$(echo "$new_pub" | cut -d' ' -f3-)"
+        old_body="$(_manifest_get_field "$r_meta" "KEY_BODY" || true)"
+        REC_REMOTE_VER["$r_meta"]="${new_comment:-ssh-rsa}"
+        if [[ -n "$new_body" && "$old_body" != "$new_body" ]]; then
+          REC_UPDATE_STATUS["$r_meta"]="updatable"
+        else
+          REC_UPDATE_STATUS["$r_meta"]="up-to-date"
+        fi
+      fi
+    fi
+    ((idx++))
+  done
+
+  rm -rf -- "$tmp_dir"
+  return 0
+}
+
+##
+# 설치 레코드 배열을 지정한 정렬 기준(--orderby)으로 정렬하여 표준 출력합니다.
+# 각 출력 라인은 기존 7개 필드 뒤에 '|updated_at'이 추가된 8개 필드입니다.
+#
+# @param $1 {string} 정렬 기준 (id | id/asc | id/desc | time | time/asc | time/desc)
+# @param $@ {array} 파이프 구분 레코드 목록
+#
+# @return 정렬된 8필드 레코드 출력
+##
+_sort_installed_records() {
+  local orderby="${1:-id}"
+  shift
+  local -a recs=("$@")
+  (( ${#recs[@]} > 0 )) || return 0
+
+  local sort_opts=""
+  case "$orderby" in
+    id|id/asc)
+      sort_opts="-t| -k2,2"
+      ;;
+    id/desc)
+      sort_opts="-t| -k2,2r"
+      ;;
+    time|time/asc)
+      sort_opts="-t| -k8,8 -k2,2"
+      ;;
+    time/desc)
+      sort_opts="-t| -k8,8r -k2,2"
+      ;;
+    *)
+      error_exit "지원하지 않는 '--orderby' 값입니다: '$orderby' (허용값: id, id/asc, id/desc, time, time/asc, time/desc)" "$LINENO" "list"
+      ;;
+  esac
+
+  local r r_type r_id r_name r_scope r_ver r_path r_meta updated_at
+  {
+    for r in "${recs[@]}"; do
+      IFS='|' read -r r_type r_id r_name r_scope r_ver r_path r_meta <<< "$r"
+      updated_at="$(_manifest_get_field "$r_meta" "UPDATED_AT" || true)"
+      updated_at="${updated_at:0:19}"
+      printf '%s|%s\n' "$r" "${updated_at:-0000-00-00T00:00:00}"
+    done
+  } | LC_ALL=C sort $sort_opts
+}
+
+##
+# 동적 컬럼 너비를 계산하여 잘림 없이 설치 대상 테이블을 출력합니다.
+# 행 데이터 형식: <no_label>|<type>|<id>|<scope>|<ver_disp>|<updated_at>|<path>
+#
+# @param $1 {string} 테이블 제목
+# @param $2 {string} 출력 대상 스트림 (stdout | stderr)
+# @param $@ {array} 행 데이터 목록
+#
+# @return 테이블 출력
+##
+_print_dynamic_installed_table() {
+  local title="$1"
+  local stream="${2:-stdout}"
+  shift 2
+  local -a rows=("$@")
+
+  local w_no=4 w_type=4 w_id=10 w_scope=5 w_ver=15 w_time=19 w_path=4
+  local row c_no c_type c_id c_scope c_ver c_time c_path cw
+  for row in "${rows[@]}"; do
+    IFS='|' read -r c_no c_type c_id c_scope c_ver c_time c_path <<< "$row"
+    cw="$(_get_display_width "$c_no")";    (( cw > w_no )) && w_no="$cw"
+    cw="$(_get_display_width "$c_type")";  (( cw > w_type )) && w_type="$cw"
+    cw="$(_get_display_width "$c_id")";    (( cw > w_id )) && w_id="$cw"
+    cw="$(_get_display_width "$c_scope")"; (( cw > w_scope )) && w_scope="$cw"
+    cw="$(_get_display_width "$c_ver")";   (( cw > w_ver )) && w_ver="$cw"
+    cw="$(_get_display_width "$c_time")";  (( cw > w_time )) && w_time="$cw"
+    cw="$(_get_display_width "$c_path")";  (( cw > w_path )) && w_path="$cw"
+  done
+
+  local total_w=$(( 2 + w_no + 3 + w_type + 3 + w_id + 3 + w_scope + 3 + w_ver + 3 + w_time + 3 + w_path + 2 ))
+  (( total_w < 80 )) && total_w=80
+  local eq_line dash_line
+  eq_line="$(printf '%*s' "$total_w" '' | tr ' ' '=')"
+  dash_line="$(printf '%*s' "$total_w" '' | tr ' ' '-')"
+
+  _emit_line() {
+    if [[ "$stream" == "stderr" ]]; then
+      printf '%b\n' "$1" >&2
+    else
+      printf '%b\n' "$1"
+    fi
+  }
+
+  _emit_line ""
+  _emit_line "$eq_line"
+  _emit_line "${COLOR_INFO}${title}${COLOR_NC}"
+  _emit_line "$dash_line"
+  _emit_line "  $(_pad_string 'No.' "$w_no") | $(_pad_string 'Type' "$w_type") | $(_pad_string 'Identifier' "$w_id") | $(_pad_string 'Scope' "$w_scope") | $(_pad_string 'Version/Comment' "$w_ver") | $(_pad_string 'Updated At' "$w_time") | Path"
+  _emit_line "$dash_line"
+
+  for row in "${rows[@]}"; do
+    IFS='|' read -r c_no c_type c_id c_scope c_ver c_time c_path <<< "$row"
+    _emit_line "  $(_pad_string "$c_no" "$w_no") | $(_pad_string "$c_type" "$w_type") | $(_pad_string "$c_id" "$w_id") | $(_pad_string "$c_scope" "$w_scope") | $(_pad_string "$c_ver" "$w_ver") | $(_pad_string "$c_time" "$w_time") | ${c_path}"
+  done
+  _emit_line "$eq_line"
+}
+
+##
+# 현재 시스템에 설치된 도구 및 등록된 SSH 공개키 목록을 정렬·상태 확인 후 테이블로 출력합니다.
+#
+# @param $1 {string} 조회 대상 유형 (all | tools | keys)
+# @param $2 {string} 범위 필터 (all | local | global)
+# @param $3 {string} 정렬 기준 (id | id/asc | id/desc | time | time/asc | time/desc)
+#
+# @return 0
+##
 _list_installed_items() {
   local filter_type="${1:-all}"
   local filter_scope="${2:-all}"
+  local orderby="${3:-id}"
 
   local -a matched=()
   local rec r_type r_id r_name r_scope r_ver r_path r_meta
@@ -3277,30 +3530,44 @@ _list_installed_items() {
     return 0
   fi
 
-  echo
-  echo "===================================================================================================================="
-  echo_i "📦 [설치된 관리 대상 현황 (총 ${#matched[@]}개)]"
-  echo "--------------------------------------------------------------------------------------------------------------------"
-  printf "  %-4s | %-8s | %-28s | %-7s | %-15s | %-19s | %s\n" "No." "Type" "Identifier" "Scope" "Version/Comment" "Updated At" "Path"
-  echo "--------------------------------------------------------------------------------------------------------------------"
+  local -a sorted_recs=()
+  local srec
+  while IFS= read -r srec; do
+    [[ -n "$srec" ]] && sorted_recs+=("$srec")
+  done < <(_sort_installed_records "$orderby" "${matched[@]}")
 
-  local i=1
+  local -a raw_for_check=()
   local updated_at
-  for rec in "${matched[@]}"; do
-    IFS='|' read -r r_type r_id r_name r_scope r_ver r_path r_meta <<< "$rec"
-    updated_at="$(_manifest_get_field "$r_meta" "UPDATED_AT" || true)"
-    updated_at="${updated_at:0:19}"
-    printf "  %3d) | %-8s | %-28s | %-7s | %-15s | %-19s | %s\n" \
-      "$i" "$r_type" "${r_id:0:28}" "$r_scope" "${r_ver:0:15}" "${updated_at:-unknown}" "$r_path"
+  for srec in "${sorted_recs[@]}"; do
+    IFS='|' read -r r_type r_id r_name r_scope r_ver r_path r_meta updated_at <<< "$srec"
+    raw_for_check+=("${r_type}|${r_id}|${r_name}|${r_scope}|${r_ver}|${r_path}|${r_meta}")
+  done
+
+  if ! _check_records_update_status "${raw_for_check[@]}"; then
+    echo_w " - [⚠️] 원격 저장소에 연결할 수 없어 최신 버전 비교를 생략합니다."
+  fi
+
+  local -a table_rows=()
+  local i=1
+  local ver_disp
+  for srec in "${sorted_recs[@]}"; do
+    IFS='|' read -r r_type r_id r_name r_scope r_ver r_path r_meta updated_at <<< "$srec"
+    ver_disp="$r_ver"
+    if [[ "${REC_UPDATE_STATUS[$r_meta]:-}" == "updatable" ]]; then
+      ver_disp="${r_ver}(*)"
+    fi
+    table_rows+=("$(printf '%3d)' "$i")|${r_type}|${r_id}|${r_scope}|${ver_disp}|${updated_at}|${r_path}")
     ((i++))
   done
-  echo "===================================================================================================================="
+
+  _print_dynamic_installed_table "📦 [설치된 관리 대상 현황 (총 ${#table_rows[@]}개)]" "stdout" "${table_rows[@]}"
 }
 
 cmd_list() {
   local list_type=""
   local installed_only="false"
   local target_scope="all"
+  local orderby=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -3325,6 +3592,16 @@ cmd_list() {
         else
           [[ $# -ge 2 && -n "${2:-}" && "${2:-}" != -* ]] || error_exit "'--target' 옵션 뒤에 local 또는 global을 지정하세요." "$LINENO" "list"
           target_scope="$2"
+          shift 2
+        fi
+        ;;
+      --orderby|--orderby=*)
+        if [[ "$1" == *=* ]]; then
+          orderby="${1#*=}"
+          shift
+        else
+          [[ $# -ge 2 && -n "${2:-}" && "${2:-}" != -* ]] || error_exit "'--orderby' 옵션 뒤에 정렬 기준(id|id/asc|id/desc|time|time/asc|time/desc)을 지정하세요." "$LINENO" "list"
+          orderby="$2"
           shift 2
         fi
         ;;
@@ -3360,9 +3637,14 @@ cmd_list() {
     error_exit "'--target' 옵션 값은 'local' 또는 'global'만 허용됩니다: '$target_scope'" "$LINENO" "list"
   fi
 
+  if [[ -n "$orderby" && "$installed_only" != "true" ]]; then
+    error_exit "'--orderby' 옵션은 '--installed'와 함께만 사용할 수 있습니다." "$LINENO" "list"
+  fi
+
   if [[ "$installed_only" == "true" ]]; then
     [[ -z "$list_type" ]] && list_type="all"
-    _list_installed_items "$list_type" "$target_scope"
+    [[ -z "$orderby" ]] && orderby="id"
+    _list_installed_items "$list_type" "$target_scope" "$orderby"
     return 0
   fi
 
@@ -3975,38 +4257,86 @@ _interactive_select_installed_items() {
   local scope_filter="${2:-all}"
   SELECTED_MANAGE_RECORDS=()
 
-  local -a records=()
+  local -a raw_records=()
   local rec
   while IFS= read -r rec; do
-    [[ -n "$rec" ]] && records+=("$rec")
+    [[ -n "$rec" ]] && raw_records+=("$rec")
   done < <(_manifest_list_installed "$scope_filter")
 
-  local total="${#records[@]}"
-  if (( total == 0 )); then
+  if (( ${#raw_records[@]} == 0 )); then
     echo_w " - [💡] 현재 sciectl로 설치된 도구 또는 등록된 SSH 공개키가 없습니다." >&2
     return 1
   fi
 
+  # 기본 정렬: Identifier 오름차순
+  local -a sorted_records=()
+  local srec r_type r_id r_name r_scope r_ver r_path r_meta updated_at
+  while IFS= read -r srec; do
+    [[ -n "$srec" ]] && sorted_records+=("$srec")
+  done < <(_sort_installed_records "id" "${raw_records[@]}")
+
+  local -a selectable_records=()
+  local -a up_to_date_rows=()
+  local -a updatable_rows=()
+
+  if [[ "$mode" == "update" ]]; then
+    local -a raw_for_check=()
+    for srec in "${sorted_records[@]}"; do
+      IFS='|' read -r r_type r_id r_name r_scope r_ver r_path r_meta updated_at <<< "$srec"
+      raw_for_check+=("${r_type}|${r_id}|${r_name}|${r_scope}|${r_ver}|${r_path}|${r_meta}")
+    done
+
+    if ! _check_records_update_status "${raw_for_check[@]}"; then
+      echo_e " - [❌] 원격 저장소에 연결할 수 없어 업데이트 여부를 확인할 수 없습니다." >&2
+      if _detect_local_repo 2>/dev/null || [[ -d "${PWD}/env/catalogs" ]]; then
+        echo_w "   💡 로컬 저장소를 사용하려면 '--local' 옵션을 함께 지정하세요." >&2
+      fi
+      return 1
+    fi
+
+    local idx_upd=1
+    for srec in "${sorted_records[@]}"; do
+      IFS='|' read -r r_type r_id r_name r_scope r_ver r_path r_meta updated_at <<< "$srec"
+      local base_rec="${r_type}|${r_id}|${r_name}|${r_scope}|${r_ver}|${r_path}|${r_meta}"
+      if [[ "${REC_UPDATE_STATUS[$r_meta]:-}" == "updatable" ]]; then
+        local rem_ver="${REC_REMOTE_VER[$r_meta]:-latest}"
+        local ver_disp="${r_ver} -> ${rem_ver}"
+        updatable_rows+=("$(printf '%3d)' "$idx_upd")|${r_type}|${r_id}|${r_scope}|${ver_disp}|${updated_at}|${r_path}")
+        selectable_records+=("$base_rec")
+        ((idx_upd++))
+      else
+        up_to_date_rows+=("  - |${r_type}|${r_id}|${r_scope}|${r_ver}|${updated_at}|${r_path}")
+      fi
+    done
+
+    if (( ${#up_to_date_rows[@]} > 0 )); then
+      _print_dynamic_installed_table "✅ 최신 버전 (업데이트 불필요 - ${#up_to_date_rows[@]}개)" "stderr" "${up_to_date_rows[@]}"
+    fi
+
+    if (( ${#updatable_rows[@]} == 0 )); then
+      echo_i " - [💡] 모든 설치 항목(${#sorted_records[@]}개)이 이미 최신 버전입니다." >&2
+      return 1
+    fi
+  else
+    local idx_rem=1
+    for srec in "${sorted_records[@]}"; do
+      IFS='|' read -r r_type r_id r_name r_scope r_ver r_path r_meta updated_at <<< "$srec"
+      selectable_records+=("${r_type}|${r_id}|${r_name}|${r_scope}|${r_ver}|${r_path}|${r_meta}")
+      updatable_rows+=("$(printf '%3d)' "$idx_rem")|${r_type}|${r_id}|${r_scope}|${r_ver}|${updated_at}|${r_path}")
+      ((idx_rem++))
+    done
+  fi
+
+  local total="${#selectable_records[@]}"
   local action_label="업데이트"
-  [[ "$mode" == "remove" ]] && action_label="제거"
+  local table_title="🔄 업데이트 가능 목록 (${total}개) - [업데이트 대상 선택]"
+  if [[ "$mode" == "remove" ]]; then
+    action_label="제거"
+    table_title="📦 현재 설치된 관리 대상 목록 (${total}개) - [제거 대상 선택]"
+  fi
 
   while true; do
-    echo >&2
-    echo "====================================================================================================" >&2
-    echo_i "📦 현재 설치된 관리 대상 목록 (총 ${total}개) - [${action_label} 대상 선택]" >&2
-    echo "----------------------------------------------------------------------------------------------------" >&2
-    printf "  %-4s | %-8s | %-28s | %-7s | %-16s | %s\n" "No." "Type" "Identifier" "Scope" "Version/Comment" "Path" >&2
-    echo "----------------------------------------------------------------------------------------------------" >&2
-
-    local i=1
-    local r r_type r_id r_name r_scope r_ver r_path r_meta
-    for r in "${records[@]}"; do
-      IFS='|' read -r r_type r_id r_name r_scope r_ver r_path r_meta <<< "$r"
-      printf "  %3d) | %-8s | %-28s | %-7s | %-16s | %s\n" \
-        "$i" "$r_type" "${r_id:0:28}" "$r_scope" "${r_ver:0:16}" "$r_path" >&2
-      ((i++))
-    done
-    echo "====================================================================================================" >&2
+    _print_dynamic_installed_table "$table_title" "stderr" "${updatable_rows[@]}"
 
     local choice_line=""
     echo -n "> 🛠️  ${action_label}할 번호를 입력하세요 (예: 1 3, 1-4, 전체: *) [취소: Enter 또는 q]: " >&2
@@ -4020,7 +4350,7 @@ _interactive_select_installed_items() {
     fi
 
     if [[ "$trimmed" == "*" || "$trimmed" == "all" || "$trimmed" == "ALL" ]]; then
-      SELECTED_MANAGE_RECORDS=("${records[@]}")
+      SELECTED_MANAGE_RECORDS=("${selectable_records[@]}")
       return 0
     fi
 
@@ -4070,7 +4400,7 @@ _interactive_select_installed_items() {
 
     local idx
     for idx in "${picked_indices[@]}"; do
-      SELECTED_MANAGE_RECORDS+=("${records[$((idx - 1))]}")
+      SELECTED_MANAGE_RECORDS+=("${selectable_records[$((idx - 1))]}")
     done
     return 0
   done

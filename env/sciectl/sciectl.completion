@@ -686,7 +686,7 @@ _sciectl_completion() {
       ;;
 
     list)
-      local -a list_opts=("--type" "--installed" "--target" "--local" "--remote" "--no-update" "--force-update" "--version" "--help")
+      local -a list_opts=("--type" "--installed" "--target" "--orderby" "--local" "--remote" "--no-update" "--force-update" "--version" "--help")
       case "$cur" in
         --type=*)
           COMPREPLY=( $(compgen -W "all catalogs tools installers commands keys" -- "${cur#--type=}") )
@@ -694,6 +694,10 @@ _sciectl_completion() {
           ;;
         --target=*)
           COMPREPLY=( $(compgen -W "local global" -- "${cur#--target=}") )
+          return 0
+          ;;
+        --orderby=*)
+          COMPREPLY=( $(compgen -W "id id/asc id/desc time time/asc time/desc" -- "${cur#--orderby=}") )
           return 0
           ;;
       esac
@@ -704,6 +708,10 @@ _sciectl_completion() {
           ;;
         --target)
           COMPREPLY=( $(compgen -W "local global" -- "$cur") )
+          return 0
+          ;;
+        --orderby)
+          COMPREPLY=( $(compgen -W "id id/asc id/desc time time/asc time/desc" -- "$cur") )
           return 0
           ;;
       esac
