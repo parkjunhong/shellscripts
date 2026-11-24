@@ -4731,7 +4731,8 @@ cmd_update() {
       if [[ "$M_IS_DRY_RUN" == "true" ]]; then
         echo_i " - [DRY-RUN] '$r_id' ($r_scope) 업데이트 확인 예정 ($r_path)"
       else
-        _install_tool "$r_id" "$r_scope" "$M_FORCE_OVERWRITE" "$M_AUTO_YES"
+        # 사용자가 이미 대상 선택 및 트랜잭션 최종 승인을 완료했으므로 개별 도구/companion 확인 생략
+        _install_tool "$r_id" "$r_scope" "$M_FORCE_OVERWRITE" "true"
       fi
     elif [[ "$r_type" == "ssh-key" ]]; then
       _update_ssh_key "$r_id" "$r_meta" "$M_IS_DRY_RUN"
