@@ -1,0 +1,549 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# @author      : parkjunhong77@gmail.com
+# @title       : defguard-versions
+# @license     : Apache License 2.0
+# @since       : 2026-11-25
+# @desc        : Docker 기반 Defguard VPN 스택(Core, Gateway, Proxy, PostgreSQL) 버전 점검 CLI 도구 (Linux)
+# @installation:
+#   1. 개인 환경: ../../utils/scriptctl/scriptctl install --script ./defguard-versions --target local
+#   2. 시스템 전역: ../../utils/scriptctl/scriptctl install --script ./defguard-versions --target global
+# ==============================================================================
+
+readonly SCRIPT_FILE_VERSION="2026.11.25.1"
+
+set -Eeuo pipefail
+
+# 구분줄 표준 길이 (86자 지정 규격 준수)
+SEPARATOR_LINE="======================================================================================"
+
+# ANSI 컬러 정의 (터미널 TTY 연결 시에만 활성화)
+if [[ -t 1 ]]; then
+  CLR_RESET="\033[0m"
+  CLR_BOLD="\033[1m"
+  CLR_GREEN="\033[32m"
+  CLR_YELLOW="\033[33m"
+  CLR_RED="\033[31m"
+  CLR_CYAN="\033[36m"
+  CLR_GRAY="\033[90m"
+else
+  CLR_RESET=""
+  CLR_BOLD=""
+  CLR_GREEN=""
+  CLR_YELLOW=""
+  CLR_RED=""
+  CLR_CYAN=""
+  CLR_GRAY=""
+fi
+
+# 기본 컨테이너 이름 설정 (운영 환경 기준)
+CONTAINER_CORE="defguard-core"
+CONTAINER_GATEWAY="defguard-gateway"
+CONTAINER_PROXY="defguard-edge"
+CONTAINER_DB="postgresql"
+
+OUTPUT_JSON=false
+VERBOSE=false
+
+##
+# 사용법 안내를 출력합니다.
+#
+# @return 0
+##
+show_help() {
+  cat << EOF
+사용법: $(basename "$0") [옵션...]
+
+설명:
+  운영 중인 Docker 기반 Defguard VPN 스택의 각 구성요소(Core, Gateway, Proxy,
+  PostgreSQL) 컨테이너의 상태 및 상세 버전을 확인합니다.
+  컨테이너가 설치되어 있지 않거나 정지된 경우 적절한 상태 메시지를 제공합니다.
+
+확인 대상 구성요소:
+  1. Defguard Core        (기본 컨테이너: ${CONTAINER_CORE})
+  2. Defguard Gateway     (기본 컨테이너: ${CONTAINER_GATEWAY})
+  3. Defguard Proxy       (기본 컨테이너: ${CONTAINER_PROXY})
+  4. PostgreSQL           (기본 컨테이너: ${CONTAINER_DB})
+
+옵션:
+  --core <이름>           Defguard Core 컨테이너 이름 직접 지정
+  --gateway <이름>        Defguard Gateway 컨테이너 이름 직접 지정
+  --proxy <이름>          Defguard Proxy 컨테이너 이름 직접 지정
+  --db <이름>             PostgreSQL 컨테이너 이름 직접 지정
+  --json                  결과를 JSON 포맷으로 출력
+  --verbose               내부 바이너리 실행 원본 출력(Raw Output)도 함께 표시
+  --help                  도움말 출력
+
+EOF
+}
+
+##
+# 커맨드라인 인자를 파싱합니다. (Long Option 전용)
+#
+# @param $@ {String[]} 커맨드라인 인자 목록
+#
+# @return 0: 성공, 1: 잘못된 옵션 또는 인자 누락
+##
+parse_arguments() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --json)
+        OUTPUT_JSON=true
+        shift 1
+        ;;
+      --verbose)
+        VERBOSE=true
+        shift 1
+        ;;
+      --core)
+        if [[ $# -lt 2 ]] || [[ "$2" =~ ^- ]]; then
+          printf "%b오류: '--core' 옵션에 컨테이너 이름을 지정해야 합니다.%b\n" "$CLR_RED" "$CLR_RESET" >&2
+          exit 1
+        fi
+        CONTAINER_CORE="$2"
+        shift 2
+        ;;
+      --gateway)
+        if [[ $# -lt 2 ]] || [[ "$2" =~ ^- ]]; then
+          printf "%b오류: '--gateway' 옵션에 컨테이너 이름을 지정해야 합니다.%b\n" "$CLR_RED" "$CLR_RESET" >&2
+          exit 1
+        fi
+        CONTAINER_GATEWAY="$2"
+        shift 2
+        ;;
+      --proxy)
+        if [[ $# -lt 2 ]] || [[ "$2" =~ ^- ]]; then
+          printf "%b오류: '--proxy' 옵션에 컨테이너 이름을 지정해야 합니다.%b\n" "$CLR_RED" "$CLR_RESET" >&2
+          exit 1
+        fi
+        CONTAINER_PROXY="$2"
+        shift 2
+        ;;
+      --db)
+        if [[ $# -lt 2 ]] || [[ "$2" =~ ^- ]]; then
+          printf "%b오류: '--db' 옵션에 컨테이너 이름을 지정해야 합니다.%b\n" "$CLR_RED" "$CLR_RESET" >&2
+          exit 1
+        fi
+        CONTAINER_DB="$2"
+        shift 2
+        ;;
+      --help)
+        show_help
+        exit 0
+        ;;
+      *)
+        printf "%b오류: 알 수 없는 옵션입니다: %s%b\n" "$CLR_RED" "$1" "$CLR_RESET" >&2
+        show_help
+        exit 1
+        ;;
+    esac
+  done
+}
+
+##
+# Docker CLI 및 데몬 접근 가능 여부를 점검합니다.
+#
+# @return 0: 정상, 1: Docker 미설치 또는 데몬 접근 불가
+##
+check_docker() {
+  if ! command -v docker >/dev/null 2>&1; then
+    printf "%b❌ [오류] 시스템에 'docker' 명령어가 설치되어 있지 않습니다.%b\n" "$CLR_RED" "$CLR_RESET" >&2
+    printf "   Docker 엔진이 설치된 호스트에서 실행해 주십시오.\n" >&2
+    exit 1
+  fi
+
+  if ! docker ps >/dev/null 2>&1; then
+    printf "%b❌ [오류] Docker 데몬에 접근할 수 없습니다.%b\n" "$CLR_RED" "$CLR_RESET" >&2
+    printf "   - Docker 서비스 실행 여부를 확인하십시오. (systemctl status docker)\n" >&2
+    printf "   - 현재 사용자에게 docker 실행 권한이 있는지 확인하십시오. (sudo 권한 또는 docker 그룹)\n" >&2
+    exit 1
+  fi
+}
+
+##
+# 컨테이너의 실제 이미지 이름(RepoTag)을 조회합니다.
+# .Config.Image가 해시 ID로 기록된 경우 .Image ID를 통해 RepoTags를 보조 조회합니다.
+#
+# @param $1 {String} 컨테이너 이름
+#
+# @return 이미지 이름 문자열 (stdout)
+##
+resolve_container_image() {
+  local c_name="$1"
+  local cfg_image=""
+  local img_id=""
+  local repo_tag=""
+
+  cfg_image=$(docker inspect --format '{{.Config.Image}}' "$c_name" 2>/dev/null || echo "unknown")
+
+  # Config.Image가 해시 ID 형태(sha256:... 또는 hex 문자열)이거나 태그가 없는 경우 RepoTags 조회
+  if [[ "$cfg_image" =~ ^(sha256:)?[0-9a-f]{12,64}$ ]] || [[ "$cfg_image" == "unknown" ]]; then
+    img_id=$(docker inspect --format '{{.Image}}' "$c_name" 2>/dev/null || true)
+    if [[ -n "$img_id" ]]; then
+      repo_tag=$(docker image inspect --format '{{if .RepoTags}}{{index .RepoTags 0}}{{end}}' "$img_id" 2>/dev/null || true)
+      if [[ -n "$repo_tag" ]]; then
+        printf "%s" "$repo_tag"
+        return 0
+      fi
+    fi
+  fi
+
+  printf "%s" "$cfg_image"
+}
+
+##
+# 컨테이너를 탐색하고 상태, 이름, 이미지 정보를 반환합니다.
+#
+# @param $1 {String} 기본 컨테이너 이름
+# @param $2 {String} 이미지 이름 매칭 정규식
+# @param $3 {String} Command 매칭 정규식 (보조 탐색용)
+#
+# @return "상태|컨테이너명|이미지명" (stdout)
+##
+inspect_container() {
+  local target_name="$1"
+  local image_regex="$2"
+  local cmd_regex="$3"
+
+  local c_name=""
+  local c_status=""
+  local c_image=""
+
+  # 1순위: 지정된 컨테이너 이름으로 탐색
+  if docker inspect "$target_name" >/dev/null 2>&1; then
+    c_name="$target_name"
+  else
+    # 2순위: 전체 컨테이너 중 이미지명(RepoTag 포함) 매칭 탐색
+    local line
+    while IFS=$'\t' read -r candidate_name candidate_img candidate_cmd; do
+      [[ -z "$candidate_name" ]] && continue
+      local resolved_img=""
+      resolved_img=$(resolve_container_image "$candidate_name")
+      if [[ "$resolved_img" =~ $image_regex ]] || [[ "$candidate_img" =~ $image_regex ]]; then
+        c_name="$candidate_name"
+        break
+      fi
+      if [[ -n "$cmd_regex" ]] && [[ "$candidate_cmd" =~ $cmd_regex ]]; then
+        c_name="$candidate_name"
+        break
+      fi
+    done < <(docker ps -a --no-trunc --format '{{.Names}}\t{{.Image}}\t{{.Command}}' 2>/dev/null || true)
+  fi
+
+  # 컨테이너가 아예 존재하지 않는 경우 (미설치)
+  if [[ -z "$c_name" ]]; then
+    printf "NOT_INSTALLED|-|-"
+    return 0
+  fi
+
+  c_status=$(docker inspect --format '{{.State.Status}}' "$c_name" 2>/dev/null || echo "unknown")
+  c_image=$(resolve_container_image "$c_name")
+
+  if [[ "$c_status" == "running" ]]; then
+    printf "RUNNING|%s|%s" "$c_name" "$c_image"
+  else
+    printf "STOPPED|%s|%s (%s)" "$c_name" "$c_image" "$c_status"
+  fi
+}
+
+##
+# 이미지 OCI 라벨 또는 태그에서 버전을 폴백 추출합니다.
+#
+# @param $1 {String} 컨테이너 이름
+# @param $2 {String} 이미지 이름
+#
+# @return 추출된 버전 문자열 (stdout)
+##
+extract_version_from_image() {
+  local c_name="$1"
+  local c_image="$2"
+
+  # 1. OCI 이미지 라벨 확인
+  local label_ver=""
+  label_ver=$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$c_name" 2>/dev/null || true)
+  if [[ -n "$label_ver" && "$label_ver" != "<no value>" ]]; then
+    printf "%s (Image Label)" "$label_ver"
+    return 0
+  fi
+
+  # 2. 이미지 태그 파싱 (예: ghcr.io/defguard/defguard:2.2.0 -> 2.2.0)
+  local tag_regex=':([^:]+)$'
+  if [[ "$c_image" =~ $tag_regex ]]; then
+    local tag="${BASH_REMATCH[1]}"
+    if [[ "$tag" != "latest" ]]; then
+      printf "%s (Image Tag)" "$tag"
+      return 0
+    fi
+  fi
+
+  printf "확인 불가"
+}
+
+##
+# Defguard 계열 컨테이너 내부 바이너리에서 버전을 추출합니다.
+# 바이너리 실행 실패 시 이미지 라벨/태그로 폴백합니다.
+#
+# @param $1 {String} 컨테이너 이름
+# @param $2 {String} 이미지 이름
+# @param $3 {String} 공백으로 구분된 후보 바이너리 경로 목록
+#
+# @return 버전 문자열 (stdout)
+##
+get_defguard_binary_version() {
+  local c_name="$1"
+  local c_image="$2"
+  local candidates="$3"
+
+  local raw_out=""
+  local ver_regex='([0-9]+\.[0-9]+(\.[0-9]+)?([a-zA-Z0-9._+-]*)?)'
+  local bin=""
+
+  for bin in $candidates; do
+    raw_out=$(docker exec "$c_name" "$bin" --version 2>&1 || true)
+    [[ "$VERBOSE" == "true" ]] && printf "DEBUG [%s:%s]: %s\n" "$c_name" "$bin" "$raw_out" >&2
+
+    # 실행 실패 메시지(no such file, exec failed 등)가 아닌 경우 버전 패턴 매칭
+    if [[ -n "$raw_out" ]] && [[ ! "$raw_out" =~ (OCI\ runtime\ exec\ failed|executable\ file\ not\ found|No\ such\ file\ or\ directory|not\ found) ]]; then
+      if [[ "$raw_out" =~ $ver_regex ]]; then
+        printf "%s" "${BASH_REMATCH[1]}"
+        return 0
+      fi
+    fi
+  done
+
+  extract_version_from_image "$c_name" "$c_image"
+}
+
+##
+# Defguard Core 버전을 추출합니다.
+#
+# @param $1 {String} 컨테이너 이름
+# @param $2 {String} 이미지 이름
+#
+# @return 버전 문자열 (stdout)
+##
+get_core_version() {
+  get_defguard_binary_version "$1" "$2" "./defguard defguard /app/defguard /usr/local/bin/defguard"
+}
+
+##
+# Defguard Gateway 버전을 추출합니다.
+#
+# @param $1 {String} 컨테이너 이름
+# @param $2 {String} 이미지 이름
+#
+# @return 버전 문자열 (stdout)
+##
+get_gateway_version() {
+  get_defguard_binary_version "$1" "$2" "/usr/local/bin/defguard-gateway defguard-gateway ./defguard-gateway"
+}
+
+##
+# Defguard Proxy 버전을 추출합니다.
+#
+# @param $1 {String} 컨테이너 이름
+# @param $2 {String} 이미지 이름
+#
+# @return 버전 문자열 (stdout)
+##
+get_proxy_version() {
+  get_defguard_binary_version "$1" "$2" "./defguard-proxy defguard-proxy /app/defguard-proxy /usr/local/bin/defguard-proxy"
+}
+
+##
+# PostgreSQL 버전을 추출합니다.
+#
+# @param $1 {String} 컨테이너 이름
+# @param $2 {String} 이미지 이름
+#
+# @return 버전 문자열 (stdout)
+##
+get_postgres_version() {
+  local c_name="$1"
+  local c_image="$2"
+  local raw_out=""
+
+  if docker exec "$c_name" command -v postgres >/dev/null 2>&1; then
+    raw_out=$(docker exec "$c_name" postgres --version 2>&1 || true)
+  elif docker exec "$c_name" command -v psql >/dev/null 2>&1; then
+    raw_out=$(docker exec "$c_name" psql --version 2>&1 || true)
+  fi
+  [[ "$VERBOSE" == "true" ]] && printf "DEBUG [%s:postgres]: %s\n" "$c_name" "$raw_out" >&2
+
+  local regex1='\(PostgreSQL\)[[:space:]]+([0-9]+\.[0-9]+[^[:space:],\)]*)'
+  if [[ "$raw_out" =~ $regex1 ]]; then
+    printf "%s" "${BASH_REMATCH[1]}"
+    return 0
+  fi
+
+  extract_version_from_image "$c_name" "$c_image"
+}
+
+##
+# JSON 문자열 특수문자를 이스케이프합니다.
+#
+# @param $1 {String} 원본 문자열
+#
+# @return 이스케이프된 문자열 (stdout)
+##
+json_escape() {
+  local str="$1"
+  str="${str//\\/\\\\}"
+  str="${str//\"/\\\"}"
+  str="${str//$'\n'/\\n}"
+  str="${str//$'\r'/\\r}"
+  str="${str//$'\t'/\\t}"
+  printf "%s" "$str"
+}
+
+##
+# 메인 실행 함수
+#
+# @param $@ {String[]} 커맨드라인 인자 목록
+#
+# @return 0
+##
+main() {
+  parse_arguments "$@"
+  check_docker
+
+  # 검사 대상 구성요소 정의: 컴포넌트 표시명 | 기본 컨테이너명 | 이미지 매칭 정규식 | Command 정규식 | 버전 추출 함수
+  local -a targets=(
+    "Defguard Core|${CONTAINER_CORE}|defguard/defguard(:|$)|(^|/)defguard(\$| )|get_core_version"
+    "Defguard Gateway|${CONTAINER_GATEWAY}|defguard/gateway(:|$)|defguard-gateway|get_gateway_version"
+    "Defguard Proxy|${CONTAINER_PROXY}|defguard/defguard-proxy(:|$)|defguard-proxy|get_proxy_version"
+    "PostgreSQL|${CONTAINER_DB}|(^|/)postgres(:|$)|docker-entrypoint\.sh|get_postgres_version"
+  )
+
+  local -a res_components=()
+  local -a res_statuses=()
+  local -a res_cnames=()
+  local -a res_versions=()
+  local -a res_images=()
+
+  local item=""
+  for item in "${targets[@]}"; do
+    IFS='|' read -r comp_name def_name img_regex cmd_regex ver_func <<< "$item"
+
+    local c_info=""
+    c_info=$(inspect_container "$def_name" "$img_regex" "$cmd_regex")
+    IFS='|' read -r status c_name c_image <<< "$c_info"
+
+    local ver_str="-"
+    local status_display=""
+
+    case "$status" in
+      RUNNING)
+        status_display="실행 중"
+        ver_str=$("$ver_func" "$c_name" "$c_image")
+        ;;
+      STOPPED)
+        status_display="정지 중"
+        ver_str="(컨테이너 정지 - 버전 확인 불가)"
+        ;;
+      NOT_INSTALLED)
+        status_display="미설치"
+        c_name="-"
+        c_image="-"
+        ver_str="컨테이너를 찾을 수 없음 (미설치)"
+        ;;
+      *)
+        status_display="상태 불명"
+        ver_str="확인 불가"
+        ;;
+    esac
+
+    res_components+=("$comp_name")
+    res_statuses+=("$status_display")
+    res_cnames+=("$c_name")
+    res_versions+=("$ver_str")
+    res_images+=("$c_image")
+  done
+
+  # JSON 출력 모드 (--json)
+  if [[ "$OUTPUT_JSON" == "true" ]]; then
+    printf "{\n"
+    printf '  "timestamp": "%s",\n' "$(date -Iseconds)"
+    printf '  "components": [\n'
+    local count=${#res_components[@]}
+    local i=0
+    for (( i=0; i<count; i++ )); do
+      local comma=","
+      (( i == count - 1 )) && comma=""
+      printf "    {\n"
+      printf '      "name": "%s",\n' "$(json_escape "${res_components[i]}")"
+      printf '      "status": "%s",\n' "$(json_escape "${res_statuses[i]}")"
+      printf '      "container": "%s",\n' "$(json_escape "${res_cnames[i]}")"
+      printf '      "version": "%s",\n' "$(json_escape "${res_versions[i]}")"
+      printf '      "image": "%s"\n' "$(json_escape "${res_images[i]}")"
+      printf "    }%s\n" "$comma"
+    done
+    printf "  ]\n"
+    printf "}\n"
+    return 0
+  fi
+
+  # 일반 터미널 테이블 출력 모드 (column -t 활용)
+  printf "%s\n" "$SEPARATOR_LINE"
+  printf "%b🚀 Defguard 스택 컴포넌트 버전 점검 결과%b\n" "$CLR_BOLD" "$CLR_RESET"
+  printf "%s\n" "$SEPARATOR_LINE"
+
+  (
+    printf "컴포넌트|상태|컨테이너명|실행 버전|이미지 정보\n"
+    local count=${#res_components[@]}
+    local i=0
+    for (( i=0; i<count; i++ )); do
+      local comp="${res_components[i]}"
+      local st="${res_statuses[i]}"
+      local cname="${res_cnames[i]}"
+      local ver="${res_versions[i]}"
+      local img="${res_images[i]}"
+
+      local st_tag="[${st}]"
+      case "$st" in
+        "실행 중")
+          st_tag="[🟢  실행 중]"
+          ;;
+        "정지 중")
+          st_tag="[🔴  정지 중]"
+          ;;
+        "미설치")
+          st_tag="[❌  미설치]"
+          ;;
+      esac
+
+      printf "%s|%s|%s|%s|%s\n" "$comp" "$st_tag" "$cname" "$ver" "$img"
+    done
+  ) | column -t -s "|"
+
+  printf "%s\n" "$SEPARATOR_LINE"
+
+  # 미설치 또는 정지된 컴포넌트가 있을 경우 경고/안내 출력
+  local has_warning=false
+  local i=0
+  for (( i=0; i<${#res_statuses[@]}; i++ )); do
+    if [[ "${res_statuses[i]}" != "실행 중" ]]; then
+      has_warning=true
+      break
+    fi
+  done
+
+  if [[ "$has_warning" == "true" ]]; then
+    printf "%b💡 [상태 알림]:%b\n" "$CLR_YELLOW" "$CLR_RESET"
+    for (( i=0; i<${#res_statuses[@]}; i++ )); do
+      if [[ "${res_statuses[i]}" == "정지 중" ]]; then
+        printf "   - %b[🔴  정지 중]%b '%s' 컨테이너가 정지 상태입니다. (시작 명령: %bdocker start %s%b)\n" \
+          "$CLR_YELLOW" "$CLR_RESET" "${res_components[i]}" "$CLR_CYAN" "${res_cnames[i]}" "$CLR_RESET"
+      elif [[ "${res_statuses[i]}" == "미설치" ]]; then
+        printf "   - %b[❌  미설치]%b '%s' 관련 컨테이너를 찾을 수 없습니다. (배포 필요 또는 컨테이너 이름 확인 필요)\n" \
+          "$CLR_RED" "$CLR_RESET" "${res_components[i]}"
+      fi
+    done
+    printf "%s\n" "$SEPARATOR_LINE"
+  fi
+
+  return 0
+}
+
+main "$@"
+exit 0
