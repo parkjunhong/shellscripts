@@ -13,7 +13,7 @@ sciectl \- Script, Command, Installer & Environment Controller
 [\fIOPTIONS\fR]
 .br
 .B sciectl list
-[\fB\-\-type\fR \fIall\fR|\fIcatalogs\fR|\fItools\fR|\fIinstallers\fR|\fIcommands\fR|\fIkeys\fR] [\fB\-\-local\fR|\fB\-\-remote\fR]
+[\fB\-\-type\fR \fIall\fR|\fIcatalogs\fR|\fItools\fR|\fIinstallers\fR|\fIcommands\fR|\fIkeys\fR] [\fB\-\-installed\fR] [\fB\-\-target\fR \fIlocal\fR|\fIglobal\fR] [\fB\-\-local\fR|\fB\-\-remote\fR]
 .br
 .B sciectl info
 [\fB\-\-catalog\fR \fIID\fR[,...]] [\fB\-\-tool\fR \fINAME\fR[,...]] [\fB\-\-installer\fR \fINAME\fR[,...]] [\fB\-\-command\fR \fINAME\fR[,...]] [\fB\-\-ssh\-key\fR \fINAME\fR[,...]] [\fB\-\-local\fR|\fB\-\-remote\fR]
@@ -115,8 +115,14 @@ CLI 도구 및 매뉴얼 설치 범위를 지정한다 (\fBlocal\fR: \fI~/bin\fR
 .SH OPTIONS (list)
 .TP
 .BR \-\-type " " \fITYPE\fR
-조회할 리소스 유형을 지정한다 (기본값: \fBcatalogs\fR).
+조회할 리소스 유형을 지정한다 (기본값: \fBcatalogs\fR, \fB\-\-installed\fR 지정 시 \fBall\fR).
 허용값: \fBall\fR, \fBcatalogs\fR, \fBtools\fR, \fBinstallers\fR, \fBcommands\fR, \fBkeys\fR.
+.TP
+.B \-\-installed
+현재 시스템에 설치된 CLI 도구 및 등록된 SSH 공개키 목록만 조회한다.
+.TP
+.BR \-\-target " " \fIlocal\fR|\fIglobal\fR
+\fB\-\-installed\fR 조회 시 대상 범위를 필터링한다.
 .TP
 .BR \-\-local " | " \-\-remote
 조회 기준 저장소 모드를 지정한다.

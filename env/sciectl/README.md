@@ -61,7 +61,9 @@
 | | `--dry-run` | 선택 | 실제 설치 없이 병합된 트랜잭션 실행 계획(Transaction Summary)만 출력 |
 | | `--all` | 선택 | 선택한 카탈로그의 모든 단계 및 기본 환경 3종 설정 적용 |
 | | `--no-default-opts` | 선택 | 기본 환경 3종(`~/bin` PATH, Git 프롬프트, `vimrc`) 설정 생략 |
-| **`list`** | `--type <TYPE>` | 선택 | 조회 대상 유형 (`all`, `catalogs`, `tools`, `installers`, `commands`, `keys`, 기본값: `catalogs`) |
+| **`list`** | `--type <TYPE>` | 선택 | 조회 대상 유형 (`all`, `catalogs`, `tools`, `installers`, `commands`, `keys`, 기본값: `catalogs`, `--installed` 시 `all`) |
+| | `--installed` | 선택 | 현재 시스템에 설치된 CLI 도구 및 등록된 SSH 공개키 목록만 조회 |
+| | `--target <local\|global>` | 선택 | `--installed` 조회 시 범위 필터 (`local` 또는 `global`) |
 | **`update`** | `--catalog <ID[,ID2...]>` | 선택 | 지정 카탈로그 내 설치된 도구/SSH키만 업데이트 (옵션 생략 시 설치된 항목 대화형 선택) |
 | | `--tool <CAT/NAME[,...]>` | 선택 | 설치된 특정 CLI 도구 업데이트 (예: `git/git-commit` 또는 `git-commit`) |
 | | `--ssh-key <NAME[,...]>` | 선택 | 등록된 SSH 공개키를 저장소 최신 내용으로 교체 업데이트 |
@@ -95,8 +97,10 @@ sciectl
 # 2. 전체 카탈로그 및 컴포넌트 목록 조회
 sciectl list --type all
 
-# 3. 커스텀 CLI 도구 목록만 조회
+# 3. 커스텀 CLI 도구 목록만 조회 및 현재 시스템에 설치된 항목 조회
 sciectl list --type tools
+sciectl list --installed
+sciectl list --type tools --installed --target local
 
 # 4. 특정 카탈로그(상속 포함) 상세 구성 요소 확인
 sciectl info --catalog default-devops
