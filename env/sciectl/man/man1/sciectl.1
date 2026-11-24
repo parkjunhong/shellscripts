@@ -13,7 +13,7 @@ sciectl \- Script, Command, Installer & Environment Controller
 [\fIOPTIONS\fR]
 .br
 .B sciectl list
-[\fB\-\-type\fR \fIall\fR|\fIcatalogs\fR|\fItools\fR|\fIinstallers\fR|\fIcommands\fR|\fIkeys\fR] [\fB\-\-installed\fR] [\fB\-\-target\fR \fIlocal\fR|\fIglobal\fR] [\fB\-\-orderby\fR \fIORDER\fR] [\fB\-\-local\fR|\fB\-\-remote\fR]
+[\fB\-\-type\fR \fIall\fR|\fIcatalogs\fR|\fItools\fR|\fIinstallers\fR|\fIcommands\fR|\fIkeys\fR] [\fB\-\-installed\fR] [\fB\-\-tool\fR \fINAME\fR[,...]] [\fB\-\-ssh\-key\fR \fINAME\fR[,...]] [\fB\-\-target\fR \fIlocal\fR|\fIglobal\fR] [\fB\-\-orderby\fR \fIORDER\fR] [\fB\-\-local\fR|\fB\-\-remote\fR]
 .br
 .B sciectl info
 [\fB\-\-catalog\fR \fIID\fR[,...]] [\fB\-\-tool\fR \fINAME\fR[,...]] [\fB\-\-installer\fR \fINAME\fR[,...]] [\fB\-\-command\fR \fINAME\fR[,...]] [\fB\-\-ssh\-key\fR \fINAME\fR[,...]] [\fB\-\-local\fR|\fB\-\-remote\fR]
@@ -119,7 +119,13 @@ CLI 도구 및 매뉴얼 설치 범위를 지정한다 (\fBlocal\fR: \fI~/bin\fR
 허용값: \fBall\fR, \fBcatalogs\fR, \fBtools\fR, \fBinstallers\fR, \fBcommands\fR, \fBkeys\fR.
 .TP
 .B \-\-installed
-현재 시스템에 설치된 CLI 도구 및 등록된 SSH 공개키 목록만 조회한다. 업데이트 가능한 항목은 버전 끝에 \fB(*)\fR가 표시된다.
+원격 버전 비교 없이 현재 시스템에 설치된 CLI 도구 및 등록된 SSH 공개키 목록만 즉시 조회한다.
+.TP
+.BR \-\-tool " " \fINAME\fR[,...]
+\fB\-\-installed\fR 조회 시 지정한 CLI 도구만 필터링하여 출력한다.
+.TP
+.BR \-\-ssh\-key " " \fINAME\fR[,...]
+\fB\-\-installed\fR 조회 시 지정한 SSH 공개키만 필터링하여 출력한다.
 .TP
 .BR \-\-target " " \fIlocal\fR|\fIglobal\fR
 \fB\-\-installed\fR 조회 시 대상 범위를 필터링한다.
