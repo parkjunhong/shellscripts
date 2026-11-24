@@ -66,7 +66,7 @@
 | | `--tool <NAME[,...]>` | 선택 | `--installed` 조회 시 특정 CLI 도구만 필터링 (예: `git-commit` 또는 `git/git-commit`) |
 | | `--ssh-key <NAME[,...]>` | 선택 | `--installed` 조회 시 특정 SSH 공개키만 필터링 |
 | | `--target <local\|global>` | 선택 | `--installed` 조회 시 범위 필터 (`local` 또는 `global`) |
-| | `--orderby <ORDER>` | 선택 | `--installed` 전용 정렬 기준 (`id`, `id/asc`, `id/desc`, `time`, `time/asc`, `time/desc`, 기본값: `id`) |
+| | `--orderby <ORDER>` | 선택 | `--installed` 전용 정렬 기준 (`Type` 오름차순 최우선 정렬 후 적용: `id`, `id/asc`, `id/desc`, `time`, `time/asc`, `time/desc`, 기본값: `id`) |
 | **`update`** | `--catalog <ID[,ID2...]>` | 선택 | 지정 카탈로그 내 설치된 도구/SSH키만 업데이트 (옵션 생략 시 설치된 항목 대화형 선택) |
 | | `--tool <CAT/NAME[,...]>` | 선택 | 설치된 특정 CLI 도구 업데이트 (예: `git/git-commit` 또는 `git-commit`) |
 | | `--ssh-key <NAME[,...]>` | 선택 | 등록된 SSH 공개키를 저장소 최신 내용으로 교체 업데이트 |
