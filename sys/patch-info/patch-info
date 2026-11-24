@@ -12,7 +12,7 @@
 
 # 도움말 출력 함수
 
-readonly SCRIPT_FILE_VERSION="2026.11.24.7"
+readonly SCRIPT_FILE_VERSION="2026.11.24.8"
 
 help() {
   cat <<'EOF'
@@ -629,9 +629,9 @@ except Exception:
                 else
                   ADV_STATUS="업데이트 가능 (Available - 패치 미적용)"
                 fi
-              elif [[ "$s_status" == "not-affected" ]]; then
+              elif [[ "$s_status" =~ ^(not-affected|DNE|ignored)$ ]]; then
                 ADV_STATUS="해당 없음 (Not Affected)"
-              elif [[ "$s_status" =~ (needed|pending) ]]; then
+              elif [[ "$s_status" =~ (needed|pending|deferred) ]]; then
                 ADV_STATUS="업데이트 대기중 (Pending/Needed - 패치 미배포)"
               fi
               break
@@ -643,7 +643,7 @@ except Exception:
             ADV_PKG="${first_item%%:::*}"
             local first_rest="${first_item#*:::}"
             local first_status="${first_rest%%:::*}"
-            if [[ "$first_status" == "not-affected" ]]; then
+            if [[ "$first_status" =~ ^(not-affected|DNE|ignored)$ ]]; then
               ADV_STATUS="해당 없음 (Not Affected - 본 릴리즈 미영향)"
             else
               ADV_STATUS="해당 없음 (Not Affected - 패키지 미설치)"
@@ -1174,8 +1174,8 @@ if [[ ${#SUMMARY_OSS_ENTRIES[@]} -gt 0 ]]; then
     elif [[ "$s_status" =~ "업데이트 가능" || "$s_status" =~ "업데이트 대기중" ]]; then
       SUM_ACTION+=("$s_label")
     elif [[ "$s_status" =~ "해당 없음" ]]; then
-      if [[ "$s_status" =~ "관련 권고 없음" && -n "$ALL_CL_MATCHED_TEXT" ]] && echo "$ALL_CL_MATCHED_TEXT" | grep -qiF "$s_oss"; then
-        SUM_RESOLVED+=("${s_label}(changelog)")
+      if [[ ( "$s_status" =~ "관련 권고 없음" || "$s_status" =~ "패키지 미설치" ) && -n "$ALL_CL_MATCHED_TEXT" ]] && echo "$ALL_CL_MATCHED_TEXT" | grep -qiF "$s_oss"; then
+        SUM_RESOLVED+=("$s_label")
       else
         SUM_NOT_AFFECTED+=("$s_label")
       fi
