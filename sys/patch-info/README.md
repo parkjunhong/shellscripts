@@ -30,6 +30,7 @@
 | `--package` | `<이름...>` | 선택 | - | 설치 여부 및 버전을 검사할 패키지명 (단독 실행 가능, 공백으로 여러 개 지정 가능) |
 | `--oss-number` | `<번호...>` | 선택 | - | 감사할 OS 보안 권고사항 번호(USN, RHSA, DSA 등) 또는 CVE 번호 (단독 실행 가능) |
 | `--show-changelog` | 없음 | 선택 | `false` | 필터링 없이 패키지의 전체 체인지로그 텍스트 출력 (`--package` 필요) |
+| `--output` | `<파일 경로>` | 선택 | - | 감사 보고서를 요약 우선 순서(헤더/1단계 &rarr; 4단계 &rarr; 3단계 &rarr; 2단계)로 파일에 저장 |
 | `--offline` | 없음 | 선택 | `false` | 온라인 보안 API 조회를 차단하고 로컬 파일시스템/캐시만 사용 (폐쇄망 지원) |
 | `--verbose` | 없음 | 선택 | `false` | OS 감지, 실행 명령어, 파싱 통계 등 상세 디버그 로그 출력 |
 | `--help` | 없음 | 선택 | - | 도움말 메시지 출력 및 종료 |
@@ -85,6 +86,11 @@ patch-info --package sudo --oss-number USN-4966-1 --offline
 ### 6) 특정 패키지의 전체 체인지로그 열람
 ```bash
 patch-info --package nginx --show-changelog
+```
+
+### 7) 감사 보고서를 요약 우선 순서로 파일에 저장
+```bash
+patch-info --oss-number "CVE-2026-123007|CVE-2026-123633" --output ./audit-report.txt
 ```
 
 ---

@@ -42,7 +42,7 @@ _patch_info_completion() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  local opts="--package --oss-number --show-changelog --offline --verbose --help"
+  local opts="--package --oss-number --show-changelog --output --offline --verbose --help"
 
   # 최근에 등장한 옵션 추적
   local last_option=""
@@ -54,7 +54,13 @@ _patch_info_completion() {
     fi
   done
 
-  # 1) 현재 입력 중인 단어가 '--'로 시작하는 경우 옵션 목록 추천
+  # 1) 이전 단어가 --output인 경우 파일 경로 자동완성
+  if [[ "$prev" == "--output" ]]; then
+    COMPREPLY=( $(compgen -f -- "$cur") )
+    return 0
+  fi
+
+  # 2) 현재 입력 중인 단어가 '--'로 시작하는 경우 옵션 목록 추천
   if [[ "$cur" =~ ^-- ]]; then
     COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
     return 0
