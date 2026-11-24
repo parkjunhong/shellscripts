@@ -1,0 +1,70 @@
+# ==============================================================================
+# @author      : parkjunhong77@gmail.com
+# @title       : defguard-versions completion
+# @license     : Apache License 2.0
+# @since       : 2026-11-25
+# @desc        : Bash completion for defguard-versions (Linux)
+# @installation:
+#   1. 개인 환경: ../../utils/scriptctl/scriptctl install --script ./defguard-versions --target local
+#   2. 시스템 전역: ../../utils/scriptctl/scriptctl install --script ./defguard-versions --target global
+# ==============================================================================
+#
+# Bash Completion Parameter Description (Global Reserved Variables)
+# - COMP_WORDS  : 현재 커맨드라인에 입력된 단어들의 배열
+# - COMP_CWORD  : 현재 커서가 위치한 단어의 COMP_WORDS 인덱스
+# - COMP_LINE   : 현재 커맨드라인 전체 문자열
+# - COMPREPLY   : 자동완성 후보 문자열을 담는 반환 배열
+# - $1          : 자동완성 대상 명령어 (defguard-versions)
+# - $2          : 현재 입력 중인 단어 (cur)
+# - $3          : 직전에 입력된 단어 (prev)
+# ==============================================================================
+
+##
+# defguard-versions 명령어의 Bash 자동완성 후보를 생성합니다.
+#
+# @param $1 {String} 명령어 이름
+# @param $2 {String} 현재 입력 중인 단어
+# @param $3 {String} 직전에 입력된 단어
+#
+# @return 0
+##
+_defguard_versions_completion() {
+  local cur prev opts containers
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+  opts="--core --gateway --proxy --db --json --verbose --help"
+
+  case "${prev}" in
+    --core|--gateway|--proxy|--db)
+      if command -v docker >/dev/null 2>&1; then
+        containers=$(docker ps -a --format '{{.Names}}' 2>/dev/null || true)
+        COMPREPLY=( $(compgen -W "${containers}" -- "${cur}") )
+      fi
+      return 0
+      ;;
+    *)
+      ;;
+  esac
+
+  local available_opts=""
+  local opt word
+  for opt in $opts; do
+    local is_used=0
+    for word in "${COMP_WORDS[@]}"; do
+      if [[ "$word" == "$opt" ]]; then
+        is_used=1
+        break
+      fi
+    done
+    if (( is_used == 0 )); then
+      available_opts+="${opt} "
+    fi
+  done
+
+  COMPREPLY=( $(compgen -W "${available_opts}" -- "${cur}") )
+  return 0
+}
+
+complete -F _defguard_versions_completion defguard-versions
