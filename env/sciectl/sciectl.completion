@@ -686,10 +686,18 @@ _sciectl_completion() {
       ;;
 
     list)
-      local -a list_opts=("--type" "--installed" "--target" "--orderby" "--local" "--remote" "--no-update" "--force-update" "--version" "--help")
+      local -a list_opts=("--type" "--installed" "--tool" "--ssh-key" "--target" "--orderby" "--local" "--remote" "--no-update" "--force-update" "--version" "--help")
       case "$cur" in
         --type=*)
           COMPREPLY=( $(compgen -W "all catalogs tools installers commands keys" -- "${cur#--type=}") )
+          return 0
+          ;;
+        --tool=*)
+          _sciectl_complete_csv_values "$tool_candidates" "${cur#--tool=}" "--tool=" "--tool"
+          return 0
+          ;;
+        --ssh-key=*)
+          _sciectl_complete_csv_values "$key_candidates" "${cur#--ssh-key=}" "--ssh-key=" "--ssh-key"
           return 0
           ;;
         --target=*)
@@ -704,6 +712,14 @@ _sciectl_completion() {
       case "$prev" in
         --type)
           COMPREPLY=( $(compgen -W "all catalogs tools installers commands keys" -- "$cur") )
+          return 0
+          ;;
+        --tool)
+          _sciectl_complete_csv_values "$tool_candidates" "$cur" "" "--tool"
+          return 0
+          ;;
+        --ssh-key)
+          _sciectl_complete_csv_values "$key_candidates" "$cur" "" "--ssh-key"
           return 0
           ;;
         --target)

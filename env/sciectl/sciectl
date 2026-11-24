@@ -11,9 +11,9 @@
 # =======================================
 
 readonly FILENAME="$(basename "$0")"
-readonly SCRIPT_FILE_VERSION="2026.11.24.4"
+readonly SCRIPT_FILE_VERSION="2026.11.24.5"
 # 구버전 sciectl(<=2026.11.23.1) 자가 업데이트 하위 호환성 유지용 (추후 제거 예정)
-readonly SCIECTL_VERSION="2026.11.24.4"
+readonly SCIECTL_VERSION="2026.11.24.5"
 readonly REPO_BASE_URL="${SCIECTL_REPO_URL:-https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main}"
 readonly REPO_WEB_BASE_URL="${SCIECTL_REPO_WEB_URL:-https://github.com/parkjunhong/shellscripts/blob/main}"
 
@@ -255,17 +255,18 @@ EOF
       cat <<EOF
 
 📋 사용법 (Usage - list):
-  $FILENAME list [--type <all|catalogs|tools|installers|commands|keys>] [--installed] [--target <local|global>] [--orderby <ORDER>] [--local|--remote]
+  $FILENAME list [--type <all|catalogs|tools|installers|commands|keys>] [--installed] [--tool <NAME[,...]>] [--ssh-key <NAME[,...]>] [--target <local|global>] [--orderby <ORDER>] [--local|--remote]
   $FILENAME list --help
 
 📝 설명 (Description):
   설치 가능한 카탈로그(그룹) 목록 및 커스텀 CLI 도구, 인스톨러, 사후 명령어, SSH 공개키 목록을 조회합니다.
-  '--installed' 옵션을 지정하면 현재 시스템에 설치된 CLI 도구 및 등록된 SSH 공개키 현황을 조회하며,
-  업데이트 가능한 항목은 버전 끝에 '(*)'가 표시됩니다.
+  '--installed' 옵션을 지정하면 원격 버전 비교 없이 현재 시스템에 설치된 CLI 도구 및 등록된 SSH 공개키 현황을 즉시 조회합니다.
 
 ⚙️  옵션 (Options):
   --type <TYPE>             조회할 대상 유형 (기본값: catalogs, --installed 시 all / 허용값: all, catalogs, tools, installers, commands, keys)
-  --installed               현재 시스템에 설치된 도구 및 등록된 SSH 공개키 목록만 조회
+  --installed               현재 시스템에 설치된 도구 및 등록된 SSH 공개키 목록만 즉시 조회
+  --tool <NAME[,...]>       --installed 조회 시 특정 CLI 도구만 필터링 (예: git-commit 또는 git/git-commit)
+  --ssh-key <NAME[,...]>    --installed 조회 시 특정 SSH 공개키만 필터링 (예: ymtech-internal)
   --target <local|global>   --installed 조회 시 범위 필터 (local | global)
   --orderby <ORDER>         --installed 조회 시 정렬 기준 (기본값: id)
                             - Identifier 정렬: id, id/asc (오름차순), id/desc (내림차순)
@@ -279,6 +280,7 @@ EOF
 
 💡 예시 (Examples):
   $FILENAME list --installed
+  $FILENAME list --installed --tool git-commit,net/sshctl
   $FILENAME list --installed --orderby time/desc
   $FILENAME list --type tools --installed --target local --orderby id/desc
   $FILENAME list --type keys --installed
@@ -3257,6 +3259,33 @@ _print_component_info() {
   echo "- [${emoji} ${disp_name}]"
   echo "  - 설명 : ${summary}"
   echo "  - 문서 : ${readme_url}"
+
+  if [[ "$comp_type" == "tool" || "$comp_type" == "ssh-key" ]]; then
+    local -a inst_matches=()
+    local irec itype iid iname iscope iver ipath imeta
+    while IFS= read -r irec; do
+      [[ -n "$irec" ]] || continue
+      IFS='|' read -r itype iid iname iscope iver ipath imeta <<< "$irec"
+      if [[ "$comp_type" == "tool" && "$itype" == "tool" ]]; then
+        if [[ "$iid" == "$item" || "$iname" == "$disp_name" ]]; then
+          inst_matches+=("${iscope}, v${iver:-unknown}, ${ipath}")
+        fi
+      elif [[ "$comp_type" == "ssh-key" && "$itype" == "ssh-key" ]]; then
+        if [[ "$iid" == "$disp_name" ]]; then
+          inst_matches+=("${iscope}, ${ipath}")
+        fi
+      fi
+    done < <(_manifest_list_installed "all")
+
+    if (( ${#inst_matches[@]} > 0 )); then
+      local m
+      for m in "${inst_matches[@]}"; do
+        echo "  - 설치 : ✅ 설치됨 (${m})"
+      done
+    else
+      echo "  - 설치 : ❌ 미설치"
+    fi
+  fi
 }
 
 ##
@@ -3491,11 +3520,13 @@ _print_dynamic_installed_table() {
 }
 
 ##
-# 현재 시스템에 설치된 도구 및 등록된 SSH 공개키 목록을 정렬·상태 확인 후 테이블로 출력합니다.
+# 현재 시스템에 설치된 도구 및 등록된 SSH 공개키 목록을 정렬 후 원격 비교 없이 즉시 테이블로 출력합니다.
 #
 # @param $1 {string} 조회 대상 유형 (all | tools | keys)
 # @param $2 {string} 범위 필터 (all | local | global)
 # @param $3 {string} 정렬 기준 (id | id/asc | id/desc | time | time/asc | time/desc)
+# @param $4 {string} 특정 도구 필터 (콤마 구분, 선택)
+# @param $5 {string} 특정 SSH 키 필터 (콤마 구분, 선택)
 #
 # @return 0
 ##
@@ -3503,6 +3534,32 @@ _list_installed_items() {
   local filter_type="${1:-all}"
   local filter_scope="${2:-all}"
   local orderby="${3:-id}"
+  local filter_tools="${4:-}"
+  local filter_keys="${5:-}"
+
+  local -a req_tools=()
+  local -a req_keys=()
+  if [[ -n "$filter_tools" ]]; then
+    local -a t_raw=()
+    IFS=',' read -ra t_raw <<< "$filter_tools"
+    local t
+    for t in "${t_raw[@]}"; do
+      t="$(echo "$t" | xargs)"
+      [[ -n "$t" ]] && req_tools+=("$t")
+    done
+  fi
+  if [[ -n "$filter_keys" ]]; then
+    local -a k_raw=()
+    IFS=',' read -ra k_raw <<< "$filter_keys"
+    local k
+    for k in "${k_raw[@]}"; do
+      k="$(echo "$k" | xargs)"
+      [[ -n "$k" ]] && req_keys+=("$k")
+    done
+  fi
+
+  local has_item_filter="false"
+  (( ${#req_tools[@]} > 0 || ${#req_keys[@]} > 0 )) && has_item_filter="true"
 
   local -a matched=()
   local rec r_type r_id r_name r_scope r_ver r_path r_meta
@@ -3522,6 +3579,29 @@ _list_installed_items() {
         error_exit "'--installed'와 함께 사용할 수 없는 '--type' 값입니다: '$filter_type' (허용값: all, tools, keys)" "$LINENO" "list"
         ;;
     esac
+
+    if [[ "$has_item_filter" == "true" ]]; then
+      local keep=0
+      if [[ "$r_type" == "tool" && ${#req_tools[@]} -gt 0 ]]; then
+        local rt
+        for rt in "${req_tools[@]}"; do
+          if [[ "$r_id" == "$rt" || "$r_name" == "$(basename "$rt")" ]]; then
+            keep=1
+            break
+          fi
+        done
+      elif [[ "$r_type" == "ssh-key" && ${#req_keys[@]} -gt 0 ]]; then
+        local rk
+        for rk in "${req_keys[@]}"; do
+          if [[ "$r_id" == "$rk" ]]; then
+            keep=1
+            break
+          fi
+        done
+      fi
+      (( keep == 1 )) || continue
+    fi
+
     matched+=("$rec")
   done < <(_manifest_list_installed "$filter_scope")
 
@@ -3531,32 +3611,16 @@ _list_installed_items() {
   fi
 
   local -a sorted_recs=()
-  local srec
+  local srec updated_at
   while IFS= read -r srec; do
     [[ -n "$srec" ]] && sorted_recs+=("$srec")
   done < <(_sort_installed_records "$orderby" "${matched[@]}")
 
-  local -a raw_for_check=()
-  local updated_at
-  for srec in "${sorted_recs[@]}"; do
-    IFS='|' read -r r_type r_id r_name r_scope r_ver r_path r_meta updated_at <<< "$srec"
-    raw_for_check+=("${r_type}|${r_id}|${r_name}|${r_scope}|${r_ver}|${r_path}|${r_meta}")
-  done
-
-  if ! _check_records_update_status "${raw_for_check[@]}"; then
-    echo_w " - [⚠️] 원격 저장소에 연결할 수 없어 최신 버전 비교를 생략합니다."
-  fi
-
   local -a table_rows=()
   local i=1
-  local ver_disp
   for srec in "${sorted_recs[@]}"; do
     IFS='|' read -r r_type r_id r_name r_scope r_ver r_path r_meta updated_at <<< "$srec"
-    ver_disp="$r_ver"
-    if [[ "${REC_UPDATE_STATUS[$r_meta]:-}" == "updatable" ]]; then
-      ver_disp="${r_ver}(*)"
-    fi
-    table_rows+=("$(printf '%3d)' "$i")|${r_type}|${r_id}|${r_scope}|${ver_disp}|${updated_at}|${r_path}")
+    table_rows+=("$(printf '%3d)' "$i")|${r_type}|${r_id}|${r_scope}|${r_ver}|${updated_at}|${r_path}")
     ((i++))
   done
 
@@ -3568,6 +3632,8 @@ cmd_list() {
   local installed_only="false"
   local target_scope="all"
   local orderby=""
+  local raw_tools=""
+  local raw_keys=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -3584,6 +3650,26 @@ cmd_list() {
       --installed)
         installed_only="true"
         shift
+        ;;
+      --tool|--tool=*)
+        if [[ "$1" == *=* ]]; then
+          raw_tools+=",${1#*=}"
+          shift
+        else
+          [[ $# -ge 2 && -n "${2:-}" && "${2:-}" != -* ]] || error_exit "'--tool' 옵션 뒤에 도구 식별자 또는 이름을 지정하세요." "$LINENO" "list"
+          raw_tools+=",${2}"
+          shift 2
+        fi
+        ;;
+      --ssh-key|--ssh-key=*)
+        if [[ "$1" == *=* ]]; then
+          raw_keys+=",${1#*=}"
+          shift
+        else
+          [[ $# -ge 2 && -n "${2:-}" && "${2:-}" != -* ]] || error_exit "'--ssh-key' 옵션 뒤에 SSH 공개키 식별자를 지정하세요." "$LINENO" "list"
+          raw_keys+=",${2}"
+          shift 2
+        fi
         ;;
       --target|--target=*)
         if [[ "$1" == *=* ]]; then
@@ -3641,10 +3727,14 @@ cmd_list() {
     error_exit "'--orderby' 옵션은 '--installed'와 함께만 사용할 수 있습니다." "$LINENO" "list"
   fi
 
+  if [[ (-n "$raw_tools" || -n "$raw_keys") && "$installed_only" != "true" ]]; then
+    error_exit "'--tool' 및 '--ssh-key' 필터는 '--installed'와 함께만 사용할 수 있습니다." "$LINENO" "list"
+  fi
+
   if [[ "$installed_only" == "true" ]]; then
     [[ -z "$list_type" ]] && list_type="all"
     [[ -z "$orderby" ]] && orderby="id"
-    _list_installed_items "$list_type" "$target_scope" "$orderby"
+    _list_installed_items "$list_type" "$target_scope" "$orderby" "$raw_tools" "$raw_keys"
     return 0
   fi
 
