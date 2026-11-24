@@ -12,7 +12,7 @@
 
 # 도움말 출력 함수
 
-readonly SCRIPT_FILE_VERSION="2026.11.24.6"
+readonly SCRIPT_FILE_VERSION="2026.11.24.7"
 
 help() {
   cat <<'EOF'
@@ -113,6 +113,23 @@ handle_interrupt() {
 }
 trap handle_interrupt INT TERM
 
+##
+# 배열 내에 특정 문자열이 이미 존재하는지 확인
+#
+# @param $1 {String} 찾을 문자열
+# @param $@ {String...} 대상 배열 원소 목록
+# @return 0: 존재함, 1: 존재하지 않음
+##
+array_contains() {
+  local needle="$1"
+  shift
+  local item
+  for item in "$@"; do
+    [[ "$item" == "$needle" ]] && return 0
+  done
+  return 1
+}
+
 # 변수 초기화
 declare -a TARGET_PACKAGES=()
 declare -a OSS_NUMBERS=()
@@ -131,7 +148,9 @@ while [[ $# -gt 0 ]]; do
         IFS=',| ' read -r -a raw_pkgs <<< "$1"
         for p in "${raw_pkgs[@]}"; do
           p="$(echo "$p" | xargs)"
-          [[ -n "$p" ]] && TARGET_PACKAGES+=("$p")
+          if [[ -n "$p" ]] && ! array_contains "$p" ${TARGET_PACKAGES[@]+"${TARGET_PACKAGES[@]}"}; then
+            TARGET_PACKAGES+=("$p")
+          fi
         done
         shift 1
       done
@@ -143,7 +162,12 @@ while [[ $# -gt 0 ]]; do
         IFS=',| ' read -r -a raw_osss <<< "$1"
         for o in "${raw_osss[@]}"; do
           o="$(echo "$o" | xargs)"
-          [[ -n "$o" ]] && OSS_NUMBERS+=("$o")
+          if [[ -n "$o" ]]; then
+            o="$(printf "%s" "$o" | tr '[:lower:]' '[:upper:]')"
+            if ! array_contains "$o" ${OSS_NUMBERS[@]+"${OSS_NUMBERS[@]}"}; then
+              OSS_NUMBERS+=("$o")
+            fi
+          fi
         done
         shift 1
       done
