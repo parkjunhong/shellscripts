@@ -37,6 +37,8 @@
 | 명령어 | 설명 |
 | :--- | :--- |
 | `install` | 카탈로그 또는 개별 컴포넌트(도구/인스톨러/커맨드/SSH키) 설치 (기본 명령어, 생략 가능) |
+| `update` | 설치된 CLI 도구(`--tool`) 및 등록된 SSH 공개키(`--ssh-key`) 최신 버전 업데이트 |
+| `remove` | 설치된 CLI 도구(연관 `.completion`, `man` 포함) 및 등록된 SSH 공개키 제거 |
 | `list` | 제공되는 카탈로그, 커스텀 CLI 도구, 인스톨러, 사후 명령어, SSH 공개키 목록 조회 |
 | `info` | 특정 카탈로그 또는 개별 컴포넌트(도구/인스톨러/커맨드/SSH키)의 상세 구성 내역 및 개요 설명 조회 |
 
@@ -60,6 +62,16 @@
 | | `--all` | 선택 | 선택한 카탈로그의 모든 단계 및 기본 환경 3종 설정 적용 |
 | | `--no-default-opts` | 선택 | 기본 환경 3종(`~/bin` PATH, Git 프롬프트, `vimrc`) 설정 생략 |
 | **`list`** | `--type <TYPE>` | 선택 | 조회 대상 유형 (`all`, `catalogs`, `tools`, `installers`, `commands`, `keys`, 기본값: `catalogs`) |
+| **`update`** | `--catalog <ID[,ID2...]>` | 선택 | 지정 카탈로그 내 설치된 도구/SSH키만 업데이트 (옵션 생략 시 설치된 항목 대화형 선택) |
+| | `--tool <CAT/NAME[,...]>` | 선택 | 설치된 특정 CLI 도구 업데이트 (예: `git/git-commit` 또는 `git-commit`) |
+| | `--ssh-key <NAME[,...]>` | 선택 | 등록된 SSH 공개키를 저장소 최신 내용으로 교체 업데이트 |
+| | `--target <local\|global>` | 선택 | 조회/업데이트 범위 필터 (`local` 또는 `global`) |
+| | `--yes` / `--force` / `--dry-run` | 선택 | 자동 승인, 강제 덮어쓰기, 시뮬레이션 실행 |
+| **`remove`** | `--catalog <ID[,ID2...]>` | 선택 | 지정 카탈로그 내 설치된 도구/SSH키만 제거 (옵션 생략 시 설치된 항목 대화형 선택) |
+| | `--tool <CAT/NAME[,...]>` | 선택 | 설치된 특정 CLI 도구 및 연관 `.completion`/`man` 파일 제거 |
+| | `--ssh-key <NAME[,...]>` | 선택 | `authorized_keys`에서 등록된 특정 SSH 공개키 제거 |
+| | `--target <local\|global>` | 선택 | 조회/제거 범위 필터 (`local` 또는 `global`) |
+| | `--yes` / `--dry-run` | 선택 | 자동 승인, 삭제 대상 시뮬레이션 출력 |
 | **`info`** | `--catalog <ID[,ID2...]>` | 조건부 | 상세 내역을 조회할 카탈로그 ID (콤마 구분 복수 지정 가능) |
 | | `--tool <CAT/NAME[,...]>` | 조건부 | 특정 CLI 도구 상세 정보 및 설명 조회 (예: `sciectl`, `utils/scriptctl`) |
 | | `--installer <NAME[,...]>` | 조건부 | 특정 인스톨러 상세 정보 및 설명 조회 (예: `install-htop`) |
@@ -104,6 +116,15 @@ sciectl install --catalog default-devops --only tools,installers
 
 # 8. 카탈로그 없이 개별 인스톨러나 커스텀 도구만 단독 설치 (dnf/apt/pacman 스타일)
 sciectl install --installer install-temurin-25-jdk,install-htop --tool git/git-commit,net/fwc-cli
+
+# 9. 설치된 도구 및 SSH 키 대화형 업데이트 / 제거 (번호 또는 * 선택)
+sciectl update
+sciectl remove
+
+# 10. 특정 도구/SSH 키 지정 업데이트 및 제거 시뮬레이션
+sciectl update --tool git/git-commit --yes
+sciectl remove --tool git/git-commit --dry-run
+sciectl remove --ssh-key ymtech-internal --yes
 ```
 
 ---

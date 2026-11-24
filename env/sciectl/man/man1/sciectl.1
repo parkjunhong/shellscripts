@@ -1,10 +1,16 @@
-.TH SCIECTL 1 "2026-11-05" "sciectl 1.0.0" "User Commands"
+.TH SCIECTL 1 "2026-11-24" "sciectl 1.1.0" "User Commands"
 .SH NAME
 sciectl \- Script, Command, Installer & Environment Controller
 
 .SH SYNOPSIS
 .B sciectl
 [\fBinstall\fR] [\fIOPTIONS\fR]
+.br
+.B sciectl update
+[\fIOPTIONS\fR]
+.br
+.B sciectl remove
+[\fIOPTIONS\fR]
 .br
 .B sciectl list
 [\fB\-\-type\fR \fIall\fR|\fIcatalogs\fR|\fItools\fR|\fIinstallers\fR|\fIcommands\fR|\fIkeys\fR] [\fB\-\-local\fR|\fB\-\-remote\fR]
@@ -42,6 +48,12 @@ sciectl \- Script, Command, Installer & Environment Controller
 .TP
 .B install
 카탈로그 또는 개별 컴포넌트를 설치한다 (기본 서브커맨드이므로 생략 가능).
+.TP
+.B update
+현재 설치된 CLI 도구(\fB\-\-tool\fR) 및 등록된 SSH 공개키(\fB\-\-ssh\-key\fR)를 최신 버전으로 업데이트한다. 인자 없이 실행하면 설치된 항목 목록을 번호와 함께 표시하고 번호 또는 전체(\fB*\fR)를 선택할 수 있다.
+.TP
+.B remove
+현재 설치된 CLI 도구(연관 \fI.completion\fR 및 \fIman\fR 페이지 포함)와 등록된 SSH 공개키를 제거한다. 인자 없이 실행하면 설치된 항목 목록을 번호와 함께 표시하고 번호 또는 전체(\fB*\fR)를 선택할 수 있다.
 .TP
 .B list
 제공되는 카탈로그, 커스텀 CLI 도구, 인스톨러, 사후 명령어, SSH 공개키 목록을 조회한다.
@@ -125,6 +137,29 @@ CLI 도구 및 매뉴얼 설치 범위를 지정한다 (\fBlocal\fR: \fI~/bin\fR
 .TP
 .BR \-\-ssh\-key " " \fINAME\fR[,...]
 개별 SSH 공개키의 개요 설명 및 문서 링크를 조회한다.
+
+.SH OPTIONS (update / remove)
+.TP
+.BR \-\-catalog " " \fIID\fR[,...]
+지정한 카탈로그에 정의된 도구 및 SSH 공개키 중 현재 시스템에 설치된 항목만 필터링하여 업데이트하거나 제거한다.
+.TP
+.BR \-\-tool " " \fICAT/NAME\fR[,...]
+설치된 특정 CLI 도구를 업데이트하거나 제거한다 (예: \fBgit/git-commit\fR 또는 \fBgit-commit\fR).
+.TP
+.BR \-\-ssh\-key " " \fINAME\fR[,...]
+등록된 특정 SSH 공개키를 최신 내용으로 교체 업데이트하거나 \fIauthorized_keys\fR에서 제거한다.
+.TP
+.BR \-\-target " " \fIlocal\fR|\fIglobal\fR
+조회/업데이트/제거 대상 범위를 제한한다.
+.TP
+.B \-\-yes
+확인 프롬프트를 자동 승인한다.
+.TP
+.B \-\-force
+(\fBupdate\fR 전용) 동일 버전이거나 내용이 달라도 확인 없이 강제 덮어쓴다.
+.TP
+.B \-\-dry\-run
+실제 변경이나 삭제 없이 대상 및 계획만 출력한다.
 
 .SH COMMON OPTIONS
 .TP
