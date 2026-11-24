@@ -12,7 +12,7 @@
 
 # 도움말 출력 함수
 
-readonly SCRIPT_FILE_VERSION="2026.11.24.4"
+readonly SCRIPT_FILE_VERSION="2026.11.24.5"
 
 help() {
   cat <<'EOF'
@@ -384,7 +384,13 @@ fetch_changelog() {
 
     rpm|zypper)
       log_debug "'$pkg' RPM 체인지로그 조회..."
-      content="$(rpm -q --changelog "$pkg" 2>/dev/null || true)"
+      local latest_rpm=""
+      latest_rpm="$(LC_ALL=C rpm -q "$pkg" 2>/dev/null | sort -V | tail -n 1 || true)"
+      if [[ -n "$latest_rpm" ]]; then
+        content="$(LC_ALL=C rpm -q --changelog "$latest_rpm" 2>/dev/null || true)"
+      else
+        content="$(LC_ALL=C rpm -q --changelog "$pkg" 2>/dev/null || true)"
+      fi
       if [[ -n "$content" ]]; then
         printf "%s\n" "$content"
         fetched=true
@@ -1139,7 +1145,11 @@ if [[ ${#SUMMARY_OSS_ENTRIES[@]} -gt 0 ]]; then
     elif [[ "$s_status" =~ "업데이트 가능" || "$s_status" =~ "업데이트 대기중" ]]; then
       SUM_ACTION+=("$s_label")
     elif [[ "$s_status" =~ "해당 없음" ]]; then
-      SUM_NOT_AFFECTED+=("$s_label")
+      if [[ "$s_status" =~ "관련 권고 없음" && -n "$ALL_CL_MATCHED_TEXT" ]] && echo "$ALL_CL_MATCHED_TEXT" | grep -qiF "$s_oss"; then
+        SUM_RESOLVED+=("${s_label}(changelog)")
+      else
+        SUM_NOT_AFFECTED+=("$s_label")
+      fi
     else
       # 2단계에서 미판별되었으나 3단계 체인지로그에서 실제로 매칭된 경우 조치 완료로 분류
       if [[ -n "$ALL_CL_MATCHED_TEXT" ]] && echo "$ALL_CL_MATCHED_TEXT" | grep -qiF "$s_oss"; then
@@ -1198,7 +1208,7 @@ if [[ -n "$OUTPUT_FILE" ]]; then
     [[ -n "$SEC_STEP3" ]] && printf "%s" "$SEC_STEP3"
     [[ -n "$SEC_STEP2" ]] && printf "%s" "$SEC_STEP2"
     printf "%s" "$SEC_FOOTER"
-  } | sed -E $'s/\x1b\\[[0-9;]*[mK]//g' > "$OUTPUT_FILE"
+  } | sed -E $'s/\x1b\\[[0-9;]*[mK]//g; s/^ \\[[0-9]+단계\\] / /' > "$OUTPUT_FILE"
 
   log_info "감사 보고서가 파일로 저장되었습니다: $OUTPUT_FILE"
 fi
