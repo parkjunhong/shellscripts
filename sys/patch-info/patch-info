@@ -12,7 +12,7 @@
 
 # 도움말 출력 함수
 
-readonly SCRIPT_FILE_VERSION="2026.11.24.5"
+readonly SCRIPT_FILE_VERSION="2026.11.24.6"
 
 help() {
   cat <<'EOF'
@@ -39,7 +39,8 @@ help() {
 
   --output <파일 경로>         감사 보고서를 지정한 파일에 저장합니다. (요약 우선 순서로 저장)
 
-  --offline                    원격 보안 API 및 온라인 조회를 차단하고 로컬 파일/캐시만 사용합니다.
+  --offline                    폐쇄망 등 외부 인터넷 단절 환경에서 외부 API 및 원격 저장소 접속을
+                               차단하고 로컬 캐시·체인지로그만으로 신속하게 검사합니다.
 
   --verbose                    상세 디버깅 정보(OS 감지, 실행 명령어, 파싱 통계)를 표준 에러로 출력합니다.
 
@@ -632,8 +633,8 @@ except Exception:
       fi
     fi
 
-    # [Ubuntu 환경 2순위 로컬 폴백]: Ubuntu Pro CLI 활용
-    if [[ "$resolved" == "false" && "$OS_TYPE" == "debian" ]] && command -v pro >/dev/null 2>&1; then
+    # [Ubuntu 환경 2순위 폴백]: Ubuntu Pro CLI 활용 (온라인 모드 전용 - 폐쇄망 타임아웃 방지)
+    if [[ "$resolved" == "false" && "$OS_TYPE" == "debian" && "$ONLINE_MODE" == "true" ]] && command -v pro >/dev/null 2>&1; then
       log_debug "Ubuntu Pro 도구를 통해 '$advisory' 분석 (pro fix --dry-run)..."
       local pro_out
       pro_out="$(timeout 15 pro fix --dry-run "$advisory" 2>&1 || true)"
@@ -746,8 +747,8 @@ except Exception:
       fi
     fi
 
-    # [2순위 로컬 폴백]: REST API 접근 불가 시 Ubuntu Pro CLI 활용
-    if [[ "$resolved" == "false" ]] && command -v pro >/dev/null 2>&1; then
+    # [2순위 폴백]: REST API 접근 불가 시 Ubuntu Pro CLI 활용 (온라인 모드 전용 - 폐쇄망 타임아웃 방지)
+    if [[ "$resolved" == "false" && "$ONLINE_MODE" == "true" ]] && command -v pro >/dev/null 2>&1; then
       log_debug "Ubuntu Pro 도구를 통해 '$advisory' 분석 (pro fix --dry-run)..."
       # [안전 가드레일]: 시스템 설치를 방지하기 위해 --dry-run을 반드시 고정 실행
       local pro_out
@@ -796,8 +797,12 @@ except Exception:
   if [[ "$advisory" =~ (SUSE-SU|openSUSE-SU) ]]; then
     if command -v zypper >/dev/null 2>&1; then
       log_debug "Zypper patch-info를 통해 '$advisory' 분석..."
-      local zyp_out
-      zyp_out="$(LC_ALL=C timeout 20 zypper patch-info "$advisory" < /dev/null 2>/dev/null || true)"
+      local zyp_out=""
+      if [[ "$ONLINE_MODE" == "false" ]]; then
+        zyp_out="$(LC_ALL=C timeout 20 zypper --no-refresh patch-info "$advisory" < /dev/null 2>/dev/null || true)"
+      else
+        zyp_out="$(LC_ALL=C timeout 20 zypper patch-info "$advisory" < /dev/null 2>/dev/null || true)"
+      fi
       while IFS= read -r cve; do
         [[ -n "$cve" ]] && ADV_CVES+=("$cve")
       done < <(echo "$zyp_out" | grep -o -E "CVE-[0-9]{4}-[0-9]+" | sort -u || true)
