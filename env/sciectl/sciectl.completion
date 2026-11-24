@@ -686,16 +686,24 @@ _sciectl_completion() {
       ;;
 
     list)
-      local -a list_opts=("--type" "--local" "--remote" "--no-update" "--force-update" "--version" "--help")
+      local -a list_opts=("--type" "--installed" "--target" "--local" "--remote" "--no-update" "--force-update" "--version" "--help")
       case "$cur" in
         --type=*)
           COMPREPLY=( $(compgen -W "all catalogs tools installers commands keys" -- "${cur#--type=}") )
+          return 0
+          ;;
+        --target=*)
+          COMPREPLY=( $(compgen -W "local global" -- "${cur#--target=}") )
           return 0
           ;;
       esac
       case "$prev" in
         --type)
           COMPREPLY=( $(compgen -W "all catalogs tools installers commands keys" -- "$cur") )
+          return 0
+          ;;
+        --target)
+          COMPREPLY=( $(compgen -W "local global" -- "$cur") )
           return 0
           ;;
       esac
