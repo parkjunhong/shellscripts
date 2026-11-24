@@ -11,9 +11,9 @@
 # =======================================
 
 readonly FILENAME="$(basename "$0")"
-readonly SCRIPT_FILE_VERSION="2026.11.24.2"
+readonly SCRIPT_FILE_VERSION="2026.11.24.3"
 # 구버전 sciectl(<=2026.11.23.1) 자가 업데이트 하위 호환성 유지용 (추후 제거 예정)
-readonly SCIECTL_VERSION="2026.11.24.2"
+readonly SCIECTL_VERSION="2026.11.24.3"
 readonly REPO_BASE_URL="${SCIECTL_REPO_URL:-https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main}"
 readonly REPO_WEB_BASE_URL="${SCIECTL_REPO_WEB_URL:-https://github.com/parkjunhong/shellscripts/blob/main}"
 
@@ -255,20 +255,28 @@ EOF
       cat <<EOF
 
 📋 사용법 (Usage - list):
-  $FILENAME list [--type <all|catalogs|tools|installers|commands|keys>] [--local|--remote]
+  $FILENAME list [--type <all|catalogs|tools|installers|commands|keys>] [--installed] [--target <local|global>] [--local|--remote]
   $FILENAME list --help
 
 📝 설명 (Description):
   설치 가능한 카탈로그(그룹) 목록 및 커스텀 CLI 도구, 인스톨러, 사후 명령어, SSH 공개키 목록을 조회합니다.
+  '--installed' 옵션을 지정하면 현재 시스템에 설치된 CLI 도구 및 등록된 SSH 공개키 현황을 조회합니다.
 
 ⚙️  옵션 (Options):
-  --type <TYPE>     조회할 대상 유형 (기본값: catalogs / 허용값: all, catalogs, tools, installers, commands, keys)
-  --local           로컬 저장소 기준으로 목록 조회
-  --remote          원격 GitHub 저장소 기준으로 목록 조회
-  --no-update       자가 업데이트(Self-Update) 건너뛰기
-  --force-update    원격 저장소 최신 버전으로 강제 자가 업데이트
-  --version         sciectl 버전 정보 출력
-  --help            list 서브커맨드 도움말 출력
+  --type <TYPE>             조회할 대상 유형 (기본값: catalogs, --installed 시 all / 허용값: all, catalogs, tools, installers, commands, keys)
+  --installed               현재 시스템에 설치된 도구 및 등록된 SSH 공개키 목록만 조회
+  --target <local|global>   --installed 조회 시 범위 필터 (local | global)
+  --local                   로컬 저장소 기준으로 목록 조회
+  --remote                  원격 GitHub 저장소 기준으로 목록 조회
+  --no-update               자가 업데이트(Self-Update) 건너뛰기
+  --force-update            원격 저장소 최신 버전으로 강제 자가 업데이트
+  --version                 sciectl 버전 정보 출력
+  --help                    list 서브커맨드 도움말 출력
+
+💡 예시 (Examples):
+  $FILENAME list --installed
+  $FILENAME list --type tools --installed --target local
+  $FILENAME list --type keys --installed
 EOF
       ;;
     info)
@@ -3231,8 +3239,68 @@ _print_component_info() {
 #
 # @return 0
 ##
+##
+# 현재 시스템에 설치된 도구 및 등록된 SSH 공개키 목록을 테이블로 출력합니다.
+#
+# @param $1 {string} 조회 대상 유형 (all | tools | keys)
+# @param $2 {string} 범위 필터 (all | local | global)
+#
+# @return 0
+##
+_list_installed_items() {
+  local filter_type="${1:-all}"
+  local filter_scope="${2:-all}"
+
+  local -a matched=()
+  local rec r_type r_id r_name r_scope r_ver r_path r_meta
+  while IFS= read -r rec; do
+    [[ -n "$rec" ]] || continue
+    IFS='|' read -r r_type r_id r_name r_scope r_ver r_path r_meta <<< "$rec"
+    case "$filter_type" in
+      tools|tool)
+        [[ "$r_type" == "tool" ]] || continue
+        ;;
+      keys|key)
+        [[ "$r_type" == "ssh-key" ]] || continue
+        ;;
+      all)
+        ;;
+      *)
+        error_exit "'--installed'와 함께 사용할 수 없는 '--type' 값입니다: '$filter_type' (허용값: all, tools, keys)" "$LINENO" "list"
+        ;;
+    esac
+    matched+=("$rec")
+  done < <(_manifest_list_installed "$filter_scope")
+
+  if (( ${#matched[@]} == 0 )); then
+    echo_w " - [💡] 조건에 해당하는 설치된 도구 또는 등록된 SSH 공개키가 없습니다."
+    return 0
+  fi
+
+  echo
+  echo "===================================================================================================================="
+  echo_i "📦 [설치된 관리 대상 현황 (총 ${#matched[@]}개)]"
+  echo "--------------------------------------------------------------------------------------------------------------------"
+  printf "  %-4s | %-8s | %-28s | %-7s | %-15s | %-19s | %s\n" "No." "Type" "Identifier" "Scope" "Version/Comment" "Updated At" "Path"
+  echo "--------------------------------------------------------------------------------------------------------------------"
+
+  local i=1
+  local updated_at
+  for rec in "${matched[@]}"; do
+    IFS='|' read -r r_type r_id r_name r_scope r_ver r_path r_meta <<< "$rec"
+    updated_at="$(_manifest_get_field "$r_meta" "UPDATED_AT" || true)"
+    updated_at="${updated_at:0:19}"
+    printf "  %3d) | %-8s | %-28s | %-7s | %-15s | %-19s | %s\n" \
+      "$i" "$r_type" "${r_id:0:28}" "$r_scope" "${r_ver:0:15}" "${updated_at:-unknown}" "$r_path"
+    ((i++))
+  done
+  echo "===================================================================================================================="
+}
+
 cmd_list() {
-  local list_type="catalogs"
+  local list_type=""
+  local installed_only="false"
+  local target_scope="all"
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -3243,6 +3311,20 @@ cmd_list() {
         else
           [[ $# -ge 2 && -n "${2:-}" && "${2:-}" != -* ]] || error_exit "'--type' 옵션 뒤에 조회 유형(all|catalogs|tools|installers|commands|keys)을 지정하세요." "$LINENO" "list"
           list_type="$2"
+          shift 2
+        fi
+        ;;
+      --installed)
+        installed_only="true"
+        shift
+        ;;
+      --target|--target=*)
+        if [[ "$1" == *=* ]]; then
+          target_scope="${1#*=}"
+          shift
+        else
+          [[ $# -ge 2 && -n "${2:-}" && "${2:-}" != -* ]] || error_exit "'--target' 옵션 뒤에 local 또는 global을 지정하세요." "$LINENO" "list"
+          target_scope="$2"
           shift 2
         fi
         ;;
@@ -3273,6 +3355,18 @@ cmd_list() {
         ;;
     esac
   done
+
+  if [[ "$target_scope" != "all" && "$target_scope" != "local" && "$target_scope" != "global" ]]; then
+    error_exit "'--target' 옵션 값은 'local' 또는 'global'만 허용됩니다: '$target_scope'" "$LINENO" "list"
+  fi
+
+  if [[ "$installed_only" == "true" ]]; then
+    [[ -z "$list_type" ]] && list_type="all"
+    _list_installed_items "$list_type" "$target_scope"
+    return 0
+  fi
+
+  [[ -z "$list_type" ]] && list_type="catalogs"
 
   case "$list_type" in
     catalogs|all)
