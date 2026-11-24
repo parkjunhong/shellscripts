@@ -11,9 +11,9 @@
 # =======================================
 
 readonly FILENAME="$(basename "$0")"
-readonly SCRIPT_FILE_VERSION="2026.11.24.1"
+readonly SCRIPT_FILE_VERSION="2026.11.24.2"
 # 구버전 sciectl(<=2026.11.23.1) 자가 업데이트 하위 호환성 유지용 (추후 제거 예정)
-readonly SCIECTL_VERSION="2026.11.24.1"
+readonly SCIECTL_VERSION="2026.11.24.2"
 readonly REPO_BASE_URL="${SCIECTL_REPO_URL:-https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main}"
 readonly REPO_WEB_BASE_URL="${SCIECTL_REPO_WEB_URL:-https://github.com/parkjunhong/shellscripts/blob/main}"
 
@@ -302,6 +302,78 @@ EOF
   $FILENAME info --catalog default-server --tool utils/scriptctl
 EOF
       ;;
+    update)
+      cat <<EOF
+
+🔄 사용법 (Usage - update):
+  $FILENAME update [options]
+  $FILENAME update --help
+
+📝 설명 (Description):
+  현재 시스템에 설치된 CLI 도구(--tool) 및 등록된 SSH 공개키(--ssh-key)를 최신 버전으로 업데이트합니다.
+  (1회성 구축 항목인 --installer, --command, sudoers, OS 패키지는 대상에서 제외됩니다.)
+  - 옵션 없이 '$FILENAME update'만 실행하면 현재 설치된 항목 목록을 번호와 함께 표시하며,
+    번호(예: 1,3 또는 1-4) 또는 전체(*)를 선택하여 업데이트할 수 있습니다.
+  - '--catalog', '--tool', '--ssh-key' 지정 시 해당 대상 중 현재 설치된 항목만 업데이트합니다.
+
+⚙️  주요 옵션 (Options - Long Option 전용):
+  --catalog <ID[,ID2...]>       지정한 카탈로그 내 설치된 도구/SSH키만 업데이트
+  --tool <CAT/NAME[,...]>       특정 CLI 도구 업데이트 (예: git/git-commit 또는 git-commit)
+  --ssh-key <NAME[,...]>        특정 SSH 공개키 최신 내용으로 교체 업데이트 (예: ymtech-internal)
+  --target <local|global>       조회/업데이트 범위 필터 (local: ~/bin, global: /usr/local/bin)
+  --local                       로컬 저장소 파일 우선 사용
+  --remote                      원격 GitHub 저장소(Raw URL) 사용 (기본 동작)
+  --no-update                   자가 업데이트(Self-Update) 건너뛰기
+  --force-update                원격 저장소 최신 버전으로 강제 자가 업데이트
+  --yes                         모든 확인 프롬프트(y/Enter) 자동 승인
+  --force                       동일 버전이거나 내용이 달라도 확인 없이 강제 덮어쓰기
+  --dry-run                     실제 변경 없이 업데이트 대상 및 계획만 출력
+  --version                     sciectl 버전 정보 출력
+  --help                        update 서브커맨드 도움말 출력
+
+💡 예시 (Examples):
+  $FILENAME update
+  $FILENAME update --tool git/git-commit,net/sshctl --yes
+  $FILENAME update --catalog docker --force
+  $FILENAME update --ssh-key ymtech-internal
+EOF
+      ;;
+    remove)
+      cat <<EOF
+
+🗑️  사용법 (Usage - remove):
+  $FILENAME remove [options]
+  $FILENAME remove --help
+
+📝 설명 (Description):
+  현재 시스템에 설치된 CLI 도구(--tool) 및 연관 파일(.completion, man 페이지)과
+  등록된 SSH 공개키(--ssh-key)를 안전하게 제거합니다.
+  (1회성 구축 항목인 --installer, --command, sudoers, OS 패키지는 대상에서 제외됩니다.)
+  - 옵션 없이 '$FILENAME remove'만 실행하면 현재 설치된 항목 목록을 번호와 함께 표시하며,
+    번호(예: 1,3 또는 1-4) 또는 전체(*)를 선택하여 제거할 수 있습니다.
+  - '--catalog', '--tool', '--ssh-key' 지정 시 해당 대상 중 현재 설치된 항목만 제거합니다.
+
+⚙️  주요 옵션 (Options - Long Option 전용):
+  --catalog <ID[,ID2...]>       지정한 카탈로그 내 설치된 도구/SSH키만 제거
+  --tool <CAT/NAME[,...]>       특정 CLI 도구 및 연관 파일 제거 (예: git/git-commit 또는 git-commit)
+  --ssh-key <NAME[,...]>        authorized_keys에서 특정 SSH 공개키 제거 (예: ymtech-internal)
+  --target <local|global>       조회/제거 범위 필터 (local: ~/bin, global: /usr/local/bin)
+  --local                       로컬 저장소 기준으로 카탈로그/식별자 해석
+  --remote                      원격 GitHub 저장소 기준으로 카탈로그/식별자 해석
+  --no-update                   자가 업데이트(Self-Update) 건너뛰기
+  --force-update                원격 저장소 최신 버전으로 강제 자가 업데이트
+  --yes                         제거 확인 프롬프트 자동 승인
+  --dry-run                     실제 삭제 없이 제거 대상 파일 및 키 목록만 출력
+  --version                     sciectl 버전 정보 출력
+  --help                        remove 서브커맨드 도움말 출력
+
+💡 예시 (Examples):
+  $FILENAME remove
+  $FILENAME remove --tool git/git-commit --dry-run
+  $FILENAME remove --tool sys/vim-cli --yes
+  $FILENAME remove --ssh-key ymtech-internal
+EOF
+      ;;
     *)
       cat <<EOF
 
@@ -317,6 +389,8 @@ EOF
 
 🧭 명령어 (Commands):
   install     카탈로그 또는 개별 도구/인스톨러/커맨드/SSH키 설치 (기본 명령어)
+  update      설치된 CLI 도구 및 등록된 SSH 공개키 업데이트
+  remove      설치된 CLI 도구(연관 파일 포함) 및 등록된 SSH 공개키 제거
   list        제공되는 카탈로그, 도구, 인스톨러, 커맨드, SSH키 목록 조회
   info        특정 카탈로그 또는 개별 컴포넌트(도구/인스톨러/커맨드/SSH키) 상세 조회
 
@@ -1848,6 +1922,522 @@ _remove_legacy_sh_tool() {
   done
 }
 
+# ==============================================================================
+# 설치 상태 매니페스트 관리 (Manifest Registry)
+# ==============================================================================
+LAST_INSTALLED_COMP_PATH=""
+LAST_INSTALLED_MAN_PATHS=""
+MANIFEST_SYNCED=0
+
+##
+# 도구 매니페스트 디렉토리 경로를 반환합니다.
+#
+# @param $1 {string} 설치 범위 (local | global)
+#
+# @return 디렉토리 경로 출력
+##
+_manifest_tools_dir() {
+  local scope="${1:-local}"
+  if [[ "$scope" == "global" ]]; then
+    printf '%s\n' "/var/lib/sciectl/installed/tools"
+  else
+    printf '%s\n' "${XDG_STATE_HOME:-$HOME/.local/state}/sciectl/installed/tools"
+  fi
+}
+
+##
+# SSH 공개키 매니페스트 디렉토리 경로를 반환합니다.
+#
+# @param 없음
+#
+# @return 디렉토리 경로 출력
+##
+_manifest_keys_dir() {
+  printf '%s\n' "${XDG_STATE_HOME:-$HOME/.local/state}/sciectl/installed/keys"
+}
+
+##
+# 현재 시각을 ISO-8601 유사 문자열로 반환합니다.
+#
+# @param 없음
+#
+# @return 타임스탬프 문자열 출력
+##
+_manifest_now_iso() {
+  date +"%Y-%m-%dT%H:%M:%S%z" 2>/dev/null || date +"%Y-%m-%dT%H:%M:%S"
+}
+
+##
+# KEY=VALUE 포맷의 매니페스트 파일에서 특정 키 값을 안전하게 조회합니다.
+#
+# @param $1 {string} 매니페스트 파일 경로
+# @param $2 {string} 조회할 키 이름
+#
+# @return 해당 키 값 출력
+##
+_manifest_get_field() {
+  local meta_file="$1"
+  local key="$2"
+  [[ -f "$meta_file" ]] || return 1
+
+  local k v
+  while IFS='=' read -r k v || [[ -n "$k" ]]; do
+    [[ -z "$k" || "$k" == \#* ]] && continue
+    if [[ "$k" == "$key" ]]; then
+      printf '%s\n' "$v"
+      return 0
+    fi
+  done < "$meta_file"
+  return 1
+}
+
+##
+# 매니페스트 파일을 원자적으로 기록합니다.
+#
+# @param $1 {string} 대상 파일 경로
+# @param $2 {string} 기록할 전체 내용
+# @param $3 {string} sudo 사용 여부 (true | false)
+#
+# @return 0: 성공, 1: 실패
+##
+_manifest_write_file() {
+  local dest_file="$1"
+  local content="$2"
+  local use_sudo="${3:-false}"
+  local dest_dir
+  dest_dir="$(dirname "$dest_file")"
+
+  local tmp_f
+  tmp_f="$(mktemp "/tmp/sciectl_meta.XXXXXX")" || return 1
+  printf '%s\n' "$content" > "$tmp_f"
+
+  if [[ "$use_sudo" == "true" ]]; then
+    sudo mkdir -p "$dest_dir" && sudo mv "$tmp_f" "$dest_file" && sudo chmod 644 "$dest_file"
+  else
+    mkdir -p "$dest_dir" && mv "$tmp_f" "$dest_file" && chmod 644 "$dest_file"
+  fi
+}
+
+##
+# 설치/업데이트된 CLI 도구의 메타데이터를 매니페스트에 저장합니다.
+#
+# @param $1 {string} 도구 식별자 (예: git/git-commit)
+# @param $2 {string} 실행 명령어 이름 (예: git-commit)
+# @param $3 {string} 설치 범위 (local | global)
+# @param $4 {string} 설치된 버전
+# @param $5 {string} 실행 파일 절대 경로
+# @param $6 {string} 자동완성 파일 절대 경로 (선택)
+# @param $7 {string} man 페이지 파일 절대 경로 목록 (콜론 구분, 선택)
+#
+# @return 0
+##
+_manifest_save_tool() {
+  local tool_id="$1"
+  local cmd_name="$2"
+  local target_scope="${3:-local}"
+  local version="${4:-}"
+  local bin_path="$5"
+  local comp_path="${6:-}"
+  local man_paths="${7:-}"
+
+  local meta_dir
+  meta_dir="$(_manifest_tools_dir "$target_scope")"
+  local meta_file="${meta_dir}/${cmd_name}.meta"
+  local use_sudo="false"
+  [[ "$target_scope" == "global" ]] && use_sudo="true"
+
+  local now
+  now="$(_manifest_now_iso)"
+  local installed_at="$now"
+  if [[ -f "$meta_file" ]]; then
+    local prev_installed
+    prev_installed="$(_manifest_get_field "$meta_file" "INSTALLED_AT" || true)"
+    [[ -n "$prev_installed" ]] && installed_at="$prev_installed"
+  fi
+
+  local content
+  content=$(cat <<EOF
+TOOL_ID=${tool_id}
+CMD_NAME=${cmd_name}
+TARGET_SCOPE=${target_scope}
+VERSION=${version}
+BIN_PATH=${bin_path}
+COMPLETION_PATH=${comp_path}
+MAN_PATHS=${man_paths}
+INSTALLED_AT=${installed_at}
+UPDATED_AT=${now}
+EOF
+)
+  _manifest_write_file "$meta_file" "$content" "$use_sudo" 2>/dev/null || true
+}
+
+##
+# CLI 도구의 매니페스트 파일을 삭제합니다.
+#
+# @param $1 {string} 실행 명령어 이름
+# @param $2 {string} 설치 범위 (local | global)
+#
+# @return 0
+##
+_manifest_delete_tool() {
+  local cmd_name="$1"
+  local target_scope="${2:-local}"
+  local meta_file
+  meta_file="$(_manifest_tools_dir "$target_scope")/${cmd_name}.meta"
+  [[ -f "$meta_file" ]] || return 0
+
+  if [[ "$target_scope" == "global" && ! -w "$meta_file" ]]; then
+    sudo rm -f -- "$meta_file"
+  else
+    rm -f -- "$meta_file"
+  fi
+}
+
+##
+# 등록된 SSH 공개키의 메타데이터를 매니페스트에 저장합니다.
+#
+# @param $1 {string} SSH 키 식별자 (예: ymtech-internal)
+# @param $2 {string} 공개키 본문 (Base64)
+# @param $3 {string} 공개키 주석
+# @param $4 {string} authorized_keys 파일 경로
+#
+# @return 0
+##
+_manifest_save_key() {
+  local key_id="$1"
+  local key_body="$2"
+  local key_comment="${3:-}"
+  local auth_file="${4:-${HOME}/.ssh/authorized_keys}"
+
+  local meta_dir
+  meta_dir="$(_manifest_keys_dir)"
+  local meta_file="${meta_dir}/${key_id}.meta"
+
+  local now
+  now="$(_manifest_now_iso)"
+  local installed_at="$now"
+  if [[ -f "$meta_file" ]]; then
+    local prev_installed
+    prev_installed="$(_manifest_get_field "$meta_file" "INSTALLED_AT" || true)"
+    [[ -n "$prev_installed" ]] && installed_at="$prev_installed"
+  fi
+
+  local content
+  content=$(cat <<EOF
+KEY_ID=${key_id}
+KEY_BODY=${key_body}
+KEY_COMMENT=${key_comment}
+AUTH_FILE=${auth_file}
+INSTALLED_AT=${installed_at}
+UPDATED_AT=${now}
+EOF
+)
+  _manifest_write_file "$meta_file" "$content" "false" 2>/dev/null || true
+}
+
+##
+# SSH 공개키의 매니페스트 파일을 삭제합니다.
+#
+# @param $1 {string} SSH 키 식별자
+#
+# @return 0
+##
+_manifest_delete_key() {
+  local key_id="$1"
+  local meta_file
+  meta_file="$(_manifest_keys_dir)/${key_id}.meta"
+  [[ -f "$meta_file" ]] && rm -f -- "$meta_file"
+  return 0
+}
+
+##
+# 저장소(로컬 또는 all-scripts.catalog)에서 알려진 모든 도구 식별자(<category>/<name>)를 수집합니다.
+#
+# @param 없음
+#
+# @return 줄바꿈 구분 도구 식별자 목록 출력
+##
+_manifest_collect_known_tools() {
+  declare -A seen_tools=()
+  local tid=""
+
+  if _detect_local_repo 2>/dev/null; then
+    local c_dir t_dir cat_name tool_name
+    for c_dir in "${LOCAL_REPO_ROOT}"/*; do
+      [[ -d "$c_dir" ]] || continue
+      cat_name="$(basename "$c_dir")"
+      [[ "$cat_name" == .* || "$cat_name" == "tmp" || "$cat_name" == "docs" ]] && continue
+      for t_dir in "$c_dir"/*; do
+        [[ -d "$t_dir" ]] || continue
+        tool_name="$(basename "$t_dir")"
+        if [[ "$cat_name" == "env" && ("$tool_name" == "installers" || "$tool_name" == "commands" || "$tool_name" == "keys" || "$tool_name" == "catalogs") ]]; then
+          continue
+        fi
+        if [[ -f "$t_dir/$tool_name" || -f "$t_dir/${tool_name}.sh" ]]; then
+          tid="${cat_name}/${tool_name}"
+          if [[ -z "${seen_tools[$tid]:-}" ]]; then
+            seen_tools["$tid"]=1
+            printf '%s\n' "$tid"
+          fi
+        fi
+      done
+    done
+    return 0
+  fi
+
+  local tmp_all
+  tmp_all="$(mktemp "/tmp/sciectl_all_tools.XXXXXX")"
+  if _fetch_resource "env/catalogs/all-scripts.catalog" "$tmp_all" 2>/dev/null; then
+    local TOOLS=""
+    local raw_line="" val="" in_cont=0
+    while IFS= read -r raw_line || [[ -n "$raw_line" ]]; do
+      raw_line="${raw_line%$'\r'}"
+      if (( in_cont == 1 )); then
+        if [[ "$raw_line" == *\\ ]]; then
+          TOOLS+="${raw_line%\\}"
+        else
+          TOOLS+="$raw_line"
+          in_cont=0
+        fi
+        continue
+      fi
+      [[ -z "${raw_line//[[:space:]]/}" || "$raw_line" == \#* ]] && continue
+      if [[ "$raw_line" == TOOLS=* ]]; then
+        val="${raw_line#TOOLS=}"
+        if [[ "$val" == *\\ ]]; then
+          TOOLS="${val%\\}"
+          in_cont=1
+        else
+          TOOLS="$val"
+        fi
+      fi
+    done < "$tmp_all"
+
+    local -a t_arr=()
+    IFS=',' read -ra t_arr <<< "$TOOLS"
+    local item
+    for item in "${t_arr[@]}"; do
+      item="$(echo "$item" | xargs)"
+      if [[ -n "$item" && -z "${seen_tools[$item]:-}" ]]; then
+        seen_tools["$item"]=1
+        printf '%s\n' "$item"
+      fi
+    done
+  fi
+  rm -f -- "$tmp_all"
+
+  if [[ -z "${seen_tools[env/sciectl]:-}" ]]; then
+    printf '%s\n' "env/sciectl"
+  fi
+}
+
+##
+# 저장소(로컬 또는 카탈로그)에서 알려진 SSH 공개키 식별자 목록을 수집합니다.
+#
+# @param 없음
+#
+# @return 줄바꿈 구분 SSH 키 식별자 목록 출력
+##
+_manifest_collect_known_keys() {
+  if _detect_local_repo 2>/dev/null && [[ -d "${LOCAL_REPO_ROOT}/env/keys" ]]; then
+    local d bname
+    for d in "${LOCAL_REPO_ROOT}/env/keys"/*; do
+      [[ -d "$d" ]] || continue
+      bname="$(basename "$d")"
+      if [[ -f "$d/${bname}.pub" ]]; then
+        printf '%s\n' "$bname"
+      fi
+    done
+    return 0
+  fi
+
+  local k
+  for k in "ymtech-internal" "letsencrypt"; do
+    printf '%s\n' "$k"
+  done
+}
+
+##
+# 시스템에 이미 설치된 도구의 자동완성 및 man 페이지 경로를 탐색합니다.
+#
+# @param $1 {string} 실행 명령어 이름
+# @param $2 {string} 설치 범위 (local | global)
+#
+# @return 전역 변수 FOUND_COMP_PATH, FOUND_MAN_PATHS 설정
+##
+_manifest_discover_companions() {
+  local cmd_name="$1"
+  local target_scope="${2:-local}"
+  FOUND_COMP_PATH=""
+  FOUND_MAN_PATHS=""
+
+  local -a comp_candidates=(
+    "/usr/share/bash-completion/completions/${cmd_name}"
+    "/etc/bash_completion.d/${cmd_name}.completion"
+    "${HOME}/.bash_completion.d/${cmd_name}.completion"
+  )
+  if [[ "$TARGET_OS" == "darwin" ]] && command -v brew &>/dev/null; then
+    local bp
+    bp="$(brew --prefix 2>/dev/null || true)"
+    if [[ -n "$bp" ]]; then
+      comp_candidates=(
+        "${bp}/etc/bash_completion.d/${cmd_name}.completion"
+        "${bp}/share/bash-completion/completions/${cmd_name}"
+        "${comp_candidates[@]}"
+      )
+    fi
+  fi
+
+  local c
+  for c in "${comp_candidates[@]}"; do
+    if [[ -f "$c" ]]; then
+      FOUND_COMP_PATH="$c"
+      break
+    fi
+  done
+
+  local man_base_dir="${XDG_DATA_HOME:-$HOME/.local/share}/man"
+  if [[ "$target_scope" == "global" ]]; then
+    man_base_dir="/usr/local/share/man"
+    if [[ "$TARGET_OS" == "darwin" ]] && command -v brew &>/dev/null; then
+      local bp
+      bp="$(brew --prefix 2>/dev/null || true)"
+      [[ -n "$bp" && -d "${bp}/share/man" ]] && man_base_dir="${bp}/share/man"
+    fi
+  fi
+
+  local -a found_mans=()
+  local -a man_names=("man1/${cmd_name}.1")
+  if [[ "$cmd_name" == "sshctl" ]]; then
+    man_names+=("man5/sshctl.conf.5" "man7/sshctl-security.7")
+  elif [[ "$cmd_name" == "sciectl" ]]; then
+    man_names+=("man5/sciectl-catalog.5")
+  fi
+
+  local mn
+  for mn in "${man_names[@]}"; do
+    if [[ -f "${man_base_dir}/${mn}" ]]; then
+      found_mans+=("${man_base_dir}/${mn}")
+    fi
+  done
+
+  if (( ${#found_mans[@]} > 0 )); then
+    local IFS=':'
+    FOUND_MAN_PATHS="${found_mans[*]}"
+  fi
+}
+
+##
+# 매니페스트 도입 이전에 설치된 기존 도구 및 SSH 공개키를 스캔하여 자동으로 매니페스트를 복구합니다.
+#
+# @param 없음
+#
+# @return 0
+##
+_manifest_sync_legacy() {
+  (( MANIFEST_SYNCED == 1 )) && return 0
+  MANIFEST_SYNCED=1
+
+  declare -A cmd_to_tid=()
+  local tid bname
+  while IFS= read -r tid; do
+    [[ -n "$tid" ]] || continue
+    bname="$(basename "$tid")"
+    cmd_to_tid["$bname"]="$tid"
+  done < <(_manifest_collect_known_tools)
+
+  local scope bin_dir
+  for scope in "local" "global"; do
+    bin_dir="${HOME}/bin"
+    [[ "$scope" == "global" ]] && bin_dir="/usr/local/bin"
+    [[ -d "$bin_dir" ]] || continue
+
+    local meta_dir
+    meta_dir="$(_manifest_tools_dir "$scope")"
+
+    local f cmd_name
+    for f in "${bin_dir}"/*; do
+      [[ -f "$f" ]] || continue
+      cmd_name="$(basename "$f")"
+      [[ -f "${meta_dir}/${cmd_name}.meta" ]] && continue
+      [[ -n "${cmd_to_tid[$cmd_name]:-}" ]] || continue
+
+      if head -n 40 "$f" 2>/dev/null | grep -qE '(@author[[:space:]]*:.*parkjunhong77@gmail\.com|SCRIPT_FILE_VERSION=)'; then
+        local ver=""
+        ver="$(_extract_script_version "$f")"
+        _manifest_discover_companions "$cmd_name" "$scope"
+        _manifest_save_tool "${cmd_to_tid[$cmd_name]}" "$cmd_name" "$scope" "$ver" "$f" "$FOUND_COMP_PATH" "$FOUND_MAN_PATHS"
+      fi
+    done
+  done
+
+  local auth_file="${HOME}/.ssh/authorized_keys"
+  if [[ -f "$auth_file" ]]; then
+    local keys_dir
+    keys_dir="$(_manifest_keys_dir)"
+    local key_id pub_content key_body key_comment
+    while IFS= read -r key_id; do
+      [[ -n "$key_id" ]] || continue
+      [[ -f "${keys_dir}/${key_id}.meta" ]] && continue
+      if pub_content="$(_resolve_ssh_key_content "$key_id" 2>/dev/null)"; then
+        key_body="$(echo "$pub_content" | awk '{print $2}')"
+        key_comment="$(echo "$pub_content" | cut -d' ' -f3-)"
+        if [[ -n "$key_body" ]] && grep -qF "$key_body" "$auth_file" 2>/dev/null; then
+          _manifest_save_key "$key_id" "$key_body" "$key_comment" "$auth_file"
+        fi
+      fi
+    done < <(_manifest_collect_known_keys)
+  fi
+}
+
+##
+# 현재 시스템에 설치된 도구 및 SSH 키 목록을 매니페스트에서 조회하여 파이프(|) 구분 레코드로 출력합니다.
+# 레코드 형식: <type>|<id>|<name>|<scope>|<version>|<primary_path>|<meta_file>
+#
+# @param $1 {string} 범위 필터 (all | local | global, 기본값: all)
+#
+# @return 파이프 구분 레코드 목록 출력
+##
+_manifest_list_installed() {
+  local filter_scope="${1:-all}"
+  _manifest_sync_legacy
+
+  local scope meta_dir mf
+  for scope in "local" "global"; do
+    [[ "$filter_scope" == "all" || "$filter_scope" == "$scope" ]] || continue
+    meta_dir="$(_manifest_tools_dir "$scope")"
+    [[ -d "$meta_dir" ]] || continue
+    for mf in "${meta_dir}"/*.meta; do
+      [[ -f "$mf" ]] || continue
+      local tid cmd ver bpath
+      tid="$(_manifest_get_field "$mf" "TOOL_ID" || true)"
+      cmd="$(_manifest_get_field "$mf" "CMD_NAME" || true)"
+      ver="$(_manifest_get_field "$mf" "VERSION" || true)"
+      bpath="$(_manifest_get_field "$mf" "BIN_PATH" || true)"
+      [[ -n "$bpath" && -f "$bpath" ]] || continue
+      printf 'tool|%s|%s|%s|%s|%s|%s\n' "$tid" "$cmd" "$scope" "${ver:-unknown}" "$bpath" "$mf"
+    done
+  done
+
+  if [[ "$filter_scope" == "all" || "$filter_scope" == "local" ]]; then
+    local keys_dir kf
+    keys_dir="$(_manifest_keys_dir)"
+    if [[ -d "$keys_dir" ]]; then
+      for kf in "${keys_dir}"/*.meta; do
+        [[ -f "$kf" ]] || continue
+        local kid kbody kcomment afile
+        kid="$(_manifest_get_field "$kf" "KEY_ID" || true)"
+        kbody="$(_manifest_get_field "$kf" "KEY_BODY" || true)"
+        kcomment="$(_manifest_get_field "$kf" "KEY_COMMENT" || true)"
+        afile="$(_manifest_get_field "$kf" "AUTH_FILE" || echo "${HOME}/.ssh/authorized_keys")"
+        [[ -f "$afile" && -n "$kbody" ]] || continue
+        grep -qF "$kbody" "$afile" 2>/dev/null || continue
+        printf 'ssh-key|%s|%s|user|%s|%s|%s\n' "$kid" "$kid" "${kcomment:-ssh-rsa}" "$afile" "$kf"
+      done
+    fi
+  fi
+}
+
 ##
 # Bash Completion 파일을 시스템 표준 경로에 설치합니다.
 #
@@ -1861,6 +2451,7 @@ _install_completion() {
   local comp_ref="$1"
   local target_cmd="$2"
   local force_overwrite="${3:-false}"
+  LAST_INSTALLED_COMP_PATH=""
 
   local comp_dir=""
   if [[ "$TARGET_OS" == "darwin" ]]; then
@@ -1945,6 +2536,10 @@ _install_completion() {
       source "$target_comp_file" 2>/dev/null || true
     fi
   fi
+
+  if [[ -f "$target_comp_file" ]]; then
+    LAST_INSTALLED_COMP_PATH="$target_comp_file"
+  fi
 }
 
 ##
@@ -1962,6 +2557,7 @@ _install_manpages() {
   local target_cmd="$2"
   local target_scope="${3:-local}"
   local force_overwrite="${4:-false}"
+  LAST_INSTALLED_MAN_PATHS=""
 
   [[ "$resolved_ref" == https://* || "$resolved_ref" == http://* ]] && return 0
 
@@ -2003,6 +2599,7 @@ _install_manpages() {
   local man_rel man_bname man_sec man_sec_dir target_man_file temp_man
   local any_installed=0
   local need_sudo_man=false
+  local -a recorded_man_files=()
 
   for man_rel in "${man_rel_list[@]}"; do
     man_bname="$(basename "$man_rel")"
@@ -2057,7 +2654,16 @@ _install_manpages() {
       echo_i " - '${man_bname} man page' 파일을 설치했습니다. ($target_man_file)"
       any_installed=1
     fi
+
+    if [[ -f "$target_man_file" ]]; then
+      recorded_man_files+=("$target_man_file")
+    fi
   done
+
+  if (( ${#recorded_man_files[@]} > 0 )); then
+    local IFS=':'
+    LAST_INSTALLED_MAN_PATHS="${recorded_man_files[*]}"
+  fi
 
   # local 설치 시 macOS 등 $HOME/bin 기반 환경에서 man 명령어가 매뉴얼을 탐색할 수 있도록
   # $HOME/share/man -> $man_base_dir 심볼릭 링크 브리지를 구성합니다.
@@ -2223,6 +2829,21 @@ _install_tool() {
 
   if [[ "$target_cmd" != *.sh ]]; then
     _remove_legacy_sh_tool "${target_cmd}.sh" "$bin_dir"
+  fi
+
+  if [[ -f "$dest_bin" ]]; then
+    local installed_ver=""
+    installed_ver="$(_extract_script_version "$dest_bin")"
+    if [[ "$sync_companions" != true ]]; then
+      _manifest_discover_companions "$target_cmd" "$target_scope"
+      LAST_INSTALLED_COMP_PATH="$FOUND_COMP_PATH"
+      LAST_INSTALLED_MAN_PATHS="$FOUND_MAN_PATHS"
+    fi
+    local meta_tool_id="$raw_id"
+    if [[ "$resolved_ref" != https://* && "$resolved_ref" != http://* ]]; then
+      meta_tool_id="$(dirname "$resolved_ref")"
+    fi
+    _manifest_save_tool "$meta_tool_id" "$target_cmd" "$target_scope" "$installed_ver" "$dest_bin" "$LAST_INSTALLED_COMP_PATH" "$LAST_INSTALLED_MAN_PATHS"
   fi
 }
 
@@ -2428,6 +3049,10 @@ setup_ssh_key() {
       echo_i " - [💡] 공개키를 등록했습니다: ${key_id} (${key_comment:-${public_key:0:30}...})"
     else
       echo_w " - [⚠️] 이미 등록된 공개키입니다: ${key_id} (${key_comment:-${public_key:0:30}...})"
+    fi
+
+    if [[ -n "$key_body" ]]; then
+      _manifest_save_key "$key_id" "$key_body" "$key_comment" "$auth_file"
     fi
   done
 
@@ -3065,6 +3690,604 @@ _print_transaction_summary() {
   echo "================================================================================"
 }
 
+# ==============================================================================
+# 서브커맨드 구현부: update / remove
+# ==============================================================================
+
+##
+# 등록된 SSH 공개키를 저장소 최신 내용으로 비교·교체 업데이트합니다.
+#
+# @param $1 {string} SSH 공개키 식별자
+# @param $2 {string} 매니페스트 파일 경로
+# @param $3 {string} 드라이런 여부 (true | false)
+#
+# @return 0
+##
+_update_ssh_key() {
+  local key_id="$1"
+  local meta_file="$2"
+  local is_dry_run="${3:-false}"
+
+  echo
+  echo "############### _update_ssh_key - $key_id ###############"
+
+  local new_pub
+  if ! new_pub="$(_resolve_ssh_key_content "$key_id")"; then
+    echo_e " - [❌] SSH 공개키('$key_id')를 저장소에서 불러올 수 없어 생략합니다."
+    _add_notice " - [_update_ssh_key] [❌] SSH 공개키('$key_id') 로드 실패"
+    return 0
+  fi
+
+  local new_body new_comment old_body auth_file
+  new_body="$(echo "$new_pub" | awk '{print $2}')"
+  new_comment="$(echo "$new_pub" | cut -d' ' -f3-)"
+  old_body="$(_manifest_get_field "$meta_file" "KEY_BODY" || true)"
+  auth_file="$(_manifest_get_field "$meta_file" "AUTH_FILE" || echo "${HOME}/.ssh/authorized_keys")"
+
+  if [[ -n "$old_body" && "$old_body" == "$new_body" ]] && [[ -f "$auth_file" ]] && grep -qF "$new_body" "$auth_file" 2>/dev/null; then
+    echo_w " - '$key_id' SSH 공개키가 이미 최신입니다."
+    return 0
+  fi
+
+  if [[ "$is_dry_run" == "true" ]]; then
+    echo_i " - [DRY-RUN] '$key_id' SSH 공개키를 최신 내용으로 교체 예정 ($auth_file)"
+    return 0
+  fi
+
+  local ssh_dir
+  ssh_dir="$(dirname "$auth_file")"
+  [[ -d "$ssh_dir" ]] || { mkdir -p "$ssh_dir" && chmod 700 "$ssh_dir"; }
+  [[ -f "$auth_file" ]] || { touch "$auth_file" && chmod 600 "$auth_file"; }
+
+  if [[ -n "$old_body" ]] && grep -qF "$old_body" "$auth_file" 2>/dev/null; then
+    local tmp_auth
+    tmp_auth="$(mktemp "/tmp/sciectl_auth.XXXXXX")"
+    grep -vF "$old_body" "$auth_file" > "$tmp_auth" || true
+    mv "$tmp_auth" "$auth_file"
+    chmod 600 "$auth_file"
+  fi
+
+  if ! grep -qF "$new_body" "$auth_file" 2>/dev/null; then
+    echo "$new_pub" >> "$auth_file"
+  fi
+  chmod 600 "$auth_file"
+
+  _manifest_save_key "$key_id" "$new_body" "$new_comment" "$auth_file"
+  echo_i " - '$key_id' SSH 공개키를 최신 버전으로 교체 업데이트했습니다. ($auth_file)"
+}
+
+##
+# 매니페스트에 기록된 SSH 공개키를 authorized_keys 및 매니페스트에서 제거합니다.
+#
+# @param $1 {string} SSH 공개키 식별자
+# @param $2 {string} 매니페스트 파일 경로
+# @param $3 {string} 드라이런 여부 (true | false)
+#
+# @return 0
+##
+_remove_ssh_key() {
+  local key_id="$1"
+  local meta_file="$2"
+  local is_dry_run="${3:-false}"
+
+  echo
+  echo "############### _remove_ssh_key - $key_id ###############"
+
+  local key_body auth_file
+  key_body="$(_manifest_get_field "$meta_file" "KEY_BODY" || true)"
+  auth_file="$(_manifest_get_field "$meta_file" "AUTH_FILE" || echo "${HOME}/.ssh/authorized_keys")"
+
+  if [[ "$is_dry_run" == "true" ]]; then
+    echo_i " - [DRY-RUN] '$key_id' SSH 공개키 제거 예정 ($auth_file)"
+    echo_i " - [DRY-RUN] 매니페스트 삭제 예정 ($meta_file)"
+    return 0
+  fi
+
+  if [[ -f "$auth_file" && -n "$key_body" ]] && grep -qF "$key_body" "$auth_file" 2>/dev/null; then
+    local tmp_auth
+    tmp_auth="$(mktemp "/tmp/sciectl_auth.XXXXXX")"
+    grep -vF "$key_body" "$auth_file" > "$tmp_auth" || true
+    mv "$tmp_auth" "$auth_file"
+    chmod 600 "$auth_file"
+    echo_i " - '$key_id' SSH 공개키를 제거했습니다. ($auth_file)"
+  else
+    echo_w " - '$key_id' SSH 공개키가 '$auth_file'에 존재하지 않습니다."
+  fi
+
+  _manifest_delete_key "$key_id"
+}
+
+##
+# 매니페스트에 기록된 CLI 도구 및 연관 파일(.completion, man 페이지)을 제거합니다.
+#
+# @param $1 {string} 매니페스트 파일 경로
+# @param $2 {string} 드라이런 여부 (true | false)
+#
+# @return 0
+##
+_remove_tool_by_meta() {
+  local meta_file="$1"
+  local is_dry_run="${2:-false}"
+
+  local cmd_name target_scope bin_path comp_path man_paths
+  cmd_name="$(_manifest_get_field "$meta_file" "CMD_NAME" || true)"
+  target_scope="$(_manifest_get_field "$meta_file" "TARGET_SCOPE" || echo "local")"
+  bin_path="$(_manifest_get_field "$meta_file" "BIN_PATH" || true)"
+  comp_path="$(_manifest_get_field "$meta_file" "COMPLETION_PATH" || true)"
+  man_paths="$(_manifest_get_field "$meta_file" "MAN_PATHS" || true)"
+
+  echo
+  echo "############### _remove_tool - $cmd_name ($target_scope) ###############"
+
+  local -a remove_targets=()
+  [[ -n "$bin_path" && -f "$bin_path" ]] && remove_targets+=("$bin_path")
+  [[ -n "$comp_path" && -f "$comp_path" ]] && remove_targets+=("$comp_path")
+
+  local any_man=0
+  if [[ -n "$man_paths" ]]; then
+    local -a m_arr=()
+    IFS=':' read -ra m_arr <<< "$man_paths"
+    local mp
+    for mp in "${m_arr[@]}"; do
+      if [[ -n "$mp" && -f "$mp" ]]; then
+        remove_targets+=("$mp")
+        any_man=1
+      fi
+    done
+  fi
+
+  if [[ "$is_dry_run" == "true" ]]; then
+    local rt
+    for rt in "${remove_targets[@]}"; do
+      echo_i " - [DRY-RUN] 삭제 예정: $rt"
+    done
+    echo_i " - [DRY-RUN] 매니페스트 삭제 예정: $meta_file"
+    return 0
+  fi
+
+  local rt
+  for rt in "${remove_targets[@]}"; do
+    if [[ -w "$rt" && -w "$(dirname "$rt")" ]]; then
+      rm -f -- "$rt"
+    else
+      sudo rm -f -- "$rt"
+    fi
+    echo_i " - 파일을 삭제했습니다: $rt"
+  done
+
+  if (( any_man == 1 )) && command -v mandb &>/dev/null; then
+    if [[ "$target_scope" == "global" ]]; then
+      sudo mandb -q >/dev/null 2>&1 || true
+    else
+      mandb -q "${XDG_DATA_HOME:-$HOME/.local/share}/man" >/dev/null 2>&1 || true
+    fi
+  fi
+
+  _manifest_delete_tool "$cmd_name" "$target_scope"
+  echo_i " - '$cmd_name' 도구 및 매니페스트 제거가 완료되었습니다."
+}
+
+##
+# 현재 설치된 도구 및 SSH 키 목록을 테이블로 출력하고 번호 또는 '*'로 선택받습니다.
+#
+# @param $1 {string} 작업 모드 (update | remove)
+# @param $2 {string} 범위 필터 (all | local | global)
+#
+# @return 선택된 레코드들을 전역 배열 SELECTED_MANAGE_RECORDS에 저장 (취소/없음 시 return 1)
+##
+SELECTED_MANAGE_RECORDS=()
+_interactive_select_installed_items() {
+  local mode="$1"
+  local scope_filter="${2:-all}"
+  SELECTED_MANAGE_RECORDS=()
+
+  local -a records=()
+  local rec
+  while IFS= read -r rec; do
+    [[ -n "$rec" ]] && records+=("$rec")
+  done < <(_manifest_list_installed "$scope_filter")
+
+  local total="${#records[@]}"
+  if (( total == 0 )); then
+    echo_w " - [💡] 현재 sciectl로 설치된 도구 또는 등록된 SSH 공개키가 없습니다." >&2
+    return 1
+  fi
+
+  local action_label="업데이트"
+  [[ "$mode" == "remove" ]] && action_label="제거"
+
+  while true; do
+    echo >&2
+    echo "====================================================================================================" >&2
+    echo_i "📦 현재 설치된 관리 대상 목록 (총 ${total}개) - [${action_label} 대상 선택]" >&2
+    echo "----------------------------------------------------------------------------------------------------" >&2
+    printf "  %-4s | %-8s | %-28s | %-7s | %-16s | %s\n" "No." "Type" "Identifier" "Scope" "Version/Comment" "Path" >&2
+    echo "----------------------------------------------------------------------------------------------------" >&2
+
+    local i=1
+    local r r_type r_id r_name r_scope r_ver r_path r_meta
+    for r in "${records[@]}"; do
+      IFS='|' read -r r_type r_id r_name r_scope r_ver r_path r_meta <<< "$r"
+      printf "  %3d) | %-8s | %-28s | %-7s | %-16s | %s\n" \
+        "$i" "$r_type" "${r_id:0:28}" "$r_scope" "${r_ver:0:16}" "$r_path" >&2
+      ((i++))
+    done
+    echo "====================================================================================================" >&2
+
+    local choice_line=""
+    echo -n "> 🛠️  ${action_label}할 번호를 입력하세요 (예: 1 3, 1-4, 전체: *) [취소: Enter 또는 q]: " >&2
+    read -r choice_line
+
+    local trimmed
+    trimmed="$(echo "$choice_line" | xargs)"
+    if [[ -z "$trimmed" || "$trimmed" == "q" || "$trimmed" == "Q" ]]; then
+      echo_w " - [🛑] ${action_label} 선택을 취소했습니다." >&2
+      return 1
+    fi
+
+    if [[ "$trimmed" == "*" || "$trimmed" == "all" || "$trimmed" == "ALL" ]]; then
+      SELECTED_MANAGE_RECORDS=("${records[@]}")
+      return 0
+    fi
+
+    choice_line="${choice_line//,/ }"
+    local -a tokens=()
+    read -ra tokens <<< "$choice_line"
+
+    declare -A seen_idx=()
+    local -a picked_indices=()
+    local valid=true
+    local tok
+    for tok in "${tokens[@]}"; do
+      if [[ "$tok" =~ ^([0-9]+)-([0-9]+)$ ]]; then
+        local s="${BASH_REMATCH[1]}"
+        local e="${BASH_REMATCH[2]}"
+        if (( s < 1 || e > total || s > e )); then
+          echo_w "⚠️  - 잘못된 범위입니다 ($tok). 1에서 $total 사이의 범위를 입력하세요." >&2
+          valid=false
+          break
+        fi
+        local n
+        for (( n=s; n<=e; n++ )); do
+          if [[ -z "${seen_idx[$n]:-}" ]]; then
+            seen_idx["$n"]=1
+            picked_indices+=("$n")
+          fi
+        done
+      elif [[ "$tok" =~ ^[0-9]+$ ]]; then
+        if (( tok < 1 || tok > total )); then
+          echo_w "⚠️  - 잘못된 번호입니다 ($tok). 1에서 $total 사이의 숫자를 입력하세요." >&2
+          valid=false
+          break
+        fi
+        if [[ -z "${seen_idx[$tok]:-}" ]]; then
+          seen_idx["$tok"]=1
+          picked_indices+=("$tok")
+        fi
+      else
+        echo_w "⚠️  - 잘못된 입력입니다: '$tok' (숫자, 범위 예: 1-3, 또는 * 만 입력 가능)" >&2
+        valid=false
+        break
+      fi
+    done
+
+    [[ "$valid" == true ]] || continue
+    (( ${#picked_indices[@]} > 0 )) || continue
+
+    local idx
+    for idx in "${picked_indices[@]}"; do
+      SELECTED_MANAGE_RECORDS+=("${records[$((idx - 1))]}")
+    done
+    return 0
+  done
+}
+
+##
+# update 및 remove 서브커맨드의 공통 CLI 옵션을 파싱하여 전역 변수에 설정합니다.
+#
+# @param $1 {string} 서브커맨드 이름 (update | remove)
+# @param $@ {array} 나머지 인자
+#
+# @return 0
+##
+_parse_manage_options() {
+  local subcmd="$1"
+  shift
+
+  M_RAW_CATALOGS=""
+  M_RAW_TOOLS=""
+  M_RAW_SSH_KEYS=""
+  M_TARGET_SCOPE="all"
+  M_AUTO_YES="false"
+  M_FORCE_OVERWRITE="false"
+  M_IS_DRY_RUN="false"
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --catalog|--catalog=*)
+        if [[ "$1" == *=* ]]; then
+          M_RAW_CATALOGS+=",${1#*=}"
+          shift
+        else
+          [[ $# -ge 2 && -n "${2:-}" && "${2:-}" != -* ]] || error_exit "'--catalog' 옵션 뒤에 카탈로그 ID를 지정하세요." "$LINENO" "$subcmd"
+          M_RAW_CATALOGS+=",${2}"
+          shift 2
+        fi
+        ;;
+      --tool|--tool=*)
+        if [[ "$1" == *=* ]]; then
+          M_RAW_TOOLS+=",${1#*=}"
+          shift
+        else
+          [[ $# -ge 2 && -n "${2:-}" && "${2:-}" != -* ]] || error_exit "'--tool' 옵션 뒤에 도구 식별자를 지정하세요." "$LINENO" "$subcmd"
+          M_RAW_TOOLS+=",${2}"
+          shift 2
+        fi
+        ;;
+      --ssh-key|--ssh-key=*)
+        if [[ "$1" == *=* ]]; then
+          M_RAW_SSH_KEYS+=",${1#*=}"
+          shift
+        else
+          [[ $# -ge 2 && -n "${2:-}" && "${2:-}" != -* ]] || error_exit "'--ssh-key' 옵션 뒤에 SSH 공개키 식별자를 지정하세요." "$LINENO" "$subcmd"
+          M_RAW_SSH_KEYS+=",${2}"
+          shift 2
+        fi
+        ;;
+      --installer|--installer=*|--command|--command=*)
+        error_exit "'$subcmd' 명령에서는 '--installer' 및 '--command' 옵션을 지원하지 않습니다 (도구 및 SSH 키만 관리 가능)." "$LINENO" "$subcmd"
+        ;;
+      --target|--target=*)
+        if [[ "$1" == *=* ]]; then
+          M_TARGET_SCOPE="${1#*=}"
+          shift
+        else
+          [[ $# -ge 2 && -n "${2:-}" && "${2:-}" != -* ]] || error_exit "'--target' 옵션 뒤에 local 또는 global을 지정하세요." "$LINENO" "$subcmd"
+          M_TARGET_SCOPE="$2"
+          shift 2
+        fi
+        ;;
+      --local)
+        SOURCE_MODE="local"
+        shift
+        ;;
+      --remote)
+        SOURCE_MODE="remote"
+        shift
+        ;;
+      --no-update|--force-update)
+        shift
+        ;;
+      --version)
+        printf '%s version %s\n' "$FILENAME" "$SCRIPT_FILE_VERSION"
+        exit 0
+        ;;
+      --yes)
+        M_AUTO_YES="true"
+        shift
+        ;;
+      --force)
+        M_FORCE_OVERWRITE="true"
+        shift
+        ;;
+      --dry-run)
+        M_IS_DRY_RUN="true"
+        shift
+        ;;
+      --help)
+        help "" "" "$subcmd"
+        exit 0
+        ;;
+      *)
+        error_exit "지원하지 않는 옵션입니다: $1" "$LINENO" "$subcmd"
+        ;;
+    esac
+  done
+
+  if [[ "$M_TARGET_SCOPE" != "all" && "$M_TARGET_SCOPE" != "local" && "$M_TARGET_SCOPE" != "global" ]]; then
+    error_exit "'--target' 옵션 값은 'local' 또는 'global'만 허용됩니다: '$M_TARGET_SCOPE'" "$LINENO" "$subcmd"
+  fi
+}
+
+##
+# 지정된 --catalog, --tool, --ssh-key 옵션을 현재 설치된 매니페스트 레코드와 매칭하여 필터링합니다.
+#
+# @param 없음 (M_RAW_*, M_TARGET_SCOPE 전역 변수 사용)
+#
+# @return 매칭된 레코드를 SELECTED_MANAGE_RECORDS에 저장 (없으면 return 1)
+##
+_resolve_manage_targets() {
+  SELECTED_MANAGE_RECORDS=()
+
+  if [[ -n "$M_RAW_CATALOGS" ]]; then
+    load_catalogs_index
+    local -a cat_list=()
+    IFS=',' read -ra cat_list <<< "$M_RAW_CATALOGS"
+    local cid
+    for cid in "${cat_list[@]}"; do
+      cid="$(echo "$cid" | xargs)"
+      [[ -n "$cid" ]] && resolve_catalog "$cid"
+    done
+  fi
+
+  _add_tx_items "tool" "$M_RAW_TOOLS"
+  _add_tx_items "ssh_key" "$M_RAW_SSH_KEYS"
+
+  local -a installed_all=()
+  local rec
+  while IFS= read -r rec; do
+    [[ -n "$rec" ]] && installed_all+=("$rec")
+  done < <(_manifest_list_installed "$M_TARGET_SCOPE")
+
+  if (( ${#installed_all[@]} == 0 )); then
+    echo_w " - [💡] 현재 설치된 도구 또는 등록된 SSH 공개키가 없습니다."
+    return 1
+  fi
+
+  declare -A matched_keys=()
+  local req_tool r r_type r_id r_name r_scope r_ver r_path r_meta
+  for req_tool in "${TX_TOOLS[@]}"; do
+    [[ -n "$req_tool" ]] || continue
+    local req_cmd
+    req_cmd="$(basename "$req_tool")"
+    local found_t=0
+    for r in "${installed_all[@]}"; do
+      IFS='|' read -r r_type r_id r_name r_scope r_ver r_path r_meta <<< "$r"
+      [[ "$r_type" == "tool" ]] || continue
+      if [[ "$r_id" == "$req_tool" || "$r_name" == "$req_cmd" ]]; then
+        if [[ -z "${matched_keys[$r_meta]:-}" ]]; then
+          matched_keys["$r_meta"]=1
+          SELECTED_MANAGE_RECORDS+=("$r")
+        fi
+        found_t=1
+      fi
+    done
+    if (( found_t == 0 )); then
+      echo_w " - [⚠️] 설치되지 않은 도구이므로 건너뜁니다: $req_tool"
+    fi
+  done
+
+  local req_key
+  for req_key in "${TX_SSH_KEYS[@]}"; do
+    [[ -n "$req_key" ]] || continue
+    local found_k=0
+    for r in "${installed_all[@]}"; do
+      IFS='|' read -r r_type r_id r_name r_scope r_ver r_path r_meta <<< "$r"
+      [[ "$r_type" == "ssh-key" ]] || continue
+      if [[ "$r_id" == "$req_key" ]]; then
+        if [[ -z "${matched_keys[$r_meta]:-}" ]]; then
+          matched_keys["$r_meta"]=1
+          SELECTED_MANAGE_RECORDS+=("$r")
+        fi
+        found_k=1
+      fi
+    done
+    if (( found_k == 0 )); then
+      echo_w " - [⚠️] 등록되지 않은 SSH 공개키이므로 건너뜁니다: $req_key"
+    fi
+  done
+
+  if (( ${#SELECTED_MANAGE_RECORDS[@]} == 0 )); then
+    echo_w " - [💡] 조건에 해당하는 설치된 관리 대상이 없습니다."
+    return 1
+  fi
+  return 0
+}
+
+##
+# [update 서브커맨드] 설치된 CLI 도구 및 등록된 SSH 공개키를 최신 버전으로 업데이트합니다.
+#
+# @param $@ {array} update 서브커맨드 인자
+#
+# @return 0
+##
+cmd_update() {
+  _parse_manage_options "update" "$@"
+
+  if [[ -n "$M_RAW_CATALOGS" || -n "$M_RAW_TOOLS" || -n "$M_RAW_SSH_KEYS" ]]; then
+    _resolve_manage_targets || exit 0
+  else
+    _interactive_select_installed_items "update" "$M_TARGET_SCOPE" || exit 0
+  fi
+
+  echo
+  echo "================================================================================"
+  echo -e "${COLOR_BOLD}🔄 Update Transaction Summary (${#SELECTED_MANAGE_RECORDS[@]}개 대상)${COLOR_NC}"
+  echo "================================================================================"
+  local r r_type r_id r_name r_scope r_ver r_path r_meta
+  for r in "${SELECTED_MANAGE_RECORDS[@]}"; do
+    IFS='|' read -r r_type r_id r_name r_scope r_ver r_path r_meta <<< "$r"
+    printf "  - [%-7s] %-28s (scope: %-6s, current: %s)\n" "$r_type" "$r_id" "$r_scope" "$r_ver"
+  done
+  echo "================================================================================"
+
+  if [[ "$M_IS_DRY_RUN" != "true" && "$M_AUTO_YES" != "true" && -t 0 ]]; then
+    local confirm=""
+    read -r -p "> 위 대상에 대해 업데이트를 진행하시겠습니까? (y/Enter: 취소): " confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+      echo_w " - [🛑] 사용자가 업데이트를 취소했습니다."
+      rm -f -- "$NOTICE_MESSAGES_TEMP_FILE"
+      exit 0
+    fi
+  fi
+
+  for r in "${SELECTED_MANAGE_RECORDS[@]}"; do
+    IFS='|' read -r r_type r_id r_name r_scope r_ver r_path r_meta <<< "$r"
+    if [[ "$r_type" == "tool" ]]; then
+      if [[ "$M_IS_DRY_RUN" == "true" ]]; then
+        echo_i " - [DRY-RUN] '$r_id' ($r_scope) 업데이트 확인 예정 ($r_path)"
+      else
+        _install_tool "$r_id" "$r_scope" "$M_FORCE_OVERWRITE" "$M_AUTO_YES"
+      fi
+    elif [[ "$r_type" == "ssh-key" ]]; then
+      _update_ssh_key "$r_id" "$r_meta" "$M_IS_DRY_RUN"
+    fi
+  done
+
+  _announce_notices
+  echo
+  if [[ "$M_IS_DRY_RUN" == "true" ]]; then
+    echo_i "🔍 [--dry-run] 시뮬레이션 모드이므로 실제 업데이트를 수행하지 않고 종료합니다."
+  else
+    echo_i "✅ 모든 업데이트 작업이 완료되었습니다."
+  fi
+}
+
+##
+# [remove 서브커맨드] 설치된 CLI 도구(연관 파일 포함) 및 등록된 SSH 공개키를 제거합니다.
+#
+# @param $@ {array} remove 서브커맨드 인자
+#
+# @return 0
+##
+cmd_remove() {
+  _parse_manage_options "remove" "$@"
+
+  if [[ -n "$M_RAW_CATALOGS" || -n "$M_RAW_TOOLS" || -n "$M_RAW_SSH_KEYS" ]]; then
+    _resolve_manage_targets || exit 0
+  else
+    _interactive_select_installed_items "remove" "$M_TARGET_SCOPE" || exit 0
+  fi
+
+  echo
+  echo "================================================================================"
+  echo -e "${COLOR_BOLD}🗑️  Remove Transaction Summary (${#SELECTED_MANAGE_RECORDS[@]}개 대상)${COLOR_NC}"
+  echo "================================================================================"
+  local r r_type r_id r_name r_scope r_ver r_path r_meta
+  for r in "${SELECTED_MANAGE_RECORDS[@]}"; do
+    IFS='|' read -r r_type r_id r_name r_scope r_ver r_path r_meta <<< "$r"
+    printf "  - [%-7s] %-28s (scope: %-6s, path: %s)\n" "$r_type" "$r_id" "$r_scope" "$r_path"
+  done
+  echo "================================================================================"
+
+  if [[ "$M_IS_DRY_RUN" != "true" && "$M_AUTO_YES" != "true" && -t 0 ]]; then
+    local confirm=""
+    read -r -p "> 위 대상을 시스템에서 정말 제거하시겠습니까? (y/Enter: 취소): " confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+      echo_w " - [🛑] 사용자가 제거를 취소했습니다."
+      rm -f -- "$NOTICE_MESSAGES_TEMP_FILE"
+      exit 0
+    fi
+  fi
+
+  for r in "${SELECTED_MANAGE_RECORDS[@]}"; do
+    IFS='|' read -r r_type r_id r_name r_scope r_ver r_path r_meta <<< "$r"
+    if [[ "$r_type" == "tool" ]]; then
+      _remove_tool_by_meta "$r_meta" "$M_IS_DRY_RUN"
+    elif [[ "$r_type" == "ssh-key" ]]; then
+      _remove_ssh_key "$r_id" "$r_meta" "$M_IS_DRY_RUN"
+    fi
+  done
+
+  _announce_notices
+  echo
+  if [[ "$M_IS_DRY_RUN" == "true" ]]; then
+    echo_i "🔍 [--dry-run] 시뮬레이션 모드이므로 실제 삭제를 수행하지 않고 종료합니다."
+  else
+    echo_i "✅ 모든 제거 작업이 완료되었습니다."
+  fi
+}
+
 ##
 # [install 서브커맨드] 카탈로그 및 개별 컴포넌트를 트랜잭션 파이프라인으로 설치합니다.
 #
@@ -3540,6 +4763,14 @@ main() {
     install)
       shift
       cmd_install "$@"
+      ;;
+    update)
+      shift
+      cmd_update "$@"
+      ;;
+    remove)
+      shift
+      cmd_remove "$@"
       ;;
     list)
       shift

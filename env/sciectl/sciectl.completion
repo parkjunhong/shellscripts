@@ -493,7 +493,7 @@ _sciectl_completion() {
   # 기본적으로는 공백 추가 활성화 (옵션, 서브커맨드 등 일반 단어 완성 시)
   compopt +o nospace 2>/dev/null || true
 
-  local -a subcommands=("install" "list" "info" "--help")
+  local -a subcommands=("install" "update" "remove" "list" "info" "--help")
   local catalog_candidates=""
   local installer_candidates=""
   local command_candidates=""
@@ -625,6 +625,63 @@ _sciectl_completion() {
       esac
 
       COMPREPLY=( $(compgen -W "${install_opts[*]}" -- "$cur") )
+      return 0
+      ;;
+
+    update|remove)
+      local specified_catalogs
+      specified_catalogs="$(_sciectl_get_used_values "--catalog" "")"
+      if [[ -n "$specified_catalogs" ]]; then
+        _sciectl_load_catalog_scoped_candidates "$specified_catalogs"
+      fi
+
+      local -a manage_opts=("--catalog")
+      if [[ -n "$specified_catalogs" ]]; then
+        [[ -n "${tool_candidates//[[:space:]]/}" ]] && manage_opts+=("--tool")
+        [[ -n "${key_candidates//[[:space:]]/}" ]] && manage_opts+=("--ssh-key")
+      else
+        manage_opts+=("--tool" "--ssh-key")
+      fi
+      manage_opts+=("--target" "--local" "--remote" "--no-update" "--force-update" "--yes" "--dry-run" "--version" "--help")
+      [[ "$subcmd" == "update" ]] && manage_opts+=("--force")
+
+      case "$cur" in
+        --catalog=*)
+          _sciectl_complete_csv_values "$catalog_candidates" "${cur#--catalog=}" "--catalog=" "--catalog"
+          return 0
+          ;;
+        --tool=*)
+          _sciectl_complete_csv_values "$tool_candidates" "${cur#--tool=}" "--tool=" "--tool"
+          return 0
+          ;;
+        --ssh-key=*)
+          _sciectl_complete_csv_values "$key_candidates" "${cur#--ssh-key=}" "--ssh-key=" "--ssh-key"
+          return 0
+          ;;
+        --target=*)
+          COMPREPLY=( $(compgen -W "local global" -- "${cur#--target=}") )
+          return 0
+          ;;
+      esac
+      case "$prev" in
+        --catalog)
+          _sciectl_complete_csv_values "$catalog_candidates" "$cur" "" "--catalog"
+          return 0
+          ;;
+        --tool)
+          _sciectl_complete_csv_values "$tool_candidates" "$cur" "" "--tool"
+          return 0
+          ;;
+        --ssh-key)
+          _sciectl_complete_csv_values "$key_candidates" "$cur" "" "--ssh-key"
+          return 0
+          ;;
+        --target)
+          COMPREPLY=( $(compgen -W "local global" -- "$cur") )
+          return 0
+          ;;
+      esac
+      COMPREPLY=( $(compgen -W "${manage_opts[*]}" -- "$cur") )
       return 0
       ;;
 
