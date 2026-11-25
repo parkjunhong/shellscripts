@@ -15,8 +15,10 @@ _ngxconf_ctl_completion() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-  local subcommands="http2"
-  local http2_actions="enable disable"
+  local subcommands="http2 ssl_protocols"
+  local http2_actions="enable disable status"
+  local ssl_protocols_targets="status tls1.0 tls1.1 tls1.2 tls1.3"
+  local ssl_protocols_actions="enable disable"
   local global_opts="--conf-dir --dry-run --no-backup --nginx-version --help"
 
   # --conf-dir 옵션 뒤에서는 디렉토리 경로 자동완성
@@ -32,18 +34,31 @@ _ngxconf_ctl_completion() {
       COMPREPLY=( $(compgen -W "${http2_actions}" -- "${cur}") )
       return 0
       ;;
+    ssl_protocols)
+      COMPREPLY=( $(compgen -W "${ssl_protocols_targets}" -- "${cur}") )
+      return 0
+      ;;
     *)
       ;;
   esac
 
-  # 이미 서브커맨드가 입력되었는지 확인
-  local has_subcommand=0
+  # 이전 단어가 tls 버전 형태인 경우 enable/disable 추천
+  if [[ "${prev,,}" =~ ^(tls)?v?[1-9][0-9]*(\.[0-9]+)*$ ]]; then
+    COMPREPLY=( $(compgen -W "${ssl_protocols_actions}" -- "${cur}") )
+    return 0
+  fi
+
+  # 이미 서브커맨드/타겟/액션이 입력되었는지 확인
+  local subcmd=""
+  local has_tls_ver=0
   local has_action=0
   for word in "${COMP_WORDS[@]:1:COMP_CWORD-1}"; do
-    if [[ "$word" == "http2" ]]; then
-      has_subcommand=1
-    elif [[ "$word" == "enable" || "$word" == "disable" ]]; then
+    if [[ "$word" == "http2" || "$word" == "ssl_protocols" ]]; then
+      subcmd="$word"
+    elif [[ "$word" == "enable" || "$word" == "disable" || "$word" == "status" ]]; then
       has_action=1
+    elif [[ "${word,,}" =~ ^(tls)?v?[1-9][0-9]*(\.[0-9]+)*$ ]]; then
+      has_tls_ver=1
     fi
   done
 
@@ -67,18 +82,29 @@ _ngxconf_ctl_completion() {
   fi
 
   # 아직 서브커맨드가 없으면 서브커맨드 및 옵션 추천
-  if (( has_subcommand == 0 )); then
+  if [[ -z "$subcmd" ]]; then
     COMPREPLY=( $(compgen -W "${subcommands} ${global_opts}" -- "${cur}") )
     return 0
   fi
 
-  # 서브커맨드는 있고 액션이 없으면 액션 추천
-  if (( has_action == 0 )); then
+  # 서브커맨드가 http2이고 액션이 없으면 액션 추천
+  if [[ "$subcmd" == "http2" && $has_action -eq 0 ]]; then
     COMPREPLY=( $(compgen -W "${http2_actions} ${global_opts}" -- "${cur}") )
     return 0
   fi
 
-  # 둘 다 있으면 옵션 추천
+  # 서브커맨드가 ssl_protocols일 때
+  if [[ "$subcmd" == "ssl_protocols" ]]; then
+    if (( has_action == 0 && has_tls_ver == 0 )); then
+      COMPREPLY=( $(compgen -W "${ssl_protocols_targets} ${global_opts}" -- "${cur}") )
+      return 0
+    elif (( has_action == 0 && has_tls_ver == 1 )); then
+      COMPREPLY=( $(compgen -W "${ssl_protocols_actions} ${global_opts}" -- "${cur}") )
+      return 0
+    fi
+  fi
+
+  # 모두 입력되었으면 옵션 추천
   COMPREPLY=( $(compgen -W "${global_opts}" -- "${cur}") )
   return 0
 }
