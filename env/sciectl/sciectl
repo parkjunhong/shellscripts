@@ -11,9 +11,9 @@
 # =======================================
 
 readonly FILENAME="$(basename "$0")"
-readonly SCRIPT_FILE_VERSION="2026.11.25.1"
+readonly SCRIPT_FILE_VERSION="2026.11.25.2"
 # 구버전 sciectl(<=2026.11.23.1) 자가 업데이트 하위 호환성 유지용 (추후 제거 예정)
-readonly SCIECTL_VERSION="2026.11.25.1"
+readonly SCIECTL_VERSION="2026.11.25.2"
 readonly REPO_BASE_URL="${SCIECTL_REPO_URL:-https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main}"
 readonly REPO_WEB_BASE_URL="${SCIECTL_REPO_WEB_URL:-https://github.com/parkjunhong/shellscripts/blob/main}"
 
@@ -763,10 +763,69 @@ _is_local_git_repo() {
 #
 # @return 0 (업데이트 없거나 건너뛴 경우), 성공 시 프로세스 치환(exec)으로 미반환
 ##
+##
+# 자가 업데이트(Self-Update) 직후 동반 자원(completion, man 페이지, 매니페스트)을 일괄 최신화합니다.
+#
+# @param $1 {string} 현재 실행 중인 sciectl 절대 경로
+#
+# @return 0
+##
+_self_sync_companions() {
+  local current_script="$1"
+  local script_dir
+  script_dir="$(dirname "$current_script")"
+
+  local scope="local"
+  if [[ "$current_script" != "${HOME}/"* ]]; then
+    scope="global"
+  fi
+
+  # 1. 실행 디렉토리 내 동반 sciectl.completion 동기화 (개발/수동 배치 호환)
+  local local_comp="${script_dir}/sciectl.completion"
+  if [[ -f "$local_comp" && -w "$local_comp" ]]; then
+    local tmp_lc
+    tmp_lc="$(mktemp "/tmp/sciectl_lc.XXXXXX")"
+    if _fetch_resource "env/sciectl/sciectl.completion" "$tmp_lc" 2>/dev/null && bash -n "$tmp_lc" &>/dev/null; then
+      chmod 644 "$tmp_lc" 2>/dev/null || true
+      mv -f "$tmp_lc" "$local_comp" 2>/dev/null || rm -f -- "$tmp_lc"
+    else
+      rm -f -- "$tmp_lc"
+    fi
+  fi
+
+  # 2. 시스템 표준 Bash Completion 동기화 (무인 환경에서 sudo 암호 대기 방지)
+  local can_sync_comp=true
+  local std_comp_dir=""
+  if [[ "$TARGET_OS" != "darwin" ]]; then
+    command -v pkg-config &>/dev/null && std_comp_dir="$(pkg-config --variable=completionsdir bash-completion 2>/dev/null || true)"
+    [[ -z "$std_comp_dir" && -d "/usr/share/bash-completion/completions" ]] && std_comp_dir="/usr/share/bash-completion/completions"
+    [[ -z "$std_comp_dir" && -d "/etc/bash_completion.d" ]] && std_comp_dir="/etc/bash_completion.d"
+    if [[ -n "$std_comp_dir" && ! -w "$std_comp_dir" ]] && ! sudo -n true 2>/dev/null; then
+      can_sync_comp=false
+      echo_w "   ⚠️ 시스템 전역 completion('${std_comp_dir}/sciectl') 갱신은 관리자 권한이 필요합니다."
+    fi
+  fi
+  if [[ "$can_sync_comp" == true ]]; then
+    _install_completion "env/sciectl/sciectl.completion" "sciectl" "true" </dev/null >/dev/null 2>&1 || true
+  fi
+
+  # 3. 시스템 표준 Man Page (sciectl.1, sciectl-catalog.5) 동기화
+  _install_manpages "env/sciectl/sciectl" "sciectl" "$scope" "true" >/dev/null 2>&1 || true
+
+  # 4. 매니페스트(sciectl.meta) 최신 버전/경로 갱신
+  _manifest_save_tool "env/sciectl" "sciectl" "$scope" "${SCRIPT_FILE_VERSION:-}" "$current_script" "${LAST_INSTALLED_COMP_PATH:-}" "${LAST_INSTALLED_MAN_PATHS:-}"
+  echo_i "   📦 동반 자원(completion, man 페이지, 매니페스트) 동기화 완료."
+}
+
 _check_and_self_update() {
-  # 1. 재실행(Re-exec) 루프 방지: 방금 업데이트되어 재실행된 프로세스인 경우 통과
+  # 1. 재실행(Re-exec) 루프 방지: 방금 업데이트되어 재실행된 프로세스인 경우 동반 자원 동기화 후 통과
   if [[ "${_SCIECTL_SELF_UPDATED:-0}" == "1" ]]; then
     unset _SCIECTL_SELF_UPDATED
+    local reexec_script="${_SCIECTL_SELF_UPDATED_PATH:-${BASH_SOURCE[0]:-$0}}"
+    unset _SCIECTL_SELF_UPDATED_PATH
+    if [[ -f "$reexec_script" ]]; then
+      _self_sync_companions "$reexec_script"
+    fi
     return 0
   fi
 
@@ -841,11 +900,13 @@ _check_and_self_update() {
     return 0
   fi
 
-  local remote_script_url="${REPO_BASE_URL}/env/sciectl/sciectl"
+  local remote_script_url="${REPO_BASE_URL}/env/sciectl/sciectl?t=$(date +%s)"
   local tmp_script="${tmp_dir}/sciectl"
 
-  # 타임아웃(연결 2초, 전송 최대 5초)으로 원격 최신 스크립트 다운로드
-  if ! curl -sfLo "$tmp_script" --connect-timeout 2 --max-time 5 "$remote_script_url" 2>/dev/null; then
+  # 타임아웃(연결 2초, 전송 최대 5초) + 캐시 우회 헤더로 원격 최신 스크립트 다운로드
+  if ! curl -sfLo "$tmp_script" --connect-timeout 2 --max-time 5 \
+    -H "Cache-Control: no-cache" -H "Pragma: no-cache" \
+    "$remote_script_url" 2>/dev/null; then
     rm -rf -- "$tmp_dir"
     return 0
   fi
@@ -916,8 +977,9 @@ _check_and_self_update() {
   echo_i "✅ [sciectl] 최신 버전으로 갱신 완료되었습니다. 프로세스를 재시작합니다."
   echo
 
-  # 9. 원자적 재실행 (Re-exec)
+  # 9. 원자적 재실행 (Re-exec) - 재실행 직후 최신 코드의 _self_sync_companions()가 모든 자원을 동기화함
   export _SCIECTL_SELF_UPDATED=1
+  export _SCIECTL_SELF_UPDATED_PATH="$current_script"
   exec "$current_script" "$@"
 }
 
