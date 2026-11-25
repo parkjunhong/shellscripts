@@ -1,4 +1,4 @@
-.TH SCIECTL 1 "2026-11-24" "sciectl 1.1.0" "User Commands"
+.TH SCIECTL 1 "2026-11-25" "sciectl 1.2.0" "User Commands"
 .SH NAME
 sciectl \- Script, Command, Installer & Environment Controller
 
@@ -17,6 +17,9 @@ sciectl \- Script, Command, Installer & Environment Controller
 .br
 .B sciectl info
 [\fB\-\-catalog\fR \fIID\fR[,...]] [\fB\-\-tool\fR \fINAME\fR[,...]] [\fB\-\-installer\fR \fINAME\fR[,...]] [\fB\-\-command\fR \fINAME\fR[,...]] [\fB\-\-ssh\-key\fR \fINAME\fR[,...]] [\fB\-\-local\fR|\fB\-\-remote\fR]
+.br
+.B sciectl refresh
+[\fB\-\-local\fR|\fB\-\-remote\fR]
 
 .SH DESCRIPTION
 .B sciectl
@@ -60,6 +63,9 @@ sciectl \- Script, Command, Installer & Environment Controller
 .TP
 .B info
 지정한 카탈로그의 병합된 구성 내역 또는 개별 컴포넌트(도구, 인스톨러, 명령어, SSH 공개키)의 개요 설명과 GitHub 웹 문서 URL을 조회한다.
+.TP
+.B refresh
+Bash 자동완성(<TAB>)에서 사용하는 카탈로그 및 컴포넌트 캐시를 원격 또는 로컬 저장소 기준으로 즉시 동기식 다운로드하여 최신화한다.
 
 .SH OPTIONS (install)
 .TP
