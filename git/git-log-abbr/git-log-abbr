@@ -10,7 +10,7 @@
 #   2. copy to /usr/local/bin/ or use scriptctl for system-wide installation.
 # =======================================
 
-readonly SCRIPT_FILE_VERSION="2026.11.25.2"
+readonly SCRIPT_FILE_VERSION="2026.11.26.1"
 
 set -Eeuo pipefail
 
@@ -127,11 +127,7 @@ main() {
     git_cmd+=(--color=always)
   fi
 
-  echo
-  echo "${git_cmd[*]}"
-  echo
   "${git_cmd[@]}"
-  echo
 }
 
 parse_args "$@" || exit 1
