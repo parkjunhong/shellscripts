@@ -11,9 +11,9 @@
 # =======================================
 
 readonly FILENAME="$(basename "$0")"
-readonly SCRIPT_FILE_VERSION="2026.11.25.4"
+readonly SCRIPT_FILE_VERSION="2026.11.25.5"
 # 구버전 sciectl(<=2026.11.23.1) 자가 업데이트 하위 호환성 유지용 (추후 제거 예정)
-readonly SCIECTL_VERSION="2026.11.25.4"
+readonly SCIECTL_VERSION="2026.11.25.5"
 readonly REPO_BASE_URL="${SCIECTL_REPO_URL:-https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main}"
 readonly REPO_WEB_BASE_URL="${SCIECTL_REPO_WEB_URL:-https://github.com/parkjunhong/shellscripts/blob/main}"
 
@@ -389,6 +389,31 @@ EOF
   $FILENAME remove --ssh-key ymtech-internal
 EOF
       ;;
+    refresh)
+      cat <<EOF
+
+🔄 사용법 (Usage - refresh):
+  $FILENAME refresh [--local|--remote] [--no-update] [--force-update]
+  $FILENAME refresh --help
+
+📝 설명 (Description):
+  Bash 자동완성(<TAB>)에서 사용하는 카탈로그 및 도구/인스톨러/커맨드/SSH키 캐시를
+  원격 또는 로컬 저장소 기준으로 즉시 동기식 다운로드하여 최신화합니다.
+  - 여러 서버를 동시에 운영하는 환경에서 <TAB> 추천 목록을 일관되게 맞추고자 할 때 사용합니다.
+
+⚙️  옵션 (Options - Long Option 전용):
+  --local                       로컬 저장소 기준으로 캐시 최신화
+  --remote                      원격 GitHub 저장소 기준으로 캐시 최신화 (기본 동작)
+  --no-update                   자가 업데이트(Self-Update) 건너뛰기
+  --force-update                원격 저장소 최신 버전으로 강제 자가 업데이트
+  --version                     sciectl 버전 정보 출력
+  --help                        refresh 서브커맨드 도움말 출력
+
+💡 예시 (Examples):
+  $FILENAME refresh
+  $FILENAME refresh --local --no-update
+EOF
+      ;;
     *)
       cat <<EOF
 
@@ -408,6 +433,7 @@ EOF
   remove      설치된 CLI 도구(연관 파일 포함) 및 등록된 SSH 공개키 제거
   list        제공되는 카탈로그, 도구, 인스톨러, 커맨드, SSH키 목록 조회
   info        특정 카탈로그 또는 개별 컴포넌트(도구/인스톨러/커맨드/SSH키) 상세 조회
+  refresh     Bash 자동완성(<TAB>)용 카탈로그 및 컴포넌트 캐시 즉시 최신화
 
 ⚙️  공통 옵션 (Common Options):
   --no-update                   자가 업데이트(Self-Update) 건너뛰기
@@ -5491,6 +5517,135 @@ cmd_install() {
   echo_i "✅ 모든 트랜잭션 작업이 완료되었습니다."
 }
 
+##
+# Bash 자동완성(sciectl.completion)과 공유하는 캐시 디렉토리 경로를 반환합니다.
+#
+# @param 없음
+#
+# @return 캐시 디렉토리 경로 출력
+##
+_get_completion_cache_dir() {
+  local dir="${XDG_CACHE_HOME:-$HOME/.cache}/sciectl"
+  if mkdir -p "$dir" 2>/dev/null; then
+    printf '%s\n' "$dir"
+    return 0
+  fi
+  dir="/tmp/.sciectl_cache_${EUID:-$(id -u 2>/dev/null || echo 0)}"
+  mkdir -p "$dir" 2>/dev/null || true
+  printf '%s\n' "$dir"
+}
+
+##
+# [refresh 서브커맨드] Bash 자동완성용 카탈로그/컴포넌트 캐시를 즉시 최신화합니다.
+#
+# @param $@ {array} refresh 서브커맨드 인자
+#
+# @return 0
+##
+cmd_refresh() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --local)
+        SOURCE_MODE="local"
+        shift
+        ;;
+      --remote)
+        SOURCE_MODE="remote"
+        shift
+        ;;
+      --no-update|--force-update)
+        shift
+        ;;
+      --version)
+        printf '%s version %s\n' "$FILENAME" "$SCRIPT_FILE_VERSION"
+        exit 0
+        ;;
+      --help)
+        help "" "" "refresh"
+        exit 0
+        ;;
+      *)
+        error_exit "지원하지 않는 옵션입니다: $1" "$LINENO" "refresh"
+        ;;
+    esac
+  done
+
+  local cache_dir
+  cache_dir="$(_get_completion_cache_dir)"
+  rm -f -- "${cache_dir}/.refresh.lock"
+
+  if [[ "$SOURCE_MODE" != "local" ]] && ! _detect_local_repo 2>/dev/null; then
+    if ! _check_remote_reachable; then
+      error_exit "원격 저장소에 연결할 수 없어 캐시를 최신화할 수 없습니다." "$LINENO" "refresh"
+    fi
+    _resolve_remote_cache_token
+  fi
+
+  echo "🔄 [sciectl] 자동완성 캐시 최신화 중... ($cache_dir)"
+
+  local ini_tmp="${cache_dir}/catalogs.ini.tmp.$$"
+  local ini_file="${cache_dir}/catalogs.ini"
+  if ! _fetch_resource "env/catalogs/catalogs.ini" "$ini_tmp"; then
+    rm -f -- "$ini_tmp"
+    error_exit "catalogs.ini를 가져오지 못했습니다 (${LAST_FETCH_ERROR:-Error})." "$LINENO" "refresh"
+  fi
+  mv -f "$ini_tmp" "$ini_file"
+
+  local -a cat_files=()
+  local -a cat_ids=()
+  local line
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    if [[ "$line" =~ ^\[([a-zA-Z0-9_-]+)\] ]]; then
+      cat_ids+=("${BASH_REMATCH[1]}")
+    elif [[ "$line" =~ ^catalog_file[[:space:]]*=[[:space:]]*(.*) ]]; then
+      local cf="${BASH_REMATCH[1]}"
+      cf="$(echo "$cf" | xargs)"
+      [[ -n "$cf" ]] && cat_files+=("$cf")
+    fi
+  done < "$ini_file"
+
+  if (( ${#cat_files[@]} == 0 )); then
+    local cid
+    for cid in "${cat_ids[@]}"; do
+      cat_files+=("${cid}.catalog")
+    done
+  fi
+
+  local total="${#cat_files[@]}"
+  local fail_dir
+  fail_dir="$(mktemp -d "/tmp/sciectl_ref.XXXXXX")"
+
+  local idx=0 max_jobs=4 cf
+  for cf in "${cat_files[@]}"; do
+    (
+      local tmp_cf="${cache_dir}/${cf}.tmp.$$"
+      if _fetch_resource "env/catalogs/${cf}" "$tmp_cf" 2>/dev/null && [[ -s "$tmp_cf" ]]; then
+        mv -f "$tmp_cf" "${cache_dir}/${cf}"
+      else
+        rm -f -- "$tmp_cf"
+        printf '%s\n' "$cf" > "${fail_dir}/${idx}.fail"
+      fi
+    ) &
+    ((idx++))
+    while (( $(jobs -pr | wc -l) >= max_jobs )); do
+      sleep 0.05
+    done
+  done
+  wait
+
+  local fail_cnt
+  fail_cnt="$(find "$fail_dir" -maxdepth 1 -name '*.fail' 2>/dev/null | wc -l)"
+  rm -rf -- "$fail_dir"
+
+  local ok_cnt=$(( total - fail_cnt ))
+  if (( fail_cnt > 0 )); then
+    echo_w "⚠️  [sciectl] 자동완성 캐시 갱신 완료 (성공: ${ok_cnt}/${total}개, 실패: ${fail_cnt}개) - 경로: ${cache_dir}"
+  else
+    echo_i "✅ [sciectl] 자동완성 캐시 최신화 완료 (총 ${ok_cnt}개 카탈로그) - 경로: ${cache_dir}"
+  fi
+}
+
 # ==============================================================================
 # 메인 엔트리포인트 (Main Dispatcher)
 # ==============================================================================
@@ -5538,6 +5693,10 @@ main() {
     info)
       shift
       cmd_info "$@"
+      ;;
+    refresh)
+      shift
+      cmd_refresh "$@"
       ;;
     --help)
       help "" "" ""

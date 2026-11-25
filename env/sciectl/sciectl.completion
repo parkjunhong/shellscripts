@@ -220,9 +220,9 @@ _sciectl_parse_catalog_field() {
 # 정의 내용만 TTL(60초) 캐시를 통해 수집합니다.
 ##
 _sciectl_load_candidates() {
-  # 1. Fallback 기본값 (네트워크 단절 및 최초 실행 비상용, 정식 등록된 12개 카탈로그 및 82개 도구)
-  catalog_candidates="setup-env default-server default-devops network docker install-lets-encrypt-certificate git gitlab ai-agent installer security all-scripts"
-  tool_candidates="ai-agent/asr-cli build/clean-project build/deploy-profile build/remove-deploy db/h2-db-migrate db/mariadb-backup db/mariadb-restore docker/dkcontls docker/dknetcli docker/install-docker docker/install-docker-dev-config docker/pull-gitlab-images docker/setup-compose-service docker/setup-docker-compose env/sciectl es/es-index-usage es/es-search-index fail2ban/fail2ban-unbanip git/git-branch-cmd git/git-commit git/git-config git/git-ff-sync git/git-getpr git/git-init git/git-log-abbr git/git-log-all git/git-merge git/git-modify git/git-mrq git/git-pull-all git/git-push-after-sync git/git-push-all git/git-status-all git/git-tags gitlab/clone-gitlab-projects gitlab/gitlab-clone installer/install-albert-with-socket installer/install-antigravity-ide installer/install-antigravity-x64 java/mac-clean-java-config java/mac-update-java-config java/update-java-config maven/build-deploy-all maven/build-mvn-package maven/mvn-deploy maven/update-mvn-config maven/upload-mvn-dependencies net/add-vlan-routes net/fwc-cli net/fwc-docker-policy net/mtr-netstat-conns net/ps-port net/scp-dir net/ssh-proxy net/sshctl redis/redis-search security/authelia-crypto-hash security/ssl-del security/ssl-inst sudo/sudoers-cli sys/cat-cli sys/copy-suffix sys/disk-size sys/remove-service sys/ren-files sys/sys-info sys/vim-cli utils/autotail utils/canonical-status utils/check-number-inline utils/csv-count-checker utils/diff-file utils/grep-files utils/gz-ext-latest utils/modify-enc-str utils/replace-codeblock utils/replace-files utils/scp-con-gen utils/scriptctl utils/sna-files utils/ssh-con-gen utils/uuid-list"
+  # 1. Fallback 기본값 (네트워크 단절 및 최초 실행 비상용)
+  catalog_candidates="setup-env default-server default-devops network docker install-lets-encrypt-certificate git gitlab ai-agent installer security powerdns nginx all-scripts"
+  tool_candidates="ai-agent/asr-cli build/clean-project build/deploy-profile build/remove-deploy db/h2-db-migrate db/mariadb-backup db/mariadb-restore defguard/defguard-versions docker/dkcontls docker/dknetcli docker/install-docker docker/install-docker-dev-config docker/pull-gitlab-images docker/setup-compose-service docker/setup-docker-compose env/sciectl es/es-index-usage es/es-search-index fail2ban/fail2ban-unbanip git/git-branch git/git-branch-cmd git/git-commit git/git-config git/git-ff-sync git/git-getpr git/git-init git/git-log-abbr git/git-log-all git/git-merge git/git-modify git/git-mrq git/git-pull git/git-pull-all git/git-push-after-sync git/git-push-all git/git-status-all git/git-tags gitlab/clone-gitlab-projects gitlab/gitlab-clone installer/install-albert-with-socket installer/install-antigravity-ide installer/install-antigravity-x64 java/mac-clean-java-config java/mac-update-java-config java/update-java-config maven/build-deploy-all maven/build-mvn-package maven/mvn-deploy maven/update-mvn-config maven/upload-mvn-dependencies net/add-vlan-routes net/fwc-cli net/fwc-docker-policy net/mtr-netstat-conns net/ps-port net/scp-dir net/ssh-proxy net/sshctl nginx/ngxconf-ctl powerdns/pdns-versions redis/redis-search security/authelia-crypto-hash security/ssl-del security/ssl-inst sudo/sudoers-cli sys/cat-cli sys/copy-suffix sys/disk-size sys/patch-info sys/remove-service sys/ren-files sys/sys-info sys/vim-cli utils/autotail utils/canonical-status utils/check-number-inline utils/csv-count-checker utils/diff-file utils/grep-files utils/gz-ext-latest utils/modify-enc-str utils/replace-codeblock utils/replace-files utils/scp-con-gen utils/scriptctl utils/sna-files utils/ssh-con-gen utils/uuid-list"
   installer_candidates="docker/install-docker install-htop install-maven-3.9.15 install-temurin-25-jdk install-update-java-config install-update-mvn-config"
   command_candidates="firewall-cmd-set-priority"
   key_candidates="letsencrypt ymtech-internal"
@@ -565,7 +565,7 @@ _sciectl_completion() {
   # 기본적으로는 공백 추가 활성화 (옵션, 서브커맨드 등 일반 단어 완성 시)
   compopt +o nospace 2>/dev/null || true
 
-  local -a subcommands=("install" "update" "remove" "list" "info" "--help")
+  local -a subcommands=("install" "update" "remove" "list" "info" "refresh" "--help")
 
   # 첫 번째 인자 완성 (원격 조회 없이 0ms 즉시 응답)
   if (( COMP_CWORD == 1 )); then
@@ -756,6 +756,12 @@ _sciectl_completion() {
           ;;
       esac
       COMPREPLY=( $(compgen -W "${manage_opts[*]}" -- "$cur") )
+      return 0
+      ;;
+
+    refresh)
+      local -a refresh_opts=("--local" "--remote" "--no-update" "--force-update" "--version" "--help")
+      COMPREPLY=( $(compgen -W "${refresh_opts[*]}" -- "$cur") )
       return 0
       ;;
 
