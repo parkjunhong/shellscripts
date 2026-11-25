@@ -18,9 +18,14 @@ if (( BASH_VERSINFO[0] < 4 )); then
 fi
 
 readonly FILENAME="$(basename "$0")"
-readonly SCRIPT_FILE_VERSION="2026.10.26.1"
+readonly SCRIPT_FILE_VERSION="2026.11.25.1"
+
+# Docker 기본 출력에서 컬럼별 최대 표시 너비 (미지정 컬럼은 제한 없음)
+readonly DEFAULT_TRUNC_ID_LEN=12
+readonly DEFAULT_TRUNC_COMMAND_LEN=20
 
 DOCKER_CMD=()
+PARSED_FIELDS=()
 
 # --format에서 선택 가능한 컬럼 목록
 readonly -a SUPPORTED_FORMAT_FIELDS=(
@@ -112,6 +117,7 @@ help() {
   'docker container ls' 명령을 래핑하여 컨테이너 목록을 조회합니다.
   - 단축 옵션(Short Option: -a, -f, -n, -l, -q, -s 등)은 지원하지 않으며, 전체 옵션명(Long Option)만 지원합니다.
   - '--format' 옵션에 콤마(,)로 구분된 컬럼명을 지정하면 자동으로 Docker 테이블 Go 템플릿으로 변환하여 출력합니다.
+  - '--format'으로 컬럼을 지정할 때 맨 마지막에 위치한 컬럼은 내용 생략(truncate) 없이 전체 내용이 출력됩니다.
   - 본 도구는 외부에서 'sudo'로 직접 실행할 수 없으며, Docker 소켓 접근에 권한이 필요한 시점에 내부적으로 sudo를 요청합니다.
 
 ⚙️  옵션 (Options):
@@ -120,13 +126,15 @@ help() {
                             * 지원 속성: id, name, label, exited, status, ancestor, before,
                                         since, isolation, volume, network, publish, expose, health, is-task
   --format < columns|fmt >  출력 포맷 지정
-                            * 콤마(,)로 구분된 컬럼 선택 지원:
+                            * 콤마(,)로 구분된 컬럼 선택 지원 (맨 마지막 컬럼은 항상 전체 출력):
                               [ID|Image|Command|CreatedAT|RunningFor|Ports|State|Status|Names|Size]
                               (예: --format ID,Names,Status,Ports)
                             * 기본 키워드 및 커스텀 Go 템플릿 지원: 'table', 'json', 'table {{.ID}}...'
   --last <int>              마지막에 생성된 n개의 컨테이너 표시 (모든 상태 포함, 기본값: -1)
   --latest                  가장 최근에 생성된 컨테이너 1개 표시 (모든 상태 포함)
-  --no-trunc                출력 내용을 생략(truncate)하지 않고 전체 표시
+  --no-trunc [columns]      출력 내용을 생략(truncate)하지 않고 전체 표시
+                            * 인자 없이 사용 시: 모든 컬럼 전체 출력
+                            * 컬럼 지정 시(예: --no-trunc ID,Command): 지정된 컬럼만 전체 출력하고 나머지는 기본 제한 적용
   --quiet                   컨테이너 ID만 출력
   --size                    컨테이너 총 파일 크기 표시
   --help                    이 도움말을 출력하고 종료
@@ -135,10 +143,16 @@ help() {
   # 1) 실행 중인 컨테이너의 ID, 이름, 상태, 포트만 테이블로 조회
   $FILENAME --format ID,Names,Status,Ports
 
-  # 2) 모든 컨테이너 중 상태가 exited인 컨테이너 조회
+  # 2) Command를 맨 끝에 배치하여 잘림 없이 전체 명령어 조회
+  $FILENAME --format Names,Ports,Status,CreatedAT,Command
+
+  # 3) 중간에 위치한 ID와 Command 컬럼만 잘림 없이 전체 출력
+  $FILENAME --format ID,Command,Ports,Status --no-trunc ID,Command
+
+  # 4) 모든 컨테이너 중 상태가 exited인 컨테이너 조회
   $FILENAME --all --filter status=exited
 
-  # 3) 특정 네트워크에 연결된 컨테이너를 JSON 형식으로 조회
+  # 5) 특정 네트워크에 연결된 컨테이너를 JSON 형식으로 조회
   $FILENAME --filter network=bridge --format json
 EOF
 }
@@ -156,32 +170,40 @@ reject_external_sudo() {
 }
 
 ##
-# 사용자가 입력한 --format 인자를 검증하고, 콤마 구분 컬럼 목록인 경우
-# Docker Go 템플릿('table {{.Field1}}\t{{.Field2}}...')으로 변환합니다.
+# 입력된 '--format' 문자열이 Docker 기본 키워드('table', 'json') 또는
+# 커스텀 Go 템플릿인지 여부를 판별합니다.
 #
 # @param $1 {string} 사용자 입력 --format 문자열
 #
-# @return 변환된 Docker --format 문자열 표준 출력 (오류 시 exit 1)
+# @return 0: 기본 키워드/커스텀 템플릿, 1: 콤마 구분 컬럼 목록
 ##
-build_format_argument() {
+is_raw_docker_format() {
   local raw_format="$1"
+  [[ "$raw_format" == "table" || "$raw_format" == "json" || "$raw_format" == *"{{."* || "$raw_format" == "table "* ]]
+}
 
-  # 1. 표준 키워드('table', 'json') 또는 이미 Go 템플릿('{{...}}')이 포함된 경우 그대로 전달
-  if [[ "$raw_format" == "table" || "$raw_format" == "json" || "$raw_format" == *"{{."* || "$raw_format" == "table "* ]]; then
-    printf '%s\n' "$raw_format"
-    return 0
-  fi
+##
+# 콤마(,)로 구분된 컬럼명 목록을 검증하고 Docker Go 템플릿용 정규화 필드명 목록을
+# 전역 배열 PARSED_FIELDS에 저장합니다.
+#
+# @param $1 {string} 옵션명 ('--format' 또는 '--no-trunc')
+# @param $2 {string} 콤마로 구분된 컬럼명 문자열
+#
+# @return 성공 시 0 (PARSED_FIELDS 설정), 오류 시 help 출력 후 exit 1
+##
+parse_comma_fields() {
+  local opt_name="$1"
+  local raw_csv="$2"
+  PARSED_FIELDS=()
 
-  # 2. 콤마(,)로 구분된 컬럼명 목록 파싱 및 검증
-  if [[ "$raw_format" == ,* || "$raw_format" == *, || "$raw_format" == *,,* ]]; then
-    help "❌ '--format' 컬럼 목록('${raw_format}')에 빈 항목이 포함되어 있습니다." "${BASH_LINENO[0]:-$LINENO}"
+  if [[ -z "$raw_csv" || "$raw_csv" == ,* || "$raw_csv" == *, || "$raw_csv" == *,,* ]]; then
+    help "❌ '${opt_name}' 컬럼 목록('${raw_csv}')이 비어 있거나 빈 항목이 포함되어 있습니다." "${BASH_LINENO[0]:-$LINENO}"
     exit 1
   fi
 
   local -a fields=()
-  local -a template_parts=()
   local -a seen_fields=()
-  IFS=',' read -r -a fields <<< "$raw_format"
+  IFS=',' read -r -a fields <<< "$raw_csv"
 
   local field mapped_field seen
   for field in "${fields[@]}"; do
@@ -194,19 +216,70 @@ build_format_argument() {
         mapped_field="CreatedAt"
         ;;
       *)
-        help "❌ 지원하지 않는 '--format' 컬럼명입니다: '${field}' (지원 목록: ${SUPPORTED_FORMAT_FIELDS[*]})" "${BASH_LINENO[0]:-$LINENO}"
+        help "❌ '${opt_name}'에서 지원하지 않는 컬럼명입니다: '${field}' (지원 목록: ${SUPPORTED_FORMAT_FIELDS[*]})" "${BASH_LINENO[0]:-$LINENO}"
         exit 1
         ;;
     esac
 
     for seen in "${seen_fields[@]}"; do
       if [[ "$seen" == "$mapped_field" ]]; then
-        help "❌ '--format' 옵션에 동일한 컬럼('${field}')이 중복 지정되었습니다." "${BASH_LINENO[0]:-$LINENO}"
+        help "❌ '${opt_name}' 옵션에 동일한 컬럼('${field}')이 중복 지정되었습니다." "${BASH_LINENO[0]:-$LINENO}"
         exit 1
       fi
     done
     seen_fields+=("$mapped_field")
-    template_parts+=("{{.${mapped_field}}}")
+    PARSED_FIELDS+=("$mapped_field")
+  done
+}
+
+##
+# 정규화된 컬럼 목록과 '--no-trunc' 설정을 바탕으로 Docker Go 테이블 템플릿을 생성합니다.
+# 맨 마지막 컬럼과 '--no-trunc' 대상 컬럼은 너비 제한 없이 전체를 출력하고,
+# 그 외 앞쪽 컬럼은 기본 너비 제한(ID=12, Command=20)을 적용합니다.
+#
+# @param $1 {string} 전체 --no-trunc 활성화 여부 ('true' 또는 'false')
+# @param $2 {string} --no-trunc 대상 정규화 컬럼의 콤마 구분 문자열 (없으면 '')
+# @param $@ {array}  출력할 정규화된 컬럼명 목록
+#
+# @return 생성된 Docker 'table ...' 포맷 문자열 표준 출력
+##
+build_table_template() {
+  local no_trunc_all="$1"
+  local no_trunc_csv="$2"
+  shift 2
+
+  local -a fields=("$@")
+  local -a template_parts=()
+  local total="${#fields[@]}"
+  local i field is_last is_no_trunc
+
+  for (( i = 0; i < total; i++ )); do
+    field="${fields[$i]}"
+    is_last=false
+    is_no_trunc=false
+
+    (( i == total - 1 )) && is_last=true
+    if [[ "$no_trunc_all" == true || "$is_last" == true ]]; then
+      is_no_trunc=true
+    elif [[ -n "$no_trunc_csv" && ",${no_trunc_csv}," == *",${field},"* ]]; then
+      is_no_trunc=true
+    fi
+
+    if [[ "$is_no_trunc" == true ]]; then
+      template_parts+=("{{.${field}}}")
+    else
+      case "$field" in
+        ID)
+          template_parts+=("{{truncate .ID ${DEFAULT_TRUNC_ID_LEN}}}")
+          ;;
+        Command)
+          template_parts+=("{{truncate .Command ${DEFAULT_TRUNC_COMMAND_LEN}}}")
+          ;;
+        *)
+          template_parts+=("{{.${field}}}")
+          ;;
+      esac
+    fi
   done
 
   local IFS=$'\t'
@@ -349,10 +422,12 @@ main() {
 
   local opt_all=false
   local -a opt_filters=()
-  local opt_format=""
+  local opt_format_raw=""
+  local -a opt_format_fields=()
   local opt_last=""
   local opt_latest=false
-  local opt_no_trunc=false
+  local opt_no_trunc_all=false
+  local opt_no_trunc_csv=""
   local opt_quiet=false
   local opt_size=false
 
@@ -409,7 +484,12 @@ main() {
           fmt_val="$2"
           shift 2
         fi
-        opt_format="$(build_format_argument "$fmt_val")"
+        if is_raw_docker_format "$fmt_val"; then
+          opt_format_raw="$fmt_val"
+        else
+          parse_comma_fields "--format" "$fmt_val"
+          opt_format_fields=("${PARSED_FIELDS[@]}")
+        fi
         ;;
       --last|--last=*)
         if [[ "$has_last" == true ]]; then
@@ -444,14 +524,36 @@ main() {
         opt_latest=true
         shift
         ;;
-      --no-trunc)
+      --no-trunc|--no-trunc=*)
         if [[ "$has_no_trunc" == true ]]; then
           help "❌ '--no-trunc' 옵션이 중복 지정되었습니다." "$LINENO"
           exit 1
         fi
         has_no_trunc=true
-        opt_no_trunc=true
-        shift
+        if [[ "$1" == *=* ]]; then
+          local nt_val="${1#*=}"
+          shift
+          if [[ -z "$nt_val" ]]; then
+            help "❌ '--no-trunc=' 뒤에 콤마로 구분된 컬럼 목록을 지정해야 합니다." "$LINENO"
+            exit 1
+          fi
+          parse_comma_fields "--no-trunc" "$nt_val"
+          local IFS=','
+          opt_no_trunc_csv="${PARSED_FIELDS[*]}"
+        elif [[ $# -ge 2 && "${2:-}" != -* ]]; then
+          local nt_val="${2:-}"
+          shift 2
+          if [[ -z "$nt_val" ]]; then
+            help "❌ '--no-trunc' 뒤에 지정한 컬럼 목록이 비어 있습니다." "$LINENO"
+            exit 1
+          fi
+          parse_comma_fields "--no-trunc" "$nt_val"
+          local IFS=','
+          opt_no_trunc_csv="${PARSED_FIELDS[*]}"
+        else
+          opt_no_trunc_all=true
+          shift
+        fi
         ;;
       --quiet)
         if [[ "$has_quiet" == true ]]; then
@@ -486,6 +588,16 @@ main() {
     esac
   done
 
+  # --no-trunc <columns>와 --quiet 또는 커스텀 --format 조합 검증
+  if [[ -n "$opt_no_trunc_csv" && "$opt_quiet" == true ]]; then
+    help "❌ '--quiet' 옵션은 컨테이너 ID만 출력하므로 '--no-trunc'에 컬럼 목록을 함께 지정할 수 없습니다." "$LINENO"
+    exit 1
+  fi
+  if [[ -n "$opt_no_trunc_csv" && -n "$opt_format_raw" ]]; then
+    help "❌ '--format'에 키워드('table', 'json') 또는 커스텀 Go 템플릿을 지정한 경우 '--no-trunc <columns>'를 함께 사용할 수 없습니다." "$LINENO"
+    exit 1
+  fi
+
   # Docker 실행 권한 및 데몬 준비
   ensure_docker_ready
 
@@ -499,10 +611,23 @@ main() {
     cmd_args+=(--filter "$f")
   done
 
-  [[ -n "$opt_format" ]] && cmd_args+=(--format "$opt_format")
+  if (( ${#opt_format_fields[@]} > 0 )); then
+    local built_format
+    built_format="$(build_table_template "$opt_no_trunc_all" "$opt_no_trunc_csv" "${opt_format_fields[@]}")"
+    cmd_args+=(--format "$built_format" --no-trunc)
+  elif [[ -n "$opt_no_trunc_csv" ]]; then
+    local -a default_fields=(ID Image Command RunningFor Status Ports Names)
+    [[ "$opt_size" == true ]] && default_fields+=(Size)
+    local built_format
+    built_format="$(build_table_template "false" "$opt_no_trunc_csv" "${default_fields[@]}")"
+    cmd_args+=(--format "$built_format" --no-trunc)
+  else
+    [[ -n "$opt_format_raw" ]] && cmd_args+=(--format "$opt_format_raw")
+    [[ "$opt_no_trunc_all" == true ]] && cmd_args+=(--no-trunc)
+  fi
+
   [[ -n "$opt_last" ]] && cmd_args+=(--last "$opt_last")
   [[ "$opt_latest" == true ]] && cmd_args+=(--latest)
-  [[ "$opt_no_trunc" == true ]] && cmd_args+=(--no-trunc)
   [[ "$opt_quiet" == true ]] && cmd_args+=(--quiet)
   [[ "$opt_size" == true ]] && cmd_args+=(--size)
 
