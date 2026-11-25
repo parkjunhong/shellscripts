@@ -10,7 +10,7 @@
 #   2. 시스템 전역: utils/scriptctl/scriptctl install --script ./git-branch --target global
 # ==============================================================================
 
-readonly SCRIPT_FILE_VERSION="2026.11.25.1"
+readonly SCRIPT_FILE_VERSION="2026.11.25.2"
 
 set -Eeuo pipefail
 
@@ -728,14 +728,59 @@ run_add_command() {
 }
 
 ##
+# 조상 프로세스 중 'watch' 명령어가 존재하는지 판별
+#
+# @return 0 (watch에 의해 호출됨), 1 (일반 호출)
+##
+is_invoked_by_watch() {
+  local pid="$$"
+  local depth=0
+  local comm=""
+  local ppid=""
+
+  while (( depth < 6 )) && [[ -n "$pid" && "$pid" -gt 1 ]]; do
+    if [[ -r "/proc/${pid}/comm" ]]; then
+      IFS= read -r comm < "/proc/${pid}/comm" || comm=""
+    else
+      comm="$(ps -o comm= -p "$pid" 2>/dev/null | xargs || echo '')"
+    fi
+
+    if [[ "$comm" == "watch" ]]; then
+      return 0
+    fi
+
+    if [[ -r "/proc/${pid}/stat" ]]; then
+      # /proc/<pid>/stat의 4번째 필드가 PPID (comm 내 공백/괄호 대응을 위해 마지막 ') ' 이후 기준 파싱)
+      local stat_line=""
+      IFS= read -r stat_line < "/proc/${pid}/stat" || stat_line=""
+      local after_comm="${stat_line##*) }"
+      read -r _ ppid _ <<< "$after_comm"
+    else
+      ppid="$(ps -o ppid= -p "$pid" 2>/dev/null | xargs || echo '')"
+    fi
+
+    pid="$ppid"
+    depth=$((depth + 1))
+  done
+
+  return 1
+}
+
+##
 # list (기본 조회) 실행 로직
 ##
 run_list_command() {
+  local -a cmd_args=()
+
   if [[ "$OPT_LIST_ALL" == "true" ]]; then
-    git branch -a
-  else
-    git branch
+    cmd_args+=("-a")
   fi
+
+  if is_invoked_by_watch; then
+    cmd_args+=("--color=always")
+  fi
+
+  git branch "${cmd_args[@]}"
   return 0
 }
 

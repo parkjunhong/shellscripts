@@ -43,6 +43,8 @@ git-branch --help
 | `--all` | 로컬 및 원격 추적 브랜치 전체 목록을 출력합니다 (`git branch -a`와 동일). |
 | `--help` | 도움말 및 옵션 안내를 출력합니다. |
 
+> **참고**: `watch --color git-branch` 또는 `watch --color git-branch --all`로 실행하면 `watch` 호출을 자동 감지하여 내부 `git branch` 명령에 `--color=always`를 적용하므로 색상이 유지됩니다.
+
 ### 서브커맨드
 | 서브커맨드 | 설명 |
 | :--- | :--- |
