@@ -23,7 +23,7 @@ _git_log_abbr_completion() {
   local cur opts available_opts opt word is_used
   COMPREPLY=()
   cur="${COMP_WORDS[COMP_CWORD]}"
-  opts="--color --help"
+  opts="--help"
   available_opts=""
 
   for opt in $opts; do

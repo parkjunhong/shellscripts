@@ -9,8 +9,9 @@
 1. **간결한 한 줄 커밋 로그 및 브랜치 현황 출력**
    * 긴 옵션을 매번 입력할 필요 없이 `git-log-abbr` 실행만으로 커밋 해시(축약), 브랜치/태그 데코레이션(`--decorate`), 커밋 제목을 한 줄씩 깔끔하게 확인할 수 있습니다.
    * `watch` 등 파이프 환경에서도 브랜치 현황이 생략되지 않고 그대로 표시됩니다.
-2. **파이프/모니터링 환경 색상 유지 (`--color`)**
-   * `--color` 옵션을 지정하면 `--color=always`가 적용되어 `watch --color "git-log-abbr --color"` 실행 시에도 ANSI 색상 강조를 유지할 수 있습니다.
+2. **`watch` 호출 자동 감지 및 색상 유지**
+   * 조상 프로세스를 탐색하여 `watch` 하위에서 실행 중인 경우 자동으로 `--color=always`를 적용합니다.
+   * `watch --color git-log-abbr` (또는 `alias watch='watch --color'` 설정 시 `watch git-log-abbr`) 실행만으로 별도 옵션 없이 ANSI 색상 강조를 유지할 수 있습니다.
 
 ---
 
@@ -18,7 +19,6 @@
 
 | 옵션 | 설명 | 필수 여부 |
 | :--- | :--- | :---: |
-| `--color` | 파이프/`watch` 등 비대화형 출력에서도 ANSI 색상 강조(`--color=always`)를 유지합니다. | 선택 |
 | `--help` | 스크립트 사용법 및 옵션 상세 정보를 출력합니다. | 선택 |
 
 ---
@@ -33,7 +33,7 @@ git-log-abbr
 watch git-log-abbr
 
 # watch로 실시간 모니터링 (브랜치 현황 + ANSI 색상 강조 유지)
-watch --color "git-log-abbr --color"
+watch --color git-log-abbr
 ```
 
 ---

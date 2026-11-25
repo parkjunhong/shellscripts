@@ -10,12 +10,11 @@
 #   2. copy to /usr/local/bin/ or use scriptctl for system-wide installation.
 # =======================================
 
-readonly SCRIPT_FILE_VERSION="2026.11.25.1"
+readonly SCRIPT_FILE_VERSION="2026.11.25.2"
 
 set -Eeuo pipefail
 
 FILENAME="$(basename "$0")"
-OPT_COLOR=false
 
 ##
 # 스크립트의 사용법 및 오류 진단 정보를 출력합니다.
@@ -39,7 +38,7 @@ help() {
     local func
     for func in "${FUNCNAME[@]:1}"; do
       printf "$formatr" "[$idx]" "$func" >&2
-      ((idx++))
+      idx=$((idx + 1))
     done
     printf "$formatl" "cause" "$1" >&2
     echo "================================================================================" >&2
@@ -47,15 +46,15 @@ help() {
 
   echo
   echo "사용법:"
-  echo "  $FILENAME [--color]"
+  echo "  $FILENAME"
   echo "  $FILENAME --help"
   echo
   echo "설명:"
   echo "  현재 Git 저장소의 커밋 히스토리를 축약 해시, 한 줄 요약 및 브랜치/태그 데코레이션(--decorate)과 함께 출력합니다."
-  echo "  watch 등 파이프 환경에서도 브랜치 현황이 표시되며, --color 옵션을 사용하면 ANSI 색상도 함께 유지됩니다."
+  echo "  watch 하위에서 실행되는 경우 자동으로 감지하여 --color=always를 적용합니다."
+  echo "  (참고: watch에서 색상을 표시하려면 'watch --color $FILENAME' 또는 'alias watch=\"watch --color\"' 설정이 필요합니다.)"
   echo
   echo "옵션 상세:"
-  echo "  --color    파이프/watch 환경에서도 색상 강조(--color=always) 유지"
   echo "  --help     도움말 출력"
   echo
 }
@@ -70,10 +69,6 @@ help() {
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --color)
-        OPT_COLOR=true
-        shift 1
-        ;;
       --help)
         help
         exit 0
@@ -88,6 +83,37 @@ parse_args() {
 }
 
 ##
+# 현재 스크립트가 watch 명령어 하위에서 실행 중인지 조상 프로세스를 탐색하여 판별합니다.
+#
+# @param 없음
+#
+# @return 0: watch 하위 실행, 1: 일반 실행
+##
+is_under_watch() {
+  local pid="$PPID"
+  local depth=0
+  local proc_info=""
+  local ppid=""
+  local comm=""
+
+  while [[ -n "$pid" && "$pid" -gt 1 && "$depth" -lt 10 ]]; do
+    proc_info="$(ps -o ppid=,comm= -p "$pid" 2>/dev/null || true)"
+    [[ -z "$proc_info" ]] && break
+
+    read -r ppid comm <<< "$proc_info"
+    if [[ "$comm" == "watch" || "${comm##*/}" == "watch" ]]; then
+      return 0
+    fi
+
+    [[ -z "$ppid" || "$ppid" == "$pid" ]] && break
+    pid="$ppid"
+    depth=$((depth + 1))
+  done
+
+  return 1
+}
+
+##
 # git log 명령어를 구성하여 커밋 로그를 출력합니다.
 #
 # @param 없음
@@ -97,7 +123,7 @@ parse_args() {
 main() {
   local -a git_cmd=(git log --abbrev-commit --pretty=oneline --decorate)
 
-  if [[ "$OPT_COLOR" == true ]]; then
+  if is_under_watch; then
     git_cmd+=(--color=always)
   fi
 
