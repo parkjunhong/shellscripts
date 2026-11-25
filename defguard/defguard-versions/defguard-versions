@@ -10,7 +10,7 @@
 #   2. 시스템 전역: ../../utils/scriptctl/scriptctl install --script ./defguard-versions --target global
 # ==============================================================================
 
-readonly SCRIPT_FILE_VERSION="2026.11.25.2"
+readonly SCRIPT_FILE_VERSION="2026.11.25.3"
 
 set -Eeuo pipefail
 
@@ -161,8 +161,9 @@ check_docker() {
 }
 
 ##
-# 컨테이너의 실제 이미지 이름(RepoTag)을 조회합니다.
-# .Config.Image가 해시 ID로 기록된 경우 .Image ID를 통해 RepoTags를 보조 조회합니다.
+# 컨테이너의 실제 이미지 이름(버전 태그 포함)을 조회합니다.
+# 병기(tag@sha256:...), 버전 태그(image:tag), 순수 해시(image@sha256:... 또는 ID)
+# 3가지 케이스를 모두 지원하며, 버전 태그가 존재하면 버전 표기 형식을 우선 반환합니다.
 #
 # @param $1 {String} 컨테이너 이름
 #
@@ -171,21 +172,33 @@ check_docker() {
 resolve_container_image() {
   local c_name="$1"
   local cfg_image=""
+  local base_image=""
   local img_id=""
   local repo_tag=""
 
   cfg_image=$(docker inspect --format '{{.Config.Image}}' "$c_name" 2>/dev/null || echo "unknown")
 
-  # Config.Image가 해시 ID 형태(sha256:... 또는 hex 문자열)이거나 태그가 없는 경우 RepoTags 조회
-  if [[ "$cfg_image" =~ ^(sha256:)?[0-9a-f]{12,64}$ ]] || [[ "$cfg_image" == "unknown" ]]; then
-    img_id=$(docker inspect --format '{{.Image}}' "$c_name" 2>/dev/null || true)
-    if [[ -n "$img_id" ]]; then
-      repo_tag=$(docker image inspect --format '{{if .RepoTags}}{{index .RepoTags 0}}{{end}}' "$img_id" 2>/dev/null || true)
-      if [[ -n "$repo_tag" ]]; then
-        printf "%s" "$repo_tag"
-        return 0
-      fi
+  # 1. 병기(image:tag@sha256:...) 또는 순수 태그(image:tag)인 경우 @sha256:... 제거 후 태그 확인
+  base_image="${cfg_image%%@sha256:*}"
+  if [[ "$base_image" != "unknown" ]] && [[ ! "$base_image" =~ ^(sha256:)?[0-9a-f]{12,64}$ ]] && [[ "${base_image##*/}" == *:* ]]; then
+    printf "%s" "$base_image"
+    return 0
+  fi
+
+  # 2. 순수 다이제스트(image@sha256:...) 또는 해시 ID인 경우 .Image의 RepoTags 조회
+  img_id=$(docker inspect --format '{{.Image}}' "$c_name" 2>/dev/null || true)
+  if [[ -n "$img_id" ]]; then
+    repo_tag=$(docker image inspect --format '{{if .RepoTags}}{{index .RepoTags 0}}{{end}}' "$img_id" 2>/dev/null || true)
+    if [[ -n "$repo_tag" && "$repo_tag" != "<none>:<none>" ]]; then
+      printf "%s" "$repo_tag"
+      return 0
     fi
+  fi
+
+  # 3. RepoTags도 없는 순수 다이제스트인 경우 표 가독성을 위해 sha256 해시를 12자로 축약
+  if [[ "$cfg_image" =~ ^(.+@sha256:)([0-9a-f]{12})[0-9a-f]+$ ]]; then
+    printf "%s%s..." "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+    return 0
   fi
 
   printf "%s" "$cfg_image"
