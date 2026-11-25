@@ -111,10 +111,10 @@ _git_branch_completion() {
     fi
   done
 
-  # 3. 서브커맨드가 아직 없으면: 서브커맨드 및 --help 제안
+  # 3. 서브커맨드가 아직 없으면: 서브커맨드 및 최상위 옵션(--all, --help) 제안
   if [[ -z "$has_subcommand" ]]; then
     if [[ "${cur}" == -* ]]; then
-      COMPREPLY=( $(compgen -W "--help" -- "${cur}") )
+      COMPREPLY=( $(compgen -W "--all --help" -- "${cur}") )
     else
       COMPREPLY=( $(compgen -W "${subcommands}" -- "${cur}") )
     fi
