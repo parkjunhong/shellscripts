@@ -27,7 +27,9 @@
 # =======================================
 
 # 원격 GitHub 저장소 Raw 기본 URL
-readonly SCIECTL_REPO_RAW_URL_DEFAULT="https://raw.githubusercontent.com/parkjunhong/shellscripts/main"
+if [[ -z "${SCIECTL_REPO_RAW_URL_DEFAULT:-}" ]]; then
+  readonly SCIECTL_REPO_RAW_URL_DEFAULT="https://raw.githubusercontent.com/parkjunhong/shellscripts/main"
+fi
 
 ##
 # 캐시 디렉토리 경로를 반환합니다.
