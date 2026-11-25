@@ -10,6 +10,7 @@
    * `--all`, `--filter`, `--format`, `--last`, `--latest`, `--no-trunc`, `--quiet`, `--size`, `--help`를 지원하며 단축 옵션(`-a`, `-f`, `-q` 등)은 허용하지 않습니다.
 2. **직관적인 `--format` 컬럼 다중 선택 및 자동 Go 템플릿 변환**
    * 복잡한 Go 템플릿 문법(`table {{.ID}}\t{{.Names}}...`)을 직접 작성할 필요 없이, `[ID|Image|Command|CreatedAT|RunningFor|Ports|State|Status|Names|Size]` 중 원하는 컬럼을 콤마(`,`)로 나열하면 자동으로 테이블 포맷으로 변환합니다.
+   * **마지막 컬럼 전체 출력**: 콤마 구분 컬럼 목록을 사용할 때 맨 마지막에 위치한 컬럼은 내용 생략(truncate) 없이 전체 내용이 출력됩니다.
    * Bash Completion에서 이미 선택한 컬럼은 제외하고 나머지 컬럼만 이어서 추천합니다.
    * 주의: Docker 내부 Go 템플릿 필드명은 `.CreatedAt`이나, 사용자 편의를 위해 `CreatedAT` 입력 시에도 자동으로 `{{.CreatedAt}}`로 매핑됩니다.
 3. **`--filter` 속성 및 값 Bash Completion 지원**
@@ -26,10 +27,10 @@
 | :--- | :---: | :--- |
 | `--all` | 불가 | 모든 상태의 컨테이너 표시 (생략 시 실행 중인 컨테이너만 표시) |
 | `--filter <key=value>` | **가능** | 조건 기반 컨테이너 필터링 (`status=running`, `name=web` 등) |
-| `--format <columns\|fmt>` | 불가 | 콤마 구분 컬럼 목록(`ID,Names,Status,Ports` 등) 또는 `table`, `json`, Go 템플릿 |
+| `--format <columns\|fmt>` | 불가 | 콤마 구분 컬럼 목록(`ID,Names,Status,Ports` 등, 맨 마지막 컬럼은 전체 출력) 또는 `table`, `json`, Go 템플릿 |
 | `--last <int>` | 불가 | 마지막에 생성된 N개의 컨테이너 표시 (모든 상태 포함) |
 | `--latest` | 불가 | 가장 최근에 생성된 컨테이너 1개 표시 (모든 상태 포함) |
-| `--no-trunc` | 불가 | 출력 내용을 생략(truncate)하지 않고 전체 표시 |
+| `--no-trunc [columns]` | 불가 | 출력 내용을 생략(truncate)하지 않고 전체 표시 (인자 생략 시 전체 컬럼, `--no-trunc ID,Command`처럼 컬럼 지정 시 해당 컬럼만 전체 출력) |
 | `--quiet` | 불가 | 컨테이너 ID만 출력 |
 | `--size` | 불가 | 컨테이너 총 파일 크기 표시 |
 | `--help` | 불가 | 도움말 출력 |
