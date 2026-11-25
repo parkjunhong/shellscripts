@@ -12,7 +12,7 @@
 
 # 도움말 출력 함수
 
-readonly SCRIPT_FILE_VERSION="2026.11.25.2"
+readonly SCRIPT_FILE_VERSION="2026.11.25.3"
 
 help() {
   cat <<'EOF'
@@ -289,6 +289,10 @@ OS_TYPE="$(echo "$ENV_INFO" | cut -d'|' -f1)"
 PKG_MGR="$(echo "$ENV_INFO" | cut -d'|' -f2)"
 OS_DESC="$(echo "$ENV_INFO" | cut -d'|' -f3)"
 
+if [[ "$OS_TYPE" == "debian" && "$ONLINE_MODE" == "false" && ${#TARGET_PACKAGES[@]} -eq 0 && ${#OSS_NUMBERS[@]} -gt 0 ]]; then
+  log_warn "오프라인(Ubuntu/Debian) 모드에서는 --package 옵션을 함께 지정해야 로컬 체인지로그 기반 패치 여부 확인이 가능합니다."
+fi
+
 log_debug "OS 환경: ${OS_DESC} (OS 유형: ${OS_TYPE})"
 log_debug "패키지 매니저: ${PKG_MGR}"
 log_debug "온라인 모드: ${ONLINE_MODE}"
@@ -564,7 +568,7 @@ resolve_advisory_info() {
       codename="$(grep -E '^VERSION_CODENAME=' /etc/os-release 2>/dev/null | cut -d'=' -f2 | tr -d '"' || true)"
 
       local api_output
-      api_output="$(curl -s --connect-timeout 5 --max-time 10 --retry 2 "https://ubuntu.com/security/cves/${advisory}.json" 2>/dev/null | python3 -c '
+      api_output="$(curl -s --connect-timeout 5 --max-time 10 --retry 2 --retry-delay 1 "https://ubuntu.com/security/cves/${advisory}.json" 2>/dev/null | python3 -c '
 import json, sys
 
 try:
@@ -673,10 +677,16 @@ except Exception:
         ADV_STATUS="업데이트 가능 (Available - 패치 미적용)"
       elif echo "$pro_out" | grep -q "is not affected"; then
         ADV_STATUS="해당 없음 (Not Affected)"
+      else
+        ADV_STATUS="확인 필요 (API 조회 실패)"
       fi
 
       ADV_PKG="$(echo "$pro_out" | grep -A 2 "affected source package is installed:" | grep -E "^\([0-9]+/[0-9]+\)" | awk '{print $2}' | tr -d ":" | head -n 1)"
       resolved=true
+    fi
+
+    if [[ "$resolved" == "false" && "$OS_TYPE" == "debian" && "$ONLINE_MODE" == "true" ]]; then
+      ADV_STATUS="확인 필요 (API 조회 실패)"
     fi
 
     # [RHEL/Rocky 환경]: DNF updateinfo 연동
@@ -696,7 +706,7 @@ except Exception:
       if [[ "$ONLINE_MODE" == "true" ]] && command -v curl >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
         log_debug "Arch Security Tracker REST API를 통해 '$advisory' 조회..."
         local arch_resp http_code arch_json
-        arch_resp="$(curl -s -w "\nHTTP_CODE:%{http_code}" --connect-timeout 3 --max-time 8 "https://security.archlinux.org/${advisory}.json" 2>/dev/null || true)"
+        arch_resp="$(curl -s -w "\nHTTP_CODE:%{http_code}" --connect-timeout 3 --max-time 8 --retry 2 --retry-delay 1 "https://security.archlinux.org/${advisory}.json" 2>/dev/null || true)"
         http_code="$(echo "$arch_resp" | grep -E '^HTTP_CODE:' | tail -n 1 | cut -d':' -f2)"
         arch_json="$(echo "$arch_resp" | sed '/^HTTP_CODE:/d')"
 
@@ -808,6 +818,9 @@ except Exception:
           ADV_STATUS="업데이트 가능 (Available - 패치 미적용)"
           resolved=true
         fi
+        if [[ "$resolved" == "false" && "$ONLINE_MODE" == "true" ]]; then
+          ADV_STATUS="확인 필요 (API 조회 실패)"
+        fi
       fi
     fi
 
@@ -825,7 +838,7 @@ except Exception:
       codename="$(grep -E '^VERSION_CODENAME=' /etc/os-release 2>/dev/null | cut -d'=' -f2 | tr -d '"' || true)"
 
       local api_output
-      api_output="$(curl -s --connect-timeout 3 --max-time 8 "https://ubuntu.com/security/notices/${advisory}.json" 2>/dev/null | python3 -c '
+      api_output="$(curl -s --connect-timeout 3 --max-time 8 --retry 2 --retry-delay 1 "https://ubuntu.com/security/notices/${advisory}.json" 2>/dev/null | python3 -c '
 import json, sys
 
 try:
