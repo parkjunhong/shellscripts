@@ -11,9 +11,9 @@
 # =======================================
 
 readonly FILENAME="$(basename "$0")"
-readonly SCRIPT_FILE_VERSION="2026.11.25.2"
+readonly SCRIPT_FILE_VERSION="2026.11.25.3"
 # 구버전 sciectl(<=2026.11.23.1) 자가 업데이트 하위 호환성 유지용 (추후 제거 예정)
-readonly SCIECTL_VERSION="2026.11.25.2"
+readonly SCIECTL_VERSION="2026.11.25.3"
 readonly REPO_BASE_URL="${SCIECTL_REPO_URL:-https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main}"
 readonly REPO_WEB_BASE_URL="${SCIECTL_REPO_WEB_URL:-https://github.com/parkjunhong/shellscripts/blob/main}"
 
@@ -793,24 +793,35 @@ _self_sync_companions() {
     fi
   fi
 
-  # 2. 시스템 표준 Bash Completion 동기화 (무인 환경에서 sudo 암호 대기 방지)
+  # 2. 시스템 표준 Bash Completion 동기화 (시스템 경로 시 sudo 적용; 비대화형+NOPASSWD 불가 시만 건너뜀)
   local can_sync_comp=true
   local std_comp_dir=""
   if [[ "$TARGET_OS" != "darwin" ]]; then
     command -v pkg-config &>/dev/null && std_comp_dir="$(pkg-config --variable=completionsdir bash-completion 2>/dev/null || true)"
     [[ -z "$std_comp_dir" && -d "/usr/share/bash-completion/completions" ]] && std_comp_dir="/usr/share/bash-completion/completions"
     [[ -z "$std_comp_dir" && -d "/etc/bash_completion.d" ]] && std_comp_dir="/etc/bash_completion.d"
-    if [[ -n "$std_comp_dir" && ! -w "$std_comp_dir" ]] && ! sudo -n true 2>/dev/null; then
-      can_sync_comp=false
-      echo_w "   ⚠️ 시스템 전역 completion('${std_comp_dir}/sciectl') 갱신은 관리자 권한이 필요합니다."
+    if [[ -n "$std_comp_dir" && ! -w "$std_comp_dir" ]]; then
+      if [[ ! -t 0 ]] && ! sudo -n true 2>/dev/null; then
+        can_sync_comp=false
+        echo_w "   ⚠️ 비대화형 환경에서 시스템 전역 completion('${std_comp_dir}/sciectl') 갱신은 관리자 권한이 필요합니다."
+      elif [[ -t 0 ]]; then
+        echo_i "   🔐 시스템 전역 completion('${std_comp_dir}/sciectl') 갱신을 위해 관리자 권한(sudo)을 확인합니다."
+      fi
     fi
   fi
   if [[ "$can_sync_comp" == true ]]; then
-    _install_completion "env/sciectl/sciectl.completion" "sciectl" "true" </dev/null >/dev/null 2>&1 || true
+    _install_completion "env/sciectl/sciectl.completion" "sciectl" "true" >/dev/null 2>&1 || true
   fi
 
   # 3. 시스템 표준 Man Page (sciectl.1, sciectl-catalog.5) 동기화
-  _install_manpages "env/sciectl/sciectl" "sciectl" "$scope" "true" >/dev/null 2>&1 || true
+  local can_sync_man=true
+  if [[ "$scope" == "global" ]] && [[ ! -w "/usr/local/share/man" ]] && [[ ! -t 0 ]] && ! sudo -n true 2>/dev/null; then
+    can_sync_man=false
+    echo_w "   ⚠️ 비대화형 환경에서 시스템 전역 man 페이지 갱신은 관리자 권한이 필요합니다."
+  fi
+  if [[ "$can_sync_man" == true ]]; then
+    _install_manpages "env/sciectl/sciectl" "sciectl" "$scope" "true" >/dev/null 2>&1 || true
+  fi
 
   # 4. 매니페스트(sciectl.meta) 최신 버전/경로 갱신
   _manifest_save_tool "env/sciectl" "sciectl" "$scope" "${SCRIPT_FILE_VERSION:-}" "$current_script" "${LAST_INSTALLED_COMP_PATH:-}" "${LAST_INSTALLED_MAN_PATHS:-}"
