@@ -4,13 +4,13 @@
 # @title       : ngxconf-ctl
 # @license     : Apache License 2.0
 # @since       : 2026-11-19
-# @desc        : Nginx 버전 기반 설정 파일(conf) 옵션(HTTP/2 등) 제어 CLI 도구
+# @desc        : Nginx 버전 기반 설정 파일(conf) 옵션(HTTP/2, ssl_protocols 등) 제어 CLI 도구
 # @installation:
 #   1. 개인 환경: utils/scriptctl/scriptctl install --script ./ngxconf-ctl --target local
 #   2. 시스템 전역: utils/scriptctl/scriptctl install --script ./ngxconf-ctl --target global
 # ==============================================================================
 
-readonly SCRIPT_FILE_VERSION="2026.11.19.1"
+readonly SCRIPT_FILE_VERSION="2026.11.25.1"
 
 set -Eeuo pipefail
 
@@ -44,6 +44,8 @@ OPT_NGINX_VERSION=""
 
 SUBCOMMAND=""
 ACTION=""
+TARGET_TLS_VERSION=""
+RAW_TLS_VERSION=""
 
 ##
 # 보안 정책 검증: 스크립트 자체의 sudo 또는 root 직접 실행 차단
@@ -97,22 +99,33 @@ show_help() {
   cat << EOF
 사용법:
   ngxconf-ctl [전역 옵션...] <서브커맨드> <액션> [옵션...]
-  ngxconf-ctl http2 <enable|disable> [--conf-dir <경로>] [--dry-run]
+  ngxconf-ctl http2 <enable|disable|status> [--conf-dir <경로>] [--dry-run]
+  ngxconf-ctl ssl_protocols status [--conf-dir <경로>]
+  ngxconf-ctl ssl_protocols <tls버전> <enable|disable> [--conf-dir <경로>] [--dry-run]
   ngxconf-ctl --help
 
 설명:
   서버에 설치된 Nginx 버전을 자동 감지하여 Nginx 가상호스트 설정 파일(*.conf)의
-  옵션을 안전하게 활성화하거나 비활성화합니다.
-  - Nginx 1.25.1 이상 : 최신 표준 독립 지시어 ('http2 on;') 방식으로 제어
-  - Nginx 1.25.1 미만 : 레거시 'listen ... http2;' 파라미터 방식으로 호환 제어
-  - 보안 원칙 : 스크립트 자체는 일반 사용자로 실행되며, 파일 수정 시점에만 필요한 최소 sudo 권한을 요청합니다.
+  옵션을 안전하게 조회(status), 활성화(enable) 또는 비활성화(disable)합니다.
+  - HTTP/2 (1.25.1 이상) : 최신 표준 독립 지시어 ('http2 on;') 방식으로 제어
+  - HTTP/2 (1.25.1 미만) : 레거시 'listen ... http2;' 파라미터 방식으로 호환 제어
+  - ssl_protocols        : TLS 프로토콜 버전(tls1.2, tls1.3, 향후 tls1.4 등) 단위 제어
+  - 보안 원칙            : 스크립트 자체는 일반 사용자로 실행되며, 파일 수정 시점에만 필요한 최소 sudo 권한을 요청합니다.
 
 서브커맨드:
-  http2                  HTTP/2 프로토콜 활성화/비활성화 제어
+  http2                  HTTP/2 프로토콜 상태 조회 및 활성화/비활성화 제어
+    - status             현재 HTTP/2 설정 상태 조회 (파일 수정 없음)
     - enable             HTTP/2 설정 활성화
                          (주석 '# http2 on;' 해제, 없을 시 'listen' 아래에 신규 추가)
     - disable            HTTP/2 설정 비활성화
                          ('http2 on;' 주석 처리, 없을 시 '설정 없음' 안내)
+
+  ssl_protocols          SSL/TLS 프로토콜 버전별 상태 조회 및 활성화/비활성화 제어
+    - status             현재 ssl_protocols 설정 상태 조회 (파일 수정 없음)
+    - <버전> enable      지정한 TLS 버전 활성화 (예: tls1.2, tls1.3, tls1.4 등)
+                         (기존 ssl_protocols 에 추가, 없을 시 SSL 설정 아래 신규 추가)
+    - <버전> disable     지정한 TLS 버전 비활성화 (예: tls1.2, tls1.3, tls1.4 등)
+                         (기존 ssl_protocols 에서 제거, 마지막 버전 제거 시 주석 처리)
 
 옵션 상세:
   --conf-dir <경로>      작업 대상 (*.conf) 디렉토리 경로 (기본값: /etc/nginx/conf.d)
@@ -123,14 +136,19 @@ show_help() {
   --help                 도움말 출력
 
 사용 예시:
-  # 1) 기본 설정 디렉토리(/etc/nginx/conf.d)의 모든 *.conf 에 대해 HTTP/2 활성화
+  # 1) 기본 설정 디렉토리(/etc/nginx/conf.d)의 HTTP/2 및 ssl_protocols 현재 상태 조회
+  ngxconf-ctl http2 status
+  ngxconf-ctl ssl_protocols status
+
+  # 2) 기본 설정 디렉토리의 모든 *.conf 에 대해 HTTP/2 활성화
   ngxconf-ctl http2 enable
 
-  # 2) 특정 디렉토리 지정 및 변경 내역 사전 시뮬레이션 (--dry-run)
-  ngxconf-ctl http2 enable --conf-dir /etc/nginx/sites-available --dry-run
+  # 3) 특정 디렉토리 지정 및 TLSv1.3 활성화 사전 시뮬레이션 (--dry-run)
+  ngxconf-ctl ssl_protocols tls1.3 enable --conf-dir /etc/nginx/sites-available --dry-run
 
-  # 3) 여러 디렉토리의 설정 파일에 대해 HTTP/2 비활성화
-  ngxconf-ctl http2 disable --conf-dir /etc/nginx/conf.d,/etc/nginx/vhosts
+  # 4) TLSv1.2 비활성화 및 신규 TLS 버전(예: tls1.4) 활성화
+  ngxconf-ctl ssl_protocols tls1.2 disable
+  ngxconf-ctl ssl_protocols tls1.4 enable
 
 EOF
 }
@@ -180,6 +198,31 @@ detect_nginx_info() {
 }
 
 ##
+# TLS 버전 문자열을 Nginx ssl_protocols 표준 표기(예: TLSv1.2, TLSv1.3, TLSv1.4)로 정규화
+#
+# @param $1 {string} 입력 TLS 버전 (예: tls1.2, tls1.3, tls1.4, TLSv1.2, 1.3)
+#
+# @return 0 성공 (stdout으로 정규화된 문자열 출력), 1 유효하지 않은 형식
+##
+normalize_tls_version() {
+  local raw="$1"
+  local lower="${raw,,}"
+  local ver=""
+
+  if [[ "$lower" =~ ^(tls)?v?([1-9][0-9]*(\.[0-9]+)*)$ ]]; then
+    ver="${BASH_REMATCH[2]}"
+    if [[ "$ver" == "1" || "$ver" == "1.0" ]]; then
+      echo "TLSv1"
+    else
+      echo "TLSv${ver}"
+    fi
+    return 0
+  fi
+
+  return 1
+}
+
+##
 # 커맨드라인 인자 파싱 (단축 옵션 금지, Long Option 전용)
 ##
 parse_arguments() {
@@ -193,20 +236,59 @@ parse_arguments() {
       http2)
         SUBCOMMAND="http2"
         if (( $# < 2 )) || [[ "$2" =~ ^- ]]; then
-          echo -e "${CLR_RED}오류: 'http2' 서브커맨드 뒤에 'enable' 또는 'disable' 액션을 지정해야 합니다.${CLR_RESET}" >&2
-          echo "예시: ngxconf-ctl http2 enable" >&2
+          echo -e "${CLR_RED}오류: 'http2' 서브커맨드 뒤에 'enable', 'disable' 또는 'status' 액션을 지정해야 합니다.${CLR_RESET}" >&2
+          echo "예시: ngxconf-ctl http2 status" >&2
           exit 1
         fi
         case "$2" in
-          enable|disable)
+          enable|disable|status)
             ACTION="$2"
             shift 2
             ;;
           *)
-            echo -e "${CLR_RED}오류: 지원하지 않는 액션입니다: '$2' (enable 또는 disable 지정 필요)${CLR_RESET}" >&2
+            echo -e "${CLR_RED}오류: 지원하지 않는 액션입니다: '$2' (enable, disable 또는 status 지정 필요)${CLR_RESET}" >&2
             exit 1
             ;;
         esac
+        ;;
+      ssl_protocols)
+        SUBCOMMAND="ssl_protocols"
+        if (( $# < 2 )) || [[ "$2" =~ ^- ]]; then
+          echo -e "${CLR_RED}오류: 'ssl_protocols' 서브커맨드 뒤에 'status' 또는 '<tls버전> <enable|disable>'을 지정해야 합니다.${CLR_RESET}" >&2
+          echo "예시: ngxconf-ctl ssl_protocols status" >&2
+          echo "예시: ngxconf-ctl ssl_protocols tls1.3 enable" >&2
+          exit 1
+        fi
+        if [[ "$2" == "status" ]]; then
+          ACTION="status"
+          shift 2
+        else
+          local normalized_ver=""
+          if ! normalized_ver="$(normalize_tls_version "$2")"; then
+            echo -e "${CLR_RED}오류: 유효하지 않은 TLS 버전 또는 액션입니다: '$2'${CLR_RESET}" >&2
+            echo "예시: ngxconf-ctl ssl_protocols status" >&2
+            echo "예시: ngxconf-ctl ssl_protocols tls1.2 enable" >&2
+            exit 1
+          fi
+          RAW_TLS_VERSION="$2"
+          TARGET_TLS_VERSION="$normalized_ver"
+
+          if (( $# < 3 )) || [[ "$3" =~ ^- ]]; then
+            echo -e "${CLR_RED}오류: '${2}' 뒤에 'enable' 또는 'disable' 액션을 지정해야 합니다.${CLR_RESET}" >&2
+            echo "예시: ngxconf-ctl ssl_protocols ${2} enable" >&2
+            exit 1
+          fi
+          case "$3" in
+            enable|disable)
+              ACTION="$3"
+              shift 3
+              ;;
+            *)
+              echo -e "${CLR_RED}오류: 지원하지 않는 액션입니다: '$3' (enable 또는 disable 지정 필요)${CLR_RESET}" >&2
+              exit 1
+              ;;
+          esac
+        fi
         ;;
       --conf-dir)
         if (( $# < 2 )) || [[ "$2" =~ ^- ]]; then
@@ -245,7 +327,7 @@ parse_arguments() {
   done
 
   if [[ -z "$SUBCOMMAND" ]]; then
-    echo -e "${CLR_RED}오류: 실행할 서브커맨드를 지정해야 합니다. (현재 'http2' 지원)${CLR_RESET}" >&2
+    echo -e "${CLR_RED}오류: 실행할 서브커맨드를 지정해야 합니다. (지원: 'http2', 'ssl_protocols')${CLR_RESET}" >&2
     show_help
     exit 1
   fi
@@ -424,6 +506,349 @@ disable_http2_listen() {
 }
 
 ##
+# 단일 conf 파일 내에서 HTTP/2 설정 상태 조회
+#
+# @param $1 {string} 대상 conf 파일 경로
+# @return 0 조회 완료
+##
+status_http2() {
+  local file="$1"
+  local found=false
+
+  local active_dir_regex='^[[:space:]]*http2[[:space:]]+on[[:space:]]*;'
+  local off_dir_regex='^[[:space:]]*http2[[:space:]]+off[[:space:]]*;'
+  local comment_dir_regex='^[[:space:]]*#[[:space:]]*http2[[:space:]]+(on|off)[[:space:]]*;'
+  local active_listen_regex='^[[:space:]]*listen[[:space:]]+[^;]*http2([[:space:]]|;)'
+  local comment_listen_regex='^[[:space:]]*#[[:space:]]*listen[[:space:]]+[^;]*http2([[:space:]]|;)'
+
+  if grep -qE "$active_dir_regex" "$file"; then
+    found=true
+    while IFS= read -r line; do
+      echo -e "   ${CLR_GREEN}✅ [활성화 - 독립 지시어]${CLR_RESET} ${line}"
+    done < <(grep -nE "$active_dir_regex" "$file")
+  fi
+
+  if grep -qE "$off_dir_regex" "$file"; then
+    found=true
+    while IFS= read -r line; do
+      echo -e "   ${CLR_YELLOW}⏸️  [비활성화 - 명시적 off]${CLR_RESET} ${line}"
+    done < <(grep -nE "$off_dir_regex" "$file")
+  fi
+
+  if grep -qE "$comment_dir_regex" "$file"; then
+    found=true
+    while IFS= read -r line; do
+      echo -e "   ${CLR_GRAY}💤 [비활성화 - 주석 처리]${CLR_RESET} ${line}"
+    done < <(grep -nE "$comment_dir_regex" "$file")
+  fi
+
+  if grep -qE "$active_listen_regex" "$file"; then
+    found=true
+    while IFS= read -r line; do
+      echo -e "   ${CLR_GREEN}✅ [활성화 - 레거시 listen]${CLR_RESET} ${line}"
+    done < <(grep -nE "$active_listen_regex" "$file")
+  fi
+
+  if grep -qE "$comment_listen_regex" "$file"; then
+    found=true
+    while IFS= read -r line; do
+      echo -e "   ${CLR_GRAY}💤 [비활성화 - 주석 listen]${CLR_RESET} ${line}"
+    done < <(grep -nE "$comment_listen_regex" "$file")
+  fi
+
+  if [[ "$found" == "false" ]]; then
+    echo -e "   ${CLR_YELLOW}ℹ️  [미설정] HTTP/2 관련 설정이 없습니다.${CLR_RESET}"
+  fi
+
+  return 0
+}
+
+##
+# 단일 conf 파일 내에서 ssl_protocols 설정 상태 조회
+#
+# @param $1 {string} 대상 conf 파일 경로
+# @return 0 조회 완료
+##
+status_ssl_protocols() {
+  local file="$1"
+  local found=false
+
+  local active_regex='^[[:space:]]*ssl_protocols[[:space:]]+[^;]*;'
+  local comment_regex='^[[:space:]]*#[[:space:]]*ssl_protocols[[:space:]]+[^;]*;'
+
+  if grep -qE "$active_regex" "$file"; then
+    found=true
+    while IFS= read -r line; do
+      local lineno="${line%%:*}"
+      local content="${line#*:}"
+      local protos
+      protos=$(echo "$content" | sed -E 's/^[[:space:]]*ssl_protocols[[:space:]]+//; s/;.*$//' | xargs)
+      echo -e "   ${CLR_GREEN}✅ [활성화]${CLR_RESET} 라인 ${lineno}: ${CLR_CYAN}${protos}${CLR_RESET}  (${content#"${content%%[![:space:]]*}"})"
+    done < <(grep -nE "$active_regex" "$file")
+  fi
+
+  if grep -qE "$comment_regex" "$file"; then
+    found=true
+    while IFS= read -r line; do
+      echo -e "   ${CLR_GRAY}💤 [비활성화 - 주석 처리]${CLR_RESET} ${line}"
+    done < <(grep -nE "$comment_regex" "$file")
+  fi
+
+  if [[ "$found" == "false" ]]; then
+    echo -e "   ${CLR_YELLOW}ℹ️  [미설정] ssl_protocols 설정이 없습니다. (Nginx 기본값 사용)${CLR_RESET}"
+  fi
+
+  return 0
+}
+
+##
+# 단일 conf 파일 내에서 특정 TLS 프로토콜 버전 활성화
+#
+# @param $1 {string} 대상 conf 파일 경로
+# @param $2 {string} 정규화된 TLS 버전 (예: TLSv1.2, TLSv1.3, TLSv1.4)
+# @return 0 변경 완료(예정), 2 변경 없음(스킵), 1 오류
+##
+enable_ssl_protocols() {
+  local file="$1"
+  local target_proto="$2"
+
+  local active_regex='^[[:space:]]*ssl_protocols[[:space:]]+[^;]*;'
+  local comment_regex='^[[:space:]]*#[[:space:]]*ssl_protocols[[:space:]]+[^;]*;'
+
+  # 1. 활성화된 ssl_protocols 지시어가 존재하는 경우
+  if grep -qE "$active_regex" "$file"; then
+    local needs_update=false
+    while IFS= read -r line; do
+      local protos
+      protos=$(echo "$line" | sed -E 's/^[[:space:]]*ssl_protocols[[:space:]]+//; s/;.*$//')
+      local has_proto=false
+      for p in $protos; do
+        if [[ "$p" == "$target_proto" ]]; then
+          has_proto=true
+          break
+        fi
+      done
+      if [[ "$has_proto" == "false" ]]; then
+        needs_update=true
+        break
+      fi
+    done < <(grep -E "$active_regex" "$file")
+
+    if [[ "$needs_update" == "false" ]]; then
+      echo -e "   ${CLR_YELLOW}ℹ️  [이미 설정됨] '${target_proto}' 프로토콜이 이미 활성화되어 있습니다. (변경 없음)${CLR_RESET}"
+      return 2
+    fi
+
+    echo -e "   ${CLR_CYAN}ℹ️  [프로토콜 추가] 기존 'ssl_protocols' 지시어에 '${target_proto}'를 추가합니다.${CLR_RESET}"
+
+    local tmp_file
+    tmp_file=$(mktemp /tmp/ngxconf_ctl_XXXXXX.tmp)
+    awk -v target="$target_proto" '
+      /^[[:space:]]*ssl_protocols[[:space:]]+[^;]*;/ {
+        line = $0
+        semi_pos = index(line, ";")
+        before = substr(line, 1, semi_pos - 1)
+        after = substr(line, semi_pos)
+        sub(/[[:space:]]+$/, "", before)
+        n = split(before, tokens, /[[:space:]]+/)
+        found = 0
+        for (i = 2; i <= n; i++) {
+          if (tokens[i] == target) { found = 1; break }
+        }
+        if (!found) {
+          print before " " target after
+          next
+        }
+      }
+      { print $0 }
+    ' "$file" > "$tmp_file"
+
+    if [[ "$OPT_DRY_RUN" == "true" ]]; then
+      diff -u "$file" "$tmp_file" | grep -E '^[-+][^-+]' | sed 's/^/   /' || true
+      rm -f "$tmp_file"
+      return 0
+    fi
+
+    run_priv_cmd "$file" cp "$tmp_file" "$file"
+    rm -f "$tmp_file"
+    echo -e "   ${CLR_GREEN}✅ [성공] '${target_proto}' 활성화 완료!${CLR_RESET}"
+    return 0
+  fi
+
+  # 2. 주석 처리된 '# ssl_protocols ...;' 만 존재하는 경우
+  if grep -qE "$comment_regex" "$file"; then
+    echo -e "   ${CLR_CYAN}ℹ️  [주석 감지] 주석 처리된 'ssl_protocols' 설정을 해제하고 '${target_proto}'를 활성화합니다.${CLR_RESET}"
+
+    local tmp_file
+    tmp_file=$(mktemp /tmp/ngxconf_ctl_XXXXXX.tmp)
+    awk -v target="$target_proto" '
+      /^[[:space:]]*#[[:space:]]*ssl_protocols[[:space:]]+[^;]*;/ {
+        line = $0
+        match(line, /^[[:space:]]*/)
+        indent = substr(line, 1, RLENGTH)
+        rest = substr(line, RLENGTH + 1)
+        sub(/^#[[:space:]]*/, "", rest)
+        semi_pos = index(rest, ";")
+        before = substr(rest, 1, semi_pos - 1)
+        after = substr(rest, semi_pos)
+        sub(/[[:space:]]+$/, "", before)
+        n = split(before, tokens, /[[:space:]]+/)
+        found = 0
+        for (i = 2; i <= n; i++) {
+          if (tokens[i] == target) { found = 1; break }
+        }
+        if (!found) {
+          print indent before " " target after
+        } else {
+          print indent before after
+        }
+        next
+      }
+      { print $0 }
+    ' "$file" > "$tmp_file"
+
+    if [[ "$OPT_DRY_RUN" == "true" ]]; then
+      diff -u "$file" "$tmp_file" | grep -E '^[-+][^-+]' | sed 's/^/   /' || true
+      rm -f "$tmp_file"
+      return 0
+    fi
+
+    run_priv_cmd "$file" cp "$tmp_file" "$file"
+    rm -f "$tmp_file"
+    echo -e "   ${CLR_GREEN}✅ [성공] 주석 해제 및 '${target_proto}' 활성화 완료!${CLR_RESET}"
+    return 0
+  fi
+
+  # 3. ssl_protocols 지시어가 없는 경우 -> SSL 설정이 있는 파일인지 확인 후 신규 추가
+  local target_line_no=""
+  target_line_no=$(grep -nE '^[[:space:]]*listen[[:space:]]+[^;]*ssl' "$file" | head -n 1 | cut -d: -f1 || true)
+  if [[ -z "$target_line_no" ]]; then
+    target_line_no=$(grep -nE '^[[:space:]]*ssl_certificate[[:space:]]+' "$file" | head -n 1 | cut -d: -f1 || true)
+  fi
+
+  if [[ -z "$target_line_no" ]]; then
+    echo -e "   ${CLR_GRAY}ℹ️  [건너뜀] SSL 설정('listen ... ssl' 또는 'ssl_certificate')이 없어 ssl_protocols를 추가하지 않습니다.${CLR_RESET}"
+    return 2
+  fi
+
+  local target_line
+  target_line=$(sed -n "${target_line_no}p" "$file")
+  local indent=""
+  local indent_regex='^([[:space:]]+)'
+  if [[ "$target_line" =~ $indent_regex ]]; then
+    indent="${BASH_REMATCH[1]}"
+  fi
+
+  echo -e "   ${CLR_CYAN}ℹ️  [신규 추가] SSL 설정 아래에 'ssl_protocols ${target_proto};' 설정을 추가합니다.${CLR_RESET}"
+
+  if [[ "$OPT_DRY_RUN" == "true" ]]; then
+    echo "   [현재 라인 ${target_line_no}] $target_line"
+    echo -e "   ${CLR_GREEN}[추가 라인 ${target_line_no}+1] ${indent}ssl_protocols ${target_proto};${CLR_RESET}"
+    return 0
+  fi
+
+  local tmp_file
+  tmp_file=$(mktemp /tmp/ngxconf_ctl_XXXXXX.tmp)
+  awk -v target="$target_line_no" -v newline="${indent}ssl_protocols ${target_proto};" '
+    NR == target { print $0; print newline; next }
+    { print $0 }
+  ' "$file" > "$tmp_file"
+
+  run_priv_cmd "$file" cp "$tmp_file" "$file"
+  rm -f "$tmp_file"
+
+  echo -e "   ${CLR_GREEN}✅ [성공] 'ssl_protocols ${target_proto};' 추가 완료!${CLR_RESET}"
+  return 0
+}
+
+##
+# 단일 conf 파일 내에서 특정 TLS 프로토콜 버전 비활성화
+#
+# @param $1 {string} 대상 conf 파일 경로
+# @param $2 {string} 정규화된 TLS 버전 (예: TLSv1.2, TLSv1.3, TLSv1.4)
+# @return 0 변경 완료(예정), 2 변경 없음(스킵), 1 오류
+##
+disable_ssl_protocols() {
+  local file="$1"
+  local target_proto="$2"
+
+  local active_regex='^[[:space:]]*ssl_protocols[[:space:]]+[^;]*;'
+
+  if ! grep -qE "$active_regex" "$file"; then
+    echo -e "   ${CLR_YELLOW}ℹ️  [설정 없음] 활성화된 'ssl_protocols' 설정이 없습니다. (변경 없음)${CLR_RESET}"
+    return 2
+  fi
+
+  # 대상 프로토콜이 실제로 포함되어 있는지 확인
+  local has_target=false
+  while IFS= read -r line; do
+    local protos
+    protos=$(echo "$line" | sed -E 's/^[[:space:]]*ssl_protocols[[:space:]]+//; s/;.*$//')
+    for p in $protos; do
+      if [[ "$p" == "$target_proto" ]]; then
+        has_target=true
+        break 2
+      fi
+    done
+  done < <(grep -E "$active_regex" "$file")
+
+  if [[ "$has_target" == "false" ]]; then
+    echo -e "   ${CLR_YELLOW}ℹ️  [설정 없음] '${target_proto}' 프로토콜이 설정되어 있지 않습니다. (변경 없음)${CLR_RESET}"
+    return 2
+  fi
+
+  echo -e "   ${CLR_CYAN}ℹ️  [프로토콜 제거] 'ssl_protocols' 설정에서 '${target_proto}'를 비활성화합니다.${CLR_RESET}"
+
+  local tmp_file
+  tmp_file=$(mktemp /tmp/ngxconf_ctl_XXXXXX.tmp)
+  awk -v target="$target_proto" '
+    /^[[:space:]]*ssl_protocols[[:space:]]+[^;]*;/ {
+      line = $0
+      match(line, /^[[:space:]]*/)
+      indent = substr(line, 1, RLENGTH)
+      semi_pos = index(line, ";")
+      before = substr(line, 1, semi_pos - 1)
+      after = substr(line, semi_pos)
+      sub(/^[[:space:]]*ssl_protocols[[:space:]]+/, "", before)
+      n = split(before, tokens, /[[:space:]]+/)
+      kept = ""
+      kept_count = 0
+      removed = 0
+      for (i = 1; i <= n; i++) {
+        if (tokens[i] == "") continue
+        if (tokens[i] == target) {
+          removed = 1
+        } else {
+          kept = (kept_count == 0) ? tokens[i] : kept " " tokens[i]
+          kept_count++
+        }
+      }
+      if (removed) {
+        if (kept_count > 0) {
+          print indent "ssl_protocols " kept after
+        } else {
+          # 마지막 프로토콜 제거 시 빈 ssl_protocols 문법 오류 방지를 위해 주석 처리
+          print indent "# ssl_protocols " target after
+        }
+        next
+      }
+    }
+    { print $0 }
+  ' "$file" > "$tmp_file"
+
+  if [[ "$OPT_DRY_RUN" == "true" ]]; then
+    diff -u "$file" "$tmp_file" | grep -E '^[-+][^-+]' | sed 's/^/   /' || true
+    rm -f "$tmp_file"
+    return 0
+  fi
+
+  run_priv_cmd "$file" cp "$tmp_file" "$file"
+  rm -f "$tmp_file"
+  echo -e "   ${CLR_GREEN}✅ [성공] '${target_proto}' 비활성화 완료!${CLR_RESET}"
+  return 0
+}
+
+##
 # 메인 제어 루틴
 ##
 main() {
@@ -442,18 +867,28 @@ main() {
   echo "$SEPARATOR_LINE"
   echo -e "${CLR_BOLD}🚀 [ngxconf-ctl] Nginx 설정 파일 옵션 제어 도구${CLR_RESET}"
   echo "$SEPARATOR_LINE"
-  echo -e "  - 제어 대상 기능   : ${CLR_CYAN}${SUBCOMMAND^^}${CLR_RESET} (${ACTION})"
-  echo -e "  - 감지된 Nginx 버전: ${CLR_BOLD}${DETECTED_VERSION}${CLR_RESET}"
-  if [[ "$NGINX_MODE" == "directive" ]]; then
-    echo -e "  - 적용 문법 모드   : ${CLR_GREEN}최신 독립 지시어 모드 ('http2 on;' Nginx 1.25.1+)${CLR_RESET}"
+  if [[ "$SUBCOMMAND" == "ssl_protocols" && -n "$TARGET_TLS_VERSION" ]]; then
+    echo -e "  - 제어 대상 기능   : ${CLR_CYAN}${SUBCOMMAND^^}${CLR_RESET} (${TARGET_TLS_VERSION} / ${ACTION})"
   else
-    echo -e "  - 적용 문법 모드   : ${CLR_YELLOW}레거시 Listen 파라미터 모드 ('listen ... http2;' Nginx < 1.25.1)${CLR_RESET}"
+    echo -e "  - 제어 대상 기능   : ${CLR_CYAN}${SUBCOMMAND^^}${CLR_RESET} (${ACTION})"
   fi
-  echo -e "  - 시뮬레이션 모드  : $([[ "$OPT_DRY_RUN" == "true" ]] && echo -e "${CLR_YELLOW}활성화 (Dry-Run: 실제 파일 수정 안 함)${CLR_RESET}" || echo "비활성화 (실제 파일 수정)")"
+  echo -e "  - 감지된 Nginx 버전: ${CLR_BOLD}${DETECTED_VERSION}${CLR_RESET}"
+  if [[ "$SUBCOMMAND" == "http2" ]]; then
+    if [[ "$NGINX_MODE" == "directive" ]]; then
+      echo -e "  - 적용 문법 모드   : ${CLR_GREEN}최신 독립 지시어 모드 ('http2 on;' Nginx 1.25.1+)${CLR_RESET}"
+    else
+      echo -e "  - 적용 문법 모드   : ${CLR_YELLOW}레거시 Listen 파라미터 모드 ('listen ... http2;' Nginx < 1.25.1)${CLR_RESET}"
+    fi
+  fi
+  if [[ "$ACTION" == "status" ]]; then
+    echo -e "  - 실행 모드        : ${CLR_CYAN}상태 조회 (Read-Only: 파일 수정 안 함)${CLR_RESET}"
+  else
+    echo -e "  - 시뮬레이션 모드  : $([[ "$OPT_DRY_RUN" == "true" ]] && echo -e "${CLR_YELLOW}활성화 (Dry-Run: 실제 파일 수정 안 함)${CLR_RESET}" || echo "비활성화 (실제 파일 수정)")"
+  fi
   echo "--------------------------------------------------------------------------------------"
 
   # 4. 실제 수정 작업 시 root 권한 필요 여부 사전 검사 및 1회 인증 캐싱
-  if [[ "$OPT_DRY_RUN" != "true" ]]; then
+  if [[ "$OPT_DRY_RUN" != "true" && "$ACTION" != "status" ]]; then
     local need_sudo=false
     for d in "${target_dirs[@]}"; do
       d=$(echo "$d" | xargs)
@@ -505,17 +940,19 @@ main() {
       total_files=$((total_files + 1))
       echo -e "\n📄 [파일 검사]: ${CLR_BOLD}${conf}${CLR_RESET}"
 
-      if [[ "$OPT_DRY_RUN" != "true" ]] && is_sudo_required_for_file "$conf"; then
+      if [[ "$OPT_DRY_RUN" != "true" && "$ACTION" != "status" ]] && is_sudo_required_for_file "$conf"; then
         echo -e "   ${CLR_CYAN}🔐 [권한 상승] 대상 파일 수정 시 root(sudo) 권한을 적용합니다.${CLR_RESET}"
       fi
 
-      if [[ "$OPT_DRY_RUN" != "true" && "$OPT_BACKUP" == "true" ]]; then
+      if [[ "$OPT_DRY_RUN" != "true" && "$ACTION" != "status" && "$OPT_BACKUP" == "true" ]]; then
         run_priv_cmd "$conf" cp -a "$conf" "${conf}.bak"
       fi
 
       local ret=0
       if [[ "$SUBCOMMAND" == "http2" ]]; then
-        if [[ "$ACTION" == "enable" ]]; then
+        if [[ "$ACTION" == "status" ]]; then
+          status_http2 "$conf" || ret=$?
+        elif [[ "$ACTION" == "enable" ]]; then
           if [[ "$NGINX_MODE" == "directive" ]]; then
             enable_http2_directive "$conf" || ret=$?
           else
@@ -527,6 +964,14 @@ main() {
           else
             disable_http2_listen "$conf" || ret=$?
           fi
+        fi
+      elif [[ "$SUBCOMMAND" == "ssl_protocols" ]]; then
+        if [[ "$ACTION" == "status" ]]; then
+          status_ssl_protocols "$conf" || ret=$?
+        elif [[ "$ACTION" == "enable" ]]; then
+          enable_ssl_protocols "$conf" "$TARGET_TLS_VERSION" || ret=$?
+        elif [[ "$ACTION" == "disable" ]]; then
+          disable_ssl_protocols "$conf" "$TARGET_TLS_VERSION" || ret=$?
         fi
       fi
 
@@ -546,18 +991,27 @@ main() {
   done
 
   echo "$SEPARATOR_LINE"
-  echo -e "${CLR_BOLD}📊 [작업 요약 보고]${CLR_RESET}"
-  echo "$SEPARATOR_LINE"
-  echo -e "  - 총 점검 대상 파일 수  : ${total_files}개"
-  echo -e "  - 변경 완료(예정) 파일 수: ${CLR_GREEN}${modified_files}개${CLR_RESET}"
-  echo -e "  - 변경 없음(스킵) 파일 수: ${CLR_GRAY}${skipped_files}개${CLR_RESET}"
-  if (( error_files > 0 )); then
-    echo -e "  - 오류/경고 파일 수     : ${CLR_RED}${error_files}개${CLR_RESET}"
+  if [[ "$ACTION" == "status" ]]; then
+    echo -e "${CLR_BOLD}📊 [상태 조회 요약 보고]${CLR_RESET}"
+    echo "$SEPARATOR_LINE"
+    echo -e "  - 총 조회 대상 파일 수  : ${total_files}개"
+    if (( error_files > 0 )); then
+      echo -e "  - 오류/경고 파일 수     : ${CLR_RED}${error_files}개${CLR_RESET}"
+    fi
+  else
+    echo -e "${CLR_BOLD}📊 [작업 요약 보고]${CLR_RESET}"
+    echo "$SEPARATOR_LINE"
+    echo -e "  - 총 점검 대상 파일 수  : ${total_files}개"
+    echo -e "  - 변경 완료(예정) 파일 수: ${CLR_GREEN}${modified_files}개${CLR_RESET}"
+    echo -e "  - 변경 없음(스킵) 파일 수: ${CLR_GRAY}${skipped_files}개${CLR_RESET}"
+    if (( error_files > 0 )); then
+      echo -e "  - 오류/경고 파일 수     : ${CLR_RED}${error_files}개${CLR_RESET}"
+    fi
   fi
   echo "$SEPARATOR_LINE"
 
-  # Nginx 문법 검사 (Dry-run이 아니고 수정된 파일이 있으며 nginx 명령어가 있을 때)
-  if [[ "$OPT_DRY_RUN" != "true" && $modified_files -gt 0 ]] && command -v nginx >/dev/null 2>&1; then
+  # Nginx 문법 검사 (Dry-run, status가 아니고 수정된 파일이 있으며 nginx 명령어가 있을 때)
+  if [[ "$OPT_DRY_RUN" != "true" && "$ACTION" != "status" && $modified_files -gt 0 ]] && command -v nginx >/dev/null 2>&1; then
     echo -e "🔍 [Nginx 문법 검사]: 'nginx -t' 실행 중..."
     local nginx_test_ok=false
     if nginx -t >/dev/null 2>&1; then
