@@ -1,4 +1,4 @@
-.TH DKCONTLS 1 "2026-10-26" "dkcontls 1.0.0" "User Commands"
+.TH DKCONTLS 1 "2026-11-25" "dkcontls 2026.11.25.1" "User Commands"
 .SH NAME
 dkcontls \- dkcontls: Docker Container List Wrapper CLI
 
@@ -42,7 +42,7 @@ Bash Completion에서 이미 선택한 컬럼은 제외하고 나머지 컬럼�
 [가능] 조건 기반 컨테이너 필터링 (status=running, name=web 등)
 .TP
 .B \-\-format <columns|fmt>
-[불가] 콤마 구분 컬럼 목록(ID,Names,Status,Ports 등) 또는 table, json, Go 템플릿
+[불가] 콤마 구분 컬럼 목록(ID,Names,Status,Ports 등, 맨 마지막 컬럼은 전체 출력) 또는 table, json, Go 템플릿
 .TP
 .B \-\-last <int>
 [불가] 마지막에 생성된 N개의 컨테이너 표시 (모든 상태 포함)
@@ -50,8 +50,8 @@ Bash Completion에서 이미 선택한 컬럼은 제외하고 나머지 컬럼�
 .B \-\-latest
 [불가] 가장 최근에 생성된 컨테이너 1개 표시 (모든 상태 포함)
 .TP
-.B \-\-no\-trunc
-[불가] 출력 내용을 생략(truncate)하지 않고 전체 표시
+.B \-\-no\-trunc [columns]
+[불가] 출력 내용을 생략(truncate)하지 않고 전체 표시 (인자 생략 시 전체 컬럼, 컬럼 지정 시 해당 컬럼만 전체 출력)
 .TP
 .B \-\-quiet
 [불가] 컨테이너 ID만 출력
