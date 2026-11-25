@@ -407,12 +407,12 @@ main() {
   parse_arguments "$@"
   check_docker
 
-  # 검사 대상 구성요소 정의: 컴포넌트 표시명 | 기본 컨테이너명 | 이미지 매칭 정규식 | Command 정규식 | 버전 추출 함수
+  # 검사 대상 구성요소 정의: 컴포넌트 표시명 ; 기본 컨테이너명 ; 이미지 매칭 정규식 ; Command 정규식 ; 버전 추출 함수
   local -a targets=(
-    "Defguard Core|${CONTAINER_CORE}|defguard/defguard(:|$)|(^|/)defguard(\$| )|get_core_version"
-    "Defguard Gateway|${CONTAINER_GATEWAY}|defguard/gateway(:|$)|defguard-gateway|get_gateway_version"
-    "Defguard Proxy|${CONTAINER_PROXY}|defguard/defguard-proxy(:|$)|defguard-proxy|get_proxy_version"
-    "PostgreSQL|${CONTAINER_DB}|(^|/)postgres(:|$)|docker-entrypoint\.sh|get_postgres_version"
+    "Defguard Core;${CONTAINER_CORE};defguard/defguard(:|\$);(^|/)defguard(\$| );get_core_version"
+    "Defguard Gateway;${CONTAINER_GATEWAY};defguard/gateway(:|\$);defguard-gateway;get_gateway_version"
+    "Defguard Proxy;${CONTAINER_PROXY};defguard/defguard-proxy(:|\$);defguard-proxy;get_proxy_version"
+    "PostgreSQL;${CONTAINER_DB};(^|/)postgres(:|\$);docker-entrypoint\.sh;get_postgres_version"
   )
 
   local -a res_components=()
@@ -423,7 +423,7 @@ main() {
 
   local item=""
   for item in "${targets[@]}"; do
-    IFS='|' read -r comp_name def_name img_regex cmd_regex ver_func <<< "$item"
+    IFS=';' read -r comp_name def_name img_regex cmd_regex ver_func <<< "$item"
 
     local c_info=""
     c_info=$(inspect_container "$def_name" "$img_regex" "$cmd_regex")
