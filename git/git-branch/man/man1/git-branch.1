@@ -1,4 +1,4 @@
-.TH GIT-BRANCH 1 "2026-11-25" "git-branch 2026.11.25.1" "User Commands"
+.TH GIT-BRANCH 1 "2026-11-25" "git-branch 2026.11.25.2" "User Commands"
 .SH NAME
 git-branch \- Manage Git branch lifecycles (batch deletion and single addition)
 
@@ -103,7 +103,7 @@ Git 저장소에서 로컬 및 원격(\fIorigin\fR) 브랜치를 일괄 삭제(\
 .SH GENERAL OPTIONS
 .TP
 .B \-\-all
-서브커맨드 없이 지정 시 로컬 및 원격 추적 브랜치 전체 목록을 출력합니다(\fIgit branch -a\fR와 동일). 인자 없이 실행하면 로컬 브랜치 목록을 출력합니다(\fIgit branch\fR와 동일).
+서브커맨드 없이 지정 시 로컬 및 원격 추적 브랜치 전체 목록을 출력합니다(\fIgit branch -a\fR와 동일). 인자 없이 실행하면 로컬 브랜치 목록을 출력합니다(\fIgit branch\fR와 동일). \fBwatch\fR 명령어 하위에서 호출된 경우 자동으로 감지하여 \fB\-\-color=always\fR를 적용합니다.
 .TP
 .B \-\-help
 도움말 및 옵션 안내를 출력하고 종료합니다.
