@@ -1,0 +1,46 @@
+# =======================================
+# @author   : parkjunhong77@gmail.com
+# @title    : git-log-abbr completion
+# @license  : Apache License 2.0
+# @since    : 2026-11-25
+# @desc     : Bash completion for git-log-abbr (Linux/macOS)
+# @installation :
+#   1. insert 'source <path>/git-log-abbr.completion' into ~/.bashrc or ~/.bash_profile for personal usage.
+#   2. copy to /etc/bash_completion.d/ or use scriptctl for all users.
+# =======================================
+#
+# Bash Completion Parameters:
+#   - COMP_WORDS : 현재 커맨드라인의 단어 배열
+#   - COMP_CWORD : 현재 커서가 위치한 단어의 인덱스
+#   - COMP_LINE  : 현재 입력된 전체 커맨드라인 문자열
+#   - COMPREPLY  : 자동완성 후보 결과를 저장하는 배열
+#   - $1         : 자동완성 대상 명령어 이름
+#   - $2         : 현재 입력 중인 단어 (cur)
+#   - $3         : 직전에 입력된 단어 (prev)
+#
+
+_git_log_abbr_completion() {
+  local cur opts available_opts opt word is_used
+  COMPREPLY=()
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  opts="--color --help"
+  available_opts=""
+
+  for opt in $opts; do
+    is_used=0
+    for word in "${COMP_WORDS[@]}"; do
+      if [[ "$word" == "$opt" ]]; then
+        is_used=1
+        break
+      fi
+    done
+    if (( is_used == 0 )); then
+      available_opts+="$opt "
+    fi
+  done
+
+  COMPREPLY=( $(compgen -W "${available_opts}" -- "${cur}") )
+  return 0
+}
+
+complete -F _git_log_abbr_completion git-log-abbr
