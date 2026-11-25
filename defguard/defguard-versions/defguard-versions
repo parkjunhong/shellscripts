@@ -10,7 +10,7 @@
 #   2. 시스템 전역: ../../utils/scriptctl/scriptctl install --script ./defguard-versions --target global
 # ==============================================================================
 
-readonly SCRIPT_FILE_VERSION="2026.11.25.1"
+readonly SCRIPT_FILE_VERSION="2026.11.25.2"
 
 set -Eeuo pipefail
 
