@@ -29,10 +29,19 @@ Git 저장소에서 로컬 및 원격(`origin`) 브랜치를 안전하고 간편
 
 ### 기본 문법
 ```bash
+git-branch [--all]
 git-branch <서브커맨드> [옵션...]
 git-branch delete [<브랜치명,...>] [--branch <브랜치명,...>] [--pattern <패턴>] [옵션...]
 git-branch add --branch <브랜치명> [--from <기준브랜치>] [옵션...]
+git-branch --help
 ```
+
+### 기본 조회 및 전역 옵션 (서브커맨드 미지정 시)
+| 옵션 | 설명 |
+| :--- | :--- |
+| *(옵션 없음)* | 현재 저장소의 로컬 브랜치 목록을 출력합니다 (`git branch`와 동일). |
+| `--all` | 로컬 및 원격 추적 브랜치 전체 목록을 출력합니다 (`git branch -a`와 동일). |
+| `--help` | 도움말 및 옵션 안내를 출력합니다. |
 
 ### 서브커맨드
 | 서브커맨드 | 설명 |
@@ -75,6 +84,12 @@ git-branch add --branch <브랜치명> [--from <기준브랜치>] [옵션...]
 ## 🚀 사용 예시
 
 ```bash
+# 0) 로컬 브랜치 목록 조회 (git branch와 동일)
+git-branch
+
+# 0-1) 로컬 및 원격 추적 브랜치 전체 목록 조회 (git branch -a와 동일)
+git-branch --all
+
 # 1) 머지 완료된 특정 작업 브랜치를 로컬과 원격에서 동시 삭제
 #    (현재 체크아웃된 브랜치일 경우 develop 또는 main으로 자동 전환 후 삭제)
 git-branch delete --branch develop-20261119-c7NGVhK3
