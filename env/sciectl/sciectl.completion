@@ -64,8 +64,62 @@ _sciectl_get_file_age() {
 }
 
 ##
-# 원격 GitHub에서 catalogs.ini 파일을 다운로드하여 TTL(기본 60초) 캐시를 관리하고
-# 로컬 캐시 파일 경로를 반환합니다.
+# 원격 GitHub에서 catalogs.ini 및 모든 *.catalog 캐시를 백그라운드에서 비동기로 갱신합니다.
+# (중복 실행 방지를 위해 .refresh.lock 타임스탬프 기반 30초 쿨다운 적용)
+#
+# @return 0
+##
+_sciectl_refresh_cache_async() {
+  local cache_dir
+  cache_dir="$(_sciectl_get_cache_dir)"
+  local lock_file="${cache_dir}/.refresh.lock"
+  local raw_base="${SCIECTL_REPO_RAW_URL:-$SCIECTL_REPO_RAW_URL_DEFAULT}"
+
+  if [[ -f "$lock_file" ]]; then
+    local lock_age
+    lock_age="$(_sciectl_get_file_age "$lock_file")"
+    (( lock_age < 30 )) && return 0
+  fi
+  touch "$lock_file" 2>/dev/null || return 0
+
+  (
+    local ini_tmp="${cache_dir}/catalogs.ini.tmp.$$"
+    local ini_file="${cache_dir}/catalogs.ini"
+    if curl -sf --connect-timeout 2 --max-time 4 "${raw_base}/env/catalogs/catalogs.ini" -o "$ini_tmp" 2>/dev/null && [[ -s "$ini_tmp" ]]; then
+      mv -f "$ini_tmp" "$ini_file" 2>/dev/null || true
+    else
+      rm -f "$ini_tmp" 2>/dev/null || true
+      exit 0
+    fi
+
+    local -a cat_files=()
+    local line
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      if [[ "$line" =~ ^catalog_file[[:space:]]*=[[:space:]]*(.*) ]]; then
+        local cf="${BASH_REMATCH[1]}"
+        cf="$(echo "$cf" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+        [[ -n "$cf" ]] && cat_files+=("$cf")
+      fi
+    done < "$ini_file"
+
+    local cf tmp_cf
+    for cf in "${cat_files[@]}"; do
+      (
+        tmp_cf="${cache_dir}/${cf}.tmp.$$"
+        if curl -sf --connect-timeout 2 --max-time 4 "${raw_base}/env/catalogs/${cf}" -o "$tmp_cf" 2>/dev/null && [[ -s "$tmp_cf" ]]; then
+          mv -f "$tmp_cf" "${cache_dir}/${cf}" 2>/dev/null || true
+        else
+          rm -f "$tmp_cf" 2>/dev/null || true
+        fi
+      ) &
+    done
+    wait
+  ) >/dev/null 2>&1 &
+}
+
+##
+# 원격 GitHub에서 catalogs.ini 파일을 TTL(기본 3600초) 캐시로 조회합니다.
+# Stale-While-Revalidate 방식으로 기존 캐시가 있으면 즉시 반환하고 만료 시 백그라운드 갱신합니다.
 #
 # @return catalogs.ini 캐시 파일 경로
 ##
@@ -73,26 +127,17 @@ _sciectl_fetch_remote_catalogs_cached() {
   local cache_dir
   cache_dir="$(_sciectl_get_cache_dir)"
   local cache_file="${cache_dir}/catalogs.ini"
-  local ttl="${SCIECTL_CACHE_TTL:-60}" # 기본값: 60초 (1분)
-  local raw_base="${SCIECTL_REPO_RAW_URL:-$SCIECTL_REPO_RAW_URL_DEFAULT}"
+  local ttl="${SCIECTL_CACHE_TTL:-3600}"
 
   local need_refresh=1
   if [[ -f "$cache_file" && -s "$cache_file" ]]; then
     local age
     age="$(_sciectl_get_file_age "$cache_file")"
-    if (( age < ttl )); then
-      need_refresh=0
-    fi
+    (( age < ttl )) && need_refresh=0
   fi
 
   if (( need_refresh == 1 )); then
-    local tmp_fetch="${cache_file}.tmp.$$"
-    if curl -sf --connect-timeout 2 --max-time 4 "${raw_base}/env/catalogs/catalogs.ini" -o "$tmp_fetch" 2>/dev/null && [[ -s "$tmp_fetch" ]]; then
-      mv -f "$tmp_fetch" "$cache_file" 2>/dev/null || true
-    else
-      rm -f "$tmp_fetch" 2>/dev/null || true
-      [[ -f "$cache_file" ]] && touch "$cache_file" 2>/dev/null || true
-    fi
+    _sciectl_refresh_cache_async
   fi
 
   if [[ -f "$cache_file" && -s "$cache_file" ]]; then
@@ -103,8 +148,8 @@ _sciectl_fetch_remote_catalogs_cached() {
 }
 
 ##
-# 원격 GitHub에서 개별 *.catalog 파일을 다운로드하여 TTL(기본 60초) 캐시를 관리하고
-# 로컬 캐시 파일 경로를 반환합니다.
+# 원격 GitHub에서 개별 *.catalog 파일을 TTL(기본 3600초) 캐시로 조회합니다.
+# Stale-While-Revalidate 방식으로 기존 캐시가 있으면 즉시 반환합니다.
 #
 # @param $1 {string} 카탈로그 파일명 (예: setup-env.catalog) 또는 카탈로그 ID
 #
@@ -116,26 +161,17 @@ _sciectl_fetch_remote_catalog_file_cached() {
   local cache_dir
   cache_dir="$(_sciectl_get_cache_dir)"
   local local_path="${cache_dir}/${cat_file}"
-  local ttl="${SCIECTL_CACHE_TTL:-60}" # 기본값: 60초 (1분)
-  local raw_base="${SCIECTL_REPO_RAW_URL:-$SCIECTL_REPO_RAW_URL_DEFAULT}"
+  local ttl="${SCIECTL_CACHE_TTL:-3600}"
 
   local need_refresh=1
   if [[ -f "$local_path" && -s "$local_path" ]]; then
     local age
     age="$(_sciectl_get_file_age "$local_path")"
-    if (( age < ttl )); then
-      need_refresh=0
-    fi
+    (( age < ttl )) && need_refresh=0
   fi
 
   if (( need_refresh == 1 )); then
-    local tmp_fetch="${local_path}.tmp.$$"
-    if curl -sf --connect-timeout 2 --max-time 4 "${raw_base}/env/catalogs/${cat_file}" -o "$tmp_fetch" 2>/dev/null && [[ -s "$tmp_fetch" ]]; then
-      mv -f "$tmp_fetch" "$local_path" 2>/dev/null || true
-    else
-      rm -f "$tmp_fetch" 2>/dev/null || true
-      [[ -f "$local_path" ]] && touch "$local_path" 2>/dev/null || true
-    fi
+    _sciectl_refresh_cache_async
   fi
 
   if [[ -f "$local_path" && -s "$local_path" ]]; then
@@ -476,6 +512,42 @@ _sciectl_complete_csv_values() {
 }
 
 ##
+# 로컬 매니페스트에서 현재 설치된 도구 및 등록된 SSH 공개키 후보군을 즉시 로드합니다.
+#
+# @return tool_candidates, key_candidates 갱신 (설치 항목이 있는 경우)
+##
+_sciectl_load_installed_candidates() {
+  local -a inst_tools=()
+  local -a inst_keys=()
+  local dir mf val
+
+  for dir in "${XDG_STATE_HOME:-$HOME/.local/state}/sciectl/installed/tools" "/var/lib/sciectl/installed/tools"; do
+    [[ -d "$dir" ]] || continue
+    for mf in "${dir}"/*.meta; do
+      [[ -f "$mf" ]] || continue
+      val="$(grep -m1 '^TOOL_ID=' "$mf" 2>/dev/null | cut -d'=' -f2-)"
+      [[ -n "$val" ]] && inst_tools+=("$val")
+    done
+  done
+
+  local kdir="${XDG_STATE_HOME:-$HOME/.local/state}/sciectl/installed/keys"
+  if [[ -d "$kdir" ]]; then
+    for mf in "${kdir}"/*.meta; do
+      [[ -f "$mf" ]] || continue
+      val="$(grep -m1 '^KEY_ID=' "$mf" 2>/dev/null | cut -d'=' -f2-)"
+      [[ -n "$val" ]] && inst_keys+=("$val")
+    done
+  fi
+
+  if (( ${#inst_tools[@]} > 0 )); then
+    tool_candidates="$(printf '%s\n' "${inst_tools[@]}" | sort -u | tr '\n' ' ')"
+  fi
+  if (( ${#inst_keys[@]} > 0 )); then
+    key_candidates="$(printf '%s\n' "${inst_keys[@]}" | sort -u | tr '\n' ' ')"
+  fi
+}
+
+##
 # sciectl 명령어에 대한 Bash 자동 완성 처리 함수
 #
 # @param $1 {string} 명령어 이름 (Command name)
@@ -494,16 +566,8 @@ _sciectl_completion() {
   compopt +o nospace 2>/dev/null || true
 
   local -a subcommands=("install" "update" "remove" "list" "info" "--help")
-  local catalog_candidates=""
-  local installer_candidates=""
-  local command_candidates=""
-  local key_candidates=""
-  local step_candidates=""
-  local tool_candidates=""
 
-  _sciectl_load_candidates
-
-  # 첫 번째 인자 완성
+  # 첫 번째 인자 완성 (원격 조회 없이 0ms 즉시 응답)
   if (( COMP_CWORD == 1 )); then
     if [[ "$cur" == --* ]]; then
       local -a top_opts=(
@@ -518,6 +582,15 @@ _sciectl_completion() {
     fi
     return 0
   fi
+
+  local catalog_candidates=""
+  local installer_candidates=""
+  local command_candidates=""
+  local key_candidates=""
+  local step_candidates=""
+  local tool_candidates=""
+
+  _sciectl_load_candidates
 
   local subcmd="${COMP_WORDS[1]:-}"
   if [[ "$subcmd" == --* ]]; then
@@ -629,6 +702,7 @@ _sciectl_completion() {
       ;;
 
     update|remove)
+      _sciectl_load_installed_candidates
       local specified_catalogs
       specified_catalogs="$(_sciectl_get_used_values "--catalog" "")"
       if [[ -n "$specified_catalogs" ]]; then
@@ -686,6 +760,9 @@ _sciectl_completion() {
       ;;
 
     list)
+      if [[ " ${COMP_WORDS[*]} " == *" --installed "* ]]; then
+        _sciectl_load_installed_candidates
+      fi
       local -a list_opts=("--type" "--installed" "--tool" "--ssh-key" "--target" "--orderby" "--local" "--remote" "--no-update" "--force-update" "--version" "--help")
       case "$cur" in
         --type=*)
