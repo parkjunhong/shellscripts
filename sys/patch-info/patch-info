@@ -12,7 +12,7 @@
 
 # 도움말 출력 함수
 
-readonly SCRIPT_FILE_VERSION="2026.11.24.8"
+readonly SCRIPT_FILE_VERSION="2026.11.25.1"
 
 help() {
   cat <<'EOF'
@@ -688,6 +688,126 @@ except Exception:
         resolved=true
       else
         ADV_STATUS="해당 없음 (Not Affected - 관련 권고 없음)"
+      fi
+    fi
+
+    # [Arch Linux 환경]: Arch Security Tracker REST API 및 arch-audit 연동
+    if [[ "$resolved" == "false" && "$OS_TYPE" == "arch" ]]; then
+      if [[ "$ONLINE_MODE" == "true" ]] && command -v curl >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+        log_debug "Arch Security Tracker REST API를 통해 '$advisory' 조회..."
+        local arch_resp http_code arch_json
+        arch_resp="$(curl -s -w "\nHTTP_CODE:%{http_code}" --connect-timeout 3 --max-time 8 "https://security.archlinux.org/${advisory}.json" 2>/dev/null || true)"
+        http_code="$(echo "$arch_resp" | grep -E '^HTTP_CODE:' | tail -n 1 | cut -d':' -f2)"
+        arch_json="$(echo "$arch_resp" | sed '/^HTTP_CODE:/d')"
+
+        if [[ "$http_code" == "404" ]]; then
+          ADV_STATUS="해당 없음 (Not Affected - Arch 트래커 미등록)"
+          resolved=true
+        elif [[ "$http_code" == "200" && -n "$arch_json" ]]; then
+          local arch_parsed=""
+          arch_parsed="$(printf "%s" "$arch_json" | python3 -c '
+import json, sys, urllib.request
+
+try:
+    data = json.load(sys.stdin)
+    pkgs = data.get("packages", [])
+    advisories = data.get("advisories", [])
+    groups = data.get("groups", [])
+    vtype = data.get("type", "").strip()
+    sev = data.get("severity", "").strip()
+
+    title_parts = []
+    if pkgs:
+        title_parts.append(", ".join(pkgs))
+    if vtype:
+        title_parts.append(vtype)
+    elif data.get("description"):
+        title_parts.append(data.get("description", "").strip().split("\n")[0][:50])
+    title = " - ".join(title_parts) if title_parts else "Arch Security Issue"
+    if sev:
+        title = f"[{sev}] {title}"
+    if advisories:
+        title += " (" + ", ".join(advisories) + ")"
+
+    avg_status = ""
+    fixed_ver = ""
+    if groups:
+        try:
+            req = urllib.request.Request(f"https://security.archlinux.org/{groups[0]}.json")
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                avg_data = json.loads(resp.read().decode("utf-8"))
+                avg_status = avg_data.get("status", "") or ""
+                fixed_ver = avg_data.get("fixed", "") or ""
+        except Exception:
+            pass
+
+    print("TITLE=" + title)
+    print("STATUS=" + avg_status)
+    print("FIXED=" + fixed_ver)
+    print("PKGS=" + " ".join(pkgs))
+except Exception:
+    sys.exit(1)
+' 2>/dev/null || true)"
+
+          if [[ -n "$arch_parsed" ]]; then
+            local a_title="" a_status="" a_fixed="" a_pkgs=""
+            a_title="$(echo "$arch_parsed" | grep -E '^TITLE=' | sed 's/^TITLE=//')"
+            a_status="$(echo "$arch_parsed" | grep -E '^STATUS=' | sed 's/^STATUS=//')"
+            a_fixed="$(echo "$arch_parsed" | grep -E '^FIXED=' | sed 's/^FIXED=//')"
+            a_pkgs="$(echo "$arch_parsed" | grep -E '^PKGS=' | sed 's/^PKGS=//')"
+
+            [[ -n "$a_title" ]] && ADV_TITLE="$a_title"
+
+            if [[ -n "$a_pkgs" ]]; then
+              local has_installed=false
+              for s_pkg in $a_pkgs; do
+                local inst_ver=""
+                inst_ver="$(pacman -Q "$s_pkg" 2>/dev/null | awk '{print $2}' || true)"
+                if [[ -n "$inst_ver" ]]; then
+                  has_installed=true
+                  ADV_PKG="$s_pkg"
+                  if [[ "$a_status" == "Not affected" ]]; then
+                    ADV_STATUS="해당 없음 (Not Affected)"
+                  elif [[ "$a_status" == "Fixed" && -n "$a_fixed" ]]; then
+                    if command -v vercmp >/dev/null 2>&1; then
+                      local cmp_res
+                      cmp_res="$(vercmp "$inst_ver" "$a_fixed" 2>/dev/null || echo -1)"
+                      if [[ "$cmp_res" -ge 0 ]]; then
+                        ADV_STATUS="해결됨 (Resolved - 이미 패치 적용됨)"
+                      else
+                        ADV_STATUS="업데이트 가능 (Available - 패치 미적용)"
+                      fi
+                    else
+                      ADV_STATUS="확인 필요 (설치됨: $inst_ver, 패치: $a_fixed)"
+                    fi
+                  elif [[ "$a_status" =~ ^(Vulnerable|Testing|Unknown)$ || -z "$a_fixed" ]]; then
+                    ADV_STATUS="업데이트 대기중 (Vulnerable - 패치 미배포)"
+                  fi
+                  break
+                fi
+              done
+
+              if [[ "$has_installed" == "false" ]]; then
+                ADV_PKG="$(echo "$a_pkgs" | awk '{print $1}')"
+                ADV_STATUS="해당 없음 (Not Affected - 패키지 미설치)"
+              fi
+            else
+              ADV_STATUS="해당 없음 (Not Affected - 영향 패키지 없음)"
+            fi
+            resolved=true
+          fi
+        fi
+      fi
+
+      if [[ "$resolved" == "false" && "$ONLINE_MODE" == "true" ]] && command -v arch-audit >/dev/null 2>&1; then
+        log_debug "arch-audit를 통해 '$advisory' 조회..."
+        local aa_out=""
+        aa_out="$(timeout 15 arch-audit -f "%n|%c|%t" 2>/dev/null | grep -i "$advisory" | head -n 1 || true)"
+        if [[ -n "$aa_out" ]]; then
+          ADV_PKG="$(echo "$aa_out" | cut -d'|' -f1)"
+          ADV_STATUS="업데이트 가능 (Available - 패치 미적용)"
+          resolved=true
+        fi
       fi
     fi
 
