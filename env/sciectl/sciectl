@@ -11,9 +11,9 @@
 # =======================================
 
 readonly FILENAME="$(basename "$0")"
-readonly SCRIPT_FILE_VERSION="2026.11.24.6"
+readonly SCRIPT_FILE_VERSION="2026.11.25.1"
 # 구버전 sciectl(<=2026.11.23.1) 자가 업데이트 하위 호환성 유지용 (추후 제거 예정)
-readonly SCIECTL_VERSION="2026.11.24.6"
+readonly SCIECTL_VERSION="2026.11.25.1"
 readonly REPO_BASE_URL="${SCIECTL_REPO_URL:-https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main}"
 readonly REPO_WEB_BASE_URL="${SCIECTL_REPO_WEB_URL:-https://github.com/parkjunhong/shellscripts/blob/main}"
 
@@ -580,30 +580,57 @@ _detect_local_repo() {
 #
 # @param $1 {string} 저장소 내 상대 경로 또는 전체 URL
 # @param $2 {string} 저장할 로컬 목적지 파일 경로
+# @param $3 {string} 다운로드 진행/결과 로그 출력 여부 (true | false, 기본값: false)
 #
 # @return 성공 시 0, 실패 시 1
 ##
 _fetch_resource() {
   local rel_or_url="$1"
   local dest_file="$2"
+  local show_progress="${3:-false}"
 
+  local target_url=""
   if [[ "$rel_or_url" == https://* || "$rel_or_url" == http://* ]]; then
-    _ensure_curl
-    curl -sfLo "$dest_file" --connect-timeout 3 --max-time 8 "$rel_or_url"
-    return $?
-  fi
-
-  if _detect_local_repo && [[ -f "${LOCAL_REPO_ROOT}/${rel_or_url}" ]]; then
+    target_url="$rel_or_url"
+  elif _detect_local_repo && [[ -f "${LOCAL_REPO_ROOT}/${rel_or_url}" ]]; then
     cp "${LOCAL_REPO_ROOT}/${rel_or_url}" "$dest_file"
-    return $?
-  fi
-
-  if [[ "$SOURCE_MODE" == "local" ]]; then
-    return 1
+    local rc=$?
+    if (( rc == 0 )) && [[ "$show_progress" == "true" ]]; then
+      local fsize
+      fsize="$(wc -c < "$dest_file" 2>/dev/null || echo 0)"
+      echo " - [⬇️ ] 로컬 복사 완료: ${rel_or_url} (${fsize} bytes)"
+    fi
+    return $rc
+  else
+    if [[ "$SOURCE_MODE" == "local" ]]; then
+      return 1
+    fi
+    target_url="${REPO_BASE_URL}/${rel_or_url}"
   fi
 
   _ensure_curl
-  curl -sfLo "$dest_file" --connect-timeout 3 --max-time 8 "${REPO_BASE_URL}/${rel_or_url}"
+  local bust_sep="?"
+  [[ "$target_url" == *\?* ]] && bust_sep="&"
+  local fetch_url="${target_url}${bust_sep}t=$(date +%s)"
+
+  if [[ "$show_progress" == "true" ]]; then
+    echo " - [⬇️ ] 다운로드 중: ${target_url}"
+    local stats
+    if stats="$(curl -sfLo "$dest_file" --connect-timeout 3 --max-time 8 \
+      -H "Cache-Control: no-cache" -H "Pragma: no-cache" \
+      -w '%{size_download}|%{time_total}' "$fetch_url" 2>/dev/null)"; then
+      local dl_bytes dl_time
+      IFS='|' read -r dl_bytes dl_time <<< "$stats"
+      echo_i " - [⬇️ ] 다운로드 완료: ${rel_or_url} (${dl_bytes:-0} bytes, ${dl_time:-0}s)"
+      return 0
+    fi
+    return 1
+  else
+    curl -sfLo "$dest_file" --connect-timeout 3 --max-time 8 \
+      -H "Cache-Control: no-cache" -H "Pragma: no-cache" \
+      "$fetch_url"
+    return $?
+  fi
 }
 
 ##
@@ -625,7 +652,9 @@ _check_remote_reachable() {
   fi
 
   _ensure_curl
-  curl -sfI --connect-timeout 3 --max-time 5 "${REPO_BASE_URL}/env/catalogs/catalogs.ini" >/dev/null 2>&1
+  curl -sfI --connect-timeout 3 --max-time 5 \
+    -H "Cache-Control: no-cache" -H "Pragma: no-cache" \
+    "${REPO_BASE_URL}/env/catalogs/catalogs.ini?t=$(date +%s)" >/dev/null 2>&1
 }
 
 ##
@@ -2761,7 +2790,7 @@ _install_tool() {
   local temp_bin
   temp_bin="$(mktemp "/tmp/${target_cmd}.XXXXXX")"
 
-  if ! _fetch_resource "$resolved_ref" "$temp_bin"; then
+  if ! _fetch_resource "$resolved_ref" "$temp_bin" "true"; then
     echo_e " - [❌] '${target_cmd}' 도구 파일을 가져올 수 없어 설치를 생략합니다. ($resolved_ref)"
     rm -f -- "$temp_bin"
     _add_notice " - [$func_name] [❌] '${target_cmd}' 다운로드 실패 ($resolved_ref)"
@@ -3337,7 +3366,15 @@ _check_records_update_status() {
   local tmp_dir
   tmp_dir="$(mktemp -d "/tmp/sciectl_chk.XXXXXX")"
 
-  # 병렬 리소스 조회 (최대 8개 동시 실행)
+  local total_cnt="${#recs[@]}"
+  local start_ts
+  start_ts="$(date +%s)"
+
+  if [[ ! -t 2 ]]; then
+    echo " - [🔍] 원격 저장소 최신 버전 확인 중... (총 ${total_cnt}개)" >&2
+  fi
+
+  # 병렬 리소스 조회 (최대 8개 동시 실행 + 실시간 진행률 표시)
   local idx=0
   local max_jobs=8
   local r r_type r_id r_name r_scope r_ver r_path r_meta
@@ -3346,16 +3383,50 @@ _check_records_update_status() {
     if [[ "$r_type" == "tool" ]]; then
       local resolved_ref
       resolved_ref="$(_resolve_tool_path "$r_id")"
-      ( _fetch_resource "$resolved_ref" "${tmp_dir}/${idx}.res" 2>/dev/null || rm -f -- "${tmp_dir}/${idx}.res" ) &
+      (
+        _fetch_resource "$resolved_ref" "${tmp_dir}/${idx}.res" 2>/dev/null || rm -f -- "${tmp_dir}/${idx}.res"
+        touch "${tmp_dir}/${idx}.done"
+      ) &
     elif [[ "$r_type" == "ssh-key" ]]; then
-      ( _resolve_ssh_key_content "$r_id" > "${tmp_dir}/${idx}.key" 2>/dev/null || rm -f -- "${tmp_dir}/${idx}.key" ) &
+      (
+        _resolve_ssh_key_content "$r_id" > "${tmp_dir}/${idx}.key" 2>/dev/null || rm -f -- "${tmp_dir}/${idx}.key"
+        touch "${tmp_dir}/${idx}.done"
+      ) &
+    else
+      touch "${tmp_dir}/${idx}.done"
     fi
     ((idx++))
-    if (( idx % max_jobs == 0 )); then
-      wait
+
+    # 동시 실행 수 제한 및 진행률 갱신
+    while (( $(jobs -pr | wc -l) >= max_jobs )); do
+      if [[ -t 2 ]]; then
+        local done_cnt
+        done_cnt="$(find "$tmp_dir" -maxdepth 1 -name '*.done' 2>/dev/null | wc -l)"
+        local pct=$(( done_cnt * 100 / total_cnt ))
+        printf '\r - [🔍] 원격 저장소 최신 버전 확인 중... (%d/%d, %d%%)' "$done_cnt" "$total_cnt" "$pct" >&2
+      fi
+      sleep 0.1
+    done
+  done
+
+  while (( $(jobs -pr | wc -l) > 0 )); do
+    if [[ -t 2 ]]; then
+      local done_cnt
+      done_cnt="$(find "$tmp_dir" -maxdepth 1 -name '*.done' 2>/dev/null | wc -l)"
+      local pct=$(( done_cnt * 100 / total_cnt ))
+      printf '\r - [🔍] 원격 저장소 최신 버전 확인 중... (%d/%d, %d%%)' "$done_cnt" "$total_cnt" "$pct" >&2
     fi
+    sleep 0.1
   done
   wait
+
+  local end_ts elapsed
+  end_ts="$(date +%s)"
+  elapsed=$(( end_ts - start_ts ))
+  if [[ -t 2 ]]; then
+    printf '\r\033[K' >&2
+  fi
+  echo_i " - [✅] 총 ${total_cnt}개 항목 최신 버전 확인 완료 (${elapsed}s)" >&2
 
   idx=0
   for r in "${recs[@]}"; do
@@ -4367,6 +4438,7 @@ _interactive_select_installed_items() {
 
   local -a selectable_records=()
   local -a up_to_date_rows=()
+  local -a unknown_rows=()
   local -a updatable_rows=()
 
   if [[ "$mode" == "update" ]]; then
@@ -4388,23 +4460,34 @@ _interactive_select_installed_items() {
     for srec in "${sorted_records[@]}"; do
       IFS='|' read -r r_type r_id r_name r_scope r_ver r_path r_meta updated_at <<< "$srec"
       local base_rec="${r_type}|${r_id}|${r_name}|${r_scope}|${r_ver}|${r_path}|${r_meta}"
-      if [[ "${REC_UPDATE_STATUS[$r_meta]:-}" == "updatable" ]]; then
+      local st="${REC_UPDATE_STATUS[$r_meta]:-unknown}"
+      if [[ "$st" == "updatable" ]]; then
         local rem_ver="${REC_REMOTE_VER[$r_meta]:-latest}"
         local ver_disp="${r_ver} -> ${rem_ver}"
         updatable_rows+=("$(printf '%3d)' "$idx_upd")|${r_type}|${r_id}|${r_scope}|${ver_disp}|${updated_at}|${r_path}")
         selectable_records+=("$base_rec")
         ((idx_upd++))
-      else
+      elif [[ "$st" == "up-to-date" ]]; then
         up_to_date_rows+=("  - |${r_type}|${r_id}|${r_scope}|${r_ver}|${updated_at}|${r_path}")
+      else
+        unknown_rows+=("  ? |${r_type}|${r_id}|${r_scope}|${r_ver}|${updated_at}|${r_path}")
       fi
     done
 
     if (( ${#up_to_date_rows[@]} > 0 )); then
-      _print_dynamic_installed_table "✅ 최신 버전 (업데이트 불필요 - ${#up_to_date_rows[@]}개)" "stderr" "${up_to_date_rows[@]}"
+      _print_dynamic_installed_table "✅ 최신 버전 (${#up_to_date_rows[@]}개)" "stderr" "${up_to_date_rows[@]}"
+    fi
+
+    if (( ${#unknown_rows[@]} > 0 )); then
+      _print_dynamic_installed_table "⚠️  버전 확인 실패 (${#unknown_rows[@]}개 - 네트워크/원격 응답 오류)" "stderr" "${unknown_rows[@]}"
     fi
 
     if (( ${#updatable_rows[@]} == 0 )); then
-      echo_i " - [💡] 모든 설치 항목(${#sorted_records[@]}개)이 이미 최신 버전입니다." >&2
+      if (( ${#unknown_rows[@]} > 0 )); then
+        echo_w " - [⚠️] 업데이트 가능한 항목이 없습니다 (버전 확인 실패 ${#unknown_rows[@]}건 포함)." >&2
+      else
+        echo_i " - [💡] 모든 설치 항목(${#sorted_records[@]}개)이 이미 최신 버전입니다." >&2
+      fi
       return 1
     fi
   else
