@@ -12,7 +12,7 @@
 
 # 도움말 출력 함수
 
-readonly SCRIPT_FILE_VERSION="2026.11.25.3"
+readonly SCRIPT_FILE_VERSION="2026.11.26.1"
 
 help() {
   cat <<'EOF'
@@ -103,9 +103,37 @@ log_warn() {
   printf "\033[1;33m[WARN]\033[0m %s\n" "$*" >&2
 }
 
+# 실시간 진행 상태 표시 제어 변수
+PROGRESS_ACTIVE=false
+ADV_PROGRESS_PREFIX=""
+
+##
+# 대화형 터미널(stderr TTY)에서 현재 진행 상태를 한 줄로 덮어쓰며 표시
+#
+# @param $1 {String} 진행 상태 메시지
+##
+show_progress() {
+  local msg="$1"
+  if [[ -t 2 && "$VERBOSE" != "true" ]]; then
+    printf "\r\033[K  \033[2m⏳ %s\033[0m" "$msg" >&2
+    PROGRESS_ACTIVE=true
+  fi
+}
+
+##
+# 표시 중인 임시 진행 상태 줄을 깨끗이 지움
+##
+clear_progress() {
+  if [[ "$PROGRESS_ACTIVE" == "true" && -t 2 ]]; then
+    printf "\r\033[K" >&2
+    PROGRESS_ACTIVE=false
+  fi
+}
+
 # 시그널 핸들러 (Ctrl+C 및 강제 종료 시 즉시 안전 종료)
 handle_interrupt() {
   trap - INT TERM EXIT
+  clear_progress
   printf "\n\033[1;33m[중단]\033[0m 사용자에 의해 작업이 취소되었습니다 (Ctrl+C).\n" >&2
   # 현재 프로세스 그룹의 모든 자식 프로세스 일괄 정리
   kill 0 2>/dev/null || true
@@ -457,9 +485,26 @@ fetch_changelog() {
 
 # 권고 분석 결과 변수군 (구분자 충돌 방지를 위한 전역 변수 전달)
 ADV_TITLE=""
+ADV_TITLE_FULL=""
 ADV_STATUS=""
 ADV_PKG=""
 declare -a ADV_CVES=()
+
+##
+# 콘솔 가독성을 위해 과도하게 긴 제목을 지정된 최대 길이로 축약
+#
+# @param $1 {String} 원본 제목 문자열
+# @param $2 {Number} 최대 허용 길이 (기본값: 120)
+##
+truncate_title() {
+  local title="$1"
+  local max_len="${2:-120}"
+  if [[ ${#title} -gt "$max_len" ]]; then
+    printf "%s..." "${title:0:$((max_len - 3))}"
+  else
+    printf "%s" "$title"
+  fi
+}
 
 ##
 # DNF updateinfo 명령을 안전하게 실행 (타임아웃, 영문 로케일, 캐시 폴백 지원)
@@ -548,6 +593,7 @@ parse_dnf_updateinfo_result() {
 resolve_advisory_info() {
   local advisory="$1"
   ADV_TITLE="Security Advisory: $advisory"
+  ADV_TITLE_FULL="$ADV_TITLE"
   ADV_STATUS="확인 필요"
   ADV_PKG=""
   ADV_CVES=()
@@ -555,6 +601,7 @@ resolve_advisory_info() {
   # 1) 입력값이 이미 CVE 형식인 경우
   if [[ "$advisory" =~ ^CVE-[0-9]{4}-[0-9]+$ ]]; then
     ADV_TITLE="CVE 단독 취약점 ($advisory)"
+    ADV_TITLE_FULL="$ADV_TITLE"
     ADV_STATUS="체인지로그 점검 필요"
     ADV_PKG=""
     ADV_CVES=("$advisory")
@@ -564,6 +611,7 @@ resolve_advisory_info() {
     # [Ubuntu 환경 1순위 고속 조회]: Canonical 공식 보안 REST API 직접 조회 (0.3초 내 초고속 파싱)
     if [[ "$OS_TYPE" == "debian" && "$ONLINE_MODE" == "true" ]] && command -v curl >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
       log_debug "Canonical 공식 보안 REST API를 통해 '$advisory' 초고속 조회..."
+      show_progress "${ADV_PROGRESS_PREFIX}${advisory} 조회 중... (Canonical 보안 API)"
       local codename=""
       codename="$(grep -E '^VERSION_CODENAME=' /etc/os-release 2>/dev/null | cut -d'=' -f2 | tr -d '"' || true)"
 
@@ -578,36 +626,58 @@ try:
     desc = data.get("description", "").strip().split("\n")[0]
     codename = sys.argv[1] if len(sys.argv) > 1 else ""
     pkgs = []
-    p_names = []
+    rel_p_names = []
+    other_p_names = []
     for p in data.get("packages", []):
         p_name = p.get("name", "")
-        if p_name and p_name not in p_names:
-            p_names.append(p_name)
+        has_rel = False
         for st in p.get("statuses", []):
             if st.get("release_codename") == codename:
+                has_rel = True
                 pkgs.append(p_name + ":::" + st.get("status", "") + ":::" + st.get("description", ""))
-    
-    if p_names:
-        title = ", ".join(p_names) + " vulnerability"
-    elif desc:
-        title = desc[:60]
-    else:
-        title = "CVE 보안 취약점"
-    if notices:
-        title += " (" + ", ".join(notices) + ")"
+        if p_name:
+            if has_rel and p_name not in rel_p_names:
+                rel_p_names.append(p_name)
+            elif not has_rel and p_name not in rel_p_names and p_name not in other_p_names:
+                other_p_names.append(p_name)
 
-    print("TITLE=" + title)
+    p_names = rel_p_names + [n for n in other_p_names if n not in rel_p_names]
+
+    if p_names:
+        title_full = ", ".join(p_names) + " vulnerability"
+        if len(p_names) > 3:
+            title_short = ", ".join(p_names[:3]) + f" 외 {len(p_names) - 3}개 패키지 vulnerability"
+        else:
+            title_short = title_full
+    elif desc:
+        title_full = desc[:60]
+        title_short = title_full
+    else:
+        title_full = "CVE 보안 취약점"
+        title_short = title_full
+
+    if notices:
+        title_full += " (" + ", ".join(notices) + ")"
+        if len(notices) > 3:
+            title_short += " (" + ", ".join(notices[:3]) + f" 외 {len(notices) - 3}건)"
+        else:
+            title_short += " (" + ", ".join(notices) + ")"
+
+    print("TITLE_SHORT=" + title_short)
+    print("TITLE_FULL=" + title_full)
     print("PKGS=" + "\t".join(pkgs))
 except Exception:
     sys.exit(1)
 ' "$codename" 2>/dev/null || true)"
 
       if [[ -n "$api_output" ]]; then
-        local p_title="" p_pkgs=""
-        p_title="$(echo "$api_output" | grep -E '^TITLE=' | sed 's/^TITLE=//')"
+        local p_title_short="" p_title_full="" p_pkgs=""
+        p_title_short="$(echo "$api_output" | grep -E '^TITLE_SHORT=' | sed 's/^TITLE_SHORT=//')"
+        p_title_full="$(echo "$api_output" | grep -E '^TITLE_FULL=' | sed 's/^TITLE_FULL=//')"
         p_pkgs="$(echo "$api_output" | grep -E '^PKGS=' | sed 's/^PKGS=//')"
 
-        [[ -n "$p_title" ]] && ADV_TITLE="$p_title"
+        [[ -n "$p_title_short" ]] && ADV_TITLE="$p_title_short"
+        [[ -n "$p_title_full" ]] && ADV_TITLE_FULL="$p_title_full" || ADV_TITLE_FULL="$ADV_TITLE"
 
         if [[ -n "$p_pkgs" ]]; then
           local has_installed=false
@@ -664,12 +734,16 @@ except Exception:
     # [Ubuntu 환경 2순위 폴백]: Ubuntu Pro CLI 활용 (온라인 모드 전용 - 폐쇄망 타임아웃 방지)
     if [[ "$resolved" == "false" && "$OS_TYPE" == "debian" && "$ONLINE_MODE" == "true" ]] && command -v pro >/dev/null 2>&1; then
       log_debug "Ubuntu Pro 도구를 통해 '$advisory' 분석 (pro fix --dry-run)..."
+      show_progress "${ADV_PROGRESS_PREFIX}${advisory} 조회 중... (Ubuntu Pro CLI 폴백)"
       local pro_out
       pro_out="$(timeout 15 pro fix --dry-run "$advisory" 2>&1 || true)"
 
       local parsed_title
       parsed_title="$(echo "$pro_out" | grep -E "^${advisory}:" | head -n 1 | sed "s/^${advisory}:[[:space:]]*//")"
-      [[ -n "$parsed_title" ]] && ADV_TITLE="$parsed_title"
+      if [[ -n "$parsed_title" ]]; then
+        ADV_TITLE="$parsed_title"
+        ADV_TITLE_FULL="$parsed_title"
+      fi
 
       if echo "$pro_out" | grep -q "is resolved"; then
         ADV_STATUS="해결됨 (Resolved - 이미 패치 적용됨)"
@@ -692,9 +766,11 @@ except Exception:
     # [RHEL/Rocky 환경]: DNF updateinfo 연동
     if [[ "$resolved" == "false" && "$OS_TYPE" == "rhel" ]] && command -v dnf >/dev/null 2>&1; then
       log_debug "DNF updateinfo를 통해 '$advisory' 분석..."
+      show_progress "${ADV_PROGRESS_PREFIX}${advisory} 조회 중... (DNF updateinfo)"
       local dnf_out
       dnf_out="$(run_dnf_updateinfo info --all --cve "$advisory")"
       if parse_dnf_updateinfo_result "$dnf_out" "$advisory"; then
+        ADV_TITLE_FULL="$ADV_TITLE"
         resolved=true
       else
         ADV_STATUS="해당 없음 (Not Affected - 관련 권고 없음)"
@@ -705,6 +781,7 @@ except Exception:
     if [[ "$resolved" == "false" && "$OS_TYPE" == "arch" ]]; then
       if [[ "$ONLINE_MODE" == "true" ]] && command -v curl >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
         log_debug "Arch Security Tracker REST API를 통해 '$advisory' 조회..."
+        show_progress "${ADV_PROGRESS_PREFIX}${advisory} 조회 중... (Arch Security Tracker)"
         local arch_resp http_code arch_json
         arch_resp="$(curl -s -w "\nHTTP_CODE:%{http_code}" --connect-timeout 3 --max-time 8 --retry 2 --retry-delay 1 "https://security.archlinux.org/${advisory}.json" 2>/dev/null || true)"
         http_code="$(echo "$arch_resp" | grep -E '^HTTP_CODE:' | tail -n 1 | cut -d':' -f2)"
@@ -726,18 +803,33 @@ try:
     vtype = data.get("type", "").strip()
     sev = data.get("severity", "").strip()
 
-    title_parts = []
+    full_parts = []
+    short_parts = []
     if pkgs:
-        title_parts.append(", ".join(pkgs))
+        full_parts.append(", ".join(pkgs))
+        if len(pkgs) > 3:
+            short_parts.append(", ".join(pkgs[:3]) + f" 외 {len(pkgs) - 3}개 패키지")
+        else:
+            short_parts.append(", ".join(pkgs))
     if vtype:
-        title_parts.append(vtype)
+        full_parts.append(vtype)
+        short_parts.append(vtype)
     elif data.get("description"):
-        title_parts.append(data.get("description", "").strip().split("\n")[0][:50])
-    title = " - ".join(title_parts) if title_parts else "Arch Security Issue"
+        d = data.get("description", "").strip().split("\n")[0][:50]
+        full_parts.append(d)
+        short_parts.append(d)
+
+    title_full = " - ".join(full_parts) if full_parts else "Arch Security Issue"
+    title_short = " - ".join(short_parts) if short_parts else "Arch Security Issue"
     if sev:
-        title = f"[{sev}] {title}"
+        title_full = f"[{sev}] {title_full}"
+        title_short = f"[{sev}] {title_short}"
     if advisories:
-        title += " (" + ", ".join(advisories) + ")"
+        title_full += " (" + ", ".join(advisories) + ")"
+        if len(advisories) > 3:
+            title_short += " (" + ", ".join(advisories[:3]) + f" 외 {len(advisories) - 3}건)"
+        else:
+            title_short += " (" + ", ".join(advisories) + ")"
 
     avg_status = ""
     fixed_ver = ""
@@ -751,7 +843,8 @@ try:
         except Exception:
             pass
 
-    print("TITLE=" + title)
+    print("TITLE_SHORT=" + title_short)
+    print("TITLE_FULL=" + title_full)
     print("STATUS=" + avg_status)
     print("FIXED=" + fixed_ver)
     print("PKGS=" + " ".join(pkgs))
@@ -760,13 +853,15 @@ except Exception:
 ' 2>/dev/null || true)"
 
           if [[ -n "$arch_parsed" ]]; then
-            local a_title="" a_status="" a_fixed="" a_pkgs=""
-            a_title="$(echo "$arch_parsed" | grep -E '^TITLE=' | sed 's/^TITLE=//')"
+            local a_title_short="" a_title_full="" a_status="" a_fixed="" a_pkgs=""
+            a_title_short="$(echo "$arch_parsed" | grep -E '^TITLE_SHORT=' | sed 's/^TITLE_SHORT=//')"
+            a_title_full="$(echo "$arch_parsed" | grep -E '^TITLE_FULL=' | sed 's/^TITLE_FULL=//')"
             a_status="$(echo "$arch_parsed" | grep -E '^STATUS=' | sed 's/^STATUS=//')"
             a_fixed="$(echo "$arch_parsed" | grep -E '^FIXED=' | sed 's/^FIXED=//')"
             a_pkgs="$(echo "$arch_parsed" | grep -E '^PKGS=' | sed 's/^PKGS=//')"
 
-            [[ -n "$a_title" ]] && ADV_TITLE="$a_title"
+            [[ -n "$a_title_short" ]] && ADV_TITLE="$a_title_short"
+            [[ -n "$a_title_full" ]] && ADV_TITLE_FULL="$a_title_full" || ADV_TITLE_FULL="$ADV_TITLE"
 
             if [[ -n "$a_pkgs" ]]; then
               local has_installed=false
@@ -811,6 +906,7 @@ except Exception:
 
       if [[ "$resolved" == "false" && "$ONLINE_MODE" == "true" ]] && command -v arch-audit >/dev/null 2>&1; then
         log_debug "arch-audit를 통해 '$advisory' 조회..."
+        show_progress "${ADV_PROGRESS_PREFIX}${advisory} 조회 중... (arch-audit)"
         local aa_out=""
         aa_out="$(timeout 15 arch-audit -f "%n|%c|%t" 2>/dev/null | grep -i "$advisory" | head -n 1 || true)"
         if [[ -n "$aa_out" ]]; then
@@ -834,6 +930,7 @@ except Exception:
     # [1순위 고속 조회]: Canonical 공식 보안 REST API 직접 조회 (0.3초 내 초고속 파싱)
     if [[ "$ONLINE_MODE" == "true" ]] && command -v curl >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
       log_debug "Canonical 공식 보안 REST API를 통해 '$advisory' 초고속 조회..."
+      show_progress "${ADV_PROGRESS_PREFIX}${advisory} 조회 중... (Canonical 보안 API)"
       local codename=""
       codename="$(grep -E '^VERSION_CODENAME=' /etc/os-release 2>/dev/null | cut -d'=' -f2 | tr -d '"' || true)"
 
@@ -864,7 +961,10 @@ except Exception:
         p_cves="$(echo "$api_output" | grep -E '^CVES=' | sed 's/^CVES=//')"
         p_pkgs="$(echo "$api_output" | grep -E '^PKGS=' | sed 's/^PKGS=//')"
 
-        [[ -n "$p_title" ]] && ADV_TITLE="$p_title"
+        if [[ -n "$p_title" ]]; then
+          ADV_TITLE="$p_title"
+          ADV_TITLE_FULL="$p_title"
+        fi
 
         if [[ -n "$p_cves" ]]; then
           IFS=' ' read -r -a ADV_CVES <<< "$p_cves"
@@ -907,6 +1007,7 @@ except Exception:
     # [2순위 폴백]: REST API 접근 불가 시 Ubuntu Pro CLI 활용 (온라인 모드 전용 - 폐쇄망 타임아웃 방지)
     if [[ "$resolved" == "false" && "$ONLINE_MODE" == "true" ]] && command -v pro >/dev/null 2>&1; then
       log_debug "Ubuntu Pro 도구를 통해 '$advisory' 분석 (pro fix --dry-run)..."
+      show_progress "${ADV_PROGRESS_PREFIX}${advisory} 조회 중... (Ubuntu Pro CLI 폴백)"
       # [안전 가드레일]: 시스템 설치를 방지하기 위해 --dry-run을 반드시 고정 실행
       local pro_out
       pro_out="$(timeout 15 pro fix --dry-run "$advisory" 2>&1 || true)"
@@ -914,7 +1015,10 @@ except Exception:
       # 제목 파싱
       local parsed_title
       parsed_title="$(echo "$pro_out" | grep -E "^${advisory}:" | head -n 1 | sed "s/^${advisory}:[[:space:]]*//")"
-      [[ -n "$parsed_title" ]] && ADV_TITLE="$parsed_title"
+      if [[ -n "$parsed_title" ]]; then
+        ADV_TITLE="$parsed_title"
+        ADV_TITLE_FULL="$parsed_title"
+      fi
 
       # 해결 상태 파싱
       if echo "$pro_out" | grep -q "is resolved"; then
@@ -940,9 +1044,11 @@ except Exception:
   if [[ "$advisory" =~ ^(RHSA|RLSA|ALSA|FEDORA)-[0-9]{4}:?[0-9]+$ ]]; then
     if command -v dnf >/dev/null 2>&1; then
       log_debug "DNF updateinfo를 통해 '$advisory' 분석..."
+      show_progress "${ADV_PROGRESS_PREFIX}${advisory} 조회 중... (DNF updateinfo)"
       local dnf_out
       dnf_out="$(run_dnf_updateinfo info --all --advisory "$advisory")"
       parse_dnf_updateinfo_result "$dnf_out" "$advisory" || true
+      ADV_TITLE_FULL="$ADV_TITLE"
       while IFS= read -r cve; do
         [[ -n "$cve" ]] && ADV_CVES+=("$cve")
       done < <(echo "$dnf_out" | grep -E "^[[:space:]]*CVEs?[[:space:]]*:" -A 20 | grep -o -E "CVE-[0-9]{4}-[0-9]+" | sort -u || true)
@@ -954,6 +1060,7 @@ except Exception:
   if [[ "$advisory" =~ (SUSE-SU|openSUSE-SU) ]]; then
     if command -v zypper >/dev/null 2>&1; then
       log_debug "Zypper patch-info를 통해 '$advisory' 분석..."
+      show_progress "${ADV_PROGRESS_PREFIX}${advisory} 조회 중... (Zypper patch-info)"
       local zyp_out=""
       if [[ "$ONLINE_MODE" == "false" ]]; then
         zyp_out="$(LC_ALL=C timeout 20 zypper --no-refresh patch-info "$advisory" < /dev/null 2>/dev/null || true)"
@@ -1152,26 +1259,49 @@ if [[ ${#OSS_NUMBERS[@]} -gt 0 ]]; then
   )"$'\n'
   printf "%s" "$SEC_STEP2"
 
+  oss_idx=0
+  oss_total="${#OSS_NUMBERS[@]}"
   for oss in "${OSS_NUMBERS[@]}"; do
+    oss_idx=$((oss_idx + 1))
+    ADV_PROGRESS_PREFIX="[${oss_idx}/${oss_total}] "
+    show_progress "${ADV_PROGRESS_PREFIX}${oss} 분석 중..."
+
     # 함수 호출 (ADV_* 변수로 안전하게 수신)
     resolve_advisory_info "$oss"
+    clear_progress
+    ADV_PROGRESS_PREFIX=""
 
-    item_buf=""
-    item_buf+="$(printf "  📢 \033[1;36m[%s]\033[0m %s\n" "$oss" "$ADV_TITLE")"$'\n'
+    display_title="$(truncate_title "$ADV_TITLE" 120)"
+    full_title="${ADV_TITLE_FULL:-$ADV_TITLE}"
+
+    status_line=""
     if [[ "$ADV_STATUS" =~ "해결됨" ]]; then
-      item_buf+="$(printf "    - 시스템 상태: \033[1;32m%s\033[0m\n" "$ADV_STATUS")"$'\n'
+      status_line="$(printf "    - 시스템 상태: \033[1;32m%s\033[0m\n" "$ADV_STATUS")"
     elif [[ "$ADV_STATUS" =~ "업데이트 가능" ]]; then
-      item_buf+="$(printf "    - 시스템 상태: \033[1;31m%s\033[0m\n" "$ADV_STATUS")"$'\n'
+      status_line="$(printf "    - 시스템 상태: \033[1;31m%s\033[0m\n" "$ADV_STATUS")"
     else
-      item_buf+="$(printf "    - 시스템 상태: %s\n" "$ADV_STATUS")"$'\n'
+      status_line="$(printf "    - 시스템 상태: %s\n" "$ADV_STATUS")"
     fi
 
+    pkg_line=""
     if [[ -n "$ADV_PKG" ]]; then
-      item_buf+="$(printf "    - 영향 패키지: %s\n" "$ADV_PKG")"$'\n'
+      pkg_line="$(printf "    - 영향 패키지: %s\n" "$ADV_PKG")"
       SUGGESTED_PKGS+=("$ADV_PKG")
     fi
 
     SUMMARY_OSS_ENTRIES+=("${oss}|||${ADV_STATUS}|||${ADV_PKG}")
+
+    item_buf=""
+    item_buf+="$(printf "  📢 \033[1;36m[%s]\033[0m %s\n" "$oss" "$display_title")"$'\n'
+    item_buf+="${status_line}"$'\n'
+    [[ -n "$pkg_line" ]] && item_buf+="${pkg_line}"$'\n'
+
+    file_item_buf=""
+    if [[ -n "$OUTPUT_FILE" ]]; then
+      file_item_buf+="$(printf "  📢 \033[1;36m[%s]\033[0m %s\n" "$oss" "$full_title")"$'\n'
+      file_item_buf+="${status_line}"$'\n'
+      [[ -n "$pkg_line" ]] && file_item_buf+="${pkg_line}"$'\n'
+    fi
 
     if [[ ${#ADV_CVES[@]} -gt 0 ]]; then
       # 사용자가 --package를 지정했고, 권고의 영향 패키지(ADV_PKG)가 감사 대상 패키지와 무관한지 검사
@@ -1203,6 +1333,11 @@ if [[ ${#OSS_NUMBERS[@]} -gt 0 ]]; then
         fi
       fi
 
+      if [[ -n "$OUTPUT_FILE" ]]; then
+        file_item_buf+="$(printf "    - 연관 CVE 목록 (%d개 추출됨):\n" "${#ADV_CVES[@]}")"$'\n'
+        file_item_buf+="$(printf "      %s\n" "${ADV_CVES[*]}")"$'\n'
+      fi
+
       # 3단계 감사를 위해 연관 CVE 누적 (단, 지정 패키지와 무관한 권고의 CVE는 3단계 정규식 패턴 폭증 방지를 위해 제외)
       if [[ "$is_unrelated" == "false" || ${#TARGET_PACKAGES[@]} -eq 0 ]]; then
         for c in "${ADV_CVES[@]}"; do
@@ -1211,10 +1346,11 @@ if [[ ${#OSS_NUMBERS[@]} -gt 0 ]]; then
       fi
     else
       item_buf+="$(printf "    - 연관 CVE: (직접 매핑 정보 없음)\n")"$'\n'
+      [[ -n "$OUTPUT_FILE" ]] && file_item_buf+="$(printf "    - 연관 CVE: (직접 매핑 정보 없음)\n")"$'\n'
     fi
 
     printf "%s\n" "$item_buf"
-    SEC_STEP2+="${item_buf}"$'\n'
+    [[ -n "$OUTPUT_FILE" ]] && SEC_STEP2+="${file_item_buf}"$'\n'
   done
 fi
 
