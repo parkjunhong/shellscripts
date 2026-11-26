@@ -32,7 +32,7 @@ from typing import Dict, List, Optional, Tuple
 import urllib.error
 import urllib.request
 
-SCRIPT_FILE_VERSION="2026.11.26.10"
+SCRIPT_FILE_VERSION="2026.11.26.11"
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[mK]")
 STEP_PREFIX_RE = re.compile(r"^ \[([0-9]+단계)\] ", re.MULTILINE)
@@ -334,8 +334,10 @@ def get_status_emoji(status: str) -> str:
     """권고 분석 상태 문자열에 대응하는 요약 이모지를 반환합니다."""
     if "해결됨" in status:
         return "✅"
-    if "업데이트 가능" in status or "업데이트 대기중" in status:
+    if "업데이트 가능" in status:
         return "⚠️"
+    if "업데이트 대기중" in status:
+        return "⏳"
     if "해당 없음" in status:
         return "➖"
     return "❓"
@@ -1579,6 +1581,7 @@ def main() -> int:
     if summary_entries:
         sum_resolved: List[str] = []
         sum_action: List[str] = []
+        sum_pending: List[str] = []
         sum_not_affected: List[str] = []
         sum_check: List[str] = []
         cl_lower = all_cl_matched_text.lower()
@@ -1587,8 +1590,10 @@ def main() -> int:
             label = f"{adv.advisory}({adv.pkg})" if adv.pkg else adv.advisory
             if "해결됨" in adv.status:
                 sum_resolved.append(label)
-            elif "업데이트 가능" in adv.status or "업데이트 대기중" in adv.status:
+            elif "업데이트 가능" in adv.status:
                 sum_action.append(label)
+            elif "업데이트 대기중" in adv.status:
+                sum_pending.append(label)
             elif "해당 없음" in adv.status:
                 if (
                     ("관련 권고 없음" in adv.status or "패키지 미설치" in adv.status)
@@ -1616,6 +1621,10 @@ def main() -> int:
         if sum_action:
             step4_lines.append(f"     {' '.join(sum_action)}")
         step4_lines.append(sub_sep)
+        if sum_pending:
+            step4_lines.append(f"  \033[1;36m⏳ 패치 대기 (Pending/Vendor)\033[0m   : {len(sum_pending)}건")
+            step4_lines.append(f"     {' '.join(sum_pending)}")
+            step4_lines.append(sub_sep)
         step4_lines.append(f"  ➖ 해당 없음 (Not Affected)     : {len(sum_not_affected)}건")
         if sum_not_affected:
             step4_lines.append(f"     {' '.join(sum_not_affected)}")
