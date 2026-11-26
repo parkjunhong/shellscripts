@@ -32,7 +32,7 @@ from typing import Dict, List, Optional, Tuple
 import urllib.error
 import urllib.request
 
-SCRIPT_FILE_VERSION="2026.11.26.9"
+SCRIPT_FILE_VERSION="2026.11.26.10"
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[mK]")
 STEP_PREFIX_RE = re.compile(r"^ \[([0-9]+단계)\] ", re.MULTILINE)
@@ -1393,8 +1393,7 @@ def main() -> int:
                     adv_res = fut.result()
                     results_by_idx[idx] = adv_res
                     id_col = f"[{adv_res.advisory}]".ljust(oss_col_w)
-                    emoji = get_status_emoji(adv_res.status)
-                    pview.add_completed(f"  📢 {id_col} : [{emoji}] {adv_res.title_short}")
+                    pview.add_completed(f"  📢 {id_col} : [완료] {adv_res.title_short}")
                     with cnt_lock:
                         done_cnt += 1
                         pview.update_label(
@@ -1461,12 +1460,13 @@ def main() -> int:
                 status_line = f"    - 시스템 상태: {adv.status}"
 
             pkg_line = f"    - 영향 패키지: {adv.pkg}" if adv.pkg else ""
+            res_emoji = get_status_emoji(adv.status)
 
-            console_lines = [f"  📢 \033[1;36m[{adv.advisory}]\033[0m {display_title}", status_line]
+            console_lines = [f"  📢 \033[1;36m[{adv.advisory}]\033[0m [{res_emoji}] {display_title}", status_line]
             if pkg_line:
                 console_lines.append(pkg_line)
 
-            file_lines = [f"  📢 \033[1;36m[{adv.advisory}]\033[0m {full_title}", status_line]
+            file_lines = [f"  📢 \033[1;36m[{adv.advisory}]\033[0m [{res_emoji}] {full_title}", status_line]
             if pkg_line:
                 file_lines.append(pkg_line)
 
