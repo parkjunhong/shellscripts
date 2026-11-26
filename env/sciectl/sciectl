@@ -37,7 +37,7 @@ import unicodedata
 import urllib.parse
 
 FILENAME = Path(sys.argv[0]).name if sys.argv and sys.argv[0] else "sciectl"
-SCRIPT_FILE_VERSION = "2026.11.26.2"
+SCRIPT_FILE_VERSION="2026.11.26.3"
 # 구버전 sciectl(<=2026.11.23.1) 자가 업데이트 하위 호환성 유지용 (추후 제거 예정)
 SCIECTL_VERSION = "2026.11.25.6"
 REPO_BASE_URL = os.environ.get(
