@@ -10,7 +10,7 @@
   - 카탈로그 매니페스트(`*.catalog`)를 OS별로 쪼개지 않고 단일 정의를 유지합니다.
   - 실행 엔진이 현재 대상 OS(Linux vs macOS)를 자동 판별하여, 해당 OS 환경에 적합한 항목만 지능적으로 선택 설치하거나 제외(Skip)합니다.
     - **Linux**: `apt`/`dnf`/`pacman` 패키지 관리, Sudoers NOPASSWD 병합, `$HOME/.bashrc`에 환경 설정 적용
-    - **macOS (Darwin)**: `Homebrew(brew)` 패키지 관리, Sudoers 자동 건너뜀, `$HOME/.bash_profile`에 단독 환경 설정 적용 (`.bashrc` 체이닝 일체 배제), Bash 4+ 기반
+    - **macOS (Darwin)**: `Homebrew(brew)` 패키지 관리, Sudoers 자동 건너뜀, `$HOME/.bash_profile`에 단독 환경 설정 적용 (`.bashrc` 체이닝 일체 배제), Python 3.8+ (Stdlib-only) 기반
 - **패키지 매니저형 다중 카탈로그 트랜잭션 (`install`)**: 1개 이상의 카탈로그(예: `--catalog default-server,docker,network`)를 동시에 지정하면 상위 상속(`INCLUDES`)까지 자동으로 해석·병합·중복 제거한 뒤, 실행 전 **Transaction Summary(실행 계획 요약표)**를 출력하고 단 1회 확인으로 일괄 실행합니다.
 - **선언형 카탈로그 및 논리 식별자 해석**: 전체 URL을 하드코딩하지 않고 `git/git-commit`, `temurin-25-jdk`, `ymtech-internal`과 같은 논리 식별자만으로 로컬 저장소(`--local`) 또는 원격 GitHub 저장소(`--remote`)에서 자원을 자동 탐색합니다.
 - **엄격한 의존성 순서 보장 (8단계 파이프라인)**:
@@ -24,7 +24,8 @@
   8. `ssh-key` (`~/.ssh/authorized_keys` Base64 본문 중복 검사 후 등록)
 - **대화형(TUI) 및 무인 자동화(`--yes`) 하이브리드 지원**: 인자 없이 실행하면 동적 ASCII 테이블 기반 다중 카탈로그/단계 선택 메뉴를 제공하며, `--yes` 지정 시 모든 확인 프롬프트를 자동 승인하여 무인 프로비저닝을 수행합니다.
 - **사전 무결성 검증 기반 원자적 자가 업데이트 (Pre-flight Self-Update)**:
-  - 스크립트 실행 시 원격 GitHub 저장소의 최신 코드와 자동 비교하여, 변경 감지 시 구문 검증(`bash -n`)을 거쳐 원자적으로 교체(`mv`)하고 즉시 재실행(`exec`)합니다.
+  - 스크립트 실행 시 원격 GitHub 저장소의 최신 코드와 자동 비교하여, 변경 감지 시 Python 구문 검증(`compile`)을 거쳐 원자적으로 교체(`os.replace`)하고 즉시 재실행(`os.execv`)합니다.
+  - (기존 Bash 버전 `sciectl`에서 Python 3 버전으로 최초 전환 시에는 `sciectl install --tool env/sciectl --no-update` 실행으로 교체할 수 있습니다.)
   - 로컬 Git 개발 작업 트리 내부 실행 시 소스 코드 유실 방지를 위해 자동 비활성화되며, `--no-update` 옵션 및 `SCIECTL_AUTO_UPDATE=false` 환경변수로 세밀하게 제어할 수 있습니다.
   - 본체 스크립트 교체 시 자동완성(`.completion`) 파일도 함께 동반 현행화됩니다.
 

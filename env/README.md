@@ -77,15 +77,12 @@ env/
 
 ### 0. 시스템 요구사항 (Prerequisites)
 
-- **Linux**: Ubuntu 24.04+, Rocky Linux 9+, RHEL 9+, CentOS Stream 9+ (`bash 4.0+`, `curl` 기본 제공)
+- **Linux**: Ubuntu 24.04+, Rocky Linux 9+, RHEL 9+, CentOS Stream 9+ (`python3` 3.8+, `bash`, `curl` 기본 제공)
 - **macOS**: macOS 13+ (Ventura, Sonoma, Sequoia 등)
+  - **Python 런타임**: `python3` 3.8 이상 필수 (표준 라이브러리만 사용하며 외부 패키지 설치 불필요)
   - **패키지 관리자**: [Homebrew](https://brew.sh) 설치 필수 (`brew`)
-  - **Bash 버전**: macOS 기본 내장 `/bin/bash`(3.2)는 연관 배열(`declare -A`)을 지원하지 않으므로, **Homebrew Bash 5.x 설치가 필수**입니다.
-    ```bash
-    # Homebrew 및 최신 Bash 설치
-    brew install bash bash-completion@2
-    ```
-  - **셸 환경 제약**: zsh는 지원하지 않으며 **오직 Bash 환경**에서만 실행됩니다. 환경 설정은 `$HOME/.bash_profile`에 단독 적용됩니다 (`$HOME/.bashrc` 연동 체이닝 없음).
+  - **Bash 자동완성 (선택)**: `brew install bash-completion@2`
+  - **셸 환경 제약**: 환경 설정은 `$HOME/.bash_profile`에 단독 적용됩니다 (`$HOME/.bashrc` 연동 체이닝 없음).
 
 ---
 

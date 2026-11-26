@@ -32,7 +32,7 @@ from typing import Dict, List, Optional, Tuple
 import urllib.error
 import urllib.request
 
-SCRIPT_FILE_VERSION="2026.11.26.6"
+SCRIPT_FILE_VERSION="2026.11.26.7"
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[mK]")
 STEP_PREFIX_RE = re.compile(r"^ \[([0-9]+단계)\] ", re.MULTILINE)
@@ -328,6 +328,17 @@ def format_sub_header(title: str) -> str:
     """단계 내부 작업 타이틀(- 구분선)을 생성합니다."""
     bar = "-" * max(67, display_width(title) + 2)
     return f"{bar}\n{title}\n{bar}\n"
+
+
+def get_status_emoji(status: str) -> str:
+    """권고 분석 상태 문자열에 대응하는 요약 이모지를 반환합니다."""
+    if "해결됨" in status:
+        return "✅"
+    if "업데이트 가능" in status or "업데이트 대기중" in status:
+        return "⚠️"
+    if "해당 없음" in status:
+        return "➖"
+    return "❓"
 
 
 @dataclass
@@ -1317,6 +1328,7 @@ def main() -> int:
         results_by_idx: Dict[int, AdvisoryResult] = {}
 
         if cfg.online_mode and total_oss > 1:
+            oss_col_w = max(len(o) for o in cfg.oss_numbers) + 2
             pview = ParallelProgressView(enabled=not cfg.verbose)
             pview.start(f"보안 권고 {total_oss}건 병렬 분석 중 (0/{total_oss} 완료)")
             done_cnt = 0
@@ -1330,8 +1342,9 @@ def main() -> int:
                     idx = future_map[fut]
                     adv_res = fut.result()
                     results_by_idx[idx] = adv_res
-                    short_t = truncate_title(adv_res.title_short, 80)
-                    pview.add_completed(f"  📢 [{adv_res.advisory}] {short_t}  : 완료")
+                    id_col = f"[{adv_res.advisory}]".ljust(oss_col_w)
+                    emoji = get_status_emoji(adv_res.status)
+                    pview.add_completed(f"  📢 {id_col} : [{emoji}] {adv_res.title_short}")
                     with cnt_lock:
                         done_cnt += 1
                         pview.update_label(
