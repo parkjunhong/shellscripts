@@ -1,4 +1,5 @@
-#!/usr/bin/env bash
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
 # ==============================================================================
 # @author       : parkjunhong77@gmail.com
@@ -6,17 +7,41 @@
 # @description  : 다양한 Linux 배포판 및 macOS에서 패키지 설치 상태 검사 및 OS 보안 권고 번호 기반 CVE 자동 추출·패치 감사 수행
 # @license      : Apache License 2.0
 # @since        : 2026-11-20
-# @desc         : support macOS 11.2.3, Ubuntu 18.04 or higher, RockyOS 8 or higher, Arch Linux, Alpine Linux
+# @desc         : support Python 3.8+, macOS 11.2.3, Ubuntu 18.04 or higher, RockyOS 8 or higher, Arch Linux, Alpine Linux
 # @installation : scriptctl install --script patch-info
 # ==============================================================================
 
-# 도움말 출력 함수
+from __future__ import annotations
 
-readonly SCRIPT_FILE_VERSION="2026.11.26.2"
+import argparse
+import concurrent.futures
+from dataclasses import dataclass, field
+import gzip
+import json
+import os
+from pathlib import Path
+import platform
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import threading
+import time
+from typing import Dict, List, Optional, Tuple
+import urllib.error
+import urllib.request
 
-help() {
-  cat <<'EOF'
-[사용법]
+SCRIPT_FILE_VERSION = "2026.11.26.3"
+
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*[mK]")
+STEP_PREFIX_RE = re.compile(r"^ \[([0-9]+단계)\] ", re.MULTILINE)
+CVE_REGEX = re.compile(r"CVE-[0-9]{4}-[0-9]+")
+
+
+def print_help() -> None:
+    """도움말 메시지를 출력합니다."""
+    help_text = """[사용법]
   patch-info [옵션]
 
 [설명]
@@ -77,1602 +102,1355 @@ help() {
   patch-info --package nginx --show-changelog
 
   # 7) 감사 보고서를 요약 우선 순서로 파일에 저장
-  patch-info --oss-number CVE-2026-123007,CVE-2026-123633 --output ./audit-report.txt
-EOF
-}
-
-# 디버그 로깅 함수
-log_debug() {
-  if [[ "$VERBOSE" == "true" ]]; then
-    printf "\033[1;34m[DEBUG]\033[0m %s\n" "$*" >&2
-  fi
-}
-
-# 에러 로깅 함수
-log_error() {
-  printf "\033[1;31m[ERROR]\033[0m %s\n" "$*" >&2
-}
-
-# 정보 로깅 함수
-log_info() {
-  printf "\033[1;32m[INFO]\033[0m %s\n" "$*"
-}
-
-# 경고 로깅 함수
-log_warn() {
-  printf "\033[1;33m[WARN]\033[0m %s\n" "$*" >&2
-}
-
-# 실시간 진행 상태 표시 제어 변수
-PROGRESS_ACTIVE=false
-PROGRESS_LINE_COUNT=0
-SPINNER_PID=""
-SPINNER_LABEL=""
-SPINNER_START_TS=0
-ADV_PROGRESS_PREFIX=""
-
-##
-# 대화형 터미널(stderr TTY)에서 회전 스피너와 경과 시간을 실시간 표시
-#
-# @param $1 {String} 단계 라벨
-##
-start_step_spinner() {
-  local label="$1"
-  if [[ -n "$SPINNER_PID" ]]; then
-    kill "$SPINNER_PID" 2>/dev/null || true
-    wait "$SPINNER_PID" 2>/dev/null || true
-    SPINNER_PID=""
-  fi
-  SPINNER_LABEL="$label"
-  SPINNER_START_TS="$(date +%s)"
-  if [[ -t 2 && "$VERBOSE" != "true" ]]; then
-    (
-      frames=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
-      idx=0
-      start_ts="$SPINNER_START_TS"
-      while true; do
-        now_ts="$(date +%s)"
-        elapsed=$(( now_ts - start_ts ))
-        printf "\r\033[K  \033[36m%s\033[0m %s: \033[2m진행 중... (%ds)\033[0m" "${frames[$idx]}" "$label" "$elapsed" >&2
-        idx=$(( (idx + 1) % ${#frames[@]} ))
-        sleep 0.15
-      done
-    ) &
-    SPINNER_PID=$!
-    PROGRESS_ACTIVE=true
-  fi
-}
-
-##
-# 진행 중인 스피너를 종료하고 해당 단계의 확정 상태(완료/실패)를 한 줄로 기록
-#
-# @param $1 {String} 결과 텍스트 (예: 완료, 실패, 미등록)
-# @param $2 {String} 성공 여부 ("true" 또는 "false", 기본값: "true")
-##
-stop_step_spinner() {
-  local result_text="${1:-완료}"
-  local is_ok="${2:-true}"
-  if [[ -n "$SPINNER_PID" ]]; then
-    kill "$SPINNER_PID" 2>/dev/null || true
-    wait "$SPINNER_PID" 2>/dev/null || true
-    SPINNER_PID=""
-  fi
-  if [[ -t 2 && "$VERBOSE" != "true" && "$PROGRESS_ACTIVE" == "true" ]]; then
-    local now_ts elapsed mark color
-    now_ts="$(date +%s)"
-    elapsed=$(( now_ts - SPINNER_START_TS ))
-    if [[ "$is_ok" == "true" ]]; then
-      mark="✓"
-      color="\033[1;32m"
-    else
-      mark="✗"
-      color="\033[1;33m"
-    fi
-    printf "\r\033[K  %b%s\033[0m %s: %b%s\033[0m (%ds)\n" "$color" "$mark" "$SPINNER_LABEL" "$color" "$result_text" "$elapsed" >&2
-    PROGRESS_LINE_COUNT=$((PROGRESS_LINE_COUNT + 1))
-    PROGRESS_ACTIVE=false
-  fi
-}
-
-##
-# 표시 중인 임시 진행 상태 줄들을 모두 깨끗이 지움
-##
-clear_progress() {
-  if [[ -n "$SPINNER_PID" ]]; then
-    kill "$SPINNER_PID" 2>/dev/null || true
-    wait "$SPINNER_PID" 2>/dev/null || true
-    SPINNER_PID=""
-  fi
-  if [[ -t 2 ]]; then
-    if [[ "$PROGRESS_ACTIVE" == "true" ]]; then
-      printf "\r\033[K" >&2
-      PROGRESS_ACTIVE=false
-    fi
-    while [[ "$PROGRESS_LINE_COUNT" -gt 0 ]]; do
-      printf "\033[1A\033[K" >&2
-      PROGRESS_LINE_COUNT=$((PROGRESS_LINE_COUNT - 1))
-    done
-  fi
-}
-
-# 시그널 핸들러 (Ctrl+C 및 강제 종료 시 즉시 안전 종료)
-handle_interrupt() {
-  trap - INT TERM EXIT
-  clear_progress
-  printf "\n\033[1;33m[중단]\033[0m 사용자에 의해 작업이 취소되었습니다 (Ctrl+C).\n" >&2
-  # 현재 프로세스 그룹의 모든 자식 프로세스 일괄 정리
-  kill 0 2>/dev/null || true
-  exit 130
-}
-trap handle_interrupt INT TERM
-
-##
-# 배열 내에 특정 문자열이 이미 존재하는지 확인
-#
-# @param $1 {String} 찾을 문자열
-# @param $@ {String...} 대상 배열 원소 목록
-# @return 0: 존재함, 1: 존재하지 않음
-##
-array_contains() {
-  local needle="$1"
-  shift
-  local item
-  for item in "$@"; do
-    [[ "$item" == "$needle" ]] && return 0
-  done
-  return 1
-}
-
-# 변수 초기화
-declare -a TARGET_PACKAGES=()
-declare -a OSS_NUMBERS=()
-SHOW_CHANGELOG=false
-ONLINE_MODE=true
-VERBOSE=false
-OUTPUT_FILE=""
-
-# CLI 옵션 파싱 루프 (Long Option 전용)
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --package)
-      shift 1
-      while [[ $# -gt 0 && ! "$1" =~ ^-- ]]; do
-        # 공백, 파이프(|), 콤마(,)를 기준으로 안전하게 개별 토큰 분리
-        IFS=',| ' read -r -a raw_pkgs <<< "$1"
-        for p in "${raw_pkgs[@]}"; do
-          p="$(echo "$p" | xargs)"
-          if [[ -n "$p" ]] && ! array_contains "$p" ${TARGET_PACKAGES[@]+"${TARGET_PACKAGES[@]}"}; then
-            TARGET_PACKAGES+=("$p")
-          fi
-        done
-        shift 1
-      done
-      ;;
-    --oss-number)
-      shift 1
-      while [[ $# -gt 0 && ! "$1" =~ ^-- ]]; do
-        # 공백, 파이프(|), 콤마(,)를 기준으로 안전하게 개별 토큰 분리
-        IFS=',| ' read -r -a raw_osss <<< "$1"
-        for o in "${raw_osss[@]}"; do
-          o="$(echo "$o" | xargs)"
-          if [[ -n "$o" ]]; then
-            o="$(printf "%s" "$o" | tr '[:lower:]' '[:upper:]')"
-            if ! array_contains "$o" ${OSS_NUMBERS[@]+"${OSS_NUMBERS[@]}"}; then
-              OSS_NUMBERS+=("$o")
-            fi
-          fi
-        done
-        shift 1
-      done
-      ;;
-    --show-changelog)
-      SHOW_CHANGELOG=true
-      shift 1
-      ;;
-    --output)
-      if [[ -z "${2:-}" || "$2" =~ ^-- ]]; then
-        log_error "--output 옵션에는 저장할 파일 경로를 지정해야 합니다."
-        exit 1
-      fi
-      OUTPUT_FILE="$2"
-      shift 2
-      ;;
-    --offline)
-      ONLINE_MODE=false
-      shift 1
-      ;;
-    --verbose)
-      VERBOSE=true
-      shift 1
-      ;;
-    --help)
-      help
-      exit 0
-      ;;
-    *)
-      log_error "알 수 없는 옵션입니다: $1"
-      echo ""
-      help
-      exit 1
-      ;;
-  esac
-done
-
-# 인자 유효성 검증
-if [[ ${#TARGET_PACKAGES[@]} -eq 0 && ${#OSS_NUMBERS[@]} -eq 0 ]]; then
-  log_error "실행할 작업이 지정되지 않았습니다. --package 또는 --oss-number 옵션을 1개 이상 지정하십시오."
-  echo ""
-  help
-  exit 1
-fi
-
-if [[ "$SHOW_CHANGELOG" == "true" && ${#TARGET_PACKAGES[@]} -eq 0 ]]; then
-  log_error "--show-changelog 옵션은 --package 옵션과 함께 사용해야 합니다."
-  exit 1
-fi
-
-# 환경 및 패키지 매니저 판별
-detect_environment() {
-  local os_type="unknown"
-  local pkg_mgr="unknown"
-  local os_desc="Unknown OS"
-
-  if [[ "$(uname -s)" == "Darwin" ]]; then
-    os_type="darwin"
-    os_desc="macOS $(sw_vers -productVersion 2>/dev/null || echo '')"
-    if command -v brew >/dev/null 2>&1; then
-      pkg_mgr="brew"
-    elif command -v port >/dev/null 2>&1; then
-      pkg_mgr="port"
-    fi
-  elif [[ -f /etc/os-release ]]; then
-    local id="" id_like="" pretty_name=""
-    id="$(grep -E '^ID=' /etc/os-release | cut -d'=' -f2 | tr -d '"')"
-    id_like="$(grep -E '^ID_LIKE=' /etc/os-release | cut -d'=' -f2 | tr -d '"')"
-    pretty_name="$(grep -E '^PRETTY_NAME=' /etc/os-release | cut -d'=' -f2 | tr -d '"')"
-    os_desc="${pretty_name:-$id}"
-
-    if [[ "$id" =~ ^(ubuntu|debian|linuxmint|pop)$ || "$id_like" =~ (debian|ubuntu) ]]; then
-      os_type="debian"
-      if command -v dpkg-query >/dev/null 2>&1; then
-        pkg_mgr="dpkg"
-      fi
-    elif [[ "$id" =~ ^(rhel|rocky|almalinux|centos|fedora|ol)$ || "$id_like" =~ (rhel|fedora|centos) ]]; then
-      os_type="rhel"
-      if command -v rpm >/dev/null 2>&1; then
-        pkg_mgr="rpm"
-      fi
-    elif [[ "$id" =~ ^(sles|opensuse.*)$ || "$id_like" =~ (suse) ]]; then
-      os_type="suse"
-      if command -v zypper >/dev/null 2>&1 || command -v rpm >/dev/null 2>&1; then
-        pkg_mgr="zypper"
-      fi
-    elif [[ "$id" =~ ^(arch|manjaro|endeavouros)$ || "$id_like" =~ (arch) ]]; then
-      os_type="arch"
-      if command -v pacman >/dev/null 2>&1; then
-        pkg_mgr="pacman"
-      fi
-    elif [[ "$id" =~ ^(alpine)$ ]]; then
-      os_type="alpine"
-      if command -v apk >/dev/null 2>&1; then
-        pkg_mgr="apk"
-      fi
-    fi
-  fi
-
-  if [[ "$pkg_mgr" == "unknown" ]]; then
-    if command -v dpkg-query >/dev/null 2>&1; then
-      os_type="debian"; pkg_mgr="dpkg"
-    elif command -v rpm >/dev/null 2>&1; then
-      os_type="rhel"; pkg_mgr="rpm"
-    elif command -v pacman >/dev/null 2>&1; then
-      os_type="arch"; pkg_mgr="pacman"
-    elif command -v apk >/dev/null 2>&1; then
-      os_type="alpine"; pkg_mgr="apk"
-    elif command -v brew >/dev/null 2>&1; then
-      os_type="darwin"; pkg_mgr="brew"
-    fi
-  fi
-
-  echo "${os_type}|${pkg_mgr}|${os_desc}"
-}
-
-ENV_INFO="$(detect_environment)"
-OS_TYPE="$(echo "$ENV_INFO" | cut -d'|' -f1)"
-PKG_MGR="$(echo "$ENV_INFO" | cut -d'|' -f2)"
-OS_DESC="$(echo "$ENV_INFO" | cut -d'|' -f3)"
-
-if [[ "$OS_TYPE" == "debian" && "$ONLINE_MODE" == "false" && ${#TARGET_PACKAGES[@]} -eq 0 && ${#OSS_NUMBERS[@]} -gt 0 ]]; then
-  log_warn "오프라인(Ubuntu/Debian) 모드에서는 --package 옵션을 함께 지정해야 로컬 체인지로그 기반 패치 여부 확인이 가능합니다."
-fi
-
-log_debug "OS 환경: ${OS_DESC} (OS 유형: ${OS_TYPE})"
-log_debug "패키지 매니저: ${PKG_MGR}"
-log_debug "온라인 모드: ${ONLINE_MODE}"
-
-##
-# 패키지 설치 여부 및 기본 버전 정보 조회
-#
-# @param $1 {String} 패키지명
-# @return 0: 설치됨, 1: 미설치
-##
-get_package_info() {
-  local pkg="$1"
-  local info_out=""
-
-  case "$PKG_MGR" in
-    dpkg)
-      info_out="$(dpkg-query -W -f='${Package}\t${Version}\t${Architecture}\t${Status}\n' "$pkg" 2>/dev/null || true)"
-      if [[ -n "$info_out" && "$info_out" =~ install[[:space:]]+ok[[:space:]]+installed ]]; then
-        local p_name p_ver p_arch
-        p_name="$(echo "$info_out" | awk '{print $1}')"
-        p_ver="$(echo "$info_out" | awk '{print $2}')"
-        p_arch="$(echo "$info_out" | awk '{print $3}')"
-        printf "  📦 %-20s : 버전 %-20s (%-6s) | \033[1;32m[설치됨]\033[0m\n" "$p_name" "$p_ver" "$p_arch"
-        return 0
-      fi
-      ;;
-    rpm|zypper)
-      info_out="$(rpm -q --queryformat '%{NAME}\t%{VERSION}-%{RELEASE}\t%{ARCH}\n' "$pkg" 2>/dev/null || true)"
-      if [[ -n "$info_out" && ! "$info_out" =~ "is not installed" ]]; then
-        local p_name p_ver p_arch
-        p_name="$(echo "$info_out" | awk '{print $1}')"
-        p_ver="$(echo "$info_out" | awk '{print $2}')"
-        p_arch="$(echo "$info_out" | awk '{print $3}')"
-        printf "  📦 %-20s : 버전 %-20s (%-6s) | \033[1;32m[설치됨]\033[0m\n" "$p_name" "$p_ver" "$p_arch"
-        return 0
-      fi
-      ;;
-    pacman)
-      info_out="$(pacman -Q "$pkg" 2>/dev/null || true)"
-      if [[ -n "$info_out" ]]; then
-        local p_name p_ver
-        p_name="$(echo "$info_out" | awk '{print $1}')"
-        p_ver="$(echo "$info_out" | awk '{print $2}')"
-        printf "  📦 %-20s : 버전 %-20s | \033[1;32m[설치됨]\033[0m\n" "$p_name" "$p_ver"
-        return 0
-      fi
-      ;;
-    apk)
-      info_out="$(apk info -v "$pkg" 2>/dev/null || true)"
-      if [[ -n "$info_out" ]]; then
-        printf "  📦 %-20s : %-20s | \033[1;32m[설치됨]\033[0m\n" "$pkg" "$info_out"
-        return 0
-      fi
-      ;;
-    brew)
-      info_out="$(brew list --versions "$pkg" 2>/dev/null || true)"
-      if [[ -n "$info_out" ]]; then
-        printf "  📦 %-20s : %-20s | \033[1;32m[설치됨]\033[0m\n" "$pkg" "$info_out"
-        return 0
-      fi
-      ;;
-  esac
-
-  printf "  📦 %-20s : \033[1;33m[미설치 (Not Installed)]\033[0m\n" "$pkg"
-  return 1
-}
-
-##
-# 패키지의 체인지로그 내용 추출
-#
-# @param $1 {String} 패키지명
-# @return 0: 성공, 1: 실패
-##
-fetch_changelog() {
-  local pkg="$1"
-  local content=""
-  local fetched=false
-
-  case "$PKG_MGR" in
-    dpkg)
-      # 1순위: 현재 로컬 시스템에 설치된 실제 패키지의 체인지로그 검사
-      local candidates=(
-        "/usr/share/doc/${pkg}/changelog.Debian.gz"
-        "/usr/share/doc/${pkg}/changelog.gz"
-        "/usr/share/doc/${pkg}/changelog.Debian"
-        "/usr/share/doc/${pkg}/changelog"
-      )
-
-      while IFS= read -r f; do
-        [[ -n "$f" ]] && candidates+=("$f")
-      done < <(find /usr/share/doc -maxdepth 2 -type f \( -name "changelog.Debian.gz" -o -name "changelog.gz" \) -path "/usr/share/doc/${pkg}*/*" 2>/dev/null || true)
-
-      for target_file in "${candidates[@]}"; do
-        if [[ -f "$target_file" ]]; then
-          log_debug "로컬 체인지로그 파일 발견: $target_file"
-          if [[ "$target_file" =~ \.gz$ ]]; then
-            content="$(gzip -dc "$target_file" 2>/dev/null || true)"
-          else
-            content="$(cat "$target_file" 2>/dev/null || true)"
-          fi
-          if [[ -n "$content" ]]; then
-            printf "%s\n" "$content"
-            return 0
-          fi
-        fi
-      done
-
-      # 2순위 (폴백): 로컬 파일이 없고 온라인 모드인 경우 원격 저장소에서 조회
-      if [[ "$ONLINE_MODE" == "true" ]] && command -v apt-get >/dev/null 2>&1; then
-        log_debug "'$pkg' 온라인 체인지로그 조회 시도 (PAGER=cat timeout 20 apt-get changelog)..."
-        content="$(PAGER=cat timeout 20 apt-get changelog "$pkg" 2>/dev/null || true)"
-        if [[ -n "$content" ]]; then
-          printf "%s\n" "$content"
-          return 0
-        fi
-      fi
-      ;;
-
-    rpm|zypper)
-      log_debug "'$pkg' RPM 체인지로그 조회..."
-      local latest_rpm=""
-      latest_rpm="$(LC_ALL=C rpm -q "$pkg" 2>/dev/null | sort -V | tail -n 1 || true)"
-      if [[ -n "$latest_rpm" ]]; then
-        content="$(LC_ALL=C rpm -q --changelog "$latest_rpm" 2>/dev/null || true)"
-      else
-        content="$(LC_ALL=C rpm -q --changelog "$pkg" 2>/dev/null || true)"
-      fi
-      if [[ -n "$content" ]]; then
-        printf "%s\n" "$content"
-        fetched=true
-      fi
-      ;;
-
-    pacman)
-      content="$(pacman -Qc "$pkg" 2>/dev/null || true)"
-      if [[ -n "$content" ]]; then
-        printf "%s\n" "$content"
-        fetched=true
-      fi
-      ;;
-
-    apk)
-      content="$(apk info -w "$pkg" 2>/dev/null || true)"
-      if [[ -n "$content" ]]; then
-        printf "%s\n" "$content"
-        fetched=true
-      fi
-      ;;
-
-    brew)
-      content="$(brew log "$pkg" -n 50 2>/dev/null || true)"
-      if [[ -n "$content" ]]; then
-        printf "%s\n" "$content"
-        fetched=true
-      fi
-      ;;
-  esac
-
-  [[ "$fetched" == "true" ]] && return 0
-  return 1
-}
-
-# 권고 분석 결과 변수군 (구분자 충돌 방지를 위한 전역 변수 전달)
-ADV_TITLE=""
-ADV_TITLE_FULL=""
-ADV_STATUS=""
-ADV_PKG=""
-declare -a ADV_CVES=()
-declare -a ADV_SOURCES=()
-
-##
-# 콘솔 가독성을 위해 과도하게 긴 제목을 지정된 최대 길이로 축약
-#
-# @param $1 {String} 원본 제목 문자열
-# @param $2 {Number} 최대 허용 길이 (기본값: 120)
-##
-truncate_title() {
-  local title="$1"
-  local max_len="${2:-120}"
-  if [[ ${#title} -gt "$max_len" ]]; then
-    printf "%s..." "${title:0:$((max_len - 3))}"
-  else
-    printf "%s" "$title"
-  fi
-}
-
-##
-# DNF updateinfo 명령을 안전하게 실행 (타임아웃, 영문 로케일, 캐시 폴백 지원)
-#
-# @param $@ {String...} dnf updateinfo 서브인자 (예: info --all --cve CVE-...)
-# @return 0: 실행 완료
-##
-run_dnf_updateinfo() {
-  local out=""
-  local rc=0
-
-  if [[ "$ONLINE_MODE" == "false" ]]; then
-    out="$(LC_ALL=C timeout 20 dnf -C --setopt=skip_if_unavailable=True updateinfo "$@" < /dev/null 2>/dev/null)" || rc=$?
-    [[ "$rc" -eq 124 ]] && log_warn "DNF 로컬 캐시 조회 시간 초과(20초)"
-    printf "%s\n" "$out"
-    return 0
-  fi
-
-  out="$(LC_ALL=C timeout 20 dnf --setopt=timeout=5 --setopt=retries=1 --setopt=skip_if_unavailable=True updateinfo "$@" < /dev/null 2>/dev/null)" || rc=$?
-  if [[ "$rc" -eq 124 || "$rc" -ne 0 ]] || ! echo "$out" | grep -qE "Update ID:|Title:|===+"; then
-    if [[ "$rc" -eq 124 ]]; then
-      log_warn "DNF 온라인 조회 시간 초과(20초) - 로컬 캐시(-C)로 폴백 조회합니다."
-    elif [[ "$rc" -ne 0 ]]; then
-      log_debug "DNF 온라인 조회 실패(rc=$rc) - 로컬 캐시(-C)로 폴백 조회합니다."
-    fi
-    local cache_out=""
-    local cache_rc=0
-    cache_out="$(LC_ALL=C timeout 20 dnf -C --setopt=skip_if_unavailable=True updateinfo "$@" < /dev/null 2>/dev/null)" || cache_rc=$?
-    if [[ -n "$cache_out" ]] && echo "$cache_out" | grep -qE "Update ID:|Title:|===+"; then
-      out="$cache_out"
-    fi
-  fi
-
-  printf "%s\n" "$out"
-  return 0
-}
-
-##
-# DNF updateinfo info 출력 결과에서 제목, 패치 상태, 영향 패키지 추출
-#
-# @param $1 {String} dnf updateinfo info 출력 원문
-# @param $2 {String} 대상 권고 ID 또는 CVE 번호
-# @return 0: 매칭 성공, 1: 매칭 실패
-##
-parse_dnf_updateinfo_result() {
-  local dnf_out="$1"
-  local target_id="$2"
-
-  if ! echo "$dnf_out" | grep -q "$target_id"; then
-    return 1
-  fi
-
-  local update_id banner_title title_field resolved_title
-  update_id="$(echo "$dnf_out" | grep -E "^[[:space:]]*Update ID[[:space:]]*:" | head -n 1 | sed -e 's/^[[:space:]]*Update ID[[:space:]]*:[[:space:]]*//')"
-  banner_title="$(echo "$dnf_out" | awk '/^===+$/{getline; if ($0 !~ /^===+$/) {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $0); print; exit}}')"
-  title_field="$(echo "$dnf_out" | grep -E "^[[:space:]]*Title[[:space:]]*:" | head -n 1 | sed -e 's/^[[:space:]]*Title[[:space:]]*:[[:space:]]*//')"
-  resolved_title="${title_field:-$banner_title}"
-
-  if [[ -n "$resolved_title" && -n "$update_id" ]]; then
-    ADV_TITLE="${resolved_title} (${update_id})"
-  elif [[ -n "$resolved_title" ]]; then
-    ADV_TITLE="$resolved_title"
-  fi
-
-  if echo "$dnf_out" | grep -qiE "^[[:space:]]*Installed[[:space:]]*:[[:space:]]*false"; then
-    ADV_STATUS="업데이트 가능 (Available - 패치 미적용)"
-  elif echo "$dnf_out" | grep -qiE "^[[:space:]]*Installed[[:space:]]*:[[:space:]]*true"; then
-    ADV_STATUS="해결됨 (Resolved - 이미 패치 적용됨)"
-  else
-    ADV_STATUS="업데이트 가능 (Available - 패치 미적용)"
-  fi
-
-  ADV_PKG="$(echo "$dnf_out" | grep -E "^[[:space:]]*Packages[[:space:]]*:" -A 5 | grep -E "^[[:space:]]+[a-zA-Z0-9]" | head -n 1 | awk '{print $1}')"
-  if [[ -z "$ADV_PKG" && -n "$banner_title" ]]; then
-    ADV_PKG="$(echo "$banner_title" | sed -nE 's/^[A-Za-z]+:[[:space:]]*([a-zA-Z0-9._+-]+)[[:space:]]+security.*/\1/p' | head -n 1)"
-  fi
-
-  return 0
-}
-
-##
-# OS 보안 권고사항 번호로부터 연관 CVE 목록 및 권고 요약 정보 추출
-#
-# @param $1 {String} 권고 번호 (USN, RHSA, DSA 등 또는 CVE)
-##
-resolve_advisory_info() {
-  local advisory="$1"
-  ADV_TITLE="Security Advisory: $advisory"
-  ADV_TITLE_FULL="$ADV_TITLE"
-  ADV_STATUS="확인 필요"
-  ADV_PKG=""
-  ADV_CVES=()
-  ADV_SOURCES=()
-
-  # 1) 입력값이 이미 CVE 형식인 경우
-  if [[ "$advisory" =~ ^CVE-[0-9]{4}-[0-9]+$ ]]; then
-    ADV_TITLE="CVE 단독 취약점 ($advisory)"
-    ADV_TITLE_FULL="$ADV_TITLE"
-    ADV_STATUS="체인지로그 점검 필요"
-    ADV_PKG=""
-    ADV_CVES=("$advisory")
-
-    local resolved=false
-
-    # [Ubuntu 환경 1순위 고속 조회]: Canonical 공식 보안 REST API 직접 조회 (0.3초 내 초고속 파싱)
-    if [[ "$OS_TYPE" == "debian" && "$ONLINE_MODE" == "true" ]] && command -v curl >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
-      log_debug "Canonical 공식 보안 REST API를 통해 '$advisory' 초고속 조회..."
-      start_step_spinner "${ADV_PROGRESS_PREFIX}${advisory} - Canonical 보안 API"
-      local codename=""
-      codename="$(grep -E '^VERSION_CODENAME=' /etc/os-release 2>/dev/null | cut -d'=' -f2 | tr -d '"' || true)"
-
-      local api_output
-      api_output="$(curl -s --connect-timeout 5 --max-time 10 --retry 2 --retry-delay 1 "https://ubuntu.com/security/cves/${advisory}.json" 2>/dev/null | python3 -c '
-import json, sys
-
-try:
-    data = json.load(sys.stdin)
-    cve_id = data.get("id", "")
-    notices = data.get("notices_ids", [])
-    desc = data.get("description", "").strip().split("\n")[0]
-    codename = sys.argv[1] if len(sys.argv) > 1 else ""
-    pkgs = []
-    rel_p_names = []
-    other_p_names = []
-    for p in data.get("packages", []):
-        p_name = p.get("name", "")
-        has_rel = False
-        for st in p.get("statuses", []):
-            if st.get("release_codename") == codename:
-                has_rel = True
-                pkgs.append(p_name + ":::" + st.get("status", "") + ":::" + st.get("description", ""))
-        if p_name:
-            if has_rel and p_name not in rel_p_names:
-                rel_p_names.append(p_name)
-            elif not has_rel and p_name not in rel_p_names and p_name not in other_p_names:
-                other_p_names.append(p_name)
-
-    p_names = rel_p_names + [n for n in other_p_names if n not in rel_p_names]
-
-    if p_names:
-        title_full = ", ".join(p_names) + " vulnerability"
-        if len(p_names) > 3:
-            title_short = ", ".join(p_names[:3]) + f" 외 {len(p_names) - 3}개 패키지 vulnerability"
-        else:
-            title_short = title_full
-    elif desc:
-        title_full = desc[:60]
-        title_short = title_full
-    else:
-        title_full = "CVE 보안 취약점"
-        title_short = title_full
-
-    if notices:
-        title_full += " (" + ", ".join(notices) + ")"
-        if len(notices) > 3:
-            title_short += " (" + ", ".join(notices[:3]) + f" 외 {len(notices) - 3}건)"
-        else:
-            title_short += " (" + ", ".join(notices) + ")"
-
-    print("TITLE_SHORT=" + title_short)
-    print("TITLE_FULL=" + title_full)
-    print("PKGS=" + "\t".join(pkgs))
-except Exception:
-    sys.exit(1)
-' "$codename" 2>/dev/null || true)"
-
-      if [[ -n "$api_output" ]]; then
-        local p_title_short="" p_title_full="" p_pkgs=""
-        p_title_short="$(echo "$api_output" | grep -E '^TITLE_SHORT=' | sed 's/^TITLE_SHORT=//')"
-        p_title_full="$(echo "$api_output" | grep -E '^TITLE_FULL=' | sed 's/^TITLE_FULL=//')"
-        p_pkgs="$(echo "$api_output" | grep -E '^PKGS=' | sed 's/^PKGS=//')"
-
-        [[ -n "$p_title_short" ]] && ADV_TITLE="$p_title_short"
-        [[ -n "$p_title_full" ]] && ADV_TITLE_FULL="$p_title_full" || ADV_TITLE_FULL="$ADV_TITLE"
-
-        if [[ -n "$p_pkgs" ]]; then
-          local has_installed=false
-          IFS=$'\t' read -r -a pkg_items <<< "$p_pkgs"
-          for item in "${pkg_items[@]}"; do
-            [[ -z "$item" ]] && continue
-            local s_pkg="${item%%:::*}"
-            local rest="${item#*:::}"
-            local s_status="${rest%%:::*}"
-            local s_fix_ver="${rest#*:::}"
-
-            local inst_status
-            inst_status="$(dpkg-query -W -f='${Status}' "$s_pkg" 2>/dev/null || true)"
-            if [[ "$inst_status" =~ install[[:space:]]+ok[[:space:]]+installed ]]; then
-              has_installed=true
-              ADV_PKG="$s_pkg"
-              local inst_ver
-              inst_ver="$(dpkg-query -W -f='${Version}' "$s_pkg" 2>/dev/null || true)"
-
-              if [[ "$s_status" == "released" ]]; then
-                if [[ -n "$s_fix_ver" ]] && dpkg --compare-versions "$inst_ver" ge "$s_fix_ver" 2>/dev/null; then
-                  ADV_STATUS="해결됨 (Resolved - 이미 패치 적용됨)"
-                else
-                  ADV_STATUS="업데이트 가능 (Available - 패치 미적용)"
-                fi
-              elif [[ "$s_status" =~ ^(not-affected|DNE|ignored)$ ]]; then
-                ADV_STATUS="해당 없음 (Not Affected)"
-              elif [[ "$s_status" =~ (needed|pending|deferred) ]]; then
-                ADV_STATUS="업데이트 대기중 (Pending/Needed - 패치 미배포)"
-              fi
-              break
-            fi
-          done
-
-          if [[ "$has_installed" == "false" && ${#pkg_items[@]} -gt 0 ]]; then
-            local first_item="${pkg_items[0]}"
-            ADV_PKG="${first_item%%:::*}"
-            local first_rest="${first_item#*:::}"
-            local first_status="${first_rest%%:::*}"
-            if [[ "$first_status" =~ ^(not-affected|DNE|ignored)$ ]]; then
-              ADV_STATUS="해당 없음 (Not Affected - 본 릴리즈 미영향)"
-            else
-              ADV_STATUS="해당 없음 (Not Affected - 패키지 미설치)"
-            fi
-          fi
-        else
-          ADV_STATUS="해당 없음 (Not Affected - 본 릴리즈 미영향)"
-        fi
-
-        resolved=true
-        stop_step_spinner "완료" "true"
-        ADV_SOURCES+=("Canonical 보안 API")
-      else
-        stop_step_spinner "실패" "false"
-        ADV_SOURCES+=("Canonical 보안 API (실패)")
-      fi
-    fi
-
-    # [Ubuntu 환경 2순위 폴백]: Ubuntu Pro CLI 활용 (온라인 모드 전용 - 폐쇄망 타임아웃 방지)
-    if [[ "$resolved" == "false" && "$OS_TYPE" == "debian" && "$ONLINE_MODE" == "true" ]] && command -v pro >/dev/null 2>&1; then
-      log_debug "Ubuntu Pro 도구를 통해 '$advisory' 분석 (pro fix --dry-run)..."
-      start_step_spinner "${ADV_PROGRESS_PREFIX}${advisory} - Ubuntu Pro CLI 폴백"
-      local pro_out
-      pro_out="$(timeout 15 pro fix --dry-run "$advisory" 2>&1 || true)"
-
-      local parsed_title
-      parsed_title="$(echo "$pro_out" | grep -E "^${advisory}:" | head -n 1 | sed "s/^${advisory}:[[:space:]]*//")"
-      if [[ -n "$parsed_title" ]]; then
-        ADV_TITLE="$parsed_title"
-        ADV_TITLE_FULL="$parsed_title"
-      fi
-
-      if echo "$pro_out" | grep -q "is resolved"; then
-        ADV_STATUS="해결됨 (Resolved - 이미 패치 적용됨)"
-        stop_step_spinner "완료" "true"
-        ADV_SOURCES+=("Ubuntu Pro CLI 폴백")
-      elif echo "$pro_out" | grep -q "A fix is available"; then
-        ADV_STATUS="업데이트 가능 (Available - 패치 미적용)"
-        stop_step_spinner "완료" "true"
-        ADV_SOURCES+=("Ubuntu Pro CLI 폴백")
-      elif echo "$pro_out" | grep -q "is not affected"; then
-        ADV_STATUS="해당 없음 (Not Affected)"
-        stop_step_spinner "완료" "true"
-        ADV_SOURCES+=("Ubuntu Pro CLI 폴백")
-      else
-        ADV_STATUS="확인 필요 (API 조회 실패)"
-        stop_step_spinner "실패" "false"
-        ADV_SOURCES+=("Ubuntu Pro CLI 폴백 (실패)")
-      fi
-
-      ADV_PKG="$(echo "$pro_out" | grep -A 2 "affected source package is installed:" | grep -E "^\([0-9]+/[0-9]+\)" | awk '{print $2}' | tr -d ":" | head -n 1)"
-      resolved=true
-    fi
-
-    if [[ "$resolved" == "false" && "$OS_TYPE" == "debian" && "$ONLINE_MODE" == "true" ]]; then
-      ADV_STATUS="확인 필요 (API 조회 실패)"
-    fi
-
-    if [[ "$ONLINE_MODE" == "false" && ( "$OS_TYPE" == "debian" || "$OS_TYPE" == "arch" ) ]]; then
-      ADV_SOURCES+=("오프라인 모드 (원격 조회 생략, 로컬 체인지로그 점검)")
-    fi
-
-    # [RHEL/Rocky 환경]: DNF updateinfo 연동
-    if [[ "$resolved" == "false" && "$OS_TYPE" == "rhel" ]] && command -v dnf >/dev/null 2>&1; then
-      log_debug "DNF updateinfo를 통해 '$advisory' 분석..."
-      if [[ "$ONLINE_MODE" == "false" ]]; then
-        start_step_spinner "${ADV_PROGRESS_PREFIX}${advisory} - DNF 로컬 캐시 (-C)"
-      else
-        start_step_spinner "${ADV_PROGRESS_PREFIX}${advisory} - DNF updateinfo"
-      fi
-      local dnf_out
-      dnf_out="$(run_dnf_updateinfo info --all --cve "$advisory")"
-      if parse_dnf_updateinfo_result "$dnf_out" "$advisory"; then
-        ADV_TITLE_FULL="$ADV_TITLE"
-        resolved=true
-        stop_step_spinner "완료" "true"
-      else
-        ADV_STATUS="해당 없음 (Not Affected - 관련 권고 없음)"
-        stop_step_spinner "완료" "true"
-      fi
-      if [[ "$ONLINE_MODE" == "false" ]]; then
-        ADV_SOURCES+=("DNF 로컬 캐시 (-C)")
-      else
-        ADV_SOURCES+=("DNF updateinfo")
-      fi
-    fi
-
-    # [Arch Linux 환경]: Arch Security Tracker REST API 및 arch-audit 연동
-    if [[ "$resolved" == "false" && "$OS_TYPE" == "arch" ]]; then
-      if [[ "$ONLINE_MODE" == "true" ]] && command -v curl >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
-        log_debug "Arch Security Tracker REST API를 통해 '$advisory' 조회..."
-        start_step_spinner "${ADV_PROGRESS_PREFIX}${advisory} - Arch Security Tracker"
-        local arch_resp http_code arch_json
-        arch_resp="$(curl -s -w "\nHTTP_CODE:%{http_code}" --connect-timeout 3 --max-time 8 --retry 2 --retry-delay 1 "https://security.archlinux.org/${advisory}.json" 2>/dev/null || true)"
-        http_code="$(echo "$arch_resp" | grep -E '^HTTP_CODE:' | tail -n 1 | cut -d':' -f2)"
-        arch_json="$(echo "$arch_resp" | sed '/^HTTP_CODE:/d')"
-
-        if [[ "$http_code" == "404" ]]; then
-          ADV_STATUS="해당 없음 (Not Affected - Arch 트래커 미등록)"
-          resolved=true
-          stop_step_spinner "완료" "true"
-          ADV_SOURCES+=("Arch Security Tracker")
-        elif [[ "$http_code" == "200" && -n "$arch_json" ]]; then
-          local arch_parsed=""
-          arch_parsed="$(printf "%s" "$arch_json" | python3 -c '
-import json, sys, urllib.request
-
-try:
-    data = json.load(sys.stdin)
-    pkgs = data.get("packages", [])
-    advisories = data.get("advisories", [])
-    groups = data.get("groups", [])
-    vtype = data.get("type", "").strip()
-    sev = data.get("severity", "").strip()
-
-    full_parts = []
-    short_parts = []
-    if pkgs:
-        full_parts.append(", ".join(pkgs))
-        if len(pkgs) > 3:
-            short_parts.append(", ".join(pkgs[:3]) + f" 외 {len(pkgs) - 3}개 패키지")
-        else:
-            short_parts.append(", ".join(pkgs))
-    if vtype:
-        full_parts.append(vtype)
-        short_parts.append(vtype)
-    elif data.get("description"):
-        d = data.get("description", "").strip().split("\n")[0][:50]
-        full_parts.append(d)
-        short_parts.append(d)
-
-    title_full = " - ".join(full_parts) if full_parts else "Arch Security Issue"
-    title_short = " - ".join(short_parts) if short_parts else "Arch Security Issue"
-    if sev:
-        title_full = f"[{sev}] {title_full}"
-        title_short = f"[{sev}] {title_short}"
-    if advisories:
-        title_full += " (" + ", ".join(advisories) + ")"
-        if len(advisories) > 3:
-            title_short += " (" + ", ".join(advisories[:3]) + f" 외 {len(advisories) - 3}건)"
-        else:
-            title_short += " (" + ", ".join(advisories) + ")"
-
-    avg_status = ""
-    fixed_ver = ""
-    if groups:
+  patch-info --oss-number CVE-2026-123007,CVE-2026-123633 --output ./audit-report.txt"""
+    print(help_text)
+
+
+class Logger:
+    """표준 출력 및 표준 에러 로깅 유틸리티."""
+
+    def __init__(self, verbose: bool = False) -> None:
+        self.verbose = verbose
+        self._lock = threading.Lock()
+
+    def debug(self, msg: str) -> None:
+        if self.verbose:
+            with self._lock:
+                print(f"\033[1;34m[DEBUG]\033[0m {msg}", file=sys.stderr)
+
+    def error(self, msg: str) -> None:
+        with self._lock:
+            print(f"\033[1;31m[ERROR]\033[0m {msg}", file=sys.stderr)
+
+    def info(self, msg: str) -> None:
+        with self._lock:
+            print(f"\033[1;32m[INFO]\033[0m {msg}")
+
+    def warn(self, msg: str) -> None:
+        with self._lock:
+            print(f"\033[1;33m[WARN]\033[0m {msg}", file=sys.stderr)
+
+
+class StepSpinner:
+    """대화형 터미널(stderr TTY)에서 회전 스피너와 경과 시간을 실시간 표시합니다."""
+
+    FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
+
+    def __init__(self, enabled: bool = True) -> None:
+        self.enabled = enabled and sys.stderr.isatty()
+        self._lock = threading.Lock()
+        self._stop_event = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self._label = ""
+        self._start_ts = 0.0
+        self._line_count = 0
+
+    def start(self, label: str) -> None:
+        self.stop_line(clear_only=True)
+        with self._lock:
+            self._label = label
+            self._start_ts = time.monotonic()
+            if not self.enabled:
+                return
+            self._stop_event.clear()
+            self._thread = threading.Thread(target=self._spin, daemon=True)
+            self._thread.start()
+
+    def update_label(self, label: str) -> None:
+        with self._lock:
+            self._label = label
+
+    def _spin(self) -> None:
+        idx = 0
+        while not self._stop_event.is_set():
+            with self._lock:
+                elapsed = int(time.monotonic() - self._start_ts)
+                label = self._label
+            frame = self.FRAMES[idx % len(self.FRAMES)]
+            sys.stderr.write(
+                f"\r\033[K  \033[36m{frame}\033[0m {label}: \033[2m진행 중... ({elapsed}s)\033[0m"
+            )
+            sys.stderr.flush()
+            idx += 1
+            self._stop_event.wait(0.15)
+
+    def stop(self, result_text: str = "완료", ok: bool = True) -> None:
+        self.stop_line(clear_only=False, result_text=result_text, ok=ok)
+
+    def stop_line(
+        self, clear_only: bool = False, result_text: str = "완료", ok: bool = True
+    ) -> None:
+        thread: Optional[threading.Thread]
+        with self._lock:
+            thread = self._thread
+            self._thread = None
+            if thread is not None:
+                self._stop_event.set()
+        if thread is not None:
+            thread.join(timeout=1.0)
+        if not self.enabled:
+            return
+        with self._lock:
+            if clear_only:
+                sys.stderr.write("\r\033[K")
+                sys.stderr.flush()
+                return
+            elapsed = int(time.monotonic() - self._start_ts)
+            mark, color = ("✓", "\033[1;32m") if ok else ("✗", "\033[1;33m")
+            sys.stderr.write(
+                f"\r\033[K  {color}{mark}\033[0m {self._label}: {color}{result_text}\033[0m ({elapsed}s)\n"
+            )
+            sys.stderr.flush()
+            self._line_count += 1
+
+    def clear_all(self) -> None:
+        self.stop_line(clear_only=True)
+        if not self.enabled:
+            return
+        with self._lock:
+            while self._line_count > 0:
+                sys.stderr.write("\033[1A\033[K")
+                self._line_count -= 1
+            sys.stderr.flush()
+
+
+@dataclass
+class AuditConfig:
+    target_packages: List[str] = field(default_factory=list)
+    oss_numbers: List[str] = field(default_factory=list)
+    show_changelog: bool = False
+    online_mode: bool = True
+    verbose: bool = False
+    output_file: str = ""
+
+
+@dataclass
+class OSInfo:
+    os_type: str
+    pkg_mgr: str
+    os_desc: str
+    codename: str = ""
+
+
+@dataclass
+class AdvisoryResult:
+    advisory: str
+    title_short: str
+    title_full: str
+    status: str = "확인 필요"
+    pkg: str = ""
+    cves: List[str] = field(default_factory=list)
+    sources: List[str] = field(default_factory=list)
+
+
+def split_tokens(raw_values: List[str], uppercase: bool = False) -> List[str]:
+    """공백, 콤마(,), 파이프(|)로 구분된 인자를 중복 없이 순서대로 분리합니다."""
+    result: List[str] = []
+    for raw in raw_values:
+        for token in re.split(r"[,|\s]+", raw.strip()):
+            token = token.strip()
+            if not token:
+                continue
+            if uppercase:
+                token = token.upper()
+            if token not in result:
+                result.append(token)
+    return result
+
+
+def parse_args(argv: List[str]) -> AuditConfig:
+    """Long Option 전용 CLI 인자를 파싱합니다."""
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--package", nargs="+", action="append", default=[])
+    parser.add_argument("--oss-number", nargs="+", action="append", default=[])
+    parser.add_argument("--show-changelog", action="store_true")
+    parser.add_argument("--output", default="")
+    parser.add_argument("--offline", action="store_true")
+    parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--help", action="store_true")
+
+    if not argv:
+        print_help()
+        sys.exit(1)
+
+    # 알 수 없는 옵션 또는 단일 하이픈(-) Short Option 차단
+    for arg in argv:
+        if arg.startswith("-") and not arg.startswith("--"):
+            print(f"\033[1;31m[ERROR]\033[0m 알 수 없는 옵션입니다 (Long Option만 지원): {arg}", file=sys.stderr)
+            sys.exit(1)
+
+    args, unknown = parser.parse_known_args(argv)
+    if unknown:
+        print(f"\033[1;31m[ERROR]\033[0m 알 수 없는 옵션입니다: {' '.join(unknown)}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.help:
+        print_help()
+        sys.exit(0)
+
+    flat_pkgs = [item for sublist in args.package for item in sublist]
+    flat_oss = [item for sublist in args.oss_number for item in sublist]
+
+    cfg = AuditConfig(
+        target_packages=split_tokens(flat_pkgs, uppercase=False),
+        oss_numbers=split_tokens(flat_oss, uppercase=True),
+        show_changelog=args.show_changelog,
+        online_mode=not args.offline,
+        verbose=args.verbose,
+        output_file=args.output.strip(),
+    )
+
+    if not cfg.target_packages and not cfg.oss_numbers:
+        print_help()
+        sys.exit(1)
+
+    if cfg.show_changelog and not cfg.target_packages:
+        print(
+            "\033[1;31m[ERROR]\033[0m --show-changelog 옵션은 --package <패키지명> 옵션과 함께 사용해야 합니다.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    return cfg
+
+
+def run_cmd(
+    cmd: List[str], timeout: int = 15, env_extra: Optional[Dict[str, str]] = None
+) -> subprocess.CompletedProcess:
+    """외부 명령어를 shell=False로 안전하게 실행합니다."""
+    env = os.environ.copy()
+    if env_extra:
+        env.update(env_extra)
+    try:
+        return subprocess.run(
+            cmd,
+            shell=False,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            errors="replace",
+            timeout=timeout,
+            env=env,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(cmd, 124, "", "timeout")
+    except FileNotFoundError:
+        return subprocess.CompletedProcess(cmd, 127, "", "not found")
+
+
+def detect_environment() -> OSInfo:
+    """현재 OS 및 패키지 매니저 환경을 감지합니다."""
+    sys_name = platform.system()
+    os_type = "unknown"
+    pkg_mgr = "unknown"
+    os_desc = sys_name
+    codename = ""
+
+    if sys_name == "Darwin":
+        os_type = "darwin"
+        res = run_cmd(["sw_vers", "-productVersion"], timeout=5)
+        ver = res.stdout.strip() if res.returncode == 0 else ""
+        os_desc = f"macOS {ver}".strip()
+        if shutil.which("brew"):
+            pkg_mgr = "brew"
+        elif shutil.which("port"):
+            pkg_mgr = "port"
+    elif Path("/etc/os-release").is_file():
+        os_rel: Dict[str, str] = {}
         try:
-            req = urllib.request.Request(f"https://security.archlinux.org/{groups[0]}.json")
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                avg_data = json.loads(resp.read().decode("utf-8"))
-                avg_status = avg_data.get("status", "") or ""
-                fixed_ver = avg_data.get("fixed", "") or ""
-        except Exception:
+            for line in Path("/etc/os-release").read_text(encoding="utf-8", errors="replace").splitlines():
+                if "=" in line:
+                    k, v = line.split("=", 1)
+                    os_rel[k.strip()] = v.strip().strip('"')
+        except OSError:
             pass
+        os_id = os_rel.get("ID", "")
+        id_like = os_rel.get("ID_LIKE", "")
+        os_desc = os_rel.get("PRETTY_NAME") or os_id or sys_name
+        codename = os_rel.get("VERSION_CODENAME", "")
 
-    print("TITLE_SHORT=" + title_short)
-    print("TITLE_FULL=" + title_full)
-    print("STATUS=" + avg_status)
-    print("FIXED=" + fixed_ver)
-    print("PKGS=" + " ".join(pkgs))
-except Exception:
-    sys.exit(1)
-' 2>/dev/null || true)"
+        if os_id in ("ubuntu", "debian", "linuxmint", "pop") or re.search(r"(debian|ubuntu)", id_like):
+            os_type = "debian"
+            if shutil.which("dpkg-query"):
+                pkg_mgr = "dpkg"
+        elif os_id in ("rhel", "rocky", "almalinux", "centos", "fedora", "ol") or re.search(
+            r"(rhel|fedora|centos)", id_like
+        ):
+            os_type = "rhel"
+            if shutil.which("rpm"):
+                pkg_mgr = "rpm"
+        elif os_id == "sles" or os_id.startswith("opensuse") or "suse" in id_like:
+            os_type = "suse"
+            if shutil.which("zypper") or shutil.which("rpm"):
+                pkg_mgr = "zypper"
+        elif os_id in ("arch", "manjaro", "endeavouros") or "arch" in id_like:
+            os_type = "arch"
+            if shutil.which("pacman"):
+                pkg_mgr = "pacman"
+        elif os_id == "alpine":
+            os_type = "alpine"
+            if shutil.which("apk"):
+                pkg_mgr = "apk"
 
-          if [[ -n "$arch_parsed" ]]; then
-            local a_title_short="" a_title_full="" a_status="" a_fixed="" a_pkgs=""
-            a_title_short="$(echo "$arch_parsed" | grep -E '^TITLE_SHORT=' | sed 's/^TITLE_SHORT=//')"
-            a_title_full="$(echo "$arch_parsed" | grep -E '^TITLE_FULL=' | sed 's/^TITLE_FULL=//')"
-            a_status="$(echo "$arch_parsed" | grep -E '^STATUS=' | sed 's/^STATUS=//')"
-            a_fixed="$(echo "$arch_parsed" | grep -E '^FIXED=' | sed 's/^FIXED=//')"
-            a_pkgs="$(echo "$arch_parsed" | grep -E '^PKGS=' | sed 's/^PKGS=//')"
+    if pkg_mgr == "unknown":
+        if shutil.which("dpkg-query"):
+            os_type, pkg_mgr = "debian", "dpkg"
+        elif shutil.which("rpm"):
+            os_type, pkg_mgr = "rhel", "rpm"
+        elif shutil.which("pacman"):
+            os_type, pkg_mgr = "arch", "pacman"
+        elif shutil.which("apk"):
+            os_type, pkg_mgr = "alpine", "apk"
+        elif shutil.which("brew"):
+            os_type, pkg_mgr = "darwin", "brew"
 
-            [[ -n "$a_title_short" ]] && ADV_TITLE="$a_title_short"
-            [[ -n "$a_title_full" ]] && ADV_TITLE_FULL="$a_title_full" || ADV_TITLE_FULL="$ADV_TITLE"
+    return OSInfo(os_type=os_type, pkg_mgr=pkg_mgr, os_desc=os_desc, codename=codename)
 
-            if [[ -n "$a_pkgs" ]]; then
-              local has_installed=false
-              for s_pkg in $a_pkgs; do
-                local inst_ver=""
-                inst_ver="$(pacman -Q "$s_pkg" 2>/dev/null | awk '{print $2}' || true)"
-                if [[ -n "$inst_ver" ]]; then
-                  has_installed=true
-                  ADV_PKG="$s_pkg"
-                  if [[ "$a_status" == "Not affected" ]]; then
-                    ADV_STATUS="해당 없음 (Not Affected)"
-                  elif [[ "$a_status" == "Fixed" && -n "$a_fixed" ]]; then
-                    if command -v vercmp >/dev/null 2>&1; then
-                      local cmp_res
-                      cmp_res="$(vercmp "$inst_ver" "$a_fixed" 2>/dev/null || echo -1)"
-                      if [[ "$cmp_res" -ge 0 ]]; then
-                        ADV_STATUS="해결됨 (Resolved - 이미 패치 적용됨)"
-                      else
-                        ADV_STATUS="업데이트 가능 (Available - 패치 미적용)"
-                      fi
-                    else
-                      ADV_STATUS="확인 필요 (설치됨: $inst_ver, 패치: $a_fixed)"
-                    fi
-                  elif [[ "$a_status" =~ ^(Vulnerable|Testing|Unknown)$ || -z "$a_fixed" ]]; then
-                    ADV_STATUS="업데이트 대기중 (Vulnerable - 패치 미배포)"
-                  fi
-                  break
-                fi
-              done
 
-              if [[ "$has_installed" == "false" ]]; then
-                ADV_PKG="$(echo "$a_pkgs" | awk '{print $1}')"
-                ADV_STATUS="해당 없음 (Not Affected - 패키지 미설치)"
-              fi
-            else
-              ADV_STATUS="해당 없음 (Not Affected - 영향 패키지 없음)"
-            fi
-            resolved=true
-            stop_step_spinner "완료" "true"
-            ADV_SOURCES+=("Arch Security Tracker")
-          else
-            stop_step_spinner "실패" "false"
-            ADV_SOURCES+=("Arch Security Tracker (실패)")
-          fi
-        else
-          stop_step_spinner "실패" "false"
-          ADV_SOURCES+=("Arch Security Tracker (실패)")
-        fi
-      fi
+def get_package_info(pkg: str, pkg_mgr: str) -> Tuple[bool, str]:
+    """패키지 설치 여부 및 버전 정보 포맷 문자열을 반환합니다."""
+    if pkg_mgr == "dpkg":
+        res = run_cmd(
+            ["dpkg-query", "-W", "-f=${Package}\t${Version}\t${Architecture}\t${Status}\n", pkg],
+            timeout=5,
+        )
+        out = res.stdout.strip()
+        if out and re.search(r"install\s+ok\s+installed", out):
+            parts = out.split("\t")
+            p_name = parts[0] if len(parts) > 0 else pkg
+            p_ver = parts[1] if len(parts) > 1 else ""
+            p_arch = parts[2] if len(parts) > 2 else ""
+            return True, f"  📦 {p_name:<20} : 버전 {p_ver:<20} ({p_arch:<6}) | \033[1;32m[설치됨]\033[0m"
+    elif pkg_mgr in ("rpm", "zypper"):
+        res = run_cmd(
+            ["rpm", "-q", "--queryformat", "%{NAME}\t%{VERSION}-%{RELEASE}\t%{ARCH}\n", pkg],
+            timeout=5,
+        )
+        out = res.stdout.strip()
+        if res.returncode == 0 and out and "is not installed" not in out:
+            parts = out.split("\t")
+            p_name = parts[0] if len(parts) > 0 else pkg
+            p_ver = parts[1] if len(parts) > 1 else ""
+            p_arch = parts[2] if len(parts) > 2 else ""
+            return True, f"  📦 {p_name:<20} : 버전 {p_ver:<20} ({p_arch:<6}) | \033[1;32m[설치됨]\033[0m"
+    elif pkg_mgr == "pacman":
+        res = run_cmd(["pacman", "-Q", pkg], timeout=5)
+        out = res.stdout.strip()
+        if res.returncode == 0 and out:
+            parts = out.split()
+            p_name = parts[0]
+            p_ver = parts[1] if len(parts) > 1 else ""
+            return True, f"  📦 {p_name:<20} : 버전 {p_ver:<20} | \033[1;32m[설치됨]\033[0m"
+    elif pkg_mgr == "apk":
+        res = run_cmd(["apk", "info", "-v", pkg], timeout=5)
+        out = res.stdout.strip()
+        if res.returncode == 0 and out:
+            return True, f"  📦 {pkg:<20} : {out:<20} | \033[1;32m[설치됨]\033[0m"
+    elif pkg_mgr == "brew":
+        res = run_cmd(["brew", "list", "--versions", pkg], timeout=10)
+        out = res.stdout.strip()
+        if res.returncode == 0 and out:
+            return True, f"  📦 {pkg:<20} : {out:<20} | \033[1;32m[설치됨]\033[0m"
 
-      if [[ "$resolved" == "false" && "$ONLINE_MODE" == "true" ]] && command -v arch-audit >/dev/null 2>&1; then
-        log_debug "arch-audit를 통해 '$advisory' 조회..."
-        start_step_spinner "${ADV_PROGRESS_PREFIX}${advisory} - arch-audit"
-        local aa_out=""
-        aa_out="$(timeout 15 arch-audit -f "%n|%c|%t" 2>/dev/null | grep -i "$advisory" | head -n 1 || true)"
-        if [[ -n "$aa_out" ]]; then
-          ADV_PKG="$(echo "$aa_out" | cut -d'|' -f1)"
-          ADV_STATUS="업데이트 가능 (Available - 패치 미적용)"
-          resolved=true
-          stop_step_spinner "완료" "true"
-          ADV_SOURCES+=("arch-audit")
-        else
-          stop_step_spinner "실패" "false"
-          ADV_SOURCES+=("arch-audit (미매칭)")
-        fi
-        if [[ "$resolved" == "false" && "$ONLINE_MODE" == "true" ]]; then
-          ADV_STATUS="확인 필요 (API 조회 실패)"
-        fi
-      fi
-    fi
+    return False, f"  📦 {pkg:<20} : \033[1;33m[미설치 (Not Installed)]\033[0m"
 
-    return 0
-  fi
 
-  # 2) Ubuntu 환경에서 USN- 형식인 경우
-  if [[ "$advisory" =~ ^USN-[0-9]+-[0-9]+$ ]]; then
-    local resolved=false
+def truncate_title(title: str, max_len: int = 120) -> str:
+    """콘솔 가독성을 위해 과도하게 긴 제목을 축약합니다."""
+    if len(title) > max_len:
+        return title[: max_len - 3] + "..."
+    return title
 
-    # [1순위 고속 조회]: Canonical 공식 보안 REST API 직접 조회 (0.3초 내 초고속 파싱)
-    if [[ "$ONLINE_MODE" == "true" ]] && command -v curl >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
-      log_debug "Canonical 공식 보안 REST API를 통해 '$advisory' 초고속 조회..."
-      start_step_spinner "${ADV_PROGRESS_PREFIX}${advisory} - Canonical 보안 API"
-      local codename=""
-      codename="$(grep -E '^VERSION_CODENAME=' /etc/os-release 2>/dev/null | cut -d'=' -f2 | tr -d '"' || true)"
 
-      local api_output
-      api_output="$(curl -s --connect-timeout 3 --max-time 8 --retry 2 --retry-delay 1 "https://ubuntu.com/security/notices/${advisory}.json" 2>/dev/null | python3 -c '
-import json, sys
+def fetch_json_url(url: str, timeout: int = 8, retries: int = 1) -> Tuple[int, Optional[dict]]:
+    """urllib.request를 사용하여 JSON API를 재시도와 함께 안전하게 호출합니다."""
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": f"patch-info/{SCRIPT_FILE_VERSION}"},
+    )
+    last_code = 0
+    for attempt in range(retries + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8", errors="replace"))
+                return resp.status, data
+        except urllib.error.HTTPError as e:
+            last_code = e.code
+            if e.code == 404:
+                return 404, None
+        except Exception:
+            last_code = 0
+        if attempt < retries:
+            time.sleep(0.5)
+    return last_code, None
 
-try:
-    data = json.load(sys.stdin)
-    title = data.get("title", "").strip()
-    cves = " ".join(data.get("cves_ids", []))
-    codename = sys.argv[1] if len(sys.argv) > 1 else ""
-    rp = data.get("release_packages", {}).get(codename, [])
-    pkgs = []
-    for p in rp:
-        if p.get("is_source"):
-            pkgs.append(p.get("name", "") + ":" + p.get("version", ""))
-    print("TITLE=" + title)
-    print("CVES=" + cves)
-    print("PKGS=" + " ".join(pkgs))
-except Exception:
-    sys.exit(1)
-' "$codename" 2>/dev/null || true)"
 
-      if [[ -n "$api_output" ]]; then
-        local p_title="" p_cves="" p_pkgs=""
-        p_title="$(echo "$api_output" | grep -E '^TITLE=' | sed 's/^TITLE=//')"
-        p_cves="$(echo "$api_output" | grep -E '^CVES=' | sed 's/^CVES=//')"
-        p_pkgs="$(echo "$api_output" | grep -E '^PKGS=' | sed 's/^PKGS=//')"
+def is_dpkg_installed(pkg: str) -> Optional[str]:
+    """dpkg 패키지 설치 시 버전을 반환하고, 미설치 시 None을 반환합니다."""
+    res = run_cmd(["dpkg-query", "-W", "-f=${Status}\t${Version}", pkg], timeout=5)
+    if res.returncode != 0:
+        return None
+    out = res.stdout.strip()
+    if "\t" in out:
+        status, ver = out.split("\t", 1)
+        if re.search(r"install\s+ok\s+installed", status):
+            return ver.strip()
+    return None
 
-        if [[ -n "$p_title" ]]; then
-          ADV_TITLE="$p_title"
-          ADV_TITLE_FULL="$p_title"
-        fi
 
-        if [[ -n "$p_cves" ]]; then
-          IFS=' ' read -r -a ADV_CVES <<< "$p_cves"
-        fi
+def dpkg_compare_ge(ver1: str, ver2: str) -> bool:
+    """dpkg --compare-versions ge 비교를 수행합니다."""
+    if not ver1 or not ver2:
+        return False
+    res = run_cmd(["dpkg", "--compare-versions", ver1, "ge", ver2], timeout=5)
+    return res.returncode == 0
 
-        # 시스템 상태 판정: 설치된 패키지와 API 픽스 버전 정밀 비교
-        if [[ -n "$p_pkgs" ]]; then
-          local has_installed=false
-          for item in $p_pkgs; do
-            local s_pkg="${item%%:*}"
-            local s_fix_ver="${item#*:}"
-            local inst_status
-            inst_status="$(dpkg-query -W -f='${Status}' "$s_pkg" 2>/dev/null || true)"
-            if [[ "$inst_status" =~ install[[:space:]]+ok[[:space:]]+installed ]]; then
-              has_installed=true
-              ADV_PKG="$s_pkg"
-              local inst_ver
-              inst_ver="$(dpkg-query -W -f='${Version}' "$s_pkg" 2>/dev/null || true)"
-              if dpkg --compare-versions "$inst_ver" ge "$s_fix_ver" 2>/dev/null; then
-                ADV_STATUS="해결됨 (Resolved - 이미 패치 적용됨)"
-              else
-                ADV_STATUS="업데이트 가능 (Available - 패치 미적용)"
-              fi
-              break
-            fi
-          done
 
-          if [[ "$has_installed" == "false" ]]; then
-            ADV_PKG="$(echo "$p_pkgs" | awk '{print $1}' | cut -d':' -f1)"
-            ADV_STATUS="해당 없음 (Not Affected - 패키지 미설치)"
-          fi
-        else
-          ADV_STATUS="해당 없음 (Not Affected - 본 릴리즈 미영향)"
-        fi
+def run_dnf_updateinfo(sub_args: List[str], online_mode: bool, log: Logger) -> str:
+    """DNF updateinfo 명령을 안전하게 실행합니다 (오프라인/캐시 폴백 지원)."""
+    env_extra = {"LC_ALL": "C"}
+    if not online_mode:
+        res = run_cmd(
+            ["dnf", "-C", "--setopt=skip_if_unavailable=True", "updateinfo"] + sub_args,
+            timeout=20,
+            env_extra=env_extra,
+        )
+        if res.returncode == 124:
+            log.warn("DNF 로컬 캐시 조회 시간 초과(20초)")
+        return res.stdout
 
-        resolved=true
-        stop_step_spinner "완료" "true"
-        ADV_SOURCES+=("Canonical 보안 API")
-      else
-        stop_step_spinner "실패" "false"
-        ADV_SOURCES+=("Canonical 보안 API (실패)")
-      fi
-    fi
+    res = run_cmd(
+        [
+            "dnf",
+            "--setopt=timeout=5",
+            "--setopt=retries=1",
+            "--setopt=skip_if_unavailable=True",
+            "updateinfo",
+        ]
+        + sub_args,
+        timeout=20,
+        env_extra=env_extra,
+    )
+    out = res.stdout
+    if res.returncode == 124 or res.returncode != 0 or not re.search(r"Update ID:|Title:|===+", out):
+        if res.returncode == 124:
+            log.warn("DNF 온라인 조회 시간 초과(20초) - 로컬 캐시(-C)로 폴백 조회합니다.")
+        elif res.returncode != 0:
+            log.debug(f"DNF 온라인 조회 실패(rc={res.returncode}) - 로컬 캐시(-C)로 폴백 조회합니다.")
+        cache_res = run_cmd(
+            ["dnf", "-C", "--setopt=skip_if_unavailable=True", "updateinfo"] + sub_args,
+            timeout=20,
+            env_extra=env_extra,
+        )
+        if cache_res.stdout and re.search(r"Update ID:|Title:|===+", cache_res.stdout):
+            out = cache_res.stdout
+    return out
 
-    # [2순위 폴백]: REST API 접근 불가 시 Ubuntu Pro CLI 활용 (온라인 모드 전용 - 폐쇄망 타임아웃 방지)
-    if [[ "$resolved" == "false" && "$ONLINE_MODE" == "true" ]] && command -v pro >/dev/null 2>&1; then
-      log_debug "Ubuntu Pro 도구를 통해 '$advisory' 분석 (pro fix --dry-run)..."
-      start_step_spinner "${ADV_PROGRESS_PREFIX}${advisory} - Ubuntu Pro CLI 폴백"
-      # [안전 가드레일]: 시스템 설치를 방지하기 위해 --dry-run을 반드시 고정 실행
-      local pro_out
-      pro_out="$(timeout 15 pro fix --dry-run "$advisory" 2>&1 || true)"
 
-      # 제목 파싱
-      local parsed_title
-      parsed_title="$(echo "$pro_out" | grep -E "^${advisory}:" | head -n 1 | sed "s/^${advisory}:[[:space:]]*//")"
-      if [[ -n "$parsed_title" ]]; then
-        ADV_TITLE="$parsed_title"
-        ADV_TITLE_FULL="$parsed_title"
-      fi
+def parse_dnf_updateinfo_result(dnf_out: str, target_id: str, res_obj: AdvisoryResult) -> bool:
+    """DNF updateinfo 출력 결과에서 제목, 상태, 영향 패키지를 추출합니다."""
+    if target_id not in dnf_out:
+        return False
 
-      # 해결 상태 파싱
-      if echo "$pro_out" | grep -q "is resolved"; then
-        ADV_STATUS="해결됨 (Resolved - 이미 패치 적용됨)"
-        stop_step_spinner "완료" "true"
-        ADV_SOURCES+=("Ubuntu Pro CLI 폴백")
-      elif echo "$pro_out" | grep -q "A fix is available"; then
-        ADV_STATUS="업데이트 가능 (Available - 패치 미적용)"
-        stop_step_spinner "완료" "true"
-        ADV_SOURCES+=("Ubuntu Pro CLI 폴백")
-      elif echo "$pro_out" | grep -q "is not affected"; then
-        ADV_STATUS="해당 없음 (Not Affected)"
-        stop_step_spinner "완료" "true"
-        ADV_SOURCES+=("Ubuntu Pro CLI 폴백")
-      else
-        stop_step_spinner "실패" "false"
-        ADV_SOURCES+=("Ubuntu Pro CLI 폴백 (실패)")
-      fi
+    update_id = ""
+    title_field = ""
+    banner_title = ""
+    lines = dnf_out.splitlines()
+    for i, line in enumerate(lines):
+        if not update_id:
+            m = re.match(r"^\s*Update ID\s*:\s*(.+)$", line)
+            if m:
+                update_id = m.group(1).strip()
+        if not title_field:
+            m = re.match(r"^\s*Title\s*:\s*(.+)$", line)
+            if m:
+                title_field = m.group(1).strip()
+        if not banner_title and re.match(r"^===+$", line.strip()) and i + 1 < len(lines):
+            nxt = lines[i + 1].strip()
+            if nxt and not re.match(r"^===+$", nxt):
+                banner_title = nxt
 
-      # 영향받는 패키지 파싱
-      ADV_PKG="$(echo "$pro_out" | grep -A 2 "affected source package is installed:" | grep -E "^\([0-9]+/[0-9]+\)" | awk '{print $2}' | tr -d ":" | head -n 1)"
+    resolved_title = title_field or banner_title
+    if resolved_title and update_id:
+        res_obj.title_short = f"{resolved_title} ({update_id})"
+        res_obj.title_full = res_obj.title_short
+    elif resolved_title:
+        res_obj.title_short = resolved_title
+        res_obj.title_full = resolved_title
 
-      # 연관 CVE 목록 파싱
-      while IFS= read -r cve; do
-        [[ -n "$cve" ]] && ADV_CVES+=("$cve")
-      done < <(echo "$pro_out" | grep -o -E "CVE-[0-9]{4}-[0-9]+" | sort -u || true)
-    fi
+    if re.search(r"^\s*Installed\s*:\s*false", dnf_out, re.MULTILINE | re.IGNORECASE):
+        res_obj.status = "업데이트 가능 (Available - 패치 미적용)"
+    elif re.search(r"^\s*Installed\s*:\s*true", dnf_out, re.MULTILINE | re.IGNORECASE):
+        res_obj.status = "해결됨 (Resolved - 이미 패치 적용됨)"
+    else:
+        res_obj.status = "업데이트 가능 (Available - 패치 미적용)"
 
-    if [[ "$ONLINE_MODE" == "false" ]]; then
-      ADV_SOURCES+=("오프라인 모드 (원격 조회 생략, 로컬 체인지로그 점검)")
-    fi
-    return 0
-  fi
+    pkg_match = re.search(r"^\s*Packages\s*:.*\n(?:\s+([a-zA-Z0-9][^\s]*))", dnf_out, re.MULTILINE)
+    if pkg_match:
+        res_obj.pkg = pkg_match.group(1).strip()
+    elif banner_title:
+        bm = re.match(r"^[A-Za-z]+:\s*([a-zA-Z0-9._+-]+)\s+security", banner_title)
+        if bm:
+            res_obj.pkg = bm.group(1)
+    return True
 
-  # 3) RHEL/Rocky 환경에서 RHSA/RLSA/ALSA 형식인 경우
-  if [[ "$advisory" =~ ^(RHSA|RLSA|ALSA|FEDORA)-[0-9]{4}:?[0-9]+$ ]]; then
-    if command -v dnf >/dev/null 2>&1; then
-      log_debug "DNF updateinfo를 통해 '$advisory' 분석..."
-      if [[ "$ONLINE_MODE" == "false" ]]; then
-        start_step_spinner "${ADV_PROGRESS_PREFIX}${advisory} - DNF 로컬 캐시 (-C)"
-      else
-        start_step_spinner "${ADV_PROGRESS_PREFIX}${advisory} - DNF updateinfo"
-      fi
-      local dnf_out
-      dnf_out="$(run_dnf_updateinfo info --all --advisory "$advisory")"
-      if parse_dnf_updateinfo_result "$dnf_out" "$advisory"; then
-        stop_step_spinner "완료" "true"
-      else
-        stop_step_spinner "완료" "true"
-      fi
-      ADV_TITLE_FULL="$ADV_TITLE"
-      while IFS= read -r cve; do
-        [[ -n "$cve" ]] && ADV_CVES+=("$cve")
-      done < <(echo "$dnf_out" | grep -E "^[[:space:]]*CVEs?[[:space:]]*:" -A 20 | grep -o -E "CVE-[0-9]{4}-[0-9]+" | sort -u || true)
-      if [[ "$ONLINE_MODE" == "false" ]]; then
-        ADV_SOURCES+=("DNF 로컬 캐시 (-C)")
-      else
-        ADV_SOURCES+=("DNF updateinfo")
-      fi
-    fi
-    return 0
-  fi
 
-  # 4) openSUSE / SLES 환경
-  if [[ "$advisory" =~ (SUSE-SU|openSUSE-SU) ]]; then
-    if command -v zypper >/dev/null 2>&1; then
-      log_debug "Zypper patch-info를 통해 '$advisory' 분석..."
-      local zyp_out=""
-      if [[ "$ONLINE_MODE" == "false" ]]; then
-        start_step_spinner "${ADV_PROGRESS_PREFIX}${advisory} - Zypper 로컬 캐시"
-        zyp_out="$(LC_ALL=C timeout 20 zypper --no-refresh patch-info "$advisory" < /dev/null 2>/dev/null || true)"
-        stop_step_spinner "완료" "true"
-        ADV_SOURCES+=("Zypper 로컬 캐시 (--no-refresh)")
-      else
-        start_step_spinner "${ADV_PROGRESS_PREFIX}${advisory} - Zypper patch-info"
-        zyp_out="$(LC_ALL=C timeout 20 zypper patch-info "$advisory" < /dev/null 2>/dev/null || true)"
-        stop_step_spinner "완료" "true"
-        ADV_SOURCES+=("Zypper patch-info")
-      fi
-      while IFS= read -r cve; do
-        [[ -n "$cve" ]] && ADV_CVES+=("$cve")
-      done < <(echo "$zyp_out" | grep -o -E "CVE-[0-9]{4}-[0-9]+" | sort -u || true)
-    fi
-    return 0
-  fi
+def resolve_advisory_info(
+    advisory: str, os_info: OSInfo, online_mode: bool, log: Logger
+) -> AdvisoryResult:
+    """OS 보안 권고번호 또는 CVE 번호를 분석하여 AdvisoryResult를 반환합니다."""
+    res = AdvisoryResult(
+        advisory=advisory,
+        title_short=f"Security Advisory: {advisory}",
+        title_full=f"Security Advisory: {advisory}",
+    )
 
-  return 0
-}
+    # 1) 입력값이 CVE 형식인 경우
+    if re.match(r"^CVE-[0-9]{4}-[0-9]+$", advisory):
+        res.title_short = f"CVE 단독 취약점 ({advisory})"
+        res.title_full = res.title_short
+        res.status = "체인지로그 점검 필요"
+        res.cves = [advisory]
+        resolved = False
 
-##
-# 체인지로그에서 특정 CVE 정규식에 일치하는 완전한 블록 전체 추출 (블록 파서)
-#
-# @param $1 {String} 체인지로그 원문 텍스트
-# @param $2 {String} CVE 정규식 패턴 (예: "CVE-2026-123633|CVE-2026-113425")
-##
-extract_changelog_blocks() {
-  local changelog_text="$1"
-  local cve_regex="$2"
+        # [Ubuntu/Debian 1순위]: Canonical 보안 REST API
+        if os_info.os_type == "debian" and online_mode:
+            log.debug(f"Canonical 공식 보안 REST API를 통해 '{advisory}' 조회...")
+            code, data = fetch_json_url(
+                f"https://ubuntu.com/security/cves/{advisory}.json", timeout=8, retries=1
+            )
+            if code == 200 and isinstance(data, dict):
+                notices = data.get("notices_ids", []) or []
+                desc = (data.get("description") or "").strip().split("\n")[0]
+                rel_p_names: List[str] = []
+                other_p_names: List[str] = []
+                codename_pkgs: List[Tuple[str, str, str]] = []
 
-  echo "$changelog_text" | awk -v pattern="$cve_regex" -v pkg_mgr="${PKG_MGR:-}" '
-    BEGIN {
-      IGNORECASE = 1
-      in_block = 0
-      is_rpm_block = 0
-      block_header = ""
-      cur_block = ""
-      cur_item = ""
-      matched_items = ""
-    }
-    function flush_rpm_item() {
-      if (cur_item != "" && cur_item ~ pattern) {
-        if (matched_items == "") {
-          matched_items = cur_item
-        } else {
-          matched_items = matched_items "\n" cur_item
-        }
-      }
-      cur_item = ""
-    }
-    function flush_block() {
-      if (!in_block) return
-      if (is_rpm_block) {
-        flush_rpm_item()
-        if (matched_items != "") {
-          sub(/^[[:space:]]*\*[[:space:]]*/, "  🔒 ", block_header)
-          print block_header
-          print matched_items
-          print ""
-        }
-      } else {
-        if (cur_block ~ pattern) {
-          sub(/^[[:space:]]*\*[[:space:]]*/, "  🔒 ", cur_block)
-          print cur_block
-          print ""
-        }
-      }
-      in_block = 0
-      is_rpm_block = 0
-      block_header = ""
-      cur_block = ""
-      cur_item = ""
-      matched_items = ""
-    }
-    # 새 항목 시작 (* 헤더)
-    /^[[:space:]]*\*[[:space:]]/ {
-      flush_block()
-      in_block = 1
-      if (pkg_mgr == "rpm" || pkg_mgr == "zypper" || $0 ~ /^[[:space:]]*\*[[:space:]]+(Mon|Tue|Wed|Thu|Fri|Sat|Sun)[[:space:]]/) {
-        is_rpm_block = 1
-        block_header = $0
-      } else {
-        is_rpm_block = 0
-        cur_block = $0
-      }
-      next
-    }
-    # 패키지 헤더 또는 서명 라인 도달 시 현재 블록 종결
-    /^[a-zA-Z0-9]/ || /^[[:space:]]*--[[:space:]]/ {
-      flush_block()
-      next
-    }
-    # 블록 내부 행 누적
-    {
-      if (in_block) {
-        if (is_rpm_block) {
-          if ($0 ~ /^[[:space:]]*-[[:space:]]/) {
+                for p in data.get("packages", []):
+                    p_name = p.get("name", "")
+                    has_rel = False
+                    for st in p.get("statuses", []):
+                        if st.get("release_codename") == os_info.codename:
+                            has_rel = True
+                            codename_pkgs.append(
+                                (p_name, st.get("status", ""), st.get("description", ""))
+                            )
+                    if p_name:
+                        if has_rel and p_name not in rel_p_names:
+                            rel_p_names.append(p_name)
+                        elif not has_rel and p_name not in rel_p_names and p_name not in other_p_names:
+                            other_p_names.append(p_name)
+
+                p_names = rel_p_names + [n for n in other_p_names if n not in rel_p_names]
+                if p_names:
+                    title_full = ", ".join(p_names) + " vulnerability"
+                    if len(p_names) > 3:
+                        title_short = (
+                            ", ".join(p_names[:3]) + f" 외 {len(p_names) - 3}개 패키지 vulnerability"
+                        )
+                    else:
+                        title_short = title_full
+                elif desc:
+                    title_full = desc[:60]
+                    title_short = title_full
+                else:
+                    title_full = "CVE 보안 취약점"
+                    title_short = title_full
+
+                if notices:
+                    title_full += " (" + ", ".join(notices) + ")"
+                    if len(notices) > 3:
+                        title_short += " (" + ", ".join(notices[:3]) + f" 외 {len(notices) - 3}건)"
+                    else:
+                        title_short += " (" + ", ".join(notices) + ")"
+
+                res.title_short = title_short
+                res.title_full = title_full
+
+                if codename_pkgs:
+                    has_installed = False
+                    for s_pkg, s_status, s_fix_ver in codename_pkgs:
+                        inst_ver = is_dpkg_installed(s_pkg)
+                        if inst_ver is not None:
+                            has_installed = True
+                            res.pkg = s_pkg
+                            if s_status == "released":
+                                if s_fix_ver and dpkg_compare_ge(inst_ver, s_fix_ver):
+                                    res.status = "해결됨 (Resolved - 이미 패치 적용됨)"
+                                else:
+                                    res.status = "업데이트 가능 (Available - 패치 미적용)"
+                            elif s_status in ("not-affected", "DNE", "ignored"):
+                                res.status = "해당 없음 (Not Affected)"
+                            elif s_status in ("needed", "pending", "deferred"):
+                                res.status = "업데이트 대기중 (Pending/Needed - 패치 미배포)"
+                            break
+                    if not has_installed:
+                        res.pkg = codename_pkgs[0][0]
+                        first_status = codename_pkgs[0][1]
+                        if first_status in ("not-affected", "DNE", "ignored"):
+                            res.status = "해당 없음 (Not Affected - 본 릴리즈 미영향)"
+                        else:
+                            res.status = "해당 없음 (Not Affected - 패키지 미설치)"
+                else:
+                    res.status = "해당 없음 (Not Affected - 본 릴리즈 미영향)"
+
+                resolved = True
+                res.sources.append("Canonical 보안 API")
+            else:
+                res.sources.append("Canonical 보안 API (실패)")
+
+        # [Ubuntu 2순위 폴백]: Ubuntu Pro CLI
+        if not resolved and os_info.os_type == "debian" and online_mode and shutil.which("pro"):
+            log.debug(f"Ubuntu Pro 도구를 통해 '{advisory}' 분석 (pro fix --dry-run)...")
+            pro_res = run_cmd(["pro", "fix", "--dry-run", advisory], timeout=15)
+            pro_out = pro_res.stdout + "\n" + pro_res.stderr
+
+            m_title = re.search(rf"^{re.escape(advisory)}:\s*(.+)$", pro_out, re.MULTILINE)
+            if m_title:
+                parsed_t = m_title.group(1).strip()
+                res.title_short = parsed_t
+                res.title_full = parsed_t
+
+            if "is resolved" in pro_out:
+                res.status = "해결됨 (Resolved - 이미 패치 적용됨)"
+                res.sources.append("Ubuntu Pro CLI 폴백")
+            elif "A fix is available" in pro_out:
+                res.status = "업데이트 가능 (Available - 패치 미적용)"
+                res.sources.append("Ubuntu Pro CLI 폴백")
+            elif "is not affected" in pro_out:
+                res.status = "해당 없음 (Not Affected)"
+                res.sources.append("Ubuntu Pro CLI 폴백")
+            else:
+                res.status = "확인 필요 (API 조회 실패)"
+                res.sources.append("Ubuntu Pro CLI 폴백 (실패)")
+
+            m_pkg = re.search(
+                r"affected source package is installed:.*?\n(?:\([0-9]+/[0-9]+\)\s+([^\s:]+))",
+                pro_out,
+                re.DOTALL,
+            )
+            if m_pkg:
+                res.pkg = m_pkg.group(1).strip()
+            resolved = True
+
+        if not resolved and os_info.os_type == "debian" and online_mode:
+            res.status = "확인 필요 (API 조회 실패)"
+
+        if not online_mode and os_info.os_type in ("debian", "arch"):
+            res.sources.append("오프라인 모드 (원격 조회 생략, 로컬 체인지로그 점검)")
+
+        # [RHEL/Rocky]: DNF updateinfo
+        if not resolved and os_info.os_type == "rhel" and shutil.which("dnf"):
+            log.debug(f"DNF updateinfo를 통해 '{advisory}' 분석...")
+            dnf_out = run_dnf_updateinfo(["info", "--all", "--cve", advisory], online_mode, log)
+            if parse_dnf_updateinfo_result(dnf_out, advisory, res):
+                resolved = True
+            else:
+                res.status = "해당 없음 (Not Affected - 관련 권고 없음)"
+            res.sources.append("DNF 로컬 캐시 (-C)" if not online_mode else "DNF updateinfo")
+
+        # [Arch Linux]: Arch Security Tracker API & arch-audit
+        if not resolved and os_info.os_type == "arch":
+            if online_mode:
+                log.debug(f"Arch Security Tracker REST API를 통해 '{advisory}' 조회...")
+                code, data = fetch_json_url(
+                    f"https://security.archlinux.org/{advisory}.json", timeout=8, retries=1
+                )
+                if code == 404:
+                    res.status = "해당 없음 (Not Affected - Arch 트래커 미등록)"
+                    resolved = True
+                    res.sources.append("Arch Security Tracker")
+                elif code == 200 and isinstance(data, dict):
+                    pkgs = data.get("packages", []) or []
+                    advisories = data.get("advisories", []) or []
+                    groups = data.get("groups", []) or []
+                    vtype = (data.get("type") or "").strip()
+                    sev = (data.get("severity") or "").strip()
+
+                    full_parts: List[str] = []
+                    short_parts: List[str] = []
+                    if pkgs:
+                        full_parts.append(", ".join(pkgs))
+                        if len(pkgs) > 3:
+                            short_parts.append(", ".join(pkgs[:3]) + f" 외 {len(pkgs) - 3}개 패키지")
+                        else:
+                            short_parts.append(", ".join(pkgs))
+                    if vtype:
+                        full_parts.append(vtype)
+                        short_parts.append(vtype)
+                    elif data.get("description"):
+                        d = data["description"].strip().split("\n")[0][:50]
+                        full_parts.append(d)
+                        short_parts.append(d)
+
+                    title_full = " - ".join(full_parts) if full_parts else "Arch Security Issue"
+                    title_short = " - ".join(short_parts) if short_parts else "Arch Security Issue"
+                    if sev:
+                        title_full = f"[{sev}] {title_full}"
+                        title_short = f"[{sev}] {title_short}"
+                    if advisories:
+                        title_full += " (" + ", ".join(advisories) + ")"
+                        if len(advisories) > 3:
+                            title_short += " (" + ", ".join(advisories[:3]) + f" 외 {len(advisories) - 3}건)"
+                        else:
+                            title_short += " (" + ", ".join(advisories) + ")"
+
+                    res.title_short = title_short
+                    res.title_full = title_full
+
+                    avg_status = ""
+                    fixed_ver = ""
+                    if groups:
+                        g_code, g_data = fetch_json_url(
+                            f"https://security.archlinux.org/{groups[0]}.json", timeout=5, retries=0
+                        )
+                        if g_code == 200 and isinstance(g_data, dict):
+                            avg_status = g_data.get("status") or ""
+                            fixed_ver = g_data.get("fixed") or ""
+
+                    if pkgs:
+                        has_installed = False
+                        for s_pkg in pkgs:
+                            pq = run_cmd(["pacman", "-Q", s_pkg], timeout=5)
+                            if pq.returncode == 0 and pq.stdout.strip():
+                                has_installed = True
+                                res.pkg = s_pkg
+                                inst_ver = pq.stdout.strip().split()[1]
+                                if avg_status == "Not affected":
+                                    res.status = "해당 없음 (Not Affected)"
+                                elif avg_status == "Fixed" and fixed_ver:
+                                    if shutil.which("vercmp"):
+                                        vc = run_cmd(["vercmp", inst_ver, fixed_ver], timeout=5)
+                                        try:
+                                            cmp_val = int(vc.stdout.strip())
+                                        except ValueError:
+                                            cmp_val = -1
+                                        if cmp_val >= 0:
+                                            res.status = "해결됨 (Resolved - 이미 패치 적용됨)"
+                                        else:
+                                            res.status = "업데이트 가능 (Available - 패치 미적용)"
+                                    else:
+                                        res.status = f"확인 필요 (설치됨: {inst_ver}, 패치: {fixed_ver})"
+                                elif avg_status in ("Vulnerable", "Testing", "Unknown") or not fixed_ver:
+                                    res.status = "업데이트 대기중 (Vulnerable - 패치 미배포)"
+                                break
+                        if not has_installed:
+                            res.pkg = pkgs[0]
+                            res.status = "해당 없음 (Not Affected - 패키지 미설치)"
+                    else:
+                        res.status = "해당 없음 (Not Affected - 영향 패키지 없음)"
+
+                    resolved = True
+                    res.sources.append("Arch Security Tracker")
+                else:
+                    res.sources.append("Arch Security Tracker (실패)")
+
+            if not resolved and online_mode and shutil.which("arch-audit"):
+                log.debug(f"arch-audit를 통해 '{advisory}' 조회...")
+                aa = run_cmd(["arch-audit", "-f", "%n|%c|%t"], timeout=15)
+                matched_line = next(
+                    (ln for ln in aa.stdout.splitlines() if advisory.lower() in ln.lower()), ""
+                )
+                if matched_line:
+                    res.pkg = matched_line.split("|")[0]
+                    res.status = "업데이트 가능 (Available - 패치 미적용)"
+                    resolved = True
+                    res.sources.append("arch-audit")
+                else:
+                    res.sources.append("arch-audit (미매칭)")
+                if not resolved:
+                    res.status = "확인 필요 (API 조회 실패)"
+
+        return res
+
+    # 2) Ubuntu USN- 형식인 경우
+    if re.match(r"^USN-[0-9]+-[0-9]+$", advisory):
+        resolved = False
+        if online_mode:
+            log.debug(f"Canonical 공식 보안 REST API를 통해 '{advisory}' 조회...")
+            code, data = fetch_json_url(
+                f"https://ubuntu.com/security/notices/{advisory}.json", timeout=8, retries=1
+            )
+            if code == 200 and isinstance(data, dict):
+                p_title = (data.get("title") or "").strip()
+                if p_title:
+                    res.title_short = p_title
+                    res.title_full = p_title
+                res.cves = [c for c in (data.get("cves_ids") or []) if c]
+                rp = (data.get("release_packages") or {}).get(os_info.codename, [])
+                src_pkgs = [
+                    (p.get("name", ""), p.get("version", ""))
+                    for p in rp
+                    if p.get("is_source") and p.get("name")
+                ]
+                if src_pkgs:
+                    has_installed = False
+                    for s_pkg, s_fix_ver in src_pkgs:
+                        inst_ver = is_dpkg_installed(s_pkg)
+                        if inst_ver is not None:
+                            has_installed = True
+                            res.pkg = s_pkg
+                            if dpkg_compare_ge(inst_ver, s_fix_ver):
+                                res.status = "해결됨 (Resolved - 이미 패치 적용됨)"
+                            else:
+                                res.status = "업데이트 가능 (Available - 패치 미적용)"
+                            break
+                    if not has_installed:
+                        res.pkg = src_pkgs[0][0]
+                        res.status = "해당 없음 (Not Affected - 패키지 미설치)"
+                else:
+                    res.status = "해당 없음 (Not Affected - 본 릴리즈 미영향)"
+
+                resolved = True
+                res.sources.append("Canonical 보안 API")
+            else:
+                res.sources.append("Canonical 보안 API (실패)")
+
+        if not resolved and online_mode and shutil.which("pro"):
+            log.debug(f"Ubuntu Pro 도구를 통해 '{advisory}' 분석 (pro fix --dry-run)...")
+            pro_res = run_cmd(["pro", "fix", "--dry-run", advisory], timeout=15)
+            pro_out = pro_res.stdout + "\n" + pro_res.stderr
+
+            m_title = re.search(rf"^{re.escape(advisory)}:\s*(.+)$", pro_out, re.MULTILINE)
+            if m_title:
+                parsed_t = m_title.group(1).strip()
+                res.title_short = parsed_t
+                res.title_full = parsed_t
+
+            if "is resolved" in pro_out:
+                res.status = "해결됨 (Resolved - 이미 패치 적용됨)"
+                res.sources.append("Ubuntu Pro CLI 폴백")
+            elif "A fix is available" in pro_out:
+                res.status = "업데이트 가능 (Available - 패치 미적용)"
+                res.sources.append("Ubuntu Pro CLI 폴백")
+            elif "is not affected" in pro_out:
+                res.status = "해당 없음 (Not Affected)"
+                res.sources.append("Ubuntu Pro CLI 폴백")
+            else:
+                res.sources.append("Ubuntu Pro CLI 폴백 (실패)")
+
+            m_pkg = re.search(
+                r"affected source package is installed:.*?\n(?:\([0-9]+/[0-9]+\)\s+([^\s:]+))",
+                pro_out,
+                re.DOTALL,
+            )
+            if m_pkg:
+                res.pkg = m_pkg.group(1).strip()
+            res.cves = sorted(set(CVE_REGEX.findall(pro_out)))
+
+        if not online_mode:
+            res.sources.append("오프라인 모드 (원격 조회 생략, 로컬 체인지로그 점검)")
+        return res
+
+    # 3) RHEL/Rocky RHSA/RLSA/ALSA/FEDORA
+    if re.match(r"^(RHSA|RLSA|ALSA|FEDORA)-[0-9]{4}:?[0-9]+$", advisory):
+        if shutil.which("dnf"):
+            log.debug(f"DNF updateinfo를 통해 '{advisory}' 분석...")
+            dnf_out = run_dnf_updateinfo(["info", "--all", "--advisory", advisory], online_mode, log)
+            parse_dnf_updateinfo_result(dnf_out, advisory, res)
+            cve_block = re.search(r"^\s*CVEs?\s*:.*(?:\n.*){0,20}", dnf_out, re.MULTILINE)
+            if cve_block:
+                res.cves = sorted(set(CVE_REGEX.findall(cve_block.group(0))))
+            res.sources.append("DNF 로컬 캐시 (-C)" if not online_mode else "DNF updateinfo")
+        return res
+
+    # 4) openSUSE / SLES
+    if "SUSE-SU" in advisory or "openSUSE-SU" in advisory:
+        if shutil.which("zypper"):
+            log.debug(f"Zypper patch-info를 통해 '{advisory}' 분석...")
+            cmd = ["zypper"]
+            if not online_mode:
+                cmd.append("--no-refresh")
+            cmd.extend(["patch-info", advisory])
+            zyp = run_cmd(cmd, timeout=20, env_extra={"LC_ALL": "C"})
+            res.cves = sorted(set(CVE_REGEX.findall(zyp.stdout)))
+            res.sources.append("Zypper 로컬 캐시 (--no-refresh)" if not online_mode else "Zypper patch-info")
+        return res
+
+    return res
+
+
+def fetch_changelog(pkg: str, pkg_mgr: str, online_mode: bool, log: Logger) -> str:
+    """패키지의 체인지로그 텍스트를 추출합니다."""
+    if pkg_mgr == "dpkg":
+        candidates: List[Path] = [
+            Path(f"/usr/share/doc/{pkg}/changelog.Debian.gz"),
+            Path(f"/usr/share/doc/{pkg}/changelog.gz"),
+            Path(f"/usr/share/doc/{pkg}/changelog.Debian"),
+            Path(f"/usr/share/doc/{pkg}/changelog"),
+        ]
+        doc_dir = Path("/usr/share/doc")
+        if doc_dir.is_dir():
+            for p_dir in sorted(doc_dir.glob(f"{pkg}*")):
+                if p_dir.is_dir():
+                    for fname in ("changelog.Debian.gz", "changelog.gz"):
+                        f_path = p_dir / fname
+                        if f_path.is_file() and f_path not in candidates:
+                            candidates.append(f_path)
+
+        for target in candidates:
+            if target.is_file():
+                log.debug(f"로컬 체인지로그 파일 발견: {target}")
+                try:
+                    if target.suffix == ".gz":
+                        with gzip.open(target, "rt", encoding="utf-8", errors="replace") as gz:
+                            content = gz.read()
+                    else:
+                        content = target.read_text(encoding="utf-8", errors="replace")
+                    if content:
+                        return content
+                except OSError:
+                    continue
+
+        if online_mode and shutil.which("apt-get"):
+            log.debug(f"'{pkg}' 온라인 체인지로그 조회 시도 (apt-get changelog)...")
+            res = run_cmd(
+                ["apt-get", "changelog", pkg], timeout=20, env_extra={"PAGER": "cat"}
+            )
+            if res.stdout:
+                return res.stdout
+
+    elif pkg_mgr in ("rpm", "zypper"):
+        log.debug(f"'{pkg}' RPM 체인지로그 조회...")
+        res = run_cmd(["rpm", "-q", "--changelog", pkg], timeout=10)
+        if res.returncode == 0 and res.stdout:
+            return res.stdout
+
+    elif pkg_mgr == "pacman":
+        res = run_cmd(["pacman", "-Qc", pkg], timeout=10)
+        if res.returncode == 0 and res.stdout:
+            return res.stdout
+
+    elif pkg_mgr == "apk":
+        res = run_cmd(["apk", "info", "-a", pkg], timeout=10)
+        if res.returncode == 0 and res.stdout:
+            return res.stdout
+
+    elif pkg_mgr == "brew":
+        res = run_cmd(["brew", "info", pkg], timeout=10)
+        if res.returncode == 0 and res.stdout:
+            return res.stdout
+
+    return ""
+
+
+def extract_changelog_blocks(changelog_text: str, cve_list: List[str], pkg_mgr: str) -> str:
+    """체인지로그에서 대상 CVE 목록에 일치하는 완전한 블록 전체를 추출합니다."""
+    if not changelog_text or not cve_list:
+        return ""
+    pattern = re.compile("|".join(re.escape(c) for c in cve_list), re.IGNORECASE)
+    is_rpm = pkg_mgr in ("rpm", "zypper")
+
+    blocks: List[str] = []
+    in_block = False
+    block_header = ""
+    cur_lines: List[str] = []
+    cur_item = ""
+    matched_items: List[str] = []
+
+    def flush_rpm_item() -> None:
+        nonlocal cur_item
+        if cur_item and pattern.search(cur_item):
+            matched_items.append(cur_item)
+        cur_item = ""
+
+    def flush_block() -> None:
+        nonlocal in_block, block_header, cur_lines, matched_items
+        if not in_block:
+            return
+        if is_rpm:
             flush_rpm_item()
-            cur_item = $0
-          } else if (cur_item != "") {
-            cur_item = cur_item "\n" $0
-          }
-        } else {
-          cur_block = cur_block "\n" $0
-        }
-      }
-    }
-    END {
-      flush_block()
-    }
-  '
-}
+            if matched_items:
+                hdr = re.sub(r"^\s*\*\s*", "  🔒 ", block_header)
+                blocks.append(hdr + "\n" + "\n".join(matched_items) + "\n")
+        else:
+            full_block = "\n".join(cur_lines)
+            if pattern.search(full_block):
+                hdr = re.sub(r"^\s*\*\s*", "  🔒 ", cur_lines[0])
+                body = "\n".join(cur_lines[1:])
+                blocks.append((hdr + "\n" + body if body else hdr) + "\n")
+        in_block = False
+        block_header = ""
+        cur_lines = []
+        matched_items = []
 
-# ==============================================================================
-# 메인 실행 화면
-# ==============================================================================
+    for line in changelog_text.splitlines():
+        if re.match(r"^\s*\*\s", line):
+            flush_block()
+            in_block = True
+            block_header = line
+            cur_lines = [line]
+        elif in_block:
+            if is_rpm:
+                if re.match(r"^\s*-\s", line):
+                    flush_rpm_item()
+                    cur_item = line
+                elif re.match(r"^\s*$", line):
+                    flush_block()
+                elif cur_item:
+                    cur_item += "\n" + line
+            else:
+                if re.match(r"^\s*--\s+", line):
+                    flush_block()
+                else:
+                    cur_lines.append(line)
 
-# 섹션별 출력 버퍼 (파일 저장 시 순서 재배치용)
-SEC_HEADER=""
-SEC_STEP1=""
-SEC_STEP2=""
-SEC_STEP3=""
-SEC_STEP4=""
-SEC_FOOTER=""
+    flush_block()
+    return "\n".join(blocks)
 
-KERNEL_INFO="$(uname -srm 2>/dev/null || uname -a 2>/dev/null || echo 'Unknown')"
 
-SEC_HEADER="$(
-  echo "================================================================================"
-  printf " 🛡️  시스템 패키지 및 OS 보안 권고 감사 보고서\n"
-  printf "    - 시스템: %s (패키지 백엔드: %s)\n" "$OS_DESC" "$PKG_MGR"
-  printf "    - 커널  : %s\n" "$KERNEL_INFO"
-  if [[ ${#OSS_NUMBERS[@]} -gt 0 ]]; then
-    printf "    - OS 보안 권고사항(OSS): %s\n" "${OSS_NUMBERS[*]}"
-  fi
-  printf "    - 조회 모드: %s\n" "$([ "$ONLINE_MODE" == "true" ] && echo '온라인 (공식 보안 API 및 원격 저장소 우선)' || echo '오프라인 (로컬 전용)')"
-  echo "================================================================================"
-  echo ""
-)"
-printf "%s\n\n" "$SEC_HEADER"
-SEC_HEADER+=$'\n\n'
+def main() -> int:
+    cfg = parse_args(sys.argv[1:])
+    log = Logger(verbose=cfg.verbose)
+    spinner = StepSpinner(enabled=not cfg.verbose)
 
-# ------------------------------------------------------------------------------
-# [1단계] 패키지 설치 상태 검사
-# ------------------------------------------------------------------------------
-declare -a INSTALLED_PKGS=()
+    def handle_interrupt(signum: int, _frame: object) -> None:
+        spinner.clear_all()
+        print("\n\033[1;33m[중단]\033[0m 사용자에 의해 작업이 취소되었습니다 (Ctrl+C).", file=sys.stderr)
+        sys.exit(130)
 
-if [[ ${#TARGET_PACKAGES[@]} -gt 0 ]]; then
-  SEC_STEP1+="$(
-    echo "--------------------------------------------------------------------------------"
-    printf " [1단계] 시스템 패키지 설치 상태 검사\n"
-    echo "--------------------------------------------------------------------------------"
-  )"$'\n'
-  printf "%s" "$SEC_STEP1"
+    signal.signal(signal.SIGINT, handle_interrupt)
+    signal.signal(signal.SIGTERM, handle_interrupt)
 
-  installed_cnt=0
-  for pkg in "${TARGET_PACKAGES[@]}"; do
-    pkg_line=""
-    if pkg_line="$(get_package_info "$pkg")"; then
-      INSTALLED_PKGS+=("$pkg")
-      installed_cnt=$((installed_cnt + 1))
-    fi
-    printf "%s\n" "$pkg_line"
-    SEC_STEP1+="${pkg_line}"$'\n'
-  done
+    os_info = detect_environment()
+    if os_info.os_type == "debian" and not cfg.online_mode and not cfg.target_packages and cfg.oss_numbers:
+        log.warn(
+            "오프라인(Ubuntu/Debian) 모드에서는 --package 옵션을 함께 지정해야 로컬 체인지로그 기반 패치 여부 확인이 가능합니다."
+        )
 
-  step1_summary="$(printf "  * 검사 결과: 총 %d개 요청 패키지 중 %d개 설치됨, %d개 미설치\n" \
-    "${#TARGET_PACKAGES[@]}" "$installed_cnt" $(( ${#TARGET_PACKAGES[@]} - installed_cnt )))"
-  printf "%s\n\n" "$step1_summary"
-  SEC_STEP1+="${step1_summary}"$'\n\n'
-fi
+    log.debug(f"OS 환경: {os_info.os_desc} (OS 유형: {os_info.os_type})")
+    log.debug(f"패키지 매니저: {os_info.pkg_mgr}")
+    log.debug(f"온라인 모드: {cfg.online_mode}")
 
-# ------------------------------------------------------------------------------
-# 전체 체인지로그 출력 모드 처리
-# ------------------------------------------------------------------------------
-if [[ "$SHOW_CHANGELOG" == "true" ]]; then
-  echo "--------------------------------------------------------------------------------"
-  printf " [체인지로그 전체 열람]\n"
-  echo "--------------------------------------------------------------------------------"
-  for pkg in "${INSTALLED_PKGS[@]}"; do
-    printf "\n--- [%s 전체 체인지로그] ---\n" "$pkg"
-    fetch_changelog "$pkg"
-  done
-  exit 0
-fi
+    # --show-changelog 단독 실행 모드
+    if cfg.show_changelog:
+        for pkg in cfg.target_packages:
+            print("================================================================================")
+            print(f" 📄 패키지 전체 체인지로그: {pkg}")
+            print("================================================================================")
+            cl = fetch_changelog(pkg, os_info.pkg_mgr, cfg.online_mode, log)
+            print(cl if cl else "(체인지로그를 찾을 수 없습니다)")
+            print()
+        return 0
 
-# ------------------------------------------------------------------------------
-# [2단계] OS 보안 권고사항 분석 및 연관 CVE 추출
-# ------------------------------------------------------------------------------
-declare -a ALL_RESOLVED_CVES=()
-declare -a SUGGESTED_PKGS=()
-declare -a SUMMARY_OSS_ENTRIES=()
-ALL_CL_MATCHED_TEXT=""
+    mode_str = (
+        "온라인 (공식 보안 API 및 원격 저장소 우선)"
+        if cfg.online_mode
+        else "오프라인 (로컬 전용)"
+    )
+    uname_info = f"{platform.system()} {platform.release()} {platform.machine()}"
 
-if [[ ${#OSS_NUMBERS[@]} -gt 0 ]]; then
-  SEC_STEP2+="$(
-    echo "--------------------------------------------------------------------------------"
-    printf " [2단계] OS 보안 권고사항(OSS Number) 분석 및 연관 CVE 자동 추출\n"
-    echo "--------------------------------------------------------------------------------"
-  )"$'\n'
-  printf "%s" "$SEC_STEP2"
+    sec_header_lines = [
+        "================================================================================",
+        " 🛡️  시스템 패키지 및 OS 보안 권고 감사 보고서",
+        f"    - 시스템: {os_info.os_desc} (패키지 백엔드: {os_info.pkg_mgr})",
+        f"    - 커널  : {uname_info}",
+    ]
+    if cfg.target_packages:
+        sec_header_lines.append(f"    - 대상 패키지: {' '.join(cfg.target_packages)}")
+    if cfg.oss_numbers:
+        sec_header_lines.append(f"    - OS 보안 권고사항(OSS): {' '.join(cfg.oss_numbers)}")
+    sec_header_lines.extend(
+        [
+            f"    - 조회 모드: {mode_str}",
+            "================================================================================",
+            "",
+        ]
+    )
+    sec_header = "\n".join(sec_header_lines) + "\n"
+    sys.stdout.write(sec_header)
+    sys.stdout.flush()
 
-  oss_idx=0
-  oss_total="${#OSS_NUMBERS[@]}"
-  for oss in "${OSS_NUMBERS[@]}"; do
-    oss_idx=$((oss_idx + 1))
-    ADV_PROGRESS_PREFIX="[${oss_idx}/${oss_total}] "
+    sec_step1 = ""
+    installed_pkgs: List[str] = []
+    not_installed_pkgs: List[str] = []
 
-    # 함수 호출 (ADV_* 변수로 안전하게 수신)
-    resolve_advisory_info "$oss"
-    clear_progress
-    ADV_PROGRESS_PREFIX=""
+    # [1단계] 시스템 패키지 설치 상태 검사
+    if cfg.target_packages:
+        step1_buf = [
+            "--------------------------------------------------------------------------------",
+            " [1단계] 시스템 패키지 설치 상태 검사",
+            "--------------------------------------------------------------------------------",
+        ]
+        for pkg in cfg.target_packages:
+            ok, line = get_package_info(pkg, os_info.pkg_mgr)
+            step1_buf.append(line)
+            if ok:
+                installed_pkgs.append(pkg)
+            else:
+                not_installed_pkgs.append(pkg)
+        step1_buf.append(
+            f"  * 검사 결과: 총 {len(cfg.target_packages)}개 요청 패키지 중 "
+            f"{len(installed_pkgs)}개 설치됨, {len(not_installed_pkgs)}개 미설치\n"
+        )
+        sec_step1 = "\n".join(step1_buf) + "\n"
+        sys.stdout.write(sec_step1)
+        sys.stdout.flush()
 
-    display_title="$(truncate_title "$ADV_TITLE" 120)"
-    full_title="${ADV_TITLE_FULL:-$ADV_TITLE}"
+    # [2단계] OS 보안 권고사항 분석 및 연관 CVE 추출 (다건 시 병렬 조회 + 실시간 스피너)
+    sec_step2 = ""
+    all_resolved_cves: List[str] = []
+    suggested_pkgs: List[str] = []
+    summary_entries: List[AdvisoryResult] = []
 
-    status_line=""
-    if [[ "$ADV_STATUS" =~ "해결됨" ]]; then
-      status_line="$(printf "    - 시스템 상태: \033[1;32m%s\033[0m\n" "$ADV_STATUS")"
-    elif [[ "$ADV_STATUS" =~ "업데이트 가능" ]]; then
-      status_line="$(printf "    - 시스템 상태: \033[1;31m%s\033[0m\n" "$ADV_STATUS")"
-    else
-      status_line="$(printf "    - 시스템 상태: %s\n" "$ADV_STATUS")"
-    fi
+    if cfg.oss_numbers:
+        step2_hdr = (
+            "--------------------------------------------------------------------------------\n"
+            " [2단계] OS 보안 권고사항(OSS Number) 분석 및 연관 CVE 자동 추출\n"
+            "--------------------------------------------------------------------------------\n"
+        )
+        sys.stdout.write(step2_hdr)
+        sys.stdout.flush()
+        sec_step2 += step2_hdr
 
-    pkg_line=""
-    if [[ -n "$ADV_PKG" ]]; then
-      pkg_line="$(printf "    - 영향 패키지: %s\n" "$ADV_PKG")"
-      SUGGESTED_PKGS+=("$ADV_PKG")
-    fi
+        total_oss = len(cfg.oss_numbers)
+        results_by_idx: Dict[int, AdvisoryResult] = {}
 
-    SUMMARY_OSS_ENTRIES+=("${oss}|||${ADV_STATUS}|||${ADV_PKG}")
+        if cfg.online_mode and total_oss > 1:
+            spinner.start(f"보안 권고 {total_oss}건 병렬 분석 중 (0/{total_oss} 완료)")
+            done_cnt = 0
+            cnt_lock = threading.Lock()
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, total_oss)) as executor:
+                future_map = {
+                    executor.submit(resolve_advisory_info, oss, os_info, cfg.online_mode, log): idx
+                    for idx, oss in enumerate(cfg.oss_numbers)
+                }
+                for fut in concurrent.futures.as_completed(future_map):
+                    idx = future_map[fut]
+                    results_by_idx[idx] = fut.result()
+                    with cnt_lock:
+                        done_cnt += 1
+                        spinner.update_label(
+                            f"보안 권고 {total_oss}건 병렬 분석 중 ({done_cnt}/{total_oss} 완료)"
+                        )
+            spinner.stop("완료", ok=True)
+            spinner.clear_all()
+        else:
+            for idx, oss in enumerate(cfg.oss_numbers):
+                if cfg.online_mode:
+                    spinner.start(f"[{idx + 1}/{total_oss}] {oss} 보안 권고 조회 중")
+                results_by_idx[idx] = resolve_advisory_info(oss, os_info, cfg.online_mode, log)
+                if cfg.online_mode:
+                    spinner.stop("완료", ok=True)
+                    spinner.clear_all()
 
-    item_buf=""
-    item_buf+="$(printf "  📢 \033[1;36m[%s]\033[0m %s\n" "$oss" "$display_title")"$'\n'
-    item_buf+="${status_line}"$'\n'
-    [[ -n "$pkg_line" ]] && item_buf+="${pkg_line}"$'\n'
+        for idx in range(total_oss):
+            adv = results_by_idx[idx]
+            summary_entries.append(adv)
+            if adv.pkg:
+                suggested_pkgs.append(adv.pkg)
 
-    file_item_buf=""
-    if [[ -n "$OUTPUT_FILE" ]]; then
-      file_item_buf+="$(printf "  📢 \033[1;36m[%s]\033[0m %s\n" "$oss" "$full_title")"$'\n'
-      file_item_buf+="${status_line}"$'\n'
-      [[ -n "$pkg_line" ]] && file_item_buf+="${pkg_line}"$'\n'
-    fi
+            display_title = truncate_title(adv.title_short, 120)
+            full_title = adv.title_full or adv.title_short
 
-    if [[ ${#ADV_CVES[@]} -gt 0 ]]; then
-      # 사용자가 --package를 지정했고, 권고의 영향 패키지(ADV_PKG)가 감사 대상 패키지와 무관한지 검사
-      is_unrelated=false
-      if [[ ${#TARGET_PACKAGES[@]} -gt 0 ]]; then
-        if [[ -n "$ADV_PKG" ]]; then
-          pkg_matched=false
-          for tp in "${TARGET_PACKAGES[@]}"; do
-            if [[ "$tp" == "$ADV_PKG" || "$tp" == "${ADV_PKG}-"* || "$ADV_PKG" == "${tp}-"* ]]; then
-              pkg_matched=true
-              break
-            fi
-          done
-          [[ "$pkg_matched" == "false" ]] && is_unrelated=true
-        elif [[ "$ADV_STATUS" =~ "해당 없음" ]]; then
-          is_unrelated=true
-        fi
-      fi
+            if "해결됨" in adv.status:
+                status_line = f"    - 시스템 상태: \033[1;32m{adv.status}\033[0m"
+            elif "업데이트 가능" in adv.status:
+                status_line = f"    - 시스템 상태: \033[1;31m{adv.status}\033[0m"
+            else:
+                status_line = f"    - 시스템 상태: {adv.status}"
 
-      if [[ "$is_unrelated" == "true" && ${#ADV_CVES[@]} -gt 5 && "$VERBOSE" != "true" ]]; then
-        item_buf+="$(printf "    - 연관 CVE 목록: 총 %d개 (지정 패키지와 무관하여 축약됨, --verbose 시 전체 출력)\n" "${#ADV_CVES[@]}")"$'\n'
-      else
-        item_buf+="$(printf "    - 연관 CVE 목록 (%d개 추출됨):\n" "${#ADV_CVES[@]}")"$'\n'
-        if [[ ${#ADV_CVES[@]} -gt 10 && "$VERBOSE" != "true" ]]; then
-          item_buf+="$(printf "      %s ... 외 %d개 생략 (총 %d개, --verbose 시 전체 출력)\n" \
-            "${ADV_CVES[*]:0:10}" $(( ${#ADV_CVES[@]} - 10 )) "${#ADV_CVES[@]}")"$'\n'
-        else
-          item_buf+="$(printf "      %s\n" "${ADV_CVES[*]}")"$'\n'
-        fi
-      fi
+            pkg_line = f"    - 영향 패키지: {adv.pkg}" if adv.pkg else ""
 
-      if [[ -n "$OUTPUT_FILE" ]]; then
-        file_item_buf+="$(printf "    - 연관 CVE 목록 (%d개 추출됨):\n" "${#ADV_CVES[@]}")"$'\n'
-        file_item_buf+="$(printf "      %s\n" "${ADV_CVES[*]}")"$'\n'
-      fi
+            console_lines = [f"  📢 \033[1;36m[{adv.advisory}]\033[0m {display_title}", status_line]
+            if pkg_line:
+                console_lines.append(pkg_line)
 
-      # 3단계 감사를 위해 연관 CVE 누적 (단, 지정 패키지와 무관한 권고의 CVE는 3단계 정규식 패턴 폭증 방지를 위해 제외)
-      if [[ "$is_unrelated" == "false" || ${#TARGET_PACKAGES[@]} -eq 0 ]]; then
-        for c in "${ADV_CVES[@]}"; do
-          ALL_RESOLVED_CVES+=("$c")
-        done
-      fi
-    else
-      item_buf+="$(printf "    - 연관 CVE: (직접 매핑 정보 없음)\n")"$'\n'
-      [[ -n "$OUTPUT_FILE" ]] && file_item_buf+="$(printf "    - 연관 CVE: (직접 매핑 정보 없음)\n")"$'\n'
-    fi
+            file_lines = [f"  📢 \033[1;36m[{adv.advisory}]\033[0m {full_title}", status_line]
+            if pkg_line:
+                file_lines.append(pkg_line)
 
-    if [[ ${#ADV_SOURCES[@]} -eq 0 ]]; then
-      if [[ "$ONLINE_MODE" == "false" ]]; then
-        ADV_SOURCES+=("오프라인 모드 (로컬 캐시/체인지로그)")
-      else
-        ADV_SOURCES+=("기본 권고 파서")
-      fi
-    fi
+            if adv.cves:
+                is_unrelated = False
+                if cfg.target_packages:
+                    if adv.pkg:
+                        pkg_matched = any(
+                            tp == adv.pkg
+                            or tp.startswith(f"{adv.pkg}-")
+                            or adv.pkg.startswith(f"{tp}-")
+                            for tp in cfg.target_packages
+                        )
+                        if not pkg_matched:
+                            is_unrelated = True
+                    elif "해당 없음" in adv.status:
+                        is_unrelated = True
 
-    sources_str=""
-    for src in "${ADV_SOURCES[@]}"; do
-      [[ -n "$sources_str" ]] && sources_str+=", "
-      sources_str+="$src"
-    done
-    item_buf+="$(printf "    - 근거: %s\n" "$sources_str")"$'\n'
-    [[ -n "$OUTPUT_FILE" ]] && file_item_buf+="$(printf "    - 근거: %s\n" "$sources_str")"$'\n'
+                if is_unrelated and len(adv.cves) > 5 and not cfg.verbose:
+                    console_lines.append(
+                        f"    - 연관 CVE 목록: 총 {len(adv.cves)}개 (지정 패키지와 무관하여 축약됨, --verbose 시 전체 출력)"
+                    )
+                else:
+                    console_lines.append(f"    - 연관 CVE 목록 ({len(adv.cves)}개 추출됨):")
+                    if len(adv.cves) > 10 and not cfg.verbose:
+                        console_lines.append(
+                            f"      {' '.join(adv.cves[:10])} ... 외 {len(adv.cves) - 10}개 생략 (총 {len(adv.cves)}개, --verbose 시 전체 출력)"
+                        )
+                    else:
+                        console_lines.append(f"      {' '.join(adv.cves)}")
 
-    printf "%s\n" "$item_buf"
-    [[ -n "$OUTPUT_FILE" ]] && SEC_STEP2+="${file_item_buf}"$'\n'
-  done
-fi
+                if cfg.output_file:
+                    file_lines.append(f"    - 연관 CVE 목록 ({len(adv.cves)}개 추출됨):")
+                    file_lines.append(f"      {' '.join(adv.cves)}")
 
-# ------------------------------------------------------------------------------
-# [3단계] 체인지로그 보안 패치 상세 내역 (완전한 블록 단위 출력)
-# ------------------------------------------------------------------------------
-if [[ ${#ALL_RESOLVED_CVES[@]} -gt 0 ]]; then
-  # 중복 CVE 제거
-  declare -a UNIQUE_CVES=()
-  while IFS= read -r c; do
-    [[ -n "$c" ]] && UNIQUE_CVES+=("$c")
-  done < <(printf "%s\n" "${ALL_RESOLVED_CVES[@]}" | sort -u)
+                if not is_unrelated or not cfg.target_packages:
+                    all_resolved_cves.extend(adv.cves)
+            else:
+                console_lines.append("    - 연관 CVE: (직접 매핑 정보 없음)")
+                if cfg.output_file:
+                    file_lines.append("    - 연관 CVE: (직접 매핑 정보 없음)")
 
-  # 정규식 패턴 생성
-  cve_regex_pattern="$(IFS="|"; echo "${UNIQUE_CVES[*]}")"
+            if not adv.sources:
+                adv.sources.append(
+                    "오프라인 모드 (로컬 캐시/체인지로그)" if not cfg.online_mode else "기본 권고 파서"
+                )
+            sources_str = ", ".join(adv.sources)
+            console_lines.append(f"    - 근거: {sources_str}")
+            if cfg.output_file:
+                file_lines.append(f"    - 근거: {sources_str}")
 
-  # 감사 대상 패키지 결정: 사용자가 지정한 설치된 패키지 우선, 없으면 권고에서 추출된 패키지 사용
-  declare -a AUDIT_PKGS=()
-  if [[ ${#INSTALLED_PKGS[@]} -gt 0 ]]; then
-    AUDIT_PKGS=("${INSTALLED_PKGS[@]}")
-  elif [[ ${#SUGGESTED_PKGS[@]} -gt 0 ]]; then
-    while IFS= read -r p; do
-      [[ -n "$p" ]] && AUDIT_PKGS+=("$p")
-    done < <(printf "%s\n" "${SUGGESTED_PKGS[@]}" | sort -u)
-  fi
+            console_block = "\n".join(console_lines) + "\n\n"
+            sys.stdout.write(console_block)
+            sys.stdout.flush()
+            if cfg.output_file:
+                sec_step2 += "\n".join(file_lines) + "\n\n"
 
-  if [[ ${#AUDIT_PKGS[@]} -gt 0 ]]; then
-    SEC_STEP3+="$(
-      echo "--------------------------------------------------------------------------------"
-      printf " [3단계] 설치된 패키지 체인지로그 보안 패치 적용 내역 (블록 정밀 추출)\n"
-      echo "--------------------------------------------------------------------------------"
-    )"$'\n'
-    printf "%s" "$SEC_STEP3"
+    # [3단계] 체인지로그 보안 패치 상세 내역
+    sec_step3 = ""
+    all_cl_matched_text = ""
+    unique_cves = sorted(set(all_resolved_cves))
 
-    for pkg in "${AUDIT_PKGS[@]}"; do
-      pkg_hdr="$(printf "\n🔍 \033[1;34m[패키지]\033[0m \033[1m%s\033[0m\n" "$pkg")"
-      printf "\n%s\n" "$pkg_hdr"
-      SEC_STEP3+=$'\n'"${pkg_hdr}"$'\n'
+    if unique_cves:
+        audit_pkgs = installed_pkgs if installed_pkgs else sorted(set(suggested_pkgs))
+        if audit_pkgs:
+            step3_hdr = (
+                "--------------------------------------------------------------------------------\n"
+                " [3단계] 설치된 패키지 체인지로그 보안 패치 적용 내역 (블록 정밀 추출)\n"
+                "--------------------------------------------------------------------------------\n"
+            )
+            sys.stdout.write(step3_hdr)
+            sys.stdout.flush()
+            sec_step3 += step3_hdr
 
-      raw_cl="$(fetch_changelog "$pkg")"
+            cve_hl_re = re.compile("|".join(re.escape(c) for c in unique_cves))
+            use_color = sys.stdout.isatty()
 
-      if [[ -z "$raw_cl" ]]; then
-        log_warn "'$pkg' 패키지의 체인지로그를 찾을 수 없습니다."
-        warn_msg="[WARN] '$pkg' 패키지의 체인지로그를 찾을 수 없습니다."
-        SEC_STEP3+="${warn_msg}"$'\n'
-        continue
-      fi
+            for pkg in audit_pkgs:
+                pkg_hdr = f"\n🔍 \033[1;34m[패키지]\033[0m \033[1m{pkg}\033[0m\n"
+                sys.stdout.write(f"\n{pkg_hdr}\n")
+                sys.stdout.flush()
+                sec_step3 += f"\n{pkg_hdr}\n"
 
-      # 완전한 보안 업데이트 블록만 추출
-      matched_blocks="$(extract_changelog_blocks "$raw_cl" "$cve_regex_pattern")"
+                raw_cl = fetch_changelog(pkg, os_info.pkg_mgr, cfg.online_mode, log)
+                if not raw_cl:
+                    log.warn(f"'{pkg}' 패키지의 체인지로그를 찾을 수 없습니다.")
+                    sec_step3 += f"[WARN] '{pkg}' 패키지의 체인지로그를 찾을 수 없습니다.\n"
+                    continue
 
-      if [[ -n "$matched_blocks" ]]; then
-        ALL_CL_MATCHED_TEXT+=$'\n'"$matched_blocks"
-        ok_hdr="$(printf "\033[1;32m[패치 확인됨]\033[0m 현재 설치된 패키지에 관련 CVE 보안 패치가 반영되어 있습니다:")"
-        printf "%s\n\n" "$ok_hdr"
-        if [[ -t 1 ]]; then
-          echo "$matched_blocks" | grep --color=always -E "$cve_regex_pattern|$"
-        else
-          echo "$matched_blocks"
-        fi
-        SEC_STEP3+="${ok_hdr}"$'\n\n'"${matched_blocks}"$'\n'
-      else
-        miss_msg="$(printf "\033[1;33m[패치 미반영]\033[0m 현재 설치된 버전의 체인지로그에는 해당 CVE 보안 패치 내역이 반영되어 있지 않습니다.")"
-        printf "%s\n" "$miss_msg"
-        SEC_STEP3+="${miss_msg}"$'\n'
-      fi
-    done
-    printf "\n"
-    SEC_STEP3+=$'\n'
-  fi
-fi
+                matched_blocks = extract_changelog_blocks(raw_cl, unique_cves, os_info.pkg_mgr)
+                if matched_blocks:
+                    all_cl_matched_text += "\n" + matched_blocks
+                    ok_hdr = "\033[1;32m[패치 확인됨]\033[0m 현재 설치된 패키지에 관련 CVE 보안 패치가 반영되어 있습니다:"
+                    print(ok_hdr)
+                    print()
+                    if use_color:
+                        print(cve_hl_re.sub(lambda m: f"\033[1;31m{m.group(0)}\033[0m", matched_blocks))
+                    else:
+                        print(matched_blocks)
+                    sec_step3 += f"{ok_hdr}\n\n{matched_blocks}\n"
+                else:
+                    miss_msg = "\033[1;33m[패치 미반영]\033[0m 현재 설치된 버전의 체인지로그에는 해당 CVE 보안 패치 내역이 반영되어 있지 않습니다."
+                    print(miss_msg)
+                    sec_step3 += f"{miss_msg}\n"
 
-# ------------------------------------------------------------------------------
-# [4단계] 시스템 취약점 패치 요약 정보
-# ------------------------------------------------------------------------------
-if [[ ${#SUMMARY_OSS_ENTRIES[@]} -gt 0 ]]; then
-  declare -a SUM_RESOLVED=()
-  declare -a SUM_ACTION=()
-  declare -a SUM_NOT_AFFECTED=()
-  declare -a SUM_CHECK=()
+            print()
+            sec_step3 += "\n"
 
-  for entry in "${SUMMARY_OSS_ENTRIES[@]}"; do
-    s_oss="${entry%%|||*}"
-    s_rest="${entry#*|||}"
-    s_status="${s_rest%%|||*}"
-    s_pkg="${s_rest#*|||}"
+    # [4단계] 시스템 취약점 패치 요약 정보
+    sec_step4 = ""
+    if summary_entries:
+        sum_resolved: List[str] = []
+        sum_action: List[str] = []
+        sum_not_affected: List[str] = []
+        sum_check: List[str] = []
+        cl_lower = all_cl_matched_text.lower()
 
-    s_label="$s_oss"
-    [[ -n "$s_pkg" ]] && s_label="${s_oss}(${s_pkg})"
+        for adv in summary_entries:
+            label = f"{adv.advisory}({adv.pkg})" if adv.pkg else adv.advisory
+            if "해결됨" in adv.status:
+                sum_resolved.append(label)
+            elif "업데이트 가능" in adv.status or "업데이트 대기중" in adv.status:
+                sum_action.append(label)
+            elif "해당 없음" in adv.status:
+                if (
+                    ("관련 권고 없음" in adv.status or "패키지 미설치" in adv.status)
+                    and cl_lower
+                    and adv.advisory.lower() in cl_lower
+                ):
+                    sum_resolved.append(label)
+                else:
+                    sum_not_affected.append(label)
+            else:
+                if cl_lower and adv.advisory.lower() in cl_lower:
+                    sum_resolved.append(label)
+                else:
+                    sum_check.append(label)
 
-    if [[ "$s_status" =~ "해결됨" ]]; then
-      SUM_RESOLVED+=("$s_label")
-    elif [[ "$s_status" =~ "업데이트 가능" || "$s_status" =~ "업데이트 대기중" ]]; then
-      SUM_ACTION+=("$s_label")
-    elif [[ "$s_status" =~ "해당 없음" ]]; then
-      if [[ ( "$s_status" =~ "관련 권고 없음" || "$s_status" =~ "패키지 미설치" ) && -n "$ALL_CL_MATCHED_TEXT" ]] && echo "$ALL_CL_MATCHED_TEXT" | grep -qiF "$s_oss"; then
-        SUM_RESOLVED+=("$s_label")
-      else
-        SUM_NOT_AFFECTED+=("$s_label")
-      fi
-    else
-      # 2단계에서 미판별되었으나 3단계 체인지로그에서 실제로 매칭된 경우 조치 완료로 분류
-      if [[ -n "$ALL_CL_MATCHED_TEXT" ]] && echo "$ALL_CL_MATCHED_TEXT" | grep -qiF "$s_oss"; then
-        SUM_RESOLVED+=("$s_label")
-      else
-        SUM_CHECK+=("$s_label")
-      fi
-    fi
-  done
+        step4_lines = [
+            "--------------------------------------------------------------------------------",
+            f" [4단계] 시스템 취약점 패치 요약 정보 (총 {len(summary_entries)}건)",
+            "--------------------------------------------------------------------------------",
+            f"  \033[1;32m✅ 조치 완료 (Resolved)\033[0m         : {len(sum_resolved)}건",
+        ]
+        if sum_resolved:
+            step4_lines.append(f"     {' '.join(sum_resolved)}")
+        step4_lines.append(f"  \033[1;31m⚠️  조치 필요 (Action Required)\033[0m  : {len(sum_action)}건")
+        if sum_action:
+            step4_lines.append(f"     {' '.join(sum_action)}")
+        step4_lines.append(f"  ➖ 해당 없음 (Not Affected)     : {len(sum_not_affected)}건")
+        if sum_not_affected:
+            step4_lines.append(f"     {' '.join(sum_not_affected)}")
+        if sum_check:
+            step4_lines.append(f"  \033[1;33m❓ 확인 필요 (Check Required)\033[0m   : {len(sum_check)}건")
+            step4_lines.append(f"     {' '.join(sum_check)}")
 
-  SEC_STEP4="$(
-    echo "--------------------------------------------------------------------------------"
-    printf " [4단계] 시스템 취약점 패치 요약 정보 (총 %d건)\n" "${#SUMMARY_OSS_ENTRIES[@]}"
-    echo "--------------------------------------------------------------------------------"
-    printf "  \033[1;32m✅ 조치 완료 (Resolved)\033[0m         : %d건\n" "${#SUM_RESOLVED[@]}"
-    if [[ ${#SUM_RESOLVED[@]} -gt 0 ]]; then
-      printf "     %s\n" "${SUM_RESOLVED[*]}"
-    fi
+        sec_step4 = "\n".join(step4_lines) + "\n\n"
+        sys.stdout.write(sec_step4)
+        sys.stdout.flush()
 
-    printf "  \033[1;31m⚠️  조치 필요 (Action Required)\033[0m  : %d건\n" "${#SUM_ACTION[@]}"
-    if [[ ${#SUM_ACTION[@]} -gt 0 ]]; then
-      printf "     %s\n" "${SUM_ACTION[*]}"
-    fi
+    sec_footer = (
+        "================================================================================\n"
+        " [감사 완료] 모든 점검 및 감사가 안전하게 종료되었습니다.\n"
+        "================================================================================\n"
+    )
+    sys.stdout.write(sec_footer)
+    sys.stdout.flush()
 
-    printf "  ➖ 해당 없음 (Not Affected)     : %d건\n" "${#SUM_NOT_AFFECTED[@]}"
-    if [[ ${#SUM_NOT_AFFECTED[@]} -gt 0 ]]; then
-      printf "     %s\n" "${SUM_NOT_AFFECTED[*]}"
-    fi
+    # --output 지정 시 요약 우선 순서(1 -> 4 -> 3 -> 2)로 저장
+    if cfg.output_file:
+        out_path = Path(cfg.output_file)
+        try:
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            log.error(f"출력 디렉토리를 생성할 수 없습니다: {out_path.parent} ({e})")
+            return 1
 
-    if [[ ${#SUM_CHECK[@]} -gt 0 ]]; then
-      printf "  \033[1;33m❓ 확인 필요 (Check Required)\033[0m   : %d건\n" "${#SUM_CHECK[@]}"
-      printf "     %s\n" "${SUM_CHECK[*]}"
-    fi
-  )"$'\n\n'
-  printf "%s" "$SEC_STEP4"
-fi
+        raw_report = (
+            sec_header
+            + (sec_step1 or "")
+            + (sec_step4 or "")
+            + (sec_step3 or "")
+            + (sec_step2 or "")
+            + sec_footer
+        )
+        clean_report = ANSI_RE.sub("", raw_report)
+        clean_report = STEP_PREFIX_RE.sub(" ", clean_report)
+        out_path.write_text(clean_report, encoding="utf-8")
+        log.info(f"감사 보고서가 파일로 저장되었습니다: {cfg.output_file}")
 
-SEC_FOOTER="$(
-  echo "================================================================================"
-  printf " [감사 완료] 모든 점검 및 감사가 안전하게 종료되었습니다.\n"
-  echo "================================================================================"
-)"$'\n'
-printf "%s" "$SEC_FOOTER"
+    return 0
 
-# --output 지정 시 요약 우선 순서로 파일에 저장 (1 -> 4 -> 3 -> 2)
-if [[ -n "$OUTPUT_FILE" ]]; then
-  output_dir="$(dirname "$OUTPUT_FILE")"
-  if [[ -n "$output_dir" && ! -d "$output_dir" ]]; then
-    mkdir -p "$output_dir" || { log_error "출력 디렉토리를 생성할 수 없습니다: $output_dir"; exit 1; }
-  fi
 
-  {
-    printf "%s" "$SEC_HEADER"
-    [[ -n "$SEC_STEP1" ]] && printf "%s" "$SEC_STEP1"
-    [[ -n "$SEC_STEP4" ]] && printf "%s" "$SEC_STEP4"
-    [[ -n "$SEC_STEP3" ]] && printf "%s" "$SEC_STEP3"
-    [[ -n "$SEC_STEP2" ]] && printf "%s" "$SEC_STEP2"
-    printf "%s" "$SEC_FOOTER"
-  } | sed -E $'s/\x1b\\[[0-9;]*[mK]//g; s/^ \\[[0-9]+단계\\] / /' > "$OUTPUT_FILE"
-
-  log_info "감사 보고서가 파일로 저장되었습니다: $OUTPUT_FILE"
-fi
-
-exit 0
+if __name__ == "__main__":
+    sys.exit(main())
