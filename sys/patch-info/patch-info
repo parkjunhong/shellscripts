@@ -32,7 +32,7 @@ from typing import Dict, List, Optional, Tuple
 import urllib.error
 import urllib.request
 
-SCRIPT_FILE_VERSION = "2026.11.26.3"
+SCRIPT_FILE_VERSION="2026.11.26.4"
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[mK]")
 STEP_PREFIX_RE = re.compile(r"^ \[([0-9]+단계)\] ", re.MULTILINE)

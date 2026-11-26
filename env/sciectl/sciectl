@@ -11,7 +11,7 @@
 # =======================================
 
 readonly FILENAME="$(basename "$0")"
-readonly SCRIPT_FILE_VERSION="2026.11.25.6"
+readonly SCRIPT_FILE_VERSION="2026.11.26.1"
 # 구버전 sciectl(<=2026.11.23.1) 자가 업데이트 하위 호환성 유지용 (추후 제거 예정)
 readonly SCIECTL_VERSION="2026.11.25.6"
 readonly REPO_BASE_URL="${SCIECTL_REPO_URL:-https://raw.githubusercontent.com/parkjunhong/shellscripts/refs/heads/main}"
@@ -827,7 +827,7 @@ _extract_script_version() {
   [[ -f "$file_path" ]] || return 0
 
   local line=""
-  line="$(grep -m 1 -E '^[[:space:]]*(readonly[[:space:]]+)?(SCRIPT_FILE_VERSION|SCIECTL_VERSION)=' "$file_path" 2>/dev/null || true)"
+  line="$(grep -m 1 -E '^[[:space:]]*(readonly[[:space:]]+)?(SCRIPT_FILE_VERSION|SCIECTL_VERSION)([[:space:]]*:[[:space:]]*[^=]+)?[[:space:]]*=' "$file_path" 2>/dev/null || true)"
   if [[ -z "$line" ]]; then
     return 0
   fi
@@ -2611,7 +2611,7 @@ _manifest_sync_legacy() {
       [[ -f "${meta_dir}/${cmd_name}.meta" ]] && continue
       [[ -n "${cmd_to_tid[$cmd_name]:-}" ]] || continue
 
-      if head -n 40 "$f" 2>/dev/null | grep -qE '(@author[[:space:]]*:.*parkjunhong77@gmail\.com|SCRIPT_FILE_VERSION=)'; then
+      if head -n 40 "$f" 2>/dev/null | grep -qE '(@author[[:space:]]*:.*parkjunhong77@gmail\.com|SCRIPT_FILE_VERSION([[:space:]]*:[[:space:]]*[^=]+)?[[:space:]]*=)'; then
         local ver=""
         ver="$(_extract_script_version "$f")"
         _manifest_discover_companions "$cmd_name" "$scope"
