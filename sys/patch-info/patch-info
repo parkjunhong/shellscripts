@@ -32,7 +32,7 @@ from typing import Dict, List, Optional, Tuple
 import urllib.error
 import urllib.request
 
-SCRIPT_FILE_VERSION="2026.11.26.8"
+SCRIPT_FILE_VERSION="2026.11.26.9"
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[mK]")
 STEP_PREFIX_RE = re.compile(r"^ \[([0-9]+단계)\] ", re.MULTILINE)
@@ -1274,7 +1274,7 @@ def extract_changelog_blocks(changelog_text: str, cve_list: List[str], pkg_mgr: 
                     cur_lines.append(line)
 
     flush_block()
-    return "\n".join(blocks)
+    return "\n".join(dict.fromkeys(blocks))
 
 
 def main() -> int:
@@ -1410,6 +1410,35 @@ def main() -> int:
                     spinner.stop("완료", ok=True)
                     spinner.clear_all()
 
+        changelog_cache: Dict[str, str] = {}
+        candidate_cl_pkgs = installed_pkgs if installed_pkgs else sorted(
+            {r.pkg for r in results_by_idx.values() if r.pkg}
+        )
+        needs_cl_verify = [
+            r for r in results_by_idx.values()
+            if r.cves and (
+                "관련 권고 없음" in r.status
+                or "패키지 미설치" in r.status
+                or "체인지로그 점검 필요" in r.status
+                or "확인 필요" in r.status
+            )
+        ]
+        if needs_cl_verify and candidate_cl_pkgs:
+            for c_pkg in candidate_cl_pkgs:
+                if c_pkg not in changelog_cache:
+                    changelog_cache[c_pkg] = fetch_changelog(c_pkg, os_info.pkg_mgr, cfg.online_mode, log)
+            for adv in needs_cl_verify:
+                for c_pkg in candidate_cl_pkgs:
+                    cl_txt = changelog_cache.get(c_pkg, "")
+                    if cl_txt and extract_changelog_blocks(cl_txt, adv.cves, os_info.pkg_mgr):
+                        adv.status = "해결됨 (Resolved - 체인지로그 패치 확인됨)"
+                        if not adv.pkg:
+                            adv.pkg = c_pkg
+                        src_tag = f"로컬 체인지로그 ({c_pkg})"
+                        if src_tag not in adv.sources:
+                            adv.sources.append(src_tag)
+                        break
+
         sub2_hdr = "\n" + format_sub_header(" 🔎 취약점별 분석 결과 입니다.")
         sys.stdout.write(sub2_hdr)
         sys.stdout.flush()
@@ -1517,7 +1546,10 @@ def main() -> int:
                 sys.stdout.flush()
                 sec_step3 += pkg_hdr
 
-                raw_cl = fetch_changelog(pkg, os_info.pkg_mgr, cfg.online_mode, log)
+                if pkg in changelog_cache:
+                    raw_cl = changelog_cache[pkg]
+                else:
+                    raw_cl = fetch_changelog(pkg, os_info.pkg_mgr, cfg.online_mode, log)
                 if not raw_cl:
                     log.warn(f"'{pkg}' 패키지의 체인지로그를 찾을 수 없습니다.")
                     sec_step3 += f"[WARN] '{pkg}' 패키지의 체인지로그를 찾을 수 없습니다.\n"
