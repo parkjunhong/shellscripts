@@ -32,7 +32,7 @@ from typing import Dict, List, Optional, Tuple
 import urllib.error
 import urllib.request
 
-SCRIPT_FILE_VERSION="2026.11.26.5"
+SCRIPT_FILE_VERSION="2026.11.26.6"
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[mK]")
 STEP_PREFIX_RE = re.compile(r"^ \[([0-9]+단계)\] ", re.MULTILINE)
@@ -215,7 +215,7 @@ class StepSpinner:
 
 
 class ParallelProgressView:
-    """상단 고정 스피너와 하단 실시간 완료 목록을 함께 표시합니다."""
+    """완료 목록을 위쪽에 누적하고 스피너를 하단 현재 줄에 고정 표시합니다."""
 
     FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
     SEP = "-" * 74
@@ -227,19 +227,18 @@ class ParallelProgressView:
         self._thread: Optional[threading.Thread] = None
         self._label = ""
         self._start_ts = 0.0
-        self._completed_lines = 0
+        self._frame_idx = 0
 
     def start(self, label: str) -> None:
         with self._lock:
             self._label = label
             self._start_ts = time.monotonic()
-            self._completed_lines = 0
+            self._frame_idx = 0
             if not self.enabled:
                 return
             sys.stderr.write(
                 f"\n{self.SEP}\n"
-                f"  \033[36m{self.FRAMES[0]}\033[0m {label}: \033[2m진행 중... (0s)\033[0m\n"
-                f"{self.SEP}\n"
+                f"  \033[36m{self.FRAMES[0]}\033[0m {label}: \033[2m진행 중... (0s)\033[0m"
             )
             sys.stderr.flush()
             self._stop_event.clear()
@@ -255,29 +254,26 @@ class ParallelProgressView:
             return
         with self._lock:
             cols = shutil.get_terminal_size((80, 24)).columns
-            if len(text) >= cols:
-                text = text[: max(10, cols - 4)] + "..."
-            sys.stderr.write(f"{text}\n")
+            safe_text = truncate_by_width(text, max(20, cols - 2))
+            elapsed = int(time.monotonic() - self._start_ts)
+            frame = self.FRAMES[self._frame_idx % len(self.FRAMES)]
+            sys.stderr.write(
+                f"\r\033[K{safe_text}\n"
+                f"  \033[36m{frame}\033[0m {self._label}: \033[2m진행 중... ({elapsed}s)\033[0m"
+            )
             sys.stderr.flush()
-            self._completed_lines += 1
 
     def _spin(self) -> None:
-        idx = 0
         while not self._stop_event.is_set():
             with self._lock:
                 elapsed = int(time.monotonic() - self._start_ts)
                 label = self._label
-                up_lines = self._completed_lines + 2
-                rows = shutil.get_terminal_size((80, 24)).lines
-                if up_lines < rows - 1:
-                    frame = self.FRAMES[idx % len(self.FRAMES)]
-                    sys.stderr.write(
-                        f"\033[{up_lines}A\r\033[K"
-                        f"  \033[36m{frame}\033[0m {label}: \033[2m진행 중... ({elapsed}s)\033[0m"
-                        f"\033[{up_lines}B\r"
-                    )
-                    sys.stderr.flush()
-            idx += 1
+                frame = self.FRAMES[self._frame_idx % len(self.FRAMES)]
+                self._frame_idx += 1
+                sys.stderr.write(
+                    f"\r\033[K  \033[36m{frame}\033[0m {label}: \033[2m진행 중... ({elapsed}s)\033[0m"
+                )
+                sys.stderr.flush()
             self._stop_event.wait(0.15)
 
     def finish(self) -> None:
@@ -293,24 +289,33 @@ class ParallelProgressView:
             return
         with self._lock:
             elapsed = int(time.monotonic() - self._start_ts)
-            up_lines = self._completed_lines + 2
-            rows = shutil.get_terminal_size((80, 24)).lines
-            if up_lines < rows - 1:
-                sys.stderr.write(
-                    f"\033[{up_lines}A\r\033[K"
-                    f"  \033[1;32m✓\033[0m {self._label}: \033[1;32m완료\033[0m ({elapsed}s)"
-                    f"\033[{up_lines}B\r\n"
-                )
-            else:
-                sys.stderr.write(
-                    f"  \033[1;32m✓\033[0m {self._label}: \033[1;32m완료\033[0m ({elapsed}s)\n"
-                )
+            sys.stderr.write(
+                f"\r\033[K  \033[1;32m✓\033[0m {self._label}: \033[1;32m완료\033[0m ({elapsed}s)\n"
+                f"{self.SEP}\n"
+            )
             sys.stderr.flush()
 
 
 def display_width(text: str) -> int:
-    """터미널 표시 폭(한글/이모지 2칸 근사)을 계산합니다."""
-    return sum(2 if ord(ch) > 127 else 1 for ch in text)
+    """터미널 표시 폭(ANSI 제외, 한글/이모지 2칸 근사)을 계산합니다."""
+    clean = ANSI_RE.sub("", text)
+    return sum(2 if ord(ch) > 127 else 1 for ch in clean)
+
+
+def truncate_by_width(text: str, max_width: int) -> str:
+    """터미널 표시 폭 기준으로 문자열을 안전하게 축약합니다."""
+    if display_width(text) <= max_width:
+        return text
+    cur_w = 0
+    out: List[str] = []
+    limit = max(4, max_width - 3)
+    for ch in text:
+        w = 2 if ord(ch) > 127 else 1
+        if cur_w + w > limit:
+            break
+        out.append(ch)
+        cur_w += w
+    return "".join(out) + "..."
 
 
 def format_step_header(title: str) -> str:
@@ -1563,4 +1568,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except BrokenPipeError:
+        sys.exit(0)
