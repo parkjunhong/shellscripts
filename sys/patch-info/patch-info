@@ -32,7 +32,7 @@ from typing import Dict, List, Optional, Tuple
 import urllib.error
 import urllib.request
 
-SCRIPT_FILE_VERSION="2026.11.26.7"
+SCRIPT_FILE_VERSION="2026.11.26.8"
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[mK]")
 STEP_PREFIX_RE = re.compile(r"^ \[([0-9]+단계)\] ", re.MULTILINE)
@@ -614,8 +614,53 @@ def fetch_json_url(url: str, timeout: int = 8, retries: int = 1) -> Tuple[int, O
     return last_code, None
 
 
-def is_dpkg_installed(pkg: str) -> Optional[str]:
-    """dpkg 패키지 설치 시 버전을 반환하고, 미설치 시 None을 반환합니다."""
+@dataclass
+class DpkgPackageMap:
+    bin_map: Dict[str, str] = field(default_factory=dict)
+    src_map: Dict[str, List[str]] = field(default_factory=dict)
+
+
+def build_dpkg_installed_map() -> DpkgPackageMap:
+    """설치된 모든 dpkg 패키지의 바이너리 및 소스 패키지 매핑을 1회 조회로 구축합니다."""
+    dmap = DpkgPackageMap()
+    res = run_cmd(
+        ["dpkg-query", "-W", "-f=${Package}\t${source:Package}\t${Version}\t${Status}\n"],
+        timeout=10,
+    )
+    if res.returncode != 0:
+        return dmap
+    for line in res.stdout.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 4:
+            continue
+        pkg_name, src_name, ver, status = (p.strip() for p in parts[:4])
+        if not re.search(r"install\s+ok\s+installed", status):
+            continue
+        if pkg_name and ver:
+            dmap.bin_map[pkg_name] = ver
+            s_key = src_name or pkg_name
+            vers = dmap.src_map.setdefault(s_key, [])
+            if ver not in vers:
+                vers.append(ver)
+    return dmap
+
+
+def is_dpkg_installed(pkg: str, dpkg_map: Optional[DpkgPackageMap] = None) -> Optional[str]:
+    """dpkg 패키지(바이너리 또는 소스 패키지) 설치 시 버전을 반환하고, 미설치 시 None을 반환합니다."""
+    if dpkg_map is not None:
+        if pkg in dpkg_map.bin_map:
+            return dpkg_map.bin_map[pkg]
+        if pkg in dpkg_map.src_map:
+            vers = dpkg_map.src_map[pkg]
+            if len(vers) == 1:
+                return vers[0]
+            min_ver = vers[0]
+            for v in vers[1:]:
+                if run_cmd(["dpkg", "--compare-versions", v, "lt", min_ver], timeout=5).returncode == 0:
+                    min_ver = v
+            return min_ver
+        return None
+
     res = run_cmd(["dpkg-query", "-W", "-f=${Status}\t${Version}", pkg], timeout=5)
     if res.returncode != 0:
         return None
@@ -725,7 +770,11 @@ def parse_dnf_updateinfo_result(dnf_out: str, target_id: str, res_obj: AdvisoryR
 
 
 def resolve_advisory_info(
-    advisory: str, os_info: OSInfo, online_mode: bool, log: Logger
+    advisory: str,
+    os_info: OSInfo,
+    online_mode: bool,
+    log: Logger,
+    dpkg_map: Optional[DpkgPackageMap] = None,
 ) -> AdvisoryResult:
     """OS 보안 권고번호 또는 CVE 번호를 분석하여 AdvisoryResult를 반환합니다."""
     res = AdvisoryResult(
@@ -799,7 +848,7 @@ def resolve_advisory_info(
                 if codename_pkgs:
                     has_installed = False
                     for s_pkg, s_status, s_fix_ver in codename_pkgs:
-                        inst_ver = is_dpkg_installed(s_pkg)
+                        inst_ver = is_dpkg_installed(s_pkg, dpkg_map)
                         if inst_ver is not None:
                             has_installed = True
                             res.pkg = s_pkg
@@ -1015,7 +1064,7 @@ def resolve_advisory_info(
                 if src_pkgs:
                     has_installed = False
                     for s_pkg, s_fix_ver in src_pkgs:
-                        inst_ver = is_dpkg_installed(s_pkg)
+                        inst_ver = is_dpkg_installed(s_pkg, dpkg_map)
                         if inst_ver is not None:
                             has_installed = True
                             res.pkg = s_pkg
@@ -1326,6 +1375,7 @@ def main() -> int:
 
         total_oss = len(cfg.oss_numbers)
         results_by_idx: Dict[int, AdvisoryResult] = {}
+        dpkg_map = build_dpkg_installed_map() if os_info.pkg_mgr == "dpkg" else None
 
         if cfg.online_mode and total_oss > 1:
             oss_col_w = max(len(o) for o in cfg.oss_numbers) + 2
@@ -1335,7 +1385,7 @@ def main() -> int:
             cnt_lock = threading.Lock()
             with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, total_oss)) as executor:
                 future_map = {
-                    executor.submit(resolve_advisory_info, oss, os_info, cfg.online_mode, log): idx
+                    executor.submit(resolve_advisory_info, oss, os_info, cfg.online_mode, log, dpkg_map): idx
                     for idx, oss in enumerate(cfg.oss_numbers)
                 }
                 for fut in concurrent.futures.as_completed(future_map):
@@ -1355,7 +1405,7 @@ def main() -> int:
             for idx, oss in enumerate(cfg.oss_numbers):
                 if cfg.online_mode:
                     spinner.start(f"[{idx + 1}/{total_oss}] {oss} 보안 권고 조회 중")
-                results_by_idx[idx] = resolve_advisory_info(oss, os_info, cfg.online_mode, log)
+                results_by_idx[idx] = resolve_advisory_info(oss, os_info, cfg.online_mode, log, dpkg_map)
                 if cfg.online_mode:
                     spinner.stop("완료", ok=True)
                     spinner.clear_all()
