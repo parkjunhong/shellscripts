@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-readonly SCRIPT_FILE_VERSION="2026.11.27.1"
+readonly SCRIPT_FILE_VERSION="2026.11.27.2"
 
 set -euo pipefail
 
@@ -1368,13 +1368,17 @@ _render_tsv_table() {
   local output=""
   if command -v python3 >/dev/null 2>&1; then
     output="$(python3 -c '
+import re
 import sys
 import unicodedata
 
 term_cols = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else 0
 mode = sys.argv[2] if len(sys.argv) > 2 else "full"
 
+_ANSI_ESC_RE = re.compile(r"\x1b(?:\[[0-9;?]*[ -/]*[@-~]|O.|.)")
+
 def sanitize(s: str) -> str:
+    s = _ANSI_ESC_RE.sub("", s)
     return "".join(" " if unicodedata.category(ch).startswith("C") else ch for ch in s)
 
 def disp_width(s: str) -> int:
@@ -1955,8 +1959,28 @@ _read_utf8_char() {
 }
 
 # -----------------------------------------------------------------------------
-# UTF-8 안전한 한 줄 입력기 (Backspace/CTRL+U 지원)
-# - 한국어/English: line editor that redraws line, safe for UTF-8
+# ESC(\x1b)로 시작하는 터미널 제어 시퀀스(방향키/기능키 등)를 stdin에서 소비한다.
+# Consume an ANSI/VT escape sequence starting after ESC (\x1b) from stdin.
+# -----------------------------------------------------------------------------
+_consume_escape_sequence() {
+  local seq1="" seq2=""
+  IFS= read -r -s -n 1 -t 0.05 seq1 || return 0
+  if [[ "$seq1" == "[" ]]; then
+    while IFS= read -r -s -n 1 -t 0.05 seq2; do
+      # CSI final byte: 0x40..0x7E (@..~)
+      if [[ "$seq2" =~ [@-~] ]]; then
+        break
+      fi
+    done
+  elif [[ "$seq1" == "O" ]]; then
+    IFS= read -r -s -n 1 -t 0.05 seq2 || true
+  fi
+  return 0
+}
+
+# -----------------------------------------------------------------------------
+# UTF-8 안전한 한 줄 입력기 (방향키/Backspace/CTRL+U/한글 편집 지원)
+# - 한국어/English: line editor using Readline (TTY) or plain read (non-TTY), safe for UTF-8
 #
 # @param $1 {string} prompt 입력 프롬프트(ASCII 권장). 예: "> "
 # @param $2 {string} default 기본값(Enter 시 적용)
@@ -1966,50 +1990,14 @@ read_line_utf8() {
   local prompt="$1"
   local default_value="${2:-}"
   local buf=""
-  local ch
 
-  local EL=$'\033[K'
-  if command -v tput >/dev/null 2>&1; then
-    EL="$(tput el)"
+  if [[ -t 0 ]]; then
+    IFS= read -e -r -p "$prompt" buf || buf=""
+  else
+    printf '%s' "$prompt" >&2
+    IFS= read -r buf || buf=""
+    printf '\n' >&2
   fi
-
-  local old_stty
-  old_stty="$(stty -g 2>/dev/null)"
-  stty -echo 2>/dev/null
-
-  # 최초 1회는 prompt만 출력 (여기서 라인을 지우지 않음)
-  printf '%s' "$prompt" >&2
-
-  while true; do
-    IFS= read -r -s -n 1 ch || break
-
-    # Enter만 눌렀을 때: bash read는 newline을 delimiter로 소비해서 ch가 빈 문자열이 됨
-    # => 빈 문자열도 Enter로 간주하고 종료
-    if [[ -z "$ch" || "$ch" == $'\n' || "$ch" == $'\r' ]]; then
-      break
-    fi
-
-    if [[ "$ch" == $'\x7f' || "$ch" == $'\x08' ]]; then
-      if [[ -n "$buf" ]]; then
-        buf="${buf%?}"  # UTF-8 안전: 마지막 문자 1개 제거
-      fi
-      # prompt는 항상 유지하고, 잔상만 제거
-      printf '\r%s%s%s' "$prompt" "$buf" "$EL" >&2
-      continue
-    fi
-
-    if [[ "$ch" == $'\x15' ]]; then
-      buf=""
-      printf '\r%s%s%s' "$prompt" "$buf" "$EL" >&2
-      continue
-    fi
-
-    buf+="$ch"
-    printf '\r%s%s%s' "$prompt" "$buf" "$EL" >&2
-  done
-
-  stty "$old_stty" 2>/dev/null
-  printf '\n' >&2
 
   if [[ -z "$buf" && -n "$default_value" ]]; then
     buf="$default_value"
@@ -2070,6 +2058,12 @@ _read_password_utf8_masked() {
       fi
 
       printf '\r%s%s%s' "$prompt" "$stars" "$EL" >&2
+      continue
+    fi
+
+    # ESC 시퀀스 (방향키/기능키 등) 무시
+    if [[ "$ch" == $'\x1b' ]]; then
+      _consume_escape_sequence
       continue
     fi
 
