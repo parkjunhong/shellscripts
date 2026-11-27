@@ -483,6 +483,7 @@ _sciectl_filter_candidates() {
 # @param $2 {string} 현재 입력 중인 값 부분
 # @param $3 {string} 옵션 접두사 (예: '--catalog=' 또는 '')
 # @param $4 {string} 옵션 식별자 (예: '--catalog', 중복 제외 필터링용)
+# @param $5 {string} 매칭 모드 ('prefix' | 'prefix_or_substr', 기본값: 'prefix')
 #
 # @return COMPREPLY 배열 설정
 ##
@@ -491,6 +492,7 @@ _sciectl_complete_csv_values() {
   local val_cur="$2"
   local opt_prefix="${3:-}"
   local opt_name="${4:-}"
+  local match_mode="${5:-prefix}"
 
   # 콤마로 연결 가능한 다중 값 옵션이므로 완성 후 자동 공백 추가 방지
   compopt -o nospace 2>/dev/null || true
@@ -508,9 +510,21 @@ _sciectl_complete_csv_values() {
   fi
 
   local item
+  local matched_count=0
   while IFS= read -r item; do
-    [[ -n "$item" ]] && COMPREPLY+=("${prefix}${item}")
+    if [[ -n "$item" ]]; then
+      COMPREPLY+=("${prefix}${item}")
+      ((matched_count++))
+    fi
   done < <(compgen -W "$active_candidates" -- "$target_part")
+
+  if (( matched_count == 0 )) && [[ "$match_mode" == "prefix_or_substr" && -n "$target_part" ]]; then
+    for item in $active_candidates; do
+      if [[ "$item" == *"$target_part"* ]]; then
+        COMPREPLY+=("${prefix}${item}")
+      fi
+    done
+  fi
 }
 
 ##
@@ -631,7 +645,7 @@ _sciectl_completion() {
           return 0
           ;;
         --tool=*)
-          _sciectl_complete_csv_values "$tool_candidates" "${cur#--tool=}" "--tool=" "--tool"
+          _sciectl_complete_csv_values "$tool_candidates" "${cur#--tool=}" "--tool=" "--tool" "prefix_or_substr"
           return 0
           ;;
         --installer=*)
@@ -666,7 +680,7 @@ _sciectl_completion() {
           return 0
           ;;
         --tool)
-          _sciectl_complete_csv_values "$tool_candidates" "$cur" "" "--tool"
+          _sciectl_complete_csv_values "$tool_candidates" "$cur" "" "--tool" "prefix_or_substr"
           return 0
           ;;
         --installer)
@@ -727,7 +741,7 @@ _sciectl_completion() {
           return 0
           ;;
         --tool=*)
-          _sciectl_complete_csv_values "$tool_candidates" "${cur#--tool=}" "--tool=" "--tool"
+          _sciectl_complete_csv_values "$tool_candidates" "${cur#--tool=}" "--tool=" "--tool" "prefix_or_substr"
           return 0
           ;;
         --ssh-key=*)
@@ -745,7 +759,7 @@ _sciectl_completion() {
           return 0
           ;;
         --tool)
-          _sciectl_complete_csv_values "$tool_candidates" "$cur" "" "--tool"
+          _sciectl_complete_csv_values "$tool_candidates" "$cur" "" "--tool" "prefix_or_substr"
           return 0
           ;;
         --ssh-key)
@@ -778,7 +792,7 @@ _sciectl_completion() {
           return 0
           ;;
         --tool=*)
-          _sciectl_complete_csv_values "$tool_candidates" "${cur#--tool=}" "--tool=" "--tool"
+          _sciectl_complete_csv_values "$tool_candidates" "${cur#--tool=}" "--tool=" "--tool" "prefix_or_substr"
           return 0
           ;;
         --ssh-key=*)
@@ -800,7 +814,7 @@ _sciectl_completion() {
           return 0
           ;;
         --tool)
-          _sciectl_complete_csv_values "$tool_candidates" "$cur" "" "--tool"
+          _sciectl_complete_csv_values "$tool_candidates" "$cur" "" "--tool" "prefix_or_substr"
           return 0
           ;;
         --ssh-key)
@@ -845,7 +859,7 @@ _sciectl_completion() {
           return 0
           ;;
         --tool=*)
-          _sciectl_complete_csv_values "$tool_candidates" "${cur#--tool=}" "--tool=" "--tool"
+          _sciectl_complete_csv_values "$tool_candidates" "${cur#--tool=}" "--tool=" "--tool" "prefix_or_substr"
           return 0
           ;;
         --installer=*)
@@ -867,7 +881,7 @@ _sciectl_completion() {
           return 0
           ;;
         --tool)
-          _sciectl_complete_csv_values "$tool_candidates" "$cur" "" "--tool"
+          _sciectl_complete_csv_values "$tool_candidates" "$cur" "" "--tool" "prefix_or_substr"
           return 0
           ;;
         --installer)
