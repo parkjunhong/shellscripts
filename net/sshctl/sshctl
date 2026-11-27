@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-readonly SCRIPT_FILE_VERSION="2026.11.27.2"
+readonly SCRIPT_FILE_VERSION="2026.11.27.3"
 
 set -euo pipefail
 
@@ -2096,6 +2096,28 @@ _read_password_utf8_masked() {
 }
 
 # -----------------------------------------------------------------------------
+# 화면 출력용 문자열에서 ANSI 이스케이프 시퀀스 및 제어문자를 제거한다.
+# Strip ANSI escape sequences and control characters for safe terminal display.
+#
+# @param $1 {string} text 원본 문자열 / raw string
+# @return {string} 정제된 문자열을 STDOUT으로 출력 / sanitized string to STDOUT
+# -----------------------------------------------------------------------------
+_sanitize_display_text() {
+  local text="${1:-}"
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c '
+import re, sys, unicodedata
+s = sys.stdin.read()
+s = re.sub(r"\x1b(?:\[[0-9;?]*[ -/]*[@-~]|O.|.)", "", s)
+s = "".join(" " if unicodedata.category(ch).startswith("C") else ch for ch in s)
+sys.stdout.write(s)
+' <<< "$text"
+  else
+    printf '%s' "$text" | LC_ALL=C tr -d '\000-\037\177'
+  fi
+}
+
+# -----------------------------------------------------------------------------
 # credential 입력 프롬프트 (password/key 공통)
 # - 한국어/English: unified credential prompt for password/key
 #
@@ -2113,17 +2135,19 @@ prompt_credential_with_icon() {
   local field="$2"
   local auth_type="$3"
   local current="${4:-}"
-  local input input_prompt
+  local input input_prompt display_current
 
   # 안내 라인 (이모지 포함, 편집 없음)
   printf '\r\033[K' >&2
   printf " * %s  '%s' 정보를 입력하세요.\n" "${icon}" "${field}" >&2
 
+  input_prompt="       > "
+
   if [[ "$auth_type" == "password" ]]; then
-    # 기존 UX 유지: > [****]:
-    input_prompt="       > "
-    #input_prompt+="[****]: "
-    input_prompt+="[${current}]: "
+    if [[ -n "$current" ]]; then
+      display_current="$(_sanitize_display_text "$current")"
+      printf '       현재값: %s\n' "$display_current" >&2
+    fi
 
     # 마스킹 입력기 사용 (Enter 시 기존 값 유지)
     input="$(_read_password_utf8_masked "$input_prompt" "$current")"
@@ -2131,12 +2155,10 @@ prompt_credential_with_icon() {
     return 0
   fi
 
-  # key path: 기존 UX 유지: > [<path>]:
-  input_prompt="       > "
+  # key path: 기존 값은 별도 줄에 표시하고 입력 프롬프트는 고정
   if [[ -n "$current" ]]; then
-    input_prompt+="[${current}]: "
-  else
-    input_prompt+=": "
+    display_current="$(_sanitize_display_text "$current")"
+    printf '       현재값: %s\n' "$display_current" >&2
   fi
 
   # key path는 일반 입력 (UTF-8 안전)
@@ -2163,7 +2185,7 @@ prompt_with_icon() {
   local icon="$1"
   local field="$2"
   local current="${3:-}"
-  local raw label input input_prompt
+  local raw label input input_prompt display_current
 
   raw="${icon}  ${field}"
   printf -v label "%-*s" "$PROMPT_LABEL_WIDTH" "$raw"
@@ -2172,22 +2194,18 @@ prompt_with_icon() {
   printf '\r\033[K' >&2
 
   # 1) 안내 라인(이모지 포함)은 별도 출력 (여기서는 커서 편집이 없음)
+  printf " * %s  '%s' 정보를 입력하세요.\n" "${icon}" "${field}" >&2
+
+  # 2) 기존 값이 있으면 정제하여 별도 줄에 표시 (Readline 프롬프트 폭 오염/줄바꿈 방지)
   if [[ -n "$current" ]]; then
-    printf " * %s  '%s' 정보를 입력하세요.\n" "${icon}" "${field}" >&2
-  else
-    printf " * %s  '%s' 정보를 입력하세요.\n" "${icon}" "${field}" >&2
+    display_current="$(_sanitize_display_text "$current")"
+    printf '       현재값: %s\n' "$display_current" >&2
   fi
 
-  # 2) 실제 입력 라인(타이핑하는 줄) - 기존 UX 유지: > [default]:
+  # 3) 실제 입력 라인 프롬프트는 항상 짧은 순수 ASCII 유지
   input_prompt="       > "
-  if [[ -n "$current" ]]; then
-    input_prompt+="[${current}]: "
-  else
-    input_prompt+=": "
-  fi
 
-  # UTF-8 안전 입력기 적용 (한글 입력/삭제 시 잔상 및 커서 문제 완화)
-  # Enter 입력 시 default(current) 값 적용
+  # UTF-8 안전 입력기 적용 (Enter 입력 시 default(current) 값 적용)
   input="$(read_line_utf8 "$input_prompt" "$current")"
 
   printf '%s' "$input"
