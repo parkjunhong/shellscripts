@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-readonly SCRIPT_FILE_VERSION="2026.10.28.1"
+readonly SCRIPT_FILE_VERSION="2026.11.27.1"
 
 set -euo pipefail
 
@@ -1333,6 +1333,175 @@ print_config_summary_banner() {
 }
 
 ##
+# 탭 구분 문자열을 터미널 폭과 전각 문자를 고려한 정렬된 표로 출력한다.
+# Render a tab-separated string as a formatted table respecting terminal width and wide characters.
+#
+# @param $1 {string} tsv_data 헤더 행을 포함한 TSV 문자열 / TSV string including header row
+# @param $2 {string|empty} target_fd "stdout" 또는 "stderr" (기본: "stdout") / "stdout" or "stderr" (default: "stdout")
+# @param $3 {string|empty} mode "full" (기본) 또는 "created" / "full" (default) or "created"
+#
+# @return {int} 성공 시 0, 실패 시 1 / 0 on success, 1 on failure.
+##
+_render_tsv_table() {
+  local tsv_data="$1"
+  local target_fd="${2:-stdout}"
+  local mode="${3:-full}"
+
+  local is_tty=0
+  local term_cols=0
+  if [[ "$target_fd" == "stderr" ]]; then
+    [[ -t 2 ]] && is_tty=1
+  else
+    [[ -t 1 ]] && is_tty=1
+  fi
+
+  if [[ "$is_tty" -eq 1 ]]; then
+    if command -v tput >/dev/null 2>&1; then
+      term_cols="$(tput cols 2>/dev/null || echo 0)"
+    fi
+    if [[ ! "$term_cols" =~ ^[0-9]+$ || "$term_cols" -le 0 ]]; then
+      term_cols="${COLUMNS:-0}"
+    fi
+    [[ "$term_cols" =~ ^[0-9]+$ ]] || term_cols=0
+  fi
+
+  local output=""
+  if command -v python3 >/dev/null 2>&1; then
+    output="$(python3 -c '
+import sys
+import unicodedata
+
+term_cols = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else 0
+mode = sys.argv[2] if len(sys.argv) > 2 else "full"
+
+def sanitize(s: str) -> str:
+    return "".join(" " if unicodedata.category(ch).startswith("C") else ch for ch in s)
+
+def disp_width(s: str) -> int:
+    w = 0
+    for ch in s:
+        if unicodedata.combining(ch):
+            continue
+        w += 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+    return w
+
+def truncate_to_width(s: str, max_w: int) -> str:
+    if disp_width(s) <= max_w:
+        return s
+    if max_w <= 3:
+        return "." * max_w
+    target = max_w - 3
+    out = []
+    cur = 0
+    for ch in s:
+        cw = 0 if unicodedata.combining(ch) else (2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1)
+        if cur + cw > target:
+            break
+        out.append(ch)
+        cur += cw
+    return "".join(out) + "..."
+
+lines = [line for line in sys.stdin.read().splitlines() if line.strip() != ""]
+if not lines:
+    sys.exit(0)
+
+rows = [[sanitize(cell) for cell in line.split("\t")] for line in lines]
+num_cols = max(len(r) for r in rows)
+for r in rows:
+    if len(r) < num_cols:
+        r.extend([""] * (num_cols - len(r)))
+
+headers = rows[0]
+max_caps = {"Name": 40, "Group": 24, "Credential": 36}
+min_widths = {"Name": 16, "Group": 12, "Credential": 16, "Host": 16}
+shrink_order = ["Name", "Group", "Credential", "Host"]
+
+col_widths = [max(disp_width(r[c]) for r in rows) for c in range(num_cols)]
+for c, h in enumerate(headers):
+    if h in max_caps and col_widths[c] > max_caps[h]:
+        col_widths[c] = max(max_caps[h], disp_width(h))
+
+if term_cols > 0:
+    sep_total = 2 * (num_cols - 1)
+    while sum(col_widths) + sep_total > term_cols:
+        shrunk = False
+        for h_name in shrink_order:
+            if h_name in headers:
+                c = headers.index(h_name)
+                min_w = max(min_widths.get(h_name, 10), disp_width(headers[c]))
+                if col_widths[c] > min_w:
+                    col_widths[c] -= 1
+                    shrunk = True
+                    break
+        if not shrunk:
+            break
+
+trunc_rows = [[truncate_to_width(r[c], col_widths[c]) for c in range(num_cols)] for r in rows]
+final_widths = [max(disp_width(r[c]) for r in trunc_rows) for c in range(num_cols)]
+
+rendered_lines = []
+for r in trunc_rows:
+    parts = []
+    for c in range(num_cols):
+        cell = r[c]
+        if c < num_cols - 1:
+            pad = final_widths[c] - disp_width(cell)
+            parts.append(cell + (" " * pad))
+        else:
+            parts.append(cell)
+    rendered_lines.append("  ".join(parts))
+
+max_line_w = max(disp_width(l) for l in rendered_lines)
+eq_line = "=" * max_line_w
+dash_line = "-" * max_line_w
+header_line = rendered_lines[0]
+data_lines = rendered_lines[1:]
+
+if mode == "created":
+    print(eq_line)
+    print("생성된 connection:")
+    print(header_line)
+    print(dash_line)
+    for dl in data_lines:
+        print(dl)
+else:
+    print(eq_line)
+    print(header_line)
+    print(dash_line)
+    for dl in data_lines:
+        print(dl)
+    print(eq_line)
+' "$term_cols" "$mode" <<< "$tsv_data")"
+  elif command -v column >/dev/null 2>&1; then
+    local rendered header_line data_lines header_len separator eq_line
+    rendered="$(printf '%s' "$tsv_data" | column -t -s $'\t')"
+    header_line="$(printf '%s\n' "$rendered" | head -n 1)"
+    data_lines="$(printf '%s\n' "$rendered" | tail -n +2)"
+    header_len=${#header_line}
+    printf -v separator '%*s' "$header_len" ''
+    separator="${separator// /-}"
+    printf -v eq_line '%*s' "$header_len" ''
+    eq_line="${eq_line// /=}"
+
+    if [[ "$mode" == "created" ]]; then
+      output="${eq_line}"$'\n'"생성된 connection:"$'\n'"${header_line}"$'\n'"${separator}"$'\n'"${data_lines}"
+    else
+      output="${eq_line}"$'\n'"${header_line}"$'\n'"${separator}"$'\n'"${data_lines}"$'\n'"${eq_line}"
+    fi
+  else
+    output="$tsv_data"
+  fi
+
+  if [[ "$target_fd" == "stderr" ]]; then
+    printf '%s\n' "$output" >&2
+  else
+    printf '%s\n' "$output"
+  fi
+
+  return 0
+}
+
+##
 # 탭 구분 원시 문자열을 인덱스 컬럼(#)이 포함된 표 형태로 출력한다.
 # Render a tab-separated raw string as a table with index (#) column.
 #
@@ -1350,11 +1519,11 @@ print_raw_as_table() {
     return 1
   fi
 
-  if command -v column >/dev/null 2>&1; then
+  if command -v column >/dev/null 2>&1 || command -v python3 >/dev/null 2>&1; then
     local temp_buffer=""
     local n=0 group name host port user cred display_cred
 
-    temp_buffer+="#\tGroup\tName\tHost\tPort\tUser\tCredential\n"
+    temp_buffer+="#"$'\t'"Group"$'\t'"Name"$'\t'"Host"$'\t'"Port"$'\t'"User"$'\t'"Credential"$'\n'
 
     while IFS=$'\t' read -r group name host port user cred; do
       if [[ -z "$group" && -z "$name" && -z "$host" && -z "$port" && -z "$user" && -z "$cred" ]]; then
@@ -1374,28 +1543,10 @@ print_raw_as_table() {
       # credential 출력 정책은 복호화된 값 기준
       display_cred="$(format_credential_for_display "$cred_dec")"
 
-      temp_buffer+="${idx}\t${group}\t${name}\t${host}\t${port}\t${user_dec}\t${display_cred}\n"
+      temp_buffer+="${idx}"$'\t'"${group}"$'\t'"${name}"$'\t'"${host}"$'\t'"${port}"$'\t'"${user_dec}"$'\t'"${display_cred}"$'\n'
     done <<< "$raw"
 
-    # column 결과를 기준으로 헤더 길이를 구해서
-    # '-' 구분선과 '=' 구분선을 함께 만든다.
-    local rendered header_line data_lines header_len separator eq_line
-    rendered="$(printf "%b" "$temp_buffer" | column -t -s $'\t')"
-    header_line="$(printf '%s\n' "$rendered" | head -n 1)"
-    data_lines="$(printf '%s\n' "$rendered" | tail -n +2)"
-    header_len=${#header_line}
-
-    printf -v separator '%*s' "$header_len" ''
-    separator="${separator// /-}"
-    printf -v eq_line '%*s' "$header_len" ''
-    eq_line="${eq_line// /=}"
-
-    # 위/아래 '=' 라인 추가
-    printf '%s\n' "$eq_line"
-    printf '%s\n' "$header_line"
-    printf '%s\n' "$separator"
-    printf '%s\n' "$data_lines"
-    printf '%s\n' "$eq_line"
+    _render_tsv_table "$temp_buffer" "stdout" "full"
   else
     printf -- "%-4s\t%s\t%s\t%s\t%s\t%s\t%s\n" "#" "Group" "Name" "Host" "Port" "User" "Credential"
     printf -- "%-4s\t%s\t%s\t%s\t%s\t%s\t%s\n" "----" "-----" "----" "----" "----" "----" "----------"
@@ -1431,13 +1582,11 @@ print_raw_as_table_no_index() {
     return 1
   fi
   
-  if command -v column >/dev/null 2>&1; then
+  if command -v column >/dev/null 2>&1 || command -v python3 >/dev/null 2>&1; then
     local temp_buffer=""
     local group name host port user cred display_cred
 
-    # '\t' 문자를 [TAB] 캐릭터로 변환
-    #raw="$(printf '%s' "$raw" | sed $'s/\\\\t/\t/g')"
-    temp_buffer+="Group\tName\tHost\tPort\tUser\tCredential\n"
+    temp_buffer+="Group"$'\t'"Name"$'\t'"Host"$'\t'"Port"$'\t'"User"$'\t'"Credential"$'\n'
     while IFS=$'\t' read -r group name host port user cred; do
       if [[ -z "$group" && -z "$name" && -z "$host" && -z "$port" && -z "$user" && -z "$cred" ]]; then
         continue
@@ -1452,28 +1601,10 @@ print_raw_as_table_no_index() {
       # credential 출력 정책은 복호화된 값 기준
       display_cred="$(format_credential_for_display "$cred_dec")"
 
-      temp_buffer+="${group}\t${name}\t${host}\t${port}\t${user_dec}\t${display_cred}\n"
+      temp_buffer+="${group}"$'\t'"${name}"$'\t'"${host}"$'\t'"${port}"$'\t'"${user_dec}"$'\t'"${display_cred}"$'\n'
     done <<< "$raw"
 
-    # column 결과를 한 번 만들어서, 헤더 길이를 기준으로
-    # '-' 구분선과 '=' 구분선을 모두 생성
-    local rendered header_line data_lines header_len separator eq_line
-    rendered="$(printf "%b" "$temp_buffer" | column -t -s $'\t')"
-    header_line="$(printf '%s\n' "$rendered" | head -n 1)"
-    data_lines="$(printf '%s\n' "$rendered" | tail -n +2)"
-    header_len=${#header_line}
-
-    printf -v separator '%*s' "$header_len" ''
-    separator="${separator// /-}"
-    printf -v eq_line '%*s' "$header_len" ''
-    eq_line="${eq_line// /=}"
-
-    # 위/아래 '=' 라인 추가
-    printf '%s\n' "$eq_line"
-    printf '%s\n' "$header_line"
-    printf '%s\n' "$separator"
-    printf '%s\n' "$data_lines"
-    printf '%s\n' "$eq_line"  
+    _render_tsv_table "$temp_buffer" "stdout" "full"
   else
     printf -- "%s\t%s\t%s\t%s\t%s\t%s\n" "Group" "Name" "Host" "Port" "User" "Credential"
     printf -- "%s\t%s\t%s\t%s\t%s\t%s\n" "-----" "----" "----" "----" "----" "----------"
@@ -1590,27 +1721,12 @@ print_single_connection_no_banner() {
   cred_dec="$(decrypt_value_if_needed "$cred")"
   display_cred="$(format_credential_for_display "$cred_dec")"
 
-  if command -v column >/dev/null 2>&1; then
+  if command -v column >/dev/null 2>&1 || command -v python3 >/dev/null 2>&1; then
     local temp_buffer=""
-    temp_buffer+="Group\tName\tHost\tPort\tUser\tCredential\n"
-    temp_buffer+="${group}\t${name}\t${host}\t${port}\t${user_dec}\t${display_cred}\n"
+    temp_buffer+="Group"$'\t'"Name"$'\t'"Host"$'\t'"Port"$'\t'"User"$'\t'"Credential"$'\n'
+    temp_buffer+="${group}"$'\t'"${name}"$'\t'"${host}"$'\t'"${port}"$'\t'"${user_dec}"$'\t'"${display_cred}"$'\n'
 
-    local rendered header_line data_lines header_len separator eq_line
-    rendered="$(printf "%b" "$temp_buffer" | column -t -s $'\t')"
-    header_line="$(printf '%s\n' "$rendered" | head -n 1)"
-    data_lines="$(printf '%s\n' "$rendered" | tail -n +2)"
-    header_len=${#header_line}
-
-    printf -v separator '%*s' "$header_len" ''
-    separator="${separator// /-}"
-    printf -v eq_line '%*s' "$header_len" ''
-    eq_line="${eq_line// /=}"
-
-    printf '%s\n' "$eq_line"
-    printf '%s\n' "$header_line"
-    printf '%s\n' "$separator"
-    printf '%s\n' "$data_lines"
-    printf '%s\n' "$eq_line"
+    _render_tsv_table "$temp_buffer" "stdout" "full"
   else
     printf -- "%s\t%s\t%s\t%s\t%s\t%s\n" "Group" "Name" "Host" "Port" "User" "Credential"
     printf -- "%s\t%s\t%s\t%s\t%s\t%s\n" "-----" "----" "----" "----" "----" "----------"
@@ -1712,9 +1828,9 @@ select_connection_interactively() {
   local n=0
   local group name host port user cred idx display_cred
 
-  if command -v column >/dev/null 2>&1; then
+  if command -v column >/dev/null 2>&1 || command -v python3 >/dev/null 2>&1; then
     local temp_buffer=""
-    temp_buffer+="#\tGroup\tName\tHost\tPort\tUser\tCredential\n"
+    temp_buffer+="#"$'\t'"Group"$'\t'"Name"$'\t'"Host"$'\t'"Port"$'\t'"User"$'\t'"Credential"$'\n'
 
     while IFS=$'\t' read -r group name host port user cred idx; do
       if [[ -z "$group" && -z "$name" && -z "$host" && -z "$port" && -z "$user" && -z "$cred" ]]; then
@@ -1733,24 +1849,10 @@ select_connection_interactively() {
 
       local display_idx
       printf -v display_idx "%04d" "$n"
-      temp_buffer+="${display_idx}\t${group}\t${name}\t${host}\t${port}\t${user_dec}\t${display_cred}\n"
+      temp_buffer+="${display_idx}"$'\t'"${group}"$'\t'"${name}"$'\t'"${host}"$'\t'"${port}"$'\t'"${user_dec}"$'\t'"${display_cred}"$'\n'
     done <<< "$raw"
 
-    local rendered header_line data_lines header_len separator eq_line
-    rendered="$(printf "%b" "$temp_buffer" | column -t -s $'\t')"
-    header_line="$(printf '%s\n' "$rendered" | head -n 1)"
-    data_lines="$(printf '%s\n' "$rendered" | tail -n +2)"
-    header_len=${#header_line}
-    printf -v separator '%*s' "$header_len" ''
-    separator="${separator// /-}"
-    printf -v eq_line '%*s' "$header_len" ''
-    eq_line="${eq_line// /=}"
-
-    printf '%s\n' "$eq_line"    >&2
-    printf '%s\n' "$header_line" >&2
-    printf '%s\n' "$separator"  >&2
-    printf '%s\n' "$data_lines" >&2
-    printf '%s\n' "$eq_line"    >&2
+    _render_tsv_table "$temp_buffer" "stderr" "full"
   else
     printf -- "%-4s\t%s\t%s\t%s\t%s\t%s\t%s\n" "#" "Group" "Name" "Host" "Port" "User" "Credential" >&2
     printf -- "%-4s\t%s\t%s\t%s\t%s\t%s\t%s\n" "----" "-----" "----" "----" "----" "----" "----------" >&2
@@ -2348,25 +2450,11 @@ cmd_add_connection() {
 
   save_connections_json <<< "$new_json"
 
-  local raw_line="${group}\t${name}\t${host}\t${port}\t${username}\t${credential}"
-  local temp_buffer="Group\tName\tHost\tPort\tUser\tCredential\n${raw_line}\n"
+  local raw_line="${group}"$'\t'"${name}"$'\t'"${host}"$'\t'"${port}"$'\t'"${username}"$'\t'"${credential}"
+  local temp_buffer="Group"$'\t'"Name"$'\t'"Host"$'\t'"Port"$'\t'"User"$'\t'"Credential"$'\n'"${raw_line}"$'\n'
 
-  if command -v column >/dev/null 2>&1; then
-    local rendered header_line data_lines header_len eq_line dash_line
-    rendered="$(printf "%b" "$temp_buffer" | column -t -s $'\t')"
-    header_line="$(printf '%s\n' "$rendered" | head -n 1)"
-    data_lines="$(printf '%s\n' "$rendered" | tail -n +2)"
-    header_len=${#header_line}
-    printf -v eq_line '%*s' "$header_len" ''
-    eq_line="${eq_line// /=}"
-    printf -v dash_line '%*s' "$header_len" ''
-    dash_line="${dash_line// /-}"
-
-    echo "$eq_line"
-    echo "생성된 connection:"
-    echo "$header_line"
-    echo "$dash_line"
-    echo "$data_lines"
+  if command -v column >/dev/null 2>&1 || command -v python3 >/dev/null 2>&1; then
+    _render_tsv_table "$temp_buffer" "stdout" "created"
   else
     echo "=============================="
     echo "생성된 connection:"
@@ -2741,9 +2829,9 @@ select_indices_for_delete() {
   local idx_map=()
   local n=0 group name host port user cred idx
 
-  if command -v column >/dev/null 2>&1; then
+  if command -v column >/dev/null 2>&1 || command -v python3 >/dev/null 2>&1; then
     local temp_buffer=""
-    temp_buffer+="#\tGroup\tName\tHost\tPort\tUser\tCredential\n"
+    temp_buffer+="#"$'\t'"Group"$'\t'"Name"$'\t'"Host"$'\t'"Port"$'\t'"User"$'\t'"Credential"$'\n'
 
     while IFS=$'\t' read -r group name host port user cred idx; do
       if [[ -z "$group" && -z "$name" && -z "$host" && -z "$port" && -z "$user" && -z "$cred" ]]; then
@@ -2764,24 +2852,10 @@ select_indices_for_delete() {
       local display_idx
       printf -v display_idx "%04d" "$n"
       display_cred="$(format_credential_for_display "$cred")"
-      temp_buffer+="${display_idx}\t${group}\t${name}\t${host}\t${port}\t${user_dec}\t${display_cred}\n"
+      temp_buffer+="${display_idx}"$'\t'"${group}"$'\t'"${name}"$'\t'"${host}"$'\t'"${port}"$'\t'"${user_dec}"$'\t'"${display_cred}"$'\n'
     done <<< "$raw"
 
-    local rendered header_line data_lines header_len dash_line eq_line
-    rendered="$(printf "%b" "$temp_buffer" | column -t -s $'\t')"
-    header_line="$(printf '%s\n' "$rendered" | head -n 1)"
-    data_lines="$(printf '%s\n' "$rendered" | tail -n +2)"
-    header_len=${#header_line}
-    printf -v dash_line '%*s' "$header_len" ''
-    dash_line="${dash_line// /-}"
-    printf -v eq_line '%*s' "$header_len" ''
-    eq_line="${eq_line// /=}"
-
-    printf '%s\n' "$eq_line"    >&2
-    printf '%s\n' "$header_line" >&2
-    printf '%s\n' "$dash_line"  >&2
-    printf '%s\n' "$data_lines" >&2
-    printf '%s\n' "$eq_line"    >&2
+    _render_tsv_table "$temp_buffer" "stderr" "full"
   else
     printf -- "%-4s\t%s\t%s\t%s\t%s\t%s\t%s\n" "#" "Group" "Name" "Host" "Port" "User" "Credential" >&2
     printf -- "%-4s\t%s\t%s\t%s\t%s\t%s\t%s\n" "----" "-----" "----" "----" "----" "----" "----------" >&2
@@ -2893,9 +2967,9 @@ select_indices_for_modify_credential() {
   local n=0 group name host port user cred idx
   local user_dec cred_dec display_cred
 
-  if command -v column >/dev/null 2>&1; then
+  if command -v column >/dev/null 2>&1 || command -v python3 >/dev/null 2>&1; then
     local temp_buffer=""
-    temp_buffer+="#\tGroup\tName\tHost\tPort\tUser\tCredential\n"
+    temp_buffer+="#"$'\t'"Group"$'\t'"Name"$'\t'"Host"$'\t'"Port"$'\t'"User"$'\t'"Credential"$'\n'
 
     while IFS=$'\t' read -r group name host port user cred idx; do
       if [[ -z "$group" && -z "$name" && -z "$host" && -z "$port" && -z "$user" && -z "$cred" ]]; then
@@ -2910,24 +2984,10 @@ select_indices_for_modify_credential() {
 
       local display_idx
       printf -v display_idx "%04d" "$n"
-      temp_buffer+="${display_idx}\t${group}\t${name}\t${host}\t${port}\t${user_dec}\t${cred_dec}\n"
+      temp_buffer+="${display_idx}"$'\t'"${group}"$'\t'"${name}"$'\t'"${host}"$'\t'"${port}"$'\t'"${user_dec}"$'\t'"${cred_dec}"$'\n'
     done <<< "$raw"
 
-    local rendered header_line data_lines header_len dash_line eq_line
-    rendered="$(printf "%b" "$temp_buffer" | column -t -s $'\t')"
-    header_line="$(printf '%s\n' "$rendered" | head -n 1)"
-    data_lines="$(printf '%s\n' "$rendered" | tail -n +2)"
-    header_len=${#header_line}
-    printf -v dash_line '%*s' "$header_len" ''
-    dash_line="${dash_line// /-}"
-    printf -v eq_line '%*s' "$header_len" ''
-    eq_line="${eq_line// /=}"
-
-    printf '%s\n' "$eq_line"     >&2
-    printf '%s\n' "$header_line" >&2
-    printf '%s\n' "$dash_line"   >&2
-    printf '%s\n' "$data_lines"  >&2
-    printf '%s\n' "$eq_line"     >&2
+    _render_tsv_table "$temp_buffer" "stderr" "full"
   else
     printf -- "%-4s\t%s\t%s\t%s\t%s\t%s\t%s\n" "#" "Group" "Name" "Host" "Port" "User" "Credential" >&2
     printf -- "%-4s\t%s\t%s\t%s\t%s\t%s\t%s\n" "----" "-----" "----" "----" "----" "----" "----------" >&2
